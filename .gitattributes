@@ -1,0 +1,7 @@
+# 仓库行尾策略（任务 N，2026-10-24 用户裁决：轻量方案）
+# 只锁定可执行文本在一切检出形态下为 LF——CRLF 会破坏 sh 的 shebang 与
+# 命令行（autocrlf=true 环境检出即触发，任务 L 批次 2 曾靠安装器归一兜底）。
+# 其余文件维持 core.autocrlf 行为；全仓归一（* text=auto eol=lf + 二进制
+# 清单 + renormalize）属彻底方案，裁决未采纳（冻结期成本不值）。
+.githooks/* eol=lf
+*.sh eol=lf

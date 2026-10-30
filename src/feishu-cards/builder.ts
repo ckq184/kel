@@ -1,0 +1,437 @@
+/**
+ * Top-level Feishu v2 Agent reply card builders.
+ *
+ *   buildAgentReplyCard(input)
+ *       Terminal (static) card. Header is status-driven: a successful `done`
+ *       reply drops the header (unless an explicit title is passed) so short
+ *       status messages aren't reduced to a truncated header, while
+ *       running/warning/error keep a status-coloured header. Followed by body
+ *       chunks + metadata row (2×2) + optional thinking/tool panels + footer.
+ *       Suitable for finalized Agent replies and error cards.
+ *
+ *   buildStreamingAgentCard(opts)
+ *       Initial streaming skeleton. Preserves the 5 slot element_ids that
+ *       feishu-streaming-card.ts patches via cardElement.content(). The aux
+ *       before/after slots remain plain markdown so the existing flush loop
+ *       keeps working unchanged.
+ */
+
+import { optimizeMarkdownStyle } from '../feishu-markdown-style.js';
+import type { AgentCardInput, CardMeta, FeishuCardV2 } from './types.js';
+import {
+  buildHeader,
+  buildMetaRow,
+  buildBodyChunks,
+  buildThinkingPanel,
+  buildToolsPanel,
+  buildFooter,
+  buildStreamingPanels,
+  buildStatusBannerText,
+  statusHeadline,
+  CARD_ELEMENT_IDS,
+  type StreamingPanelsInit,
+} from './sections.js';
+
+/** Per-platform typewriter tuning — mobile feels faster, PC breathes more. */
+const STREAMING_CONFIG = {
+  print_frequency_ms: { default: 30, android: 25, ios: 40, pc: 50 },
+  print_step: { default: 2, android: 3, ios: 4, pc: 5 },
+  print_strategy: 'fast' as const,
+};
+
+export function buildAgentReplyCard(input: AgentCardInput): FeishuCardV2 {
+  // Apply Feishu-friendly markdown transformation once, up front.
+  const optimizedText = optimizeMarkdownStyle(input.text, 2);
+  const optimizedThinking = input.thinking
+    ? optimizeMarkdownStyle(input.thinking, 2)
+    : undefined;
+
+  const explicitTitle = input.title?.trim();
+  const body = optimizedText.trim();
+
+  // Header policy: always render a status-coloured header so the
+  // streaming→terminal transition stays visually consistent (blue「生成中」→
+  // violet「已完成」is a colour change, not a header that suddenly vanishes).
+  // The header title is the explicit title when present, otherwise a minimal
+  // status word ('已完成'/'已中断'/'出错') — NEVER the body's first line, which
+  // was the root cause of the header/first-line duplication (issue #488). Using
+  // a fixed status word for `done` keeps issue #488 fixed while still giving the
+  // completed reply a clear status anchor.
+  const headlineTitle = explicitTitle ?? statusHeadline(input.status);
+  const summaryTitle = input.titlePrefix
+    ? `${input.titlePrefix}${headlineTitle}`
+    : headlineTitle;
+
+  const normalizedInput: AgentCardInput = {
+    ...input,
+    text: optimizedText,
+    title: explicitTitle,
+    thinking: optimizedThinking,
+  };
+
+  const header = buildHeader(normalizedInput);
+  const elements: Array<Record<string, unknown>> = [];
+  if (body) {
+    elements.push(...buildBodyChunks(body));
+  }
+
+  const metaRow = buildMetaRow(input.meta);
+  const thinkingPanel = buildThinkingPanel(optimizedThinking);
+  const toolsPanel = buildToolsPanel(input.meta?.toolCalls);
+  const footer = buildFooter(input.footer, input.completedAtMs);
+
+  const hasFooterArea =
+    metaRow.length + thinkingPanel.length + toolsPanel.length + footer.length >
+    0;
+  if (hasFooterArea) {
+    // Native v2 hr — components.md §hr confirms it's a valid component outside
+    // of CardKit's live-streaming patch surface.
+    elements.push({ tag: 'hr' });
+  }
+
+  elements.push(...metaRow);
+  elements.push(...thinkingPanel);
+  elements.push(...toolsPanel);
+  elements.push(...footer);
+
+  const config: Record<string, unknown> = {
+    update_multi: true,
+    enable_forward: true,
+    width_mode: 'fill',
+  };
+  if (summaryTitle) {
+    config.summary = { content: summaryTitle };
+  }
+
+  const card: FeishuCardV2 = {
+    schema: '2.0',
+    config,
+    header,
+    body: {
+      direction: 'vertical',
+      vertical_spacing: 'medium',
+      elements,
+    },
+  };
+  return card;
+}
+
+export interface StreamingCardBuildOptions {
+  /** Initial text to seed into the MAIN_CONTENT slot. */
+  initialText?: string;
+  /** Optional override title (otherwise extracted from initialText). */
+  title?: string;
+  /** Optional title prefix (e.g. AI name). */
+  titlePrefix?: string;
+  /** Optional subtitle shown under the title. */
+  subtitle?: string;
+  /** Optional meta (currently only `model` is used for the header tag). */
+  meta?: Pick<CardMeta, 'model'>;
+  /** Initial content for structured runtime panels. */
+  panels?: StreamingPanelsInit;
+  /**
+   * If true, use the "rich" structured skeleton (STATUS_BANNER + 4 collapsible
+   * panels). If false, use the legacy flat skeleton (AUX_BEFORE/AUX_AFTER).
+   * Default: true.
+   */
+  rich?: boolean;
+}
+
+export function buildStreamingAgentCard(
+  opts: StreamingCardBuildOptions = {},
+): FeishuCardV2 {
+  const initialText = opts.initialText ?? '';
+  const visibleInitialText =
+    initialText.trim() || '> 正在分析请求，最终结论完成后会显示在这里。';
+  // Header/summary title follows the same status-driven policy as the terminal
+  // card: an explicit title wins, otherwise a minimal status word ("生成中") —
+  // never the reply's first line. This keeps the streaming→terminal transition
+  // consistent instead of moving the first line between header and body.
+  const displayTitle = opts.title?.trim() || statusHeadline('running');
+  const useRich = opts.rich !== false;
+
+  const header = buildHeader({
+    text: initialText,
+    status: 'running',
+    title: opts.title,
+    titlePrefix: opts.titlePrefix,
+    subtitle: opts.subtitle,
+    meta: opts.meta ? { model: opts.meta.model } : undefined,
+  });
+
+  const mainContentEl = {
+    tag: 'markdown',
+    content: visibleInitialText,
+    element_id: CARD_ELEMENT_IDS.MAIN_CONTENT,
+  };
+  const interruptBtn = {
+    tag: 'button',
+    text: { tag: 'plain_text', content: '⏹ 停止回复' },
+    type: 'danger',
+    value: { action: 'interrupt_stream' },
+    element_id: CARD_ELEMENT_IDS.INTERRUPT_BTN,
+  };
+  const footerNote = {
+    tag: 'markdown',
+    content: `<font color='grey'>${buildStatusBannerText({ phase: 'streaming' })}</font>`,
+    element_id: CARD_ELEMENT_IDS.FOOTER_NOTE,
+    text_size: 'notation',
+  };
+
+  const baseConfig = {
+    update_multi: true,
+    enable_forward: true,
+    width_mode: 'fill',
+    summary: { content: displayTitle },
+    streaming_mode: true,
+    streaming_config: STREAMING_CONFIG,
+  };
+
+  if (!useRich) {
+    return {
+      schema: '2.0',
+      config: baseConfig,
+      header,
+      body: {
+        direction: 'vertical',
+        vertical_spacing: 'medium',
+        elements: [
+          {
+            tag: 'markdown',
+            content: '',
+            element_id: CARD_ELEMENT_IDS.AUX_BEFORE,
+            text_size: 'notation',
+          },
+          mainContentEl,
+          {
+            tag: 'markdown',
+            content: '',
+            element_id: CARD_ELEMENT_IDS.AUX_AFTER,
+            text_size: 'notation',
+          },
+          interruptBtn,
+          {
+            tag: 'markdown',
+            content: '⏳ 生成中...',
+            element_id: CARD_ELEMENT_IDS.STATUS_NOTE,
+            text_size: 'notation',
+          },
+        ],
+      },
+    };
+  }
+
+  // Default panel expansion for the streaming skeleton:
+  // Runtime diagnostics are folded by default. The always-visible status
+  // banner carries deterministic progress; raw reasoning is secondary detail
+  // and should not dominate the user's answer surface.
+  const panelsInit: StreamingPanelsInit = {
+    expandThinking: false,
+    expandTools: false,
+    expandProgress: false,
+    ...(opts.panels ?? {}),
+  };
+
+  return {
+    schema: '2.0',
+    config: baseConfig,
+    header,
+    body: {
+      direction: 'vertical',
+      vertical_spacing: 'medium',
+      elements: [
+        ...buildStreamingPanels(panelsInit),
+        mainContentEl,
+        interruptBtn,
+        footerNote,
+      ],
+    },
+  };
+}
+
+export interface QueuedFollowUpCardInput {
+  content: string;
+  position: number;
+  sourceJid: string;
+  targetJid: string;
+  messageId: string;
+  expectedRunId: string;
+}
+
+/** Compact action card shown only when a message is durably queued. */
+export function buildQueuedFollowUpCard(
+  input: QueuedFollowUpCardInput,
+): FeishuCardV2 {
+  const preview = optimizeMarkdownStyle(input.content.trim(), 2).slice(0, 300);
+  const actionValue = {
+    sourceJid: input.sourceJid,
+    targetJid: input.targetJid,
+    messageId: input.messageId,
+    expectedRunId: input.expectedRunId,
+  };
+  return {
+    schema: '2.0',
+    config: {
+      update_multi: true,
+      enable_forward: false,
+      width_mode: 'fill',
+      summary: { content: `消息已排队 · 第 ${input.position} 位` },
+    },
+    header: {
+      title: {
+        tag: 'plain_text',
+        content: `消息已排队 · 第 ${input.position} 位`,
+      },
+      template: 'grey',
+    },
+    body: {
+      direction: 'vertical',
+      vertical_spacing: 'small',
+      elements: [
+        {
+          tag: 'markdown',
+          content: preview || '（空消息）',
+        },
+        {
+          tag: 'markdown',
+          content:
+            "<font color='grey'>默认会在当前回复结束后发送。点击立即发送，会先停止当前回复，再优先处理这条消息。</font>",
+          text_size: 'notation',
+        },
+        {
+          tag: 'button',
+          text: { tag: 'plain_text', content: '↪ 立即发送' },
+          type: 'primary',
+          value: { ...actionValue, action: 'steer_queued' },
+        },
+        {
+          tag: 'button',
+          text: { tag: 'plain_text', content: '删除' },
+          type: 'default',
+          value: { ...actionValue, action: 'cancel_queued' },
+        },
+      ],
+    },
+  };
+}
+
+export function buildFollowUpActionResultCard(
+  message: string,
+  ok: boolean,
+): FeishuCardV2 {
+  return buildAgentReplyCard({
+    status: ok ? 'done' : 'warning',
+    title: ok ? '操作已完成' : '操作未执行',
+    text: message,
+  });
+}
+
+/**
+ * Extract the bare card object from prebuilt interactive card text
+ * (`{"type":"interactive","card":{...}}` — the agent-authored / approval-card
+ * convention). im/v1/message.create rejects the wrapper with Feishu 200621
+ * "parse card json err": the wire content must be the bare card object
+ * (verified against the live API 2026-10-22). Returns null when the text is
+ * not wrapper-shaped card JSON so callers can fall back to the markdown lane.
+ */
+export function parsePrebuiltInteractiveCardText(text: string): object | null {
+  if (!text.startsWith('{"type":"interactive"')) return null;
+  try {
+    const parsed = JSON.parse(text) as {
+      type?: string;
+      card?: Record<string, unknown>;
+    };
+    if (parsed.type === 'interactive' && parsed.card) return parsed.card;
+  } catch {
+    // Not valid card JSON — fall back to the markdown lane.
+  }
+  return null;
+}
+
+export interface ParsedCardCallback {
+  /** Button value payload (action name + ids), already parsed. */
+  value: Record<string, unknown>;
+  /** open_message_id of the card that carried the button. */
+  cardMessageId: string;
+  /** Channel user id of the clicker (feishu open_id). */
+  operatorImId: string;
+}
+
+/**
+ * Normalize a `card.action.trigger` callback body into the fields the host
+ * handler needs. Across Feishu card schema versions the `action`, `context`
+ * and `operator` sections arrive either as objects or as JSON strings
+ * (observed live 2026-10-22 with schema-2.0 event envelopes), so both shapes
+ * are accepted. Returns null when no actionable button value is present —
+ * callers should ignore the click instead of guessing.
+ */
+export function parseCardCallbackEnvelope(
+  data: unknown,
+): ParsedCardCallback | null {
+  const body = (data ?? {}) as Record<string, unknown>;
+  const parseMaybeJson = (
+    input: unknown,
+  ): Record<string, unknown> | undefined => {
+    if (input && typeof input === 'object')
+      return input as Record<string, unknown>;
+    if (typeof input === 'string') {
+      try {
+        const parsed = JSON.parse(input);
+        if (parsed && typeof parsed === 'object') return parsed;
+      } catch {
+        /* not JSON — treat as absent */
+      }
+    }
+    return undefined;
+  };
+  const actionWrapper = parseMaybeJson(body.action);
+  const value = (actionWrapper?.value ?? {}) as Record<string, unknown>;
+  if (!value.action) return null;
+  const context = parseMaybeJson(body.context);
+  const operator = parseMaybeJson(body.operator);
+  return {
+    value,
+    cardMessageId: (context?.open_message_id as string) ?? '',
+    operatorImId:
+      (operator?.open_id as string) ?? (operator?.openId as string) ?? '',
+  };
+}
+
+export interface ApprovalResultCardInput {
+  approved: boolean;
+  message: string;
+}
+
+/**
+ * v1-format result card returned in the `card.action.trigger` callback
+ * response (`card: { type: 'raw', data }`). The approval request card is a
+ * v1 card, and the response card MUST stay v1: Feishu rejects version
+ * switches on the card entity (live-verified 2026-10-23 — patching the
+ * message with a schema-2.0 card via im/v1/message.patch returns code 0 and
+ * rewrites the row, but every client keeps rendering the old v1 card, and a
+ * follow-up v1 payload is rejected with 230099/200830 "schemaV2 card can not
+ * change schemaV1"). The callback-response channel renders natively.
+ */
+export function buildApprovalResultCardV1(
+  input: ApprovalResultCardInput,
+): object {
+  return {
+    config: { wide_screen_mode: true },
+    header: {
+      title: {
+        tag: 'plain_text',
+        content: input.approved ? '✅ 已批准' : '⛔ 已拒绝',
+      },
+      template: input.approved ? 'green' : 'red',
+    },
+    elements: [
+      { tag: 'markdown', content: input.message },
+      {
+        tag: 'note',
+        elements: [
+          { tag: 'plain_text', content: '该审批已处理，按钮不再生效' },
+        ],
+      },
+    ],
+  };
+}

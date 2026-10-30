@@ -1,0 +1,3 @@
+#!/bin/sh
+# Miniclaw pre-commit（任务 L 批次 2）——逻辑在 scripts/gate-pre-commit.mjs
+exec node "$(git rev-parse --show-toplevel)/scripts/gate-pre-commit.mjs" "$@"

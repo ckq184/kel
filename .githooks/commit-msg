@@ -1,0 +1,3 @@
+#!/bin/sh
+# Miniclaw commit-msg（任务 L 批次 2）——逻辑在 scripts/gate-commit-msg.mjs
+exec node "$(git rev-parse --show-toplevel)/scripts/gate-commit-msg.mjs" "$1"

@@ -1,0 +1,12 @@
+{
+  "task": "配置 remote 并首次推送 github.com/ckq184/Personnal-agent（用户显式指示）",
+  "base": "cf39af0",
+  "allow": [
+    "AGENTS.md",
+    "docs/constitution.md",
+    "docs/REMAINING-WORK.md",
+    ".githooks/pre-push",
+    "scripts/check-format-changed.mjs",
+    ".gatescope.json"
+  ]
+}
