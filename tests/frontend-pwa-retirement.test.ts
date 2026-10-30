@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, test } from 'vitest';
 import {
-  isLegacyMiniclawRegistration,
+  isLegacyCkqclawRegistration,
   isLegacyPwaCacheName,
 } from '../web/src/utils/legacyPwaCleanup';
 
@@ -57,14 +57,14 @@ describe('PWA cache retirement', () => {
     expect(worker).not.toMatch(/addEventListener\(['"]fetch|cache\.put|addAll/);
   });
 
-  test('recognizes only Miniclaw legacy caches and registrations', () => {
+  test('recognizes only CKQClaw legacy caches and registrations', () => {
     expect(
       isLegacyPwaCacheName('workbox-precache-v2-https://example.com/'),
     ).toBe(true);
     expect(isLegacyPwaCacheName('api-groups-cache')).toBe(true);
     expect(isLegacyPwaCacheName('unrelated-product-cache')).toBe(false);
 
-    const appScope = 'https://example.com/miniclaw/';
+    const appScope = 'https://example.com/ckqclaw/';
     const scriptUrl = `${appScope}sw.js`;
     const worker = { scriptURL: scriptUrl } as ServiceWorker;
     const registration = {
@@ -73,11 +73,11 @@ describe('PWA cache retirement', () => {
       waiting: null,
       installing: null,
     };
+    expect(isLegacyCkqclawRegistration(registration, appScope, scriptUrl)).toBe(
+      true,
+    );
     expect(
-      isLegacyMiniclawRegistration(registration, appScope, scriptUrl),
-    ).toBe(true);
-    expect(
-      isLegacyMiniclawRegistration(
+      isLegacyCkqclawRegistration(
         {
           ...registration,
           scope: 'https://example.com/other/',

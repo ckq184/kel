@@ -1,5 +1,5 @@
 {
-  "task": "任务O - miniclaw→ckqclaw 全仓品牌重命名（用户 2026-10-30 批准，计划见 docs/task-o-brand-rename-plan.md）",
+  "task": "任务O - ckqclaw→ckqclaw 全仓品牌重命名（用户 2026-10-30 批准，计划见 docs/task-o-brand-rename-plan.md）",
   "base": "7f41d5b",
   "allow": [
     "src/**",

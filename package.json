@@ -1,5 +1,5 @@
 {
-  "name": "miniclaw",
+  "name": "ckqclaw",
   "version": "1.0.0",
   "description": "Self-hosted AI Agent workspace powered by the Pi Agent Runtime.",
   "type": "module",
@@ -80,11 +80,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ckq184/miniclaw.git"
+    "url": "git+https://github.com/ckq184/ckqclaw.git"
   },
-  "homepage": "https://github.com/ckq184/miniclaw#readme",
+  "homepage": "https://github.com/ckq184/ckqclaw#readme",
   "bugs": {
-    "url": "https://github.com/ckq184/miniclaw/issues"
+    "url": "https://github.com/ckq184/ckqclaw/issues"
   },
   "author": "ckq184",
   "keywords": [

@@ -16,7 +16,7 @@ vi.mock('../src/config.js', async () => ({
   STORE_DIR: tmpStoreDir,
   GROUPS_DIR: tmpGroupsDir,
   DATA_DIR: tmpDataDir,
-  ASSISTANT_NAME: 'Miniclaw Test',
+  ASSISTANT_NAME: 'CKQClaw Test',
 }));
 
 vi.mock('../src/logger.js', () => ({
@@ -795,7 +795,7 @@ describe('/api/agent-profiles routes', () => {
     });
   });
 
-  test('allows admins to create host agents and patch the default Miniclaw profile', async () => {
+  test('allows admins to create host agents and patch the default CKQClaw profile', async () => {
     const createRes = await routes.request('/', {
       method: 'POST',
       headers: {

@@ -1,4 +1,4 @@
-# Minimal private SearXNG configuration for Miniclaw.
+# Minimal private SearXNG configuration for CKQClaw.
 # Two requirements matter:
 #   1. search.formats must include json — mcp-searxng queries the JSON API.
 #   2. The instance is loopback-only (see compose.yaml); the limiter and
@@ -20,15 +20,15 @@ use_default_settings:
       - mwmbl
 
 server:
-  secret_key: "miniclaw-private-instance-change-me"
+  secret_key: 'ckqclaw-private-instance-change-me'
   limiter: false
   image_proxy: false
   port: 8080
-  bind_address: "0.0.0.0"
+  bind_address: '0.0.0.0'
 
 search:
   safe_search: 0
-  autocomplete: ""
+  autocomplete: ''
   formats:
     - html
     - json

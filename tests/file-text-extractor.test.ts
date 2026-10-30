@@ -9,7 +9,10 @@ import {
 } from '../src/file-text-extractor.js';
 
 const tmp = (suffix: string) =>
-  path.join(os.tmpdir(), `miniclaw-extractor-${Date.now()}-${Math.random()}${suffix}`);
+  path.join(
+    os.tmpdir(),
+    `ckqclaw-extractor-${Date.now()}-${Math.random()}${suffix}`,
+  );
 
 describe('extractFileText', () => {
   test('returns null for unknown extension', async () => {

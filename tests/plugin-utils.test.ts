@@ -30,7 +30,12 @@ function seedRuntimeManifest(
   marketplace: string,
   pluginName: string,
 ): string {
-  const dir = getUserPluginRuntimePath(userId, snapshotId, marketplace, pluginName);
+  const dir = getUserPluginRuntimePath(
+    userId,
+    snapshotId,
+    marketplace,
+    pluginName,
+  );
   fs.mkdirSync(path.join(dir, '.claude-plugin'), { recursive: true });
   fs.writeFileSync(
     path.join(dir, '.claude-plugin', 'plugin.json'),
@@ -40,7 +45,7 @@ function seedRuntimeManifest(
 }
 
 beforeEach(() => {
-  tmpDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'miniclaw-plugin-utils-'));
+  tmpDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ckqclaw-plugin-utils-'));
 });
 
 afterEach(() => {
@@ -118,10 +123,7 @@ describe('readUserPluginsV2 / writeUserPluginsV2', () => {
   test('returns null for unknown schemaVersion (no auto-overwrite)', () => {
     const file = getUserPluginsFileV2('alice');
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(
-      file,
-      JSON.stringify({ schemaVersion: 99, enabled: {} }),
-    );
+    fs.writeFileSync(file, JSON.stringify({ schemaVersion: 99, enabled: {} }));
     expect(readUserPluginsV2('alice')).toBeNull();
   });
 });

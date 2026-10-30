@@ -1,5 +1,5 @@
 {
-  "name": "miniclaw-web",
+  "name": "ckqclaw-web",
   "private": true,
   "version": "0.0.1",
   "type": "module",
@@ -55,12 +55,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ckq184/miniclaw.git",
+    "url": "git+https://github.com/ckq184/ckqclaw.git",
     "directory": "web"
   },
-  "homepage": "https://github.com/ckq184/miniclaw#readme",
+  "homepage": "https://github.com/ckq184/ckqclaw#readme",
   "bugs": {
-    "url": "https://github.com/ckq184/miniclaw/issues"
+    "url": "https://github.com/ckq184/ckqclaw/issues"
   },
   "author": "ckq184",
   "allowScripts": {

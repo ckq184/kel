@@ -8,7 +8,7 @@ import {
  *
  * The host resolves `/mcp-servers` (plus managed/workspace layers) into a
  * Claude-format `mcpServers` map and ships it in
- * `MINICLAW_USER_MCP_SERVERS_JSON` — the exact shape Pi's `mcp.json` uses.
+ * `CKQCLAW_USER_MCP_SERVERS_JSON` — the exact shape Pi's `mcp.json` uses.
  * Pi's built-in MCP extension is wired with a custom `loadConfig` that reads
  * that env instead of `mcp.json` files, so no filesystem config source or
  * project-trust grant is involved.
@@ -26,7 +26,7 @@ import {
  * servers, mirroring Pi's own config handling.
  */
 
-export const MCP_SERVERS_ENV = 'MINICLAW_USER_MCP_SERVERS_JSON';
+export const MCP_SERVERS_ENV = 'CKQCLAW_USER_MCP_SERVERS_JSON';
 
 /** Pi server names allow letters, digits, `_` and `-` only. */
 const SERVER_NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
@@ -221,8 +221,8 @@ export function parseExternalMcpServers(
   return config;
 }
 
-/** Pi MCP extension bound to the Miniclaw env config source. */
-export function createMiniclawMcpExtension(): ExtensionFactory {
+/** Pi MCP extension bound to the CKQClaw env config source. */
+export function createCkqclawMcpExtension(): ExtensionFactory {
   return createMcpExtension({
     loadConfig: () => {
       const loaded = parseExternalMcpServers(process.env[MCP_SERVERS_ENV]);

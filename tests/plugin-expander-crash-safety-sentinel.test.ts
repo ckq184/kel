@@ -127,7 +127,7 @@ function enable(opts: {
 }
 
 beforeEach(() => {
-  tmpDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'miniclaw-r14-'));
+  tmpDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ckqclaw-r14-'));
   _resetCommandIndexCacheForTests();
 });
 
@@ -176,10 +176,15 @@ describe('readPluginExpansionFromAttachments / writePluginExpansionToAttachments
       expandedAt: '2026-04-27T00:00:00.000Z',
     };
     const out = writePluginExpansionToAttachments(existing, sentinel);
-    const arr = JSON.parse(out) as Array<{ type: string; [k: string]: unknown }>;
+    const arr = JSON.parse(out) as Array<{
+      type: string;
+      [k: string]: unknown;
+    }>;
     expect(arr.length).toBe(2);
     expect(arr.find((a) => a.type === 'image')).toBeTruthy();
-    expect(arr.find((a) => a.type === PLUGIN_EXPANSION_ATTACHMENT_TYPE)).toBeTruthy();
+    expect(
+      arr.find((a) => a.type === PLUGIN_EXPANSION_ATTACHMENT_TYPE),
+    ).toBeTruthy();
   });
 
   test('writing twice replaces the prior sentinel (no duplicates)', () => {

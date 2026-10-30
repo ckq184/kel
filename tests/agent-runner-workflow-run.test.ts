@@ -85,9 +85,7 @@ describe('Workflow live projection', () => {
   });
 
   test('uses the SDK output file as the authoritative completed state', () => {
-    const tempDir = fs.mkdtempSync(
-      path.join(os.tmpdir(), 'miniclaw-workflow-'),
-    );
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ckqclaw-workflow-'));
     const outputFile = path.join(tempDir, 'workflow.output');
     fs.writeFileSync(
       outputFile,

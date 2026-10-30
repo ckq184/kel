@@ -1,7 +1,7 @@
-# Miniclaw
+# CKQClaw
 
 <p align="center">
-  <img src="web/public/icons/logo-1024.png" alt="Miniclaw logo" width="96" />
+  <img src="web/public/icons/logo-1024.png" alt="CKQClaw logo" width="96" />
 </p>
 
 <p align="center">
@@ -10,17 +10,17 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/ckq184/miniclaw">GitHub</a> ·
+  <a href="https://github.com/ckq184/ckqclaw">GitHub</a> ·
   <a href="docs/API.md">API</a> ·
   <a href="docs/ACL-MATRIX.md">权限模型</a> ·
   <a href="SECURITY.md">安全策略</a>
 </p>
 
-> 一句话：聊天界面让你向 Agent 提问；Miniclaw 让 Agent 拥有长期运行的工作区、可审计的能力边界，以及能够被 Web、桌面端和消息渠道共同使用的运行时。
+> 一句话：聊天界面让你向 Agent 提问；CKQClaw 让 Agent 拥有长期运行的工作区、可审计的能力边界，以及能够被 Web、桌面端和消息渠道共同使用的运行时。
 
 ## 产品定位
 
-Miniclaw 是一个面向个人与团队的自托管 AI Agent 工作台。它不是一个只保存聊天记录的对话框，而是把以下对象放在同一个产品模型中：
+CKQClaw 是一个面向个人与团队的自托管 AI Agent 工作台。它不是一个只保存聊天记录的对话框，而是把以下对象放在同一个产品模型中：
 
 - Agent 身份、模型策略与能力配置。
 - Workspace 文件、执行环境、权限和渠道绑定。
@@ -29,7 +29,7 @@ Miniclaw 是一个面向个人与团队的自托管 AI Agent 工作台。它不�
 - Web、Electron Desktop、飞书、Telegram、QQ、钉钉、微信、Discord、WhatsApp 等入口。
 - Cron、间隔和一次性任务，以及任务运行历史、通知与恢复。
 
-Miniclaw 采用本地优先和显式集成的思路：数据库、工作区元数据、会话状态和配置由自己的服务管理；模型、消息渠道、Docker 与外部工具都作为可配置边界接入。
+CKQClaw 采用本地优先和显式集成的思路：数据库、工作区元数据、会话状态和配置由自己的服务管理；模型、消息渠道、Docker 与外部工具都作为可配置边界接入。
 
 ## 界面与体验
 
@@ -38,7 +38,7 @@ Miniclaw 采用本地优先和显式集成的思路：数据库、工作区元�
 下面是当前桌面端工作台的实际界面：
 
 <p align="center">
-  <img src="docs/screenshots/workbench.png" alt="Miniclaw 智能体工作台" width="900" />
+  <img src="docs/screenshots/workbench.png" alt="CKQClaw 智能体工作台" width="900" />
 </p>
 
 <p align="center">
@@ -46,18 +46,18 @@ Miniclaw 采用本地优先和显式集成的思路：数据库、工作区元�
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/capabilities.png" alt="Miniclaw 能力库" width="49%" />
-  <img src="docs/screenshots/settings-models.png" alt="Miniclaw 模型配置" width="49%" />
+  <img src="docs/screenshots/capabilities.png" alt="CKQClaw 能力库" width="49%" />
+  <img src="docs/screenshots/settings-models.png" alt="CKQClaw 模型配置" width="49%" />
 </p>
 
 <p align="center">
   <em>能力库与模型配置：把 Skills、MCP、Plugins 和 Provider 配置放在清晰的管理边界内。</em>
 </p>
 
-新的 Miniclaw 图标同时用于 Web/PWA、Electron 窗口和安装包资源：
+新的 CKQClaw 图标同时用于 Web/PWA、Electron 窗口和安装包资源：
 
 <p align="center">
-  <img src="web/public/icons/logo-1024.png" alt="Miniclaw application icon" width="160" />
+  <img src="web/public/icons/logo-1024.png" alt="CKQClaw application icon" width="160" />
 </p>
 
 ## 核心功能
@@ -73,7 +73,7 @@ Miniclaw 采用本地优先和显式集成的思路：数据库、工作区元�
 
 - 基于 Pi Agent Runtime 提供 prompt、流式输出、工具调用、Session 持久化与恢复。
 - 支持 abort、follow-up、原生 compaction 和持久化 JSONL Session。
-- 复用 Miniclaw 已有的 MCP capability handler，并映射为稳定的 `mcp__miniclaw__*` 工具。
+- 复用 CKQClaw 已有的 MCP capability handler，并映射为稳定的 `mcp__ckqclaw__*` 工具。
 - Subagents 通过 Pi extension 与显式的 spawn/stop 生命周期桥接。
 - Runtime 不会静默假装拥有缺失能力；尚未接入 Pi 的 Web Search/Web Fetch 能力会保持明确不可用。
 
@@ -106,7 +106,7 @@ Miniclaw 采用本地优先和显式集成的思路：数据库、工作区元�
 - Electron 只是 Desktop Shell，复用现有 Web Client，不在 Renderer 中承载数据库、文件系统、凭证、Docker 或 shell/process 权限。
 - Main Process 负责窗口生命周期、外部链接、菜单和受限 IPC；Preload 只暴露白名单 API。
 - 默认提供 macOS arm64 打包配置，并保留 Windows、Linux 目标配置。
-- 同一套 Renderer 可以连接本地 Backend，也可以通过 `MINICLAW_SERVER_URL` 连接远程 Miniclaw 服务。
+- 同一套 Renderer 可以连接本地 Backend，也可以通过 `CKQCLAW_SERVER_URL` 连接远程 CKQClaw 服务。
 
 ## 工作原理
 
@@ -114,7 +114,7 @@ Miniclaw 采用本地优先和显式集成的思路：数据库、工作区元�
 Web Client / Electron Desktop / Message Channels
                          │ HTTP + WebSocket / Channel Adapters
                          ▼
-                Miniclaw Backend
+                CKQClaw Backend
         Auth · API · Queue · Scheduler · ACL
                          │
         ┌────────────────┼─────────────────┐
@@ -146,8 +146,8 @@ Web Client / Electron Desktop / Message Channels
 ### 启动 Backend 与 Web Client
 
 ```bash
-git clone https://github.com/ckq184/miniclaw.git
-cd miniclaw
+git clone https://github.com/ckq184/ckqclaw.git
+cd ckqclaw
 
 npm install
 npm --prefix web install
@@ -170,7 +170,7 @@ npm run dev:all
 
 首次进入时完成管理员初始化和 Provider 配置即可。Provider/渠道接入步骤现在可以选择“稍后设置”，跳过后仍可进入工作台，之后在设置中补齐模型和渠道配置。
 
-Agent 容器镜像默认使用 `ckq184/miniclaw-agent:latest`，可以通过 `MINICLAW_CONTAINER_IMAGE` 或 `CONTAINER_IMAGE` 覆盖。
+Agent 容器镜像默认使用 `ckq184/ckqclaw-agent:latest`，可以通过 `CKQCLAW_CONTAINER_IMAGE` 或 `CONTAINER_IMAGE` 覆盖。
 
 ### 启动 Electron Desktop
 
@@ -183,10 +183,10 @@ npm run dev:all
 再在另一个终端启动桌面端：
 
 ```bash
-MINICLAW_RENDERER_URL=http://127.0.0.1:5173 npm run desktop:dev
+CKQCLAW_RENDERER_URL=http://127.0.0.1:5173 npm run desktop:dev
 ```
 
-如果直接使用 Backend 提供的构建后页面，可以省略 `MINICLAW_RENDERER_URL`：
+如果直接使用 Backend 提供的构建后页面，可以省略 `CKQCLAW_RENDERER_URL`：
 
 ```bash
 npm run desktop:dev
@@ -195,7 +195,7 @@ npm run desktop:dev
 连接远程 Backend 时：
 
 ```bash
-MINICLAW_SERVER_URL=https://your-miniclaw.example.com npm run desktop:dev
+CKQCLAW_SERVER_URL=https://your-ckqclaw.example.com npm run desktop:dev
 ```
 
 打包命令：
@@ -212,31 +212,31 @@ npm run desktop:package
 
 ## 常用命令
 
-| 命令 | 说明 |
-| --- | --- |
-| `npm run dev:all` | 启动 Backend 与 Vite Web Client |
-| `npm run build:all` | 构建 Backend、Web Client 与 Agent Runner |
-| `npm run typecheck` | 检查 Backend TypeScript |
-| `make typecheck` | 执行 Backend、Web、Agent Runner 的完整类型与文档检查 |
-| `npm test -- --run` | 运行 Vitest 测试 |
-| `npm run desktop:typecheck` | 检查 Electron Main/Preload 类型 |
-| `npm run desktop:build` | 构建 Electron Main/Preload bundle |
-| `npm run desktop:package:dir` | 构建并生成目录形式的桌面应用 |
-| `npm run desktop:package` | 构建并打包桌面应用 |
-| `make backup` | 创建运行时数据备份 |
-| `make restore FILE=...` | 恢复指定备份 |
-| `make status` | 查看 Backend、日志和 Docker 状态 |
-| `make stop` | 停止当前端口上的 Miniclaw 服务 |
+| 命令                          | 说明                                                 |
+| ----------------------------- | ---------------------------------------------------- |
+| `npm run dev:all`             | 启动 Backend 与 Vite Web Client                      |
+| `npm run build:all`           | 构建 Backend、Web Client 与 Agent Runner             |
+| `npm run typecheck`           | 检查 Backend TypeScript                              |
+| `make typecheck`              | 执行 Backend、Web、Agent Runner 的完整类型与文档检查 |
+| `npm test -- --run`           | 运行 Vitest 测试                                     |
+| `npm run desktop:typecheck`   | 检查 Electron Main/Preload 类型                      |
+| `npm run desktop:build`       | 构建 Electron Main/Preload bundle                    |
+| `npm run desktop:package:dir` | 构建并生成目录形式的桌面应用                         |
+| `npm run desktop:package`     | 构建并打包桌面应用                                   |
+| `make backup`                 | 创建运行时数据备份                                   |
+| `make restore FILE=...`       | 恢复指定备份                                         |
+| `make status`                 | 查看 Backend、日志和 Docker 状态                     |
+| `make stop`                   | 停止当前端口上的 CKQClaw 服务                        |
 
 ## 配置入口
 
-| 环境变量 | 用途 | 默认值 |
-| --- | --- | --- |
-| `MINICLAW_SERVER_URL` | Electron 要连接的 Backend 地址 | `http://127.0.0.1:3000` |
-| `MINICLAW_RENDERER_URL` | Electron 要加载的 Renderer 地址，适合本地 Vite 开发 | 与 Server URL 相同 |
-| `MINICLAW_CONTAINER_IMAGE` | Agent Runner 使用的容器镜像 | `ckq184/miniclaw-agent:latest` |
-| `CONTAINER_IMAGE` | 容器镜像的兼容覆盖项 | 同上 |
-| `WEB_PORT` | Makefile 启动 Backend 使用的端口 | `3000` |
+| 环境变量                  | 用途                                                | 默认值                        |
+| ------------------------- | --------------------------------------------------- | ----------------------------- |
+| `CKQCLAW_SERVER_URL`      | Electron 要连接的 Backend 地址                      | `http://127.0.0.1:3000`       |
+| `CKQCLAW_RENDERER_URL`    | Electron 要加载的 Renderer 地址，适合本地 Vite 开发 | 与 Server URL 相同            |
+| `CKQCLAW_CONTAINER_IMAGE` | Agent Runner 使用的容器镜像                         | `ckq184/ckqclaw-agent:latest` |
+| `CONTAINER_IMAGE`         | 容器镜像的兼容覆盖项                                | 同上                          |
+| `WEB_PORT`                | Makefile 启动 Backend 使用的端口                    | `3000`                        |
 
 不要把 API Key、Session Cookie 或其他凭证写入命令行历史、截图或提交到仓库。远程部署时使用 HTTPS/WSS，并为反向代理、Cookie 和访问控制配置独立的安全边界。
 
@@ -254,7 +254,7 @@ npm run desktop:package
 
 ## 项目状态
 
-Miniclaw 当前处于持续开发阶段。仓库已经包含：
+CKQClaw 当前处于持续开发阶段。仓库已经包含：
 
 - Pi Agent Runtime 生产执行路径与 runtime-neutral contract。
 - Web Client 与 Electron Desktop Shell。
@@ -288,7 +288,7 @@ Miniclaw 当前处于持续开发阶段。仓库已经包含：
 - [`docs/workspace-memory-v2.md`](docs/workspace-memory-v2.md) — Workspace Memory 的数据模型、版本与交互边界
 - [`docs/runtime-migration.md`](docs/runtime-migration.md) — 从旧运行时到 Pi Agent Runtime 的迁移记录
 - [`docs/PROMPT-SKILL-RUNTIME-TEST-PLAN.md`](docs/PROMPT-SKILL-RUNTIME-TEST-PLAN.md) — Prompt、Skill、Runtime 与 Agent Builder 验证计划
-- [`docs/miniclaw-migration-cleanup.md`](docs/miniclaw-migration-cleanup.md) — 品牌和运行时命名迁移记录
+- [`docs/miniclaw-migration-cleanup.md`](docs/miniclaw-migration-cleanup.md) — 品牌和运行时命名迁移记录（happyclaw→miniclaw 历史存档）
 - [`SECURITY.md`](SECURITY.md) — 安全问题报告与处理策略
 
 ## 参与贡献
@@ -307,4 +307,4 @@ npm run desktop:build
 
 ## License
 
-Miniclaw 使用 MIT License，详见 [`LICENSE`](LICENSE)。
+CKQClaw 使用 MIT License，详见 [`LICENSE`](LICENSE)。

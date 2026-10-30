@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Miniclaw 范围核对（任务 L 批次 3 原型，宪法 1.5「最小范围修改」的机审化）。
+// CKQClaw 范围核对（任务 L 批次 3 原型，宪法 1.5「最小范围修改」的机审化）。
 //
 // 把「git diff 文件清单 vs 任务声明范围」变成一条命令：
 //   node scripts/check-scope.mjs

@@ -12,7 +12,7 @@ fs.mkdirSync(tmpStoreDir, { recursive: true });
 fs.mkdirSync(tmpGroupsDir, { recursive: true });
 
 vi.mock('../src/config.js', async () => ({
-  ASSISTANT_NAME: 'Miniclaw',
+  ASSISTANT_NAME: 'CKQClaw',
   DATA_DIR: tmpDir,
   STORE_DIR: tmpStoreDir,
   GROUPS_DIR: tmpGroupsDir,
@@ -36,7 +36,7 @@ afterAll(() => {
 });
 
 describe('AgentProfile runtime invalidation', () => {
-  test('default Miniclaw takes its compact threshold from global policy', () => {
+  test('default CKQClaw takes its compact threshold from global policy', () => {
     const userId = 'agent-profile-runtime-default-compact';
     const now = new Date().toISOString();
     db.createUser({
@@ -60,7 +60,7 @@ describe('AgentProfile runtime invalidation', () => {
     expect(effective?.runtime_policy.context.auto_compact_window).toBe(0);
     expect(effective?.runtime_policy.context.auto_compact_percentage).toBe(80);
     expect(effective?.identity_hash).toBe(
-      runtime.bindMiniclawPlatformIdentityHash(
+      runtime.bindCkqclawPlatformIdentityHash(
         db.computeAgentProfileIdentityHash(
           profile,
           effective!.runtime_policy,
@@ -71,7 +71,7 @@ describe('AgentProfile runtime invalidation', () => {
     expect(effective?.identity_hash).not.toBe(profile.identity_hash);
   });
 
-  test('custom Agents do not inherit the protected Miniclaw identity hash', () => {
+  test('custom Agents do not inherit the protected CKQClaw identity hash', () => {
     const userId = 'agent-profile-runtime-custom-identity';
     const now = new Date().toISOString();
     db.createUser({
@@ -100,7 +100,7 @@ describe('AgentProfile runtime invalidation', () => {
       ),
     );
     expect(effective.identity_hash).not.toBe(
-      runtime.bindMiniclawPlatformIdentityHash(effective.identity_hash),
+      runtime.bindCkqclawPlatformIdentityHash(effective.identity_hash),
     );
   });
 

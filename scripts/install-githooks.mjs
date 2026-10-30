@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 安装 Miniclaw git hooks（任务 L 批次 2，经用户按宪法第 6 条显式批准引入）。
+// 安装 CKQClaw git hooks（任务 L 批次 2，经用户按宪法第 6 条显式批准引入）。
 //
 // 做三件事（幂等，重复运行无害）：
 //   1. git config core.hooksPath .githooks —— 不写 .git/hooks，检出即可用；

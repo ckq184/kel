@@ -17,7 +17,7 @@ import type {
 } from '../types.js';
 import { isPolicyEnforced } from '../../approval/policy.js';
 import { resolvePiProvider } from './pi-provider.js';
-import { createMiniclawMcpExtension } from './pi-mcp.js';
+import { createCkqclawMcpExtension } from './pi-mcp.js';
 import { PiRuntimeSession } from './pi-session.js';
 
 const require = createRequire(import.meta.url);
@@ -142,7 +142,7 @@ export class PiRuntimeAdapter implements AgentRuntime {
       // External MCP servers from the host-injected env config. SDK sessions
       // do not load built-in extensions, so the MCP extension must be added
       // explicitly; every tool it registers flows through the approval gate.
-      extensionFactories: [createMiniclawMcpExtension()],
+      extensionFactories: [createCkqclawMcpExtension()],
     });
     try {
       await resourceLoader.reload({ resolveProjectTrust: async () => true });
@@ -165,7 +165,7 @@ export class PiRuntimeAdapter implements AgentRuntime {
         systemPrompt: options.systemPrompt,
         additionalSkillPaths: options.skillPaths,
         additionalExtensionPaths: withoutSubagents,
-        extensionFactories: [createMiniclawMcpExtension()],
+        extensionFactories: [createCkqclawMcpExtension()],
       });
       await resourceLoader.reload({ resolveProjectTrust: async () => true });
     }
@@ -196,7 +196,7 @@ export class PiRuntimeAdapter implements AgentRuntime {
       ? [
           ...new Set(
             allowedNames.flatMap((name) => {
-              if (name === 'mcp__miniclaw__*') {
+              if (name === 'mcp__ckqclaw__*') {
                 return customTools.map((tool) => tool.name);
               }
               return [toolAliases[name] || name];

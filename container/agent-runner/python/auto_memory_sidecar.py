@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Miniclaw auto-memory sidecar (mem0 bridge).
+"""CKQClaw auto-memory sidecar (mem0 bridge).
 
 One sidecar process serves one workspace for one runner lifetime. The Node
 runner spawns it lazily, speaks JSON lines on stdio, and the sidecar keeps

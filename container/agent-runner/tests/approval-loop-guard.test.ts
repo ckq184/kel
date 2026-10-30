@@ -146,13 +146,13 @@ describe('loop guard extension hook', () => {
 
   test('blocked calls are audit-logged as loop_guard events', async () => {
     const ipcRoot = fs.mkdtempSync(
-      path.join(os.tmpdir(), 'miniclaw-loopguard-'),
+      path.join(os.tmpdir(), 'ckqclaw-loopguard-'),
     );
     setApprovalIpcRoot(ipcRoot);
     try {
       const { handler } = captureHook();
       const event = {
-        toolName: 'mcp__miniclaw__get_channel_context',
+        toolName: 'mcp__ckqclaw__get_channel_context',
         input: {},
       };
       await handler(event);
@@ -167,7 +167,7 @@ describe('loop guard extension hook', () => {
         .map((line) => JSON.parse(line));
       expect(entries.map((e) => e.verdict)).toEqual(['reflect', 'stop']);
       expect(entries.every((e) => e.kind === 'loop_guard')).toBe(true);
-      expect(entries[0].tool).toBe('mcp__miniclaw__get_channel_context');
+      expect(entries[0].tool).toBe('mcp__ckqclaw__get_channel_context');
     } finally {
       fs.rmSync(ipcRoot, { recursive: true, force: true });
     }

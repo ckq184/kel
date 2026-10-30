@@ -5,8 +5,8 @@ import process from 'node:process';
 
 import { readDescriptorMountId } from './session-permissions-mount.mjs';
 
-const READY_FILE = '/run/miniclaw-session-watcher.ready';
-const FAILED_FILE = '/run/miniclaw-session-watcher.failed';
+const READY_FILE = '/run/ckqclaw-session-watcher.ready';
+const FAILED_FILE = '/run/ckqclaw-session-watcher.failed';
 const RESCAN_INTERVAL_MS = 30_000;
 const MAX_RECOVERY_FAILURES = 3;
 const OPEN_FLAGS =
@@ -101,7 +101,7 @@ const generatedRoots = new Map([
   [
     'chromium',
     {
-      path: '/tmp/miniclaw-chromium-profile',
+      path: '/tmp/ckqclaw-chromium-profile',
       policy: 'managed',
       normalization: 'node-owned',
     },
@@ -266,7 +266,7 @@ function normalizeDescriptor(fd, root, required = false) {
     ) {
       throw new Error(`refusing ${description}`);
     }
-    process.stderr.write(`miniclaw: skipping ${description}\n`);
+    process.stderr.write(`ckqclaw: skipping ${description}\n`);
     return { stat, outsideRootMount: false };
   }
   try {
@@ -539,7 +539,7 @@ function stop() {
   } catch (error) {
     closeRoots();
     process.stderr.write(
-      `miniclaw permission watcher final scan failed: ${error}\n`,
+      `ckqclaw permission watcher final scan failed: ${error}\n`,
     );
     process.exit(1);
   }

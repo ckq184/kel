@@ -16,7 +16,7 @@ import {
 import { removeTmpDirRecursive } from './helpers/remove-tmp-dir.js';
 
 const tmpDir = fs.mkdtempSync(
-  path.join(os.tmpdir(), 'miniclaw-provider-runtime-apply-'),
+  path.join(os.tmpdir(), 'ckqclaw-provider-runtime-apply-'),
 );
 
 vi.mock('../src/config.js', async (importOriginal) => ({

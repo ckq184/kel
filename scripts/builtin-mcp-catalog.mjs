@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 // Source of truth for the MCP components and libraries that ship pre-installed
-// with Miniclaw (container image + `install-host-tools.sh mcp`). Every entry
+// with CKQClaw (container image + `install-host-tools.sh mcp`). Every entry
 // pins an exact upstream version and the SHA256 of the primary artifact we
 // verified at pin time; the install paths download the artifact, re-verify the
 // hash, and only then install. Bump a version here and mirror the new ARG
@@ -24,7 +24,8 @@ export const BUILTIN_MCP_COMPONENTS = [
     bin: 'playwright-mcp',
     tarballUrl: 'https://registry.npmjs.org/@playwright/mcp/-/mcp-0.0.83.tgz',
     tarballFilename: 'mcp-0.0.83.tgz',
-    artifactSha256: 'f0014a13361b1ee2d8607a4e187868ab9a6e8ac637dbcd66e4af43f738d0c8cb',
+    artifactSha256:
+      'f0014a13361b1ee2d8607a4e187868ab9a6e8ac637dbcd66e4af43f738d0c8cb',
     summary: 'Playwright 官方浏览器自动化 MCP 服务器（结构化快照模式）',
     mcpConfig: {
       command: 'playwright-mcp',
@@ -39,9 +40,11 @@ export const BUILTIN_MCP_COMPONENTS = [
     npmPackage: 'mcp-searxng',
     version: '2.6.0',
     bin: 'mcp-searxng',
-    tarballUrl: 'https://registry.npmjs.org/mcp-searxng/-/mcp-searxng-2.6.0.tgz',
+    tarballUrl:
+      'https://registry.npmjs.org/mcp-searxng/-/mcp-searxng-2.6.0.tgz',
     tarballFilename: 'mcp-searxng-2.6.0.tgz',
-    artifactSha256: 'c98c5ceec8a5d7dc463748e5e2d24132ce933a9c658e14d2af1ee40bd3c70aa9',
+    artifactSha256:
+      'c98c5ceec8a5d7dc463748e5e2d24132ce933a9c658e14d2af1ee40bd3c70aa9',
     summary: 'SearXNG 自托管元搜索的 MCP 服务器',
     mcpConfig: {
       command: 'mcp-searxng',
@@ -57,7 +60,8 @@ export const BUILTIN_MCP_COMPONENTS = [
     version: '2026.10.10',
     bin: 'mcp-server-fetch',
     artifactFilename: 'mcp_server_fetch-2026.10.10-py3-none-any.whl',
-    artifactSha256: 'd722c48bdc1de3e2a81727853bc490cf55c6c935e2038cdcad3c111b1d85db77',
+    artifactSha256:
+      'd722c48bdc1de3e2a81727853bc490cf55c6c935e2038cdcad3c111b1d85db77',
     summary: 'MCP 官方参考实现：抓取网页并转换为 LLM 友好内容',
     mcpConfig: { command: 'mcp-server-fetch' },
     notes: '以 uv tool 形式安装，依赖由官方 PyPI 索引解析。',
@@ -69,7 +73,8 @@ export const BUILTIN_MCP_COMPONENTS = [
     version: '2.2.1',
     bin: null,
     artifactFilename: 'mem0ai-2.2.1-py3-none-any.whl',
-    artifactSha256: 'fe91bb91ac8926231993a4aa58df00a60c6c74c709e6a338fe399500776eef4d',
+    artifactSha256:
+      'fe91bb91ac8926231993a4aa58df00a60c6c74c709e6a338fe399500776eef4d',
     summary: '自托管自动记忆库（自动抽取/冲突消解/语义检索）',
     mcpConfig: null,
     notes:
@@ -151,7 +156,9 @@ function verifyArtifact(id, file) {
   }
   const actual = sha256File(file);
   if (actual !== component.artifactSha256) {
-    console.error(`SHA256 mismatch for ${id}: expected ${component.artifactSha256}, got ${actual}`);
+    console.error(
+      `SHA256 mismatch for ${id}: expected ${component.artifactSha256}, got ${actual}`,
+    );
     return 1;
   }
   console.log(`${id} artifact verified (${filename})`);
@@ -190,7 +197,9 @@ if (action === 'show') {
   if (action === 'write') {
     writeCatalog(root);
   } else if (!validateCatalog(root)) {
-    console.error(`builtin MCP catalog marker invalid or missing under ${root}`);
+    console.error(
+      `builtin MCP catalog marker invalid or missing under ${root}`,
+    );
     process.exitCode = 1;
   }
 } else {

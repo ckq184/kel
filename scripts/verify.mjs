@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Miniclaw 提交前门槛一键机审（任务 L 批次 1）。
+// CKQClaw 提交前门槛一键机审（任务 L 批次 1）。
 //
 // 把 CLAUDE.md §10「提交前门槛」六步封装为顺序执行、失败即停的一条命令：
 //   npm run verify
@@ -104,7 +104,7 @@ function resolveBash() {
   if (process.platform !== 'win32') return 'bash';
   if (bashPathCache) return bashPathCache;
   const candidates = [];
-  if (process.env.MINICLAW_BASH) candidates.push(process.env.MINICLAW_BASH);
+  if (process.env.CKQCLAW_BASH) candidates.push(process.env.CKQCLAW_BASH);
   candidates.push('bash'); // Git Bash 会话内 PATH 直接可解析
   // cmd/PowerShell 来源的 PATH 无 MSYS 目录：从 git.exe 安装位置向上推导。
   // where.exe 可能先命中 cmd\git.exe 或 mingw64\bin\git.exe，两者向上爬
@@ -147,7 +147,7 @@ function resolveBash() {
   }
   console.error(
     'verify: 未找到 Git Bash（运行 scripts/*.sh 需要 MINGW/MSYS bash）。' +
-      '可安装 Git for Windows，或设 MINICLAW_BASH 指向 bash.exe。',
+      '可安装 Git for Windows，或设 CKQCLAW_BASH 指向 bash.exe。',
   );
   process.exit(2);
 }
@@ -375,7 +375,7 @@ function main(argv) {
     );
   } else if (steps === VERIFY_STEPS) {
     console.log(
-      'Miniclaw verify —— 提交前门槛（六步，失败即停）。\n' +
+      'CKQClaw verify —— 提交前门槛（六步，失败即停）。\n' +
         '步骤真相源：CLAUDE.md §10；与 VERIFY_STEPS 的同步由 tests/verify-gate-contract.test.ts 锁定。',
     );
   }

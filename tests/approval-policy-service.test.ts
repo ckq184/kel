@@ -11,7 +11,7 @@ import {
 
 describe('approval policy loader', () => {
   afterEach(() => {
-    delete process.env.MINICLAW_APPROVAL_POLICY;
+    delete process.env.CKQCLAW_APPROVAL_POLICY;
     resetApprovalPolicyCache();
     vi.restoreAllMocks();
   });
@@ -39,7 +39,7 @@ describe('approval policy loader', () => {
   });
 
   test('env JSON overrides the default and unknown entries are dropped', () => {
-    process.env.MINICLAW_APPROVAL_POLICY = JSON.stringify({
+    process.env.CKQCLAW_APPROVAL_POLICY = JSON.stringify({
       default: 'allow',
       tools: { bash: 'deny', not_a_tool: 'nonsense' },
       timeoutMs: 60_000,
@@ -52,20 +52,22 @@ describe('approval policy loader', () => {
   });
 
   test('invalid env JSON falls back to the default policy', () => {
-    process.env.MINICLAW_APPROVAL_POLICY = '{ not json';
+    process.env.CKQCLAW_APPROVAL_POLICY = '{ not json';
     resetApprovalPolicyCache();
     const policy = getEffectiveApprovalPolicy();
-    expect(policy.tools?.send_file).toBe(DEFAULT_APPROVAL_POLICY.tools?.send_file);
+    expect(policy.tools?.send_file).toBe(
+      DEFAULT_APPROVAL_POLICY.tools?.send_file,
+    );
   });
 
   test('timeoutMs outside the sane range is rejected', () => {
-    process.env.MINICLAW_APPROVAL_POLICY = JSON.stringify({ timeoutMs: 1 });
+    process.env.CKQCLAW_APPROVAL_POLICY = JSON.stringify({ timeoutMs: 1 });
     resetApprovalPolicyCache();
     expect(getEffectiveApprovalPolicy().timeoutMs).not.toBe(1);
   });
 
   test('shell policy config survives sanitization, invalid values are dropped', () => {
-    process.env.MINICLAW_APPROVAL_POLICY = JSON.stringify({
+    process.env.CKQCLAW_APPROVAL_POLICY = JSON.stringify({
       shell: { mode: 'audit', redAction: 'deny' },
     });
     resetApprovalPolicyCache();
@@ -74,7 +76,7 @@ describe('approval policy loader', () => {
       redAction: 'deny',
     });
 
-    process.env.MINICLAW_APPROVAL_POLICY = JSON.stringify({
+    process.env.CKQCLAW_APPROVAL_POLICY = JSON.stringify({
       shell: { mode: 'yolo', redAction: 'always' },
     });
     resetApprovalPolicyCache();

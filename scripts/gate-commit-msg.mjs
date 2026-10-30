@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Miniclaw commit-msg 门禁（任务 L 批次 2，宪法第 8 条的机审化）。
+// CKQClaw commit-msg 门禁（任务 L 批次 2，宪法第 8 条的机审化）。
 //
 // 规则：提交首行必须为 `type: 范围 - 摘要`——
 //   - type ∈ 宪法第 8 条白名单（小写）；

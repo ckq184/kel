@@ -12,7 +12,7 @@ import { logger } from './logger.js';
  * endpoints for its LLM (fact extraction) and embedder (Anthropic offers no
  * embeddings), so the feature is inactive until an endpoint pair is provided:
  *
- *   1. MINICLAW_AUTO_MEMORY env var (JSON)
+ *   1. CKQCLAW_AUTO_MEMORY env var (JSON)
  *   2. data/config/auto-memory.json
  *   3. Built-in default: disabled (tools report "unavailable" cleanly).
  *
@@ -83,14 +83,14 @@ export function getAutoMemoryHostConfig(): AutoMemoryHostConfig {
   if (cached && Date.now() - cached.loadedAt < 30_000) return cached.config;
 
   let config: AutoMemoryHostConfig = { enabled: false };
-  const envRaw = process.env.MINICLAW_AUTO_MEMORY;
+  const envRaw = process.env.CKQCLAW_AUTO_MEMORY;
   if (envRaw) {
     try {
       config = sanitizeConfig(JSON.parse(envRaw));
     } catch (error) {
       logger.warn(
         { err: error },
-        'MINICLAW_AUTO_MEMORY is not valid JSON — auto memory stays disabled',
+        'CKQCLAW_AUTO_MEMORY is not valid JSON — auto memory stays disabled',
       );
     }
   } else {

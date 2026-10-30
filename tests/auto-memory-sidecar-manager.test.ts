@@ -15,14 +15,28 @@ import {
 } from '../src/auto-memory-sidecar-manager.js';
 
 const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
-const FAKE_SIDECAR = path.join(TEST_DIR, 'fixtures', 'fake-auto-memory-sidecar.mjs');
-const REAL_SIDECAR = path.resolve(TEST_DIR, '..', 'container', 'agent-runner', 'python', 'auto_memory_sidecar.py');
+const FAKE_SIDECAR = path.join(
+  TEST_DIR,
+  'fixtures',
+  'fake-auto-memory-sidecar.mjs',
+);
+const REAL_SIDECAR = path.resolve(
+  TEST_DIR,
+  '..',
+  'container',
+  'agent-runner',
+  'python',
+  'auto_memory_sidecar.py',
+);
 
 const NODE: PythonInterpreter = { command: process.execPath, args: [] };
 
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+const sleep = (ms: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-function makeConfig(overrides: Partial<AutoMemorySidecarConfig> = {}): AutoMemorySidecarConfig {
+function makeConfig(
+  overrides: Partial<AutoMemorySidecarConfig> = {},
+): AutoMemorySidecarConfig {
   return {
     dataPath: '/tmp/auto-memory-manager-test',
     collection: 'ws-test',
@@ -33,7 +47,9 @@ function makeConfig(overrides: Partial<AutoMemorySidecarConfig> = {}): AutoMemor
   };
 }
 
-function makeManager(overrides: Record<string, unknown> = {}): AutoMemorySidecarManager {
+function makeManager(
+  overrides: Record<string, unknown> = {},
+): AutoMemorySidecarManager {
   return new AutoMemorySidecarManager({
     scriptPath: FAKE_SIDECAR,
     interpreterCandidates: [NODE],
@@ -103,7 +119,9 @@ for await (const line of createInterface({ input: process.stdin })) {
 `;
 
 function writeSlowFake(): { dir: string; script: string } {
-  const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'am-slowfake-'));
+  const dir = fs.mkdtempSync(
+    path.join(fs.realpathSync(os.tmpdir()), 'am-slowfake-'),
+  );
   const script = path.join(dir, 'slow-fake.mjs');
   fs.writeFileSync(script, SLOW_FAKE_SOURCE);
   return { dir, script };
@@ -126,7 +144,9 @@ describe('AutoMemorySidecarManager against the fake sidecar', () => {
       expect(manager.spawnCountForTest('ws1')).toBe(1);
       expect(manager.isRunning('ws1')).toBe(true);
 
-      const second = await manager.call('ws1', makeConfig(), 'search', { query: 'again' });
+      const second = await manager.call('ws1', makeConfig(), 'search', {
+        query: 'again',
+      });
       expect(second.available).toBe(true);
       // Same process serves both calls — the sidecar is a per-folder singleton.
       expect(manager.spawnCountForTest('ws1')).toBe(1);
@@ -144,7 +164,9 @@ describe('AutoMemorySidecarManager against the fake sidecar', () => {
       });
       expect(add).toEqual({ available: true, value: expect.anything() });
 
-      const get = await manager.call('ws2', makeConfig(), 'get', { memory_id: 'mem-9' });
+      const get = await manager.call('ws2', makeConfig(), 'get', {
+        memory_id: 'mem-9',
+      });
       expect(get.available).toBe(true);
       if (get.available) {
         expect(get.value).toMatchObject({ id: 'mem-9', memory: 'fake memory' });
@@ -157,16 +179,24 @@ describe('AutoMemorySidecarManager against the fake sidecar', () => {
   test('folders hold independent sidecar processes', async () => {
     const manager = makeManager();
     try {
-      const a = await manager.call('wsA', makeConfig(), 'search', { query: 'q' });
-      const b = await manager.call('wsB', makeConfig(), 'search', { query: 'q' });
+      const a = await manager.call('wsA', makeConfig(), 'search', {
+        query: 'q',
+      });
+      const b = await manager.call('wsB', makeConfig(), 'search', {
+        query: 'q',
+      });
       expect(a.available).toBe(true);
       expect(b.available).toBe(true);
       expect(manager.spawnCountForTest('wsA')).toBe(1);
       expect(manager.spawnCountForTest('wsB')).toBe(1);
 
       manager.killChildForTest('wsA');
-      const a2 = await manager.call('wsA', makeConfig(), 'search', { query: 'q' });
-      const b2 = await manager.call('wsB', makeConfig(), 'search', { query: 'q' });
+      const a2 = await manager.call('wsA', makeConfig(), 'search', {
+        query: 'q',
+      });
+      const b2 = await manager.call('wsB', makeConfig(), 'search', {
+        query: 'q',
+      });
       expect(a2.available).toBe(true);
       expect(b2.available).toBe(true);
       expect(manager.spawnCountForTest('wsA')).toBe(2);
@@ -242,7 +272,9 @@ describe('idle TTL', () => {
   test('idle sidecar is stopped after the TTL and lazily respawned', async () => {
     const manager = makeManager({ idleTtlMs: 120 });
     try {
-      const first = await manager.call('wsT', makeConfig(), 'search', { query: 'q' });
+      const first = await manager.call('wsT', makeConfig(), 'search', {
+        query: 'q',
+      });
       expect(first.available).toBe(true);
       expect(manager.isRunning('wsT')).toBe(true);
 
@@ -250,7 +282,9 @@ describe('idle TTL', () => {
       expect(manager.isRunning('wsT')).toBe(false);
       expect(manager.spawnCountForTest('wsT')).toBe(1);
 
-      const second = await manager.call('wsT', makeConfig(), 'search', { query: 'q' });
+      const second = await manager.call('wsT', makeConfig(), 'search', {
+        query: 'q',
+      });
       expect(second.available).toBe(true);
       expect(manager.spawnCountForTest('wsT')).toBe(2);
     } finally {
@@ -261,7 +295,9 @@ describe('idle TTL', () => {
   test('idleTtlMs=0 disables idle shutdown', async () => {
     const manager = makeManager({ idleTtlMs: 0 });
     try {
-      const first = await manager.call('wsZ', makeConfig(), 'search', { query: 'q' });
+      const first = await manager.call('wsZ', makeConfig(), 'search', {
+        query: 'q',
+      });
       expect(first.available).toBe(true);
       await sleep(400);
       expect(manager.isRunning('wsZ')).toBe(true);
@@ -277,10 +313,14 @@ describe('crash recovery and restart budget', () => {
     const manager = makeManager();
     try {
       for (let round = 0; round < 4; round += 1) {
-        const before = await manager.call('wsC', makeConfig(), 'search', { query: 'ping' });
+        const before = await manager.call('wsC', makeConfig(), 'search', {
+          query: 'ping',
+        });
         expect(before.available).toBe(true);
         manager.killChildForTest('wsC');
-        const after = await manager.call('wsC', makeConfig(), 'search', { query: 'ping' });
+        const after = await manager.call('wsC', makeConfig(), 'search', {
+          query: 'ping',
+        });
         expect(after.available).toBe(true);
       }
       expect(manager.spawnCountForTest('wsC')).toBe(5);
@@ -291,16 +331,22 @@ describe('crash recovery and restart budget', () => {
 
   test('budget exhausts after 3 consecutive failed spawns and stops retrying', async () => {
     const manager = makeManager({
-      interpreterCandidates: [{ command: process.execPath, args: ['-e', 'process.exit(3)'] }],
+      interpreterCandidates: [
+        { command: process.execPath, args: ['-e', 'process.exit(3)'] },
+      ],
     });
     try {
       for (let attempt = 0; attempt < 3; attempt += 1) {
-        const result = await manager.call('wsB', makeConfig(), 'search', { query: 'q' });
+        const result = await manager.call('wsB', makeConfig(), 'search', {
+          query: 'q',
+        });
         expect(result.available).toBe(false);
       }
       expect(manager.spawnCountForTest('wsB')).toBe(3);
 
-      const fourth = await manager.call('wsB', makeConfig(), 'search', { query: 'q' });
+      const fourth = await manager.call('wsB', makeConfig(), 'search', {
+        query: 'q',
+      });
       expect(fourth.available).toBe(false);
       if (!fourth.available) expect(fourth.reason).toMatch(/3 times/);
       expect(manager.spawnCountForTest('wsB')).toBe(3);
@@ -308,7 +354,9 @@ describe('crash recovery and restart budget', () => {
       // stop() is the explicit recovery hatch: it resets the entry so the
       // next call may try again (e.g. after the operator fixed the env).
       await manager.stop('wsB');
-      const fifth = await manager.call('wsB', makeConfig(), 'search', { query: 'q' });
+      const fifth = await manager.call('wsB', makeConfig(), 'search', {
+        query: 'q',
+      });
       expect(fifth.available).toBe(false);
       expect(manager.spawnCountForTest('wsB')).toBe(1);
     } finally {
@@ -323,22 +371,30 @@ describe('crash recovery and restart budget', () => {
     // cooldown clears every sticky unavailable state (budget exhaustion,
     // interpreter-null) and re-probes the environment.
     const manager = makeManager({
-      interpreterCandidates: [{ command: process.execPath, args: ['-e', 'process.exit(3)'] }],
+      interpreterCandidates: [
+        { command: process.execPath, args: ['-e', 'process.exit(3)'] },
+      ],
       budgetCooldownMs: 150,
     });
     try {
       for (let attempt = 0; attempt < 3; attempt += 1) {
-        const result = await manager.call('wsBC', makeConfig(), 'search', { query: 'q' });
+        const result = await manager.call('wsBC', makeConfig(), 'search', {
+          query: 'q',
+        });
         expect(result.available).toBe(false);
       }
       expect(manager.spawnCountForTest('wsBC')).toBe(3);
-      const stuck = await manager.call('wsBC', makeConfig(), 'search', { query: 'q' });
+      const stuck = await manager.call('wsBC', makeConfig(), 'search', {
+        query: 'q',
+      });
       expect(stuck.available).toBe(false);
       expect(manager.spawnCountForTest('wsBC')).toBe(3);
 
       await sleep(250);
       // Past the cooldown the budget resets and the manager retries.
-      const retried = await manager.call('wsBC', makeConfig(), 'search', { query: 'q' });
+      const retried = await manager.call('wsBC', makeConfig(), 'search', {
+        query: 'q',
+      });
       expect(retried.available).toBe(false);
       expect(manager.spawnCountForTest('wsBC')).toBe(4);
     } finally {
@@ -350,15 +406,21 @@ describe('crash recovery and restart budget', () => {
 describe('interpreter resolution inside the manager', () => {
   test('resolution failure degrades explicitly without spawning', async () => {
     const manager = makeManager({
-      interpreterCandidates: [{ command: 'definitely-missing-python-xyz', args: [] }],
+      interpreterCandidates: [
+        { command: 'definitely-missing-python-xyz', args: [] },
+      ],
     });
     try {
-      const result = await manager.call('wsP', makeConfig(), 'search', { query: 'q' });
+      const result = await manager.call('wsP', makeConfig(), 'search', {
+        query: 'q',
+      });
       expect(result.available).toBe(false);
       if (!result.available) expect(result.reason).toMatch(/[Pp]ython/);
       expect(manager.spawnCountForTest('wsP')).toBe(0);
 
-      const again = await manager.call('wsP', makeConfig(), 'search', { query: 'q' });
+      const again = await manager.call('wsP', makeConfig(), 'search', {
+        query: 'q',
+      });
       expect(again.available).toBe(false);
       expect(manager.spawnCountForTest('wsP')).toBe(0);
     } finally {
@@ -373,7 +435,9 @@ describe('request timeout', () => {
     process.env.SLOW_FAKE_DELAY = '5000';
     const manager = makeManager({ scriptPath: script, requestTimeoutMs: 250 });
     try {
-      const result = await manager.call('wsX', makeConfig(), 'search', { query: 'q' });
+      const result = await manager.call('wsX', makeConfig(), 'search', {
+        query: 'q',
+      });
       expect(result.available).toBe(false);
       if (!result.available) expect(result.reason).toContain('timed out');
     } finally {
@@ -391,9 +455,14 @@ describe('request timeout', () => {
     // a cold Windows spawn needs well under 2s; the hang must exceed it.
     const { dir, script } = writeSlowFake();
     process.env.SLOW_FAKE_DELAY = '8000';
-    const manager = makeManager({ scriptPath: script, requestTimeoutMs: 2_000 });
+    const manager = makeManager({
+      scriptPath: script,
+      requestTimeoutMs: 2_000,
+    });
     try {
-      const hung = await manager.call('wsK', makeConfig(), 'search', { query: 'q' });
+      const hung = await manager.call('wsK', makeConfig(), 'search', {
+        query: 'q',
+      });
       expect(hung.available).toBe(false);
       if (!hung.available) expect(hung.reason).toContain('timed out');
       // The hung child was killed, not left wedged on the queue.
@@ -401,7 +470,9 @@ describe('request timeout', () => {
       expect(manager.spawnCountForTest('wsK')).toBe(1);
 
       process.env.SLOW_FAKE_DELAY = '10';
-      const recovered = await manager.call('wsK', makeConfig(), 'search', { query: 'q' });
+      const recovered = await manager.call('wsK', makeConfig(), 'search', {
+        query: 'q',
+      });
       expect(recovered.available).toBe(true);
       expect(manager.spawnCountForTest('wsK')).toBe(2);
     } finally {
@@ -413,7 +484,11 @@ describe('request timeout', () => {
 });
 
 describe('pythonInterpreterCandidates', () => {
-  function withEnv(name: string, value: string | undefined, run: () => void): void {
+  function withEnv(
+    name: string,
+    value: string | undefined,
+    run: () => void,
+  ): void {
     const previous = process.env[name];
     if (value === undefined) delete process.env[name];
     else process.env[name] = value;
@@ -426,13 +501,13 @@ describe('pythonInterpreterCandidates', () => {
   }
 
   test('win32 order: env override, then py -3, then python3', () => {
-    withEnv('MINICLAW_AUTO_MEMORY_PYTHON', undefined, () => {
+    withEnv('CKQCLAW_AUTO_MEMORY_PYTHON', undefined, () => {
       expect(pythonInterpreterCandidates('win32')).toEqual([
         { command: 'py', args: ['-3'] },
         { command: 'python3', args: [] },
       ]);
     });
-    withEnv('MINICLAW_AUTO_MEMORY_PYTHON', 'C:\\Python312\\python.exe', () => {
+    withEnv('CKQCLAW_AUTO_MEMORY_PYTHON', 'C:\\Python312\\python.exe', () => {
       expect(pythonInterpreterCandidates('win32')).toEqual([
         { command: 'C:\\Python312\\python.exe', args: [] },
         { command: 'py', args: ['-3'] },
@@ -442,7 +517,7 @@ describe('pythonInterpreterCandidates', () => {
   });
 
   test('non-win32 order: env override, then python3', () => {
-    withEnv('MINICLAW_AUTO_MEMORY_PYTHON', '/usr/local/bin/python3.12', () => {
+    withEnv('CKQCLAW_AUTO_MEMORY_PYTHON', '/usr/local/bin/python3.12', () => {
       expect(pythonInterpreterCandidates('linux')).toEqual([
         { command: '/usr/local/bin/python3.12', args: [] },
         { command: 'python3', args: [] },
@@ -470,7 +545,10 @@ describe('resolvePythonInterpreter', () => {
 
   test('returns null when every candidate fails the probe', () => {
     const picked = resolvePythonInterpreter({
-      candidates: [{ command: 'nope-1', args: [] }, { command: 'nope-2', args: [] }],
+      candidates: [
+        { command: 'nope-1', args: [] },
+        { command: 'nope-2', args: [] },
+      ],
       probe: () => false,
     });
     expect(picked).toBeNull();
@@ -479,7 +557,9 @@ describe('resolvePythonInterpreter', () => {
 
 describe('findHostSidecarScript', () => {
   function makeRepoLayout(): { root: string; script: string } {
-    const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'am-repo-'));
+    const root = fs.mkdtempSync(
+      path.join(fs.realpathSync(os.tmpdir()), 'am-repo-'),
+    );
     fs.writeFileSync(path.join(root, 'package.json'), '{ "name": "layout" }\n');
     const pythonDir = path.join(root, 'container', 'agent-runner', 'python');
     fs.mkdirSync(pythonDir, { recursive: true });
@@ -489,14 +569,15 @@ describe('findHostSidecarScript', () => {
   }
 
   function withSidecarEnv(value: string | undefined, run: () => void): void {
-    const previous = process.env.MINICLAW_AUTO_MEMORY_SIDECAR;
-    if (value === undefined) delete process.env.MINICLAW_AUTO_MEMORY_SIDECAR;
-    else process.env.MINICLAW_AUTO_MEMORY_SIDECAR = value;
+    const previous = process.env.CKQCLAW_AUTO_MEMORY_SIDECAR;
+    if (value === undefined) delete process.env.CKQCLAW_AUTO_MEMORY_SIDECAR;
+    else process.env.CKQCLAW_AUTO_MEMORY_SIDECAR = value;
     try {
       run();
     } finally {
-      if (previous === undefined) delete process.env.MINICLAW_AUTO_MEMORY_SIDECAR;
-      else process.env.MINICLAW_AUTO_MEMORY_SIDECAR = previous;
+      if (previous === undefined)
+        delete process.env.CKQCLAW_AUTO_MEMORY_SIDECAR;
+      else process.env.CKQCLAW_AUTO_MEMORY_SIDECAR = previous;
     }
   }
 
@@ -510,7 +591,7 @@ describe('findHostSidecarScript', () => {
     });
   });
 
-  test('MINICLAW_AUTO_MEMORY_SIDECAR override wins when it exists', () => {
+  test('CKQCLAW_AUTO_MEMORY_SIDECAR override wins when it exists', () => {
     const { root, script } = makeRepoLayout();
     withSidecarEnv(script, () => {
       expect(findHostSidecarScript(path.join(root, 'dist'))).toBe(script);
@@ -519,16 +600,23 @@ describe('findHostSidecarScript', () => {
   });
 
   test('set-but-missing override fails loud (null), never a silent fallback', () => {
-    withSidecarEnv(path.join(fs.realpathSync(os.tmpdir()), 'am-nope', 'missing.py'), () => {
-      const scratch = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'am-scratch-'));
-      expect(findHostSidecarScript(scratch)).toBeNull();
-      fs.rmSync(scratch, { recursive: true, force: true });
-    });
+    withSidecarEnv(
+      path.join(fs.realpathSync(os.tmpdir()), 'am-nope', 'missing.py'),
+      () => {
+        const scratch = fs.mkdtempSync(
+          path.join(fs.realpathSync(os.tmpdir()), 'am-scratch-'),
+        );
+        expect(findHostSidecarScript(scratch)).toBeNull();
+        fs.rmSync(scratch, { recursive: true, force: true });
+      },
+    );
   });
 
   test('package root without the sidecar script resolves to null', () => {
     withSidecarEnv(undefined, () => {
-      const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'am-bare-'));
+      const root = fs.mkdtempSync(
+        path.join(fs.realpathSync(os.tmpdir()), 'am-bare-'),
+      );
       fs.writeFileSync(path.join(root, 'package.json'), '{ "name": "bare" }\n');
       expect(findHostSidecarScript(root)).toBeNull();
       fs.rmSync(root, { recursive: true, force: true });
@@ -537,7 +625,9 @@ describe('findHostSidecarScript', () => {
 
   test('no package root and no override resolves to null', () => {
     withSidecarEnv(undefined, () => {
-      const scratch = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'am-orphan-'));
+      const scratch = fs.mkdtempSync(
+        path.join(fs.realpathSync(os.tmpdir()), 'am-orphan-'),
+      );
       expect(findHostSidecarScript(scratch)).toBeNull();
       fs.rmSync(scratch, { recursive: true, force: true });
     });
@@ -550,9 +640,15 @@ describe('spawn smoke (real python sidecar, protocol only)', () => {
     // the manager must degrade explicitly — both outcomes prove the
     // Node↔Python protocol wiring against the script that ships.
     expect(fs.existsSync(REAL_SIDECAR)).toBe(true);
-    const manager = new AutoMemorySidecarManager({ scriptPath: REAL_SIDECAR, requestTimeoutMs: 20_000 });
+    const manager = new AutoMemorySidecarManager({
+      scriptPath: REAL_SIDECAR,
+      requestTimeoutMs: 20_000,
+    });
     try {
-      const result = await manager.call('ws-smoke', makeConfig(), 'search', { query: 'ping', limit: 1 });
+      const result = await manager.call('ws-smoke', makeConfig(), 'search', {
+        query: 'ping',
+        limit: 1,
+      });
       expect(['boolean']).toContain(typeof result.available);
     } finally {
       await manager.stopAll();

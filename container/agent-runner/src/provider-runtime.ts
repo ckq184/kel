@@ -1,6 +1,5 @@
-export const CLAUDE_ENDPOINT_KIND_ENV = 'MINICLAW_CLAUDE_ENDPOINT_KIND';
-export const MINICLAW_CLAUDE_ENDPOINT_KIND_ENV =
-  'MINICLAW_CLAUDE_ENDPOINT_KIND';
+export const CLAUDE_ENDPOINT_KIND_ENV = 'CKQCLAW_CLAUDE_ENDPOINT_KIND';
+export const CKQCLAW_CLAUDE_ENDPOINT_KIND_ENV = 'CKQCLAW_CLAUDE_ENDPOINT_KIND';
 
 export type ClaudeEndpointKind = 'official' | 'custom';
 
@@ -42,7 +41,7 @@ export function resolveClaudeProviderRuntime(
 ): ClaudeProviderRuntime {
   const model = env.ANTHROPIC_MODEL?.trim() ?? '';
   const marker = (
-    env[MINICLAW_CLAUDE_ENDPOINT_KIND_ENV] || env[CLAUDE_ENDPOINT_KIND_ENV]
+    env[CKQCLAW_CLAUDE_ENDPOINT_KIND_ENV] || env[CLAUDE_ENDPOINT_KIND_ENV]
   )
     ?.trim()
     .toLowerCase();

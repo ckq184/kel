@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
 
-export const MINICLAW_SUBAGENT_RUNTIME_CONTRACT = `## Miniclaw delegated-task contract
+export const CKQCLAW_SUBAGENT_RUNTIME_CONTRACT = `## CKQClaw delegated-task contract
 
-You are executing a task delegated by a parent agent. Return the requested findings or work product to that parent agent; do not act as though your text is the final user-facing reply. Stay within the delegated scope. Do not independently operate Miniclaw memory or Agent Builder unless the delegated task explicitly requires it.`;
+You are executing a task delegated by a parent agent. Return the requested findings or work product to that parent agent; do not act as though your text is the final user-facing reply. Stay within the delegated scope. Do not independently operate CKQClaw memory or Agent Builder unless the delegated task explicitly requires it.`;
 
 export interface SubagentRuntimeContractAudit {
   enabled: boolean;
@@ -21,7 +21,7 @@ type SdkOptionsWithEnv = {
 
 function contractHash(): string {
   return createHash('sha256')
-    .update(MINICLAW_SUBAGENT_RUNTIME_CONTRACT, 'utf8')
+    .update(CKQCLAW_SUBAGENT_RUNTIME_CONTRACT, 'utf8')
     .digest('hex');
 }
 
@@ -30,9 +30,7 @@ function contractHash(): string {
  * The SDK serializes appendSubagentSystemPrompt during its initialize control
  * request, while this CLI version gates consumption behind the environment flag.
  */
-export function withMiniclawSubagentContract<
-  T extends Record<string, unknown>,
->(
+export function withCkqclawSubagentContract<T extends Record<string, unknown>>(
   options: T,
   inheritedEnv: NodeJS.ProcessEnv = process.env,
 ): {
@@ -40,7 +38,7 @@ export function withMiniclawSubagentContract<
   audit: SubagentRuntimeContractAudit;
 } {
   const enabled =
-    process.env.MINICLAW_DISABLE_SUBAGENT_RUNTIME_CONTRACT !== 'true';
+    process.env.CKQCLAW_DISABLE_SUBAGENT_RUNTIME_CONTRACT !== 'true';
   const existingEnv = (options as T & SdkOptionsWithEnv).env;
   const hash = contractHash();
   const audit: SubagentRuntimeContractAudit = {
@@ -65,7 +63,7 @@ export function withMiniclawSubagentContract<
         ...existingEnv,
         CLAUDE_CODE_ENABLE_APPEND_SUBAGENT_PROMPT: '1',
       },
-      appendSubagentSystemPrompt: MINICLAW_SUBAGENT_RUNTIME_CONTRACT,
+      appendSubagentSystemPrompt: CKQCLAW_SUBAGENT_RUNTIME_CONTRACT,
     },
     audit,
   };

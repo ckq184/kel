@@ -1,7 +1,7 @@
 export type FollowUpPreference = 'queue' | 'steer';
 
-export const FOLLOW_UP_MODE_KEY = 'miniclaw:follow-up-mode';
-export const FOLLOW_UP_MODE_CHANGED_EVENT = 'miniclaw:follow-up-mode-changed';
+export const FOLLOW_UP_MODE_KEY = 'ckqclaw:follow-up-mode';
+export const FOLLOW_UP_MODE_CHANGED_EVENT = 'ckqclaw:follow-up-mode-changed';
 
 export function normalizeFollowUpMode(
   value: string | null | undefined,

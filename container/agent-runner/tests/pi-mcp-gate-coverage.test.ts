@@ -34,7 +34,7 @@ import {
 } from '../src/approval/policy.js';
 import {
   MCP_SERVERS_ENV,
-  createMiniclawMcpExtension,
+  createCkqclawMcpExtension,
 } from '../src/runtime/pi/pi-mcp.js';
 
 const approvalGatePath = fileURLToPath(
@@ -50,7 +50,7 @@ const fakeServerPath = fileURLToPath(
 let tempRoot: string;
 
 beforeAll(() => {
-  tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'miniclaw-pi-mcp-'));
+  tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ckqclaw-pi-mcp-'));
   setApprovalIpcRoot(path.join(tempRoot, 'ipc'));
 });
 
@@ -166,8 +166,8 @@ describe('env-driven MCP loader in a real Pi session', () => {
         modelsPath: path.join(agentDir, 'models.json'),
         refreshOnCreate: false,
       });
-      modelRuntime.registerProvider('miniclaw-mcp-test', {
-        name: 'Miniclaw MCP test provider',
+      modelRuntime.registerProvider('ckqclaw-mcp-test', {
+        name: 'CKQClaw MCP test provider',
         baseUrl: 'http://127.0.0.1:9',
         api: 'anthropic-messages',
         models: [
@@ -183,14 +183,14 @@ describe('env-driven MCP loader in a real Pi session', () => {
           },
         ],
       });
-      const model = modelRuntime.getModel('miniclaw-mcp-test', 'test-model');
+      const model = modelRuntime.getModel('ckqclaw-mcp-test', 'test-model');
       expect(model).toBeTruthy();
       const loader = new DefaultResourceLoader({
         cwd: tempRoot,
         agentDir,
         settingsManager: SettingsManager.create(tempRoot, agentDir),
         additionalExtensionPaths: [approvalGatePath, loopGuardPath],
-        extensionFactories: [createMiniclawMcpExtension()],
+        extensionFactories: [createCkqclawMcpExtension()],
       });
       await loader.reload({ resolveProjectTrust: async () => true });
       const { session } = await createAgentSession({

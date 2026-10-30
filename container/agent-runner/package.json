@@ -1,8 +1,8 @@
 {
-  "name": "miniclaw-agent-runner",
+  "name": "ckqclaw-agent-runner",
   "version": "1.0.0",
   "type": "module",
-  "description": "Container-side Pi agent runner for Miniclaw",
+  "description": "Container-side Pi agent runner for CKQClaw",
   "main": "dist/pi-index.js",
   "scripts": {
     "build": "tsc",
@@ -26,18 +26,18 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ckq184/miniclaw.git",
+    "url": "git+https://github.com/ckq184/ckqclaw.git",
     "directory": "container/agent-runner"
   },
-  "homepage": "https://github.com/ckq184/miniclaw#readme",
+  "homepage": "https://github.com/ckq184/ckqclaw#readme",
   "bugs": {
-    "url": "https://github.com/ckq184/miniclaw/issues"
+    "url": "https://github.com/ckq184/ckqclaw/issues"
   },
   "author": "ckq184",
   "keywords": [
     "agent-runner",
     "mcp",
-    "miniclaw"
+    "ckqclaw"
   ],
   "allowScripts": {
     "@google/genai@2.21.0": true,

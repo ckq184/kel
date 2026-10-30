@@ -101,7 +101,7 @@ export function pythonInterpreterCandidates(
   platform: NodeJS.Platform = process.platform,
 ): PythonInterpreter[] {
   const candidates: PythonInterpreter[] = [];
-  const override = process.env.MINICLAW_AUTO_MEMORY_PYTHON;
+  const override = process.env.CKQCLAW_AUTO_MEMORY_PYTHON;
   if (override) candidates.push({ command: override, args: [] });
   if (platform === 'win32') candidates.push({ command: 'py', args: ['-3'] });
   candidates.push({ command: 'python3', args: [] });
@@ -135,7 +135,7 @@ export function resolvePythonInterpreter(
 /**
  * Locate auto_memory_sidecar.py for the host server.
  *
- * MINICLAW_AUTO_MEMORY_SIDECAR is authoritative when set: a set-but-missing
+ * CKQCLAW_AUTO_MEMORY_SIDECAR is authoritative when set: a set-but-missing
  * override is an operator misconfiguration and returns null instead of
  * silently falling back. Otherwise the search walks up from `startDir` to
  * the package root and expects the repo checkout layout
@@ -143,7 +143,7 @@ export function resolvePythonInterpreter(
  * <root>/python/… layout for packaged distributions.
  */
 export function findHostSidecarScript(startDir: string): string | null {
-  const override = process.env.MINICLAW_AUTO_MEMORY_SIDECAR;
+  const override = process.env.CKQCLAW_AUTO_MEMORY_SIDECAR;
   if (override) return fs.existsSync(override) ? override : null;
   let dir = startDir;
   for (let depth = 0; depth < 8; depth += 1) {
@@ -298,10 +298,7 @@ export class AutoMemorySidecarManager {
     return entry;
   }
 
-  private enqueue<T>(
-    entry: FolderEntry,
-    task: () => Promise<T>,
-  ): Promise<T> {
+  private enqueue<T>(entry: FolderEntry, task: () => Promise<T>): Promise<T> {
     const run = entry.tail.then(task, task);
     entry.tail = run.then(
       () => undefined,
@@ -361,8 +358,7 @@ export class AutoMemorySidecarManager {
       }
     }
     if (entry.interpreter === undefined) {
-      const tried =
-        this.interpreterCandidates ?? pythonInterpreterCandidates();
+      const tried = this.interpreterCandidates ?? pythonInterpreterCandidates();
       entry.interpreter = resolvePythonInterpreter({ candidates: tried });
       if (!entry.interpreter) {
         entry.unavailableReason =
@@ -390,7 +386,7 @@ export class AutoMemorySidecarManager {
     if (!this.scriptPath) {
       entry.unavailableReason =
         'auto-memory sidecar script not found ' +
-        '(set MINICLAW_AUTO_MEMORY_SIDECAR to auto_memory_sidecar.py)';
+        '(set CKQCLAW_AUTO_MEMORY_SIDECAR to auto_memory_sidecar.py)';
       return { ok: false, reason: entry.unavailableReason };
     }
     entry.spawnAttempts += 1;

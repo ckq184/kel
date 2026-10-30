@@ -17,9 +17,7 @@ export function AboutSection() {
     <div className="space-y-6">
       {/* 项目信息 */}
       <div>
-        <h2 className="text-lg font-semibold text-foreground mb-1">
-          Miniclaw
-        </h2>
+        <h2 className="text-lg font-semibold text-foreground mb-1">CKQClaw</h2>
         <p className="text-sm text-muted-foreground">
           基于 Claude Agent SDK 的自托管多智能体工作平台
         </p>
@@ -33,12 +31,12 @@ export function AboutSection() {
         <div className="flex items-center gap-3">
           <Github className="w-4 h-4 text-muted-foreground shrink-0" />
           <a
-            href="https://github.com/ckq184/miniclaw"
+            href="https://github.com/ckq184/ckqclaw"
             target="_blank"
             rel="noopener noreferrer"
             className="text-sm text-primary hover:text-primary/80 inline-flex items-center gap-1"
           >
-            ckq184/miniclaw
+            ckq184/ckqclaw
             <ExternalLink className="w-3 h-3" />
           </a>
         </div>
@@ -100,8 +98,8 @@ export function AboutSection() {
               <ExternalLink className="w-3 h-3" />
             </a>
             <p className="mt-1 leading-relaxed">
-              自托管个人智能体产品方向的重要参考。Miniclaw 选择复用 Claude
-              Agent SDK，并在此基础上构建工作区、渠道与多智能体管理能力。
+              自托管个人智能体产品方向的重要参考。CKQClaw 选择复用 Claude Agent
+              SDK，并在此基础上构建工作区、渠道与多智能体管理能力。
             </p>
           </div>
         </div>

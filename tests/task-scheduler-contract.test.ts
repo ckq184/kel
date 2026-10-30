@@ -183,7 +183,7 @@ function makeDeps(
       }),
     ),
     storeResultAndNotify: vi.fn(),
-    assistantName: 'Miniclaw',
+    assistantName: 'CKQClaw',
   } as any;
   return {
     deps,
@@ -477,7 +477,7 @@ describe('scheduled task workspace/session contract', () => {
           `result-${taskId}`,
           chatJid,
           'assistant',
-          'Miniclaw',
+          'CKQClaw',
           text,
           new Date().toISOString(),
           true,
@@ -816,8 +816,8 @@ describe('scheduled task workspace/session contract', () => {
       db.storeScheduledGroupWorkspaceResultAndFinalize({
         messageId: lateMessageId,
         chatJid: deliveryRouteJid,
-        senderId: 'miniclaw-agent',
-        senderName: 'Miniclaw',
+        senderId: 'ckqclaw-agent',
+        senderName: 'CKQClaw',
         text: '迟到的成功结果',
         timestamp: new Date().toISOString(),
         messageMeta: { sourceKind: 'scheduled_task_result' },
@@ -1251,8 +1251,8 @@ describe('scheduled task workspace/session contract', () => {
       db.storeScheduledGroupWorkspaceResultAndFinalize({
         messageId,
         chatJid: GROUP_JID,
-        senderId: 'miniclaw-agent',
-        senderName: 'Miniclaw',
+        senderId: 'ckqclaw-agent',
+        senderName: 'CKQClaw',
         text: '两个任务共享的完整结果',
         timestamp: new Date().toISOString(),
         messageMeta: { sourceKind: 'scheduled_task_result' },
@@ -1313,8 +1313,8 @@ describe('scheduled task workspace/session contract', () => {
     const heldMessageId = db.storeMessageDirect(
       'scheduled-truncated-held',
       GROUP_JID,
-      'miniclaw-agent',
-      'Miniclaw',
+      'ckqclaw-agent',
+      'CKQClaw',
       '首段业务数据\n\n> ⚠️ 回复在生成中被上游截断，正在自动续写…',
       new Date().toISOString(),
       true,
@@ -1332,8 +1332,8 @@ describe('scheduled task workspace/session contract', () => {
       db.storeScheduledGroupWorkspaceResultAndFinalize({
         messageId: 'scheduled-group-result:truncation-merge',
         chatJid: GROUP_JID,
-        senderId: 'miniclaw-agent',
-        senderName: 'Miniclaw',
+        senderId: 'ckqclaw-agent',
+        senderName: 'CKQClaw',
         text: completeResult,
         timestamp: new Date().toISOString(),
         messageMeta: {
@@ -1408,8 +1408,8 @@ describe('scheduled task workspace/session contract', () => {
       db.storeScheduledGroupWorkspaceResultAndFinalize({
         messageId,
         chatJid: GROUP_JID,
-        senderId: 'miniclaw-agent',
-        senderName: 'Miniclaw',
+        senderId: 'ckqclaw-agent',
+        senderName: 'CKQClaw',
         text: '不得留下的结果',
         timestamp: new Date().toISOString(),
         messageMeta: { sourceKind: 'scheduled_task_result' },

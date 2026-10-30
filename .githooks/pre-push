@@ -1,8 +1,8 @@
 #!/bin/sh
-# Miniclaw pre-push（任务 L 批次 2）——只提醒不强制：verify 仍是唯一强制门禁。
+# CKQClaw pre-push（任务 L 批次 2）——只提醒不强制：verify 仍是唯一强制门禁。
 # remote 已配置（origin = github.com/ckq184/Personnal-agent，2026-10-24 起）。
 # 若未来要改为强制，把本文件替换为：
 #   exec node "$(git rev-parse --show-toplevel)/scripts/verify.mjs"
 # （全量六步门禁，冷却态实测约 4-6 分钟；改前须按宪法第 6 条获批。）
-echo "Miniclaw: push 前请确认 npm run verify 已全绿（hooks 仅第二道防线，不替代 verify）。"
+echo "CKQClaw: push 前请确认 npm run verify 已全绿（hooks 仅第二道防线，不替代 verify）。"
 exit 0

@@ -34,16 +34,15 @@ vi.mock('../src/logger.js', () => ({
 }));
 
 const { buildAutoMemoryInput } = await import('../src/container-runner.js');
-const { resetAutoMemoryConfigCache } = await import(
-  '../src/auto-memory-config.js'
-);
+const { resetAutoMemoryConfigCache } =
+  await import('../src/auto-memory-config.js');
 
 afterAll(() => {
   fs.rmSync(SHARED_TMP, { recursive: true, force: true });
 });
 
 afterEach(() => {
-  delete process.env.MINICLAW_AUTO_MEMORY;
+  delete process.env.CKQCLAW_AUTO_MEMORY;
   resetAutoMemoryConfigCache();
 });
 
@@ -72,7 +71,7 @@ function allKeys(value: unknown, into: Set<string> = new Set()): Set<string> {
 
 describe('buildAutoMemoryInput secret surface', () => {
   test('fully configured host sends only the enable flag', () => {
-    process.env.MINICLAW_AUTO_MEMORY = FULL_ENDPOINTS;
+    process.env.CKQCLAW_AUTO_MEMORY = FULL_ENDPOINTS;
     resetAutoMemoryConfigCache();
     const input = buildAutoMemoryInput();
     // Deep equality pins the exact shape: no dataPath, no endpoints.
@@ -80,16 +79,26 @@ describe('buildAutoMemoryInput secret surface', () => {
   });
 
   test('bootstrap JSON contains no endpoint keys anywhere', () => {
-    process.env.MINICLAW_AUTO_MEMORY = FULL_ENDPOINTS;
+    process.env.CKQCLAW_AUTO_MEMORY = FULL_ENDPOINTS;
     resetAutoMemoryConfigCache();
     const keys = allKeys(buildAutoMemoryInput());
-    for (const forbidden of ['apiKey', 'baseUrl', 'model', 'llm', 'embedder', 'dataPath']) {
-      expect(keys.has(forbidden), `bootstrap must not carry key "${forbidden}"`).toBe(false);
+    for (const forbidden of [
+      'apiKey',
+      'baseUrl',
+      'model',
+      'llm',
+      'embedder',
+      'dataPath',
+    ]) {
+      expect(
+        keys.has(forbidden),
+        `bootstrap must not carry key "${forbidden}"`,
+      ).toBe(false);
     }
   });
 
   test('disabled host sends nothing at all', () => {
-    delete process.env.MINICLAW_AUTO_MEMORY;
+    delete process.env.CKQCLAW_AUTO_MEMORY;
     resetAutoMemoryConfigCache();
     expect(buildAutoMemoryInput()).toBeUndefined();
   });

@@ -20,7 +20,7 @@ function splitModelRef(value: string): { providerId: string; modelId: string } {
 }
 
 /**
- * Bridge the existing Miniclaw provider env contract to Pi ModelRuntime.
+ * Bridge the existing CKQClaw provider env contract to Pi ModelRuntime.
  * Custom Anthropic-compatible endpoints are registered as a separate provider
  * so Pi's built-in Anthropic catalog and credentials remain untouched.
  */
@@ -52,9 +52,7 @@ export async function resolvePiProvider(
   }
   const split = splitModelRef(rawModel || 'claude-sonnet');
   const custom = input.endpointKind === 'custom' || !!input.baseUrl?.trim();
-  const providerId = custom
-    ? `miniclaw-${split.providerId}`
-    : split.providerId;
+  const providerId = custom ? `ckqclaw-${split.providerId}` : split.providerId;
 
   if (custom) {
     if (!input.baseUrl?.trim()) {
@@ -64,7 +62,7 @@ export async function resolvePiProvider(
       throw new Error('Pi custom provider requires ANTHROPIC_MODEL');
     }
     modelRuntime.registerProvider(providerId, {
-      name: `Miniclaw ${split.providerId} compatible provider`,
+      name: `CKQClaw ${split.providerId} compatible provider`,
       baseUrl: input.baseUrl.trim(),
       api: 'anthropic-messages',
       ...(input.apiKey?.trim() ? { apiKey: input.apiKey.trim() } : {}),

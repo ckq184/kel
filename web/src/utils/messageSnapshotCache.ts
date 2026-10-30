@@ -1,6 +1,6 @@
 import type { Message } from '../stores/chat';
 
-const DB_NAME = 'miniclaw-message-snapshots';
+const DB_NAME = 'ckqclaw-message-snapshots';
 const DB_VERSION = 1;
 const AGENT_MESSAGES_STORE = 'agentMessages';
 const MAX_MESSAGES_PER_AGENT = 100;
@@ -25,7 +25,8 @@ function agentSnapshotKey(jid: string, agentId: string): string {
 let dbPromise: Promise<IDBDatabase> | null = null;
 
 function openSnapshotDb(): Promise<IDBDatabase> {
-  if (!canUseIndexedDB()) return Promise.reject(new Error('IndexedDB unavailable'));
+  if (!canUseIndexedDB())
+    return Promise.reject(new Error('IndexedDB unavailable'));
   if (dbPromise) return dbPromise;
 
   dbPromise = new Promise((resolve, reject) => {
@@ -33,7 +34,9 @@ function openSnapshotDb(): Promise<IDBDatabase> {
     request.onupgradeneeded = () => {
       const db = request.result;
       if (!db.objectStoreNames.contains(AGENT_MESSAGES_STORE)) {
-        const store = db.createObjectStore(AGENT_MESSAGES_STORE, { keyPath: 'key' });
+        const store = db.createObjectStore(AGENT_MESSAGES_STORE, {
+          keyPath: 'key',
+        });
         store.createIndex('jid', 'jid', { unique: false });
       }
     };
@@ -59,16 +62,19 @@ function runAgentStore<T>(
   mode: IDBTransactionMode,
   action: (store: IDBObjectStore) => IDBRequest<T>,
 ): Promise<T> {
-  return openSnapshotDb().then((db) => new Promise<T>((resolve, reject) => {
-    const tx = db.transaction(AGENT_MESSAGES_STORE, mode);
-    const request = action(tx.objectStore(AGENT_MESSAGES_STORE));
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-    tx.onerror = () => reject(tx.error);
-    // Quota-exceeded triggers abort (not error). Without this, the
-    // returned promise hangs forever on storage pressure.
-    tx.onabort = () => reject(tx.error);
-  }));
+  return openSnapshotDb().then(
+    (db) =>
+      new Promise<T>((resolve, reject) => {
+        const tx = db.transaction(AGENT_MESSAGES_STORE, mode);
+        const request = action(tx.objectStore(AGENT_MESSAGES_STORE));
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+        tx.onerror = () => reject(tx.error);
+        // Quota-exceeded triggers abort (not error). Without this, the
+        // returned promise hangs forever on storage pressure.
+        tx.onabort = () => reject(tx.error);
+      }),
+  );
 }
 
 function normalizeSnapshotMessages(messages: Message[]): Message[] {
@@ -137,7 +143,9 @@ export async function deleteAgentMessageSnapshot(
 ): Promise<void> {
   if (!canUseIndexedDB()) return;
   try {
-    await runAgentStore('readwrite', (store) => store.delete(agentSnapshotKey(jid, agentId)));
+    await runAgentStore('readwrite', (store) =>
+      store.delete(agentSnapshotKey(jid, agentId)),
+    );
   } catch {
     /* best effort */
   }

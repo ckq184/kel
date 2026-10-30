@@ -128,7 +128,7 @@ function makeDeps() {
     broadcastStreamEvent: vi.fn(),
     storePromptMessage: vi.fn(),
     storeResultAndNotify: vi.fn(),
-    assistantName: 'Miniclaw',
+    assistantName: 'CKQClaw',
   } as any;
 }
 
@@ -199,7 +199,7 @@ function runToSuccess(
 
 beforeAll(() => {
   db.initDatabase();
-  process.env.MINICLAW_TASK_CONTINUATION =
+  process.env.CKQCLAW_TASK_CONTINUATION =
     '{"maxContinuations": 3, "backoffMs": 0}';
   resetTaskContinuationConfigCache();
 });
@@ -209,7 +209,7 @@ beforeEach(() => {
 });
 
 afterAll(() => {
-  delete process.env.MINICLAW_TASK_CONTINUATION;
+  delete process.env.CKQCLAW_TASK_CONTINUATION;
   resetTaskContinuationConfigCache();
   db.closeDatabase();
   fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -389,7 +389,7 @@ describe('sweepTaskRunContinuations state machine', () => {
   });
 
   test('zero budget escalates on the first request', () => {
-    process.env.MINICLAW_TASK_CONTINUATION =
+    process.env.CKQCLAW_TASK_CONTINUATION =
       '{"maxContinuations": 0, "backoffMs": 0}';
     resetTaskContinuationConfigCache();
     try {
@@ -401,14 +401,14 @@ describe('sweepTaskRunContinuations state machine', () => {
       expect(escalated.status).toBe('needs_human');
       expect(db.getTaskRunsForTask(task.id)).toHaveLength(1);
     } finally {
-      process.env.MINICLAW_TASK_CONTINUATION =
+      process.env.CKQCLAW_TASK_CONTINUATION =
         '{"maxContinuations": 3, "backoffMs": 0}';
       resetTaskContinuationConfigCache();
     }
   });
 
   test('continuation run respects the configured backoff before becoming due', () => {
-    process.env.MINICLAW_TASK_CONTINUATION =
+    process.env.CKQCLAW_TASK_CONTINUATION =
       '{"maxContinuations": 1, "backoffMs": 300000}';
     resetTaskContinuationConfigCache();
     try {
@@ -428,7 +428,7 @@ describe('sweepTaskRunContinuations state machine', () => {
       if (premature) db.cancelTaskRun(premature.id, 'drained by test');
       expect(premature?.id ?? 'none').not.toBe(child.id);
     } finally {
-      process.env.MINICLAW_TASK_CONTINUATION =
+      process.env.CKQCLAW_TASK_CONTINUATION =
         '{"maxContinuations": 3, "backoffMs": 0}';
       resetTaskContinuationConfigCache();
     }

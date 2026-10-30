@@ -3,7 +3,7 @@
 // ChatView consults this map to auto-restore the previous tab.
 // Entries are cleared by `selectTab(null)` (explicit return to main).
 
-const STORAGE_KEY = 'miniclaw-workspace-last-agent';
+const STORAGE_KEY = 'ckqclaw-workspace-last-agent';
 
 function safeStorage(): Storage | null {
   try {
@@ -20,7 +20,9 @@ function readMap(): Record<string, string> {
     const raw = ls.getItem(STORAGE_KEY);
     if (!raw) return {};
     const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed
+      : {};
   } catch {
     return {};
   }
@@ -44,7 +46,10 @@ export function getWorkspaceLastAgent(jid: string): string | null {
   return readMap()[jid] || null;
 }
 
-export function setWorkspaceLastAgent(jid: string, agentId: string | null): void {
+export function setWorkspaceLastAgent(
+  jid: string,
+  agentId: string | null,
+): void {
   const map = readMap();
   if (agentId) {
     map[jid] = agentId;

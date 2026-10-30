@@ -163,14 +163,14 @@ export function getTaskContinuationConfig(): TaskContinuationConfig {
     maxContinuations: DEFAULT_MAX_CONTINUATIONS,
     backoffMs: DEFAULT_BACKOFF_MS,
   };
-  const envRaw = process.env.MINICLAW_TASK_CONTINUATION;
+  const envRaw = process.env.CKQCLAW_TASK_CONTINUATION;
   if (envRaw) {
     try {
       config = sanitizeTaskContinuationConfig(JSON.parse(envRaw)) ?? config;
     } catch (error) {
       logger.warn(
         { err: error },
-        'MINICLAW_TASK_CONTINUATION is not valid JSON — using default continuation config',
+        'CKQCLAW_TASK_CONTINUATION is not valid JSON — using default continuation config',
       );
     }
   } else {

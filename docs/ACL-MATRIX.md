@@ -1,4 +1,4 @@
-# Miniclaw 权限矩阵
+# CKQClaw 权限矩阵
 
 本文档描述当前授权边界。具体中间件和条件分支以代码为准：
 
@@ -61,7 +61,7 @@
 | `/api/skills/*`                                     | Login，仅本人用户 Skills                      |
 | 用户级 `/api/mcp-servers/*`                         | Login，仅本人配置                             |
 | Workspace Memory v2                                 | Login + Workspace owner ACL，见 4.5           |
-| Miniclaw Owner Profile                             | Home actual owner + runtime exact-turn gate   |
+| CKQClaw Owner Profile                               | Home actual owner + runtime exact-turn gate   |
 | `/api/usage/*`                                      | Login；普通用户只见本人，管理视图再按角色过滤 |
 | `/api/billing/my/*`                                 | Login，仅本人                                 |
 
@@ -88,7 +88,7 @@
 - 打开 Web 终端前的资源检查
 
 Home 的 AgentProfile 归属也是系统不变量：只能绑定同一 owner 的 `is_default`
-Miniclaw。路由在进入 Runtime quiesce 前拒绝迁移，数据库绑定函数再次校验；启动
+CKQClaw。路由在进入 Runtime quiesce 前拒绝迁移，数据库绑定函数再次校验；启动
 backfill 会修复旧数据中的错误 Home 绑定。
 
 Host Workspace 在 Access 之外还要求 admin。
@@ -153,18 +153,18 @@ Agent Runtime 的 Workspace Memory MCP 还叠加执行上下文策略：
 定时任务和 Sub-Agent 即使继承 Workspace owner 身份，也不能写入 Workspace Memory；
 只读限制由 MCP 暴露面与主进程 IPC broker 共同执行，不能由模型参数扩大权限。
 
-### 4.6 Miniclaw Owner Profile
+### 4.6 CKQClaw Owner Profile
 
 `GET|PATCH /api/workspaces/:jid/owner-profile` 只接受当前登录用户自己的 Home
-Workspace，且目标必须绑定内置默认 Miniclaw。admin 不具有跨 owner bypass。
+Workspace，且目标必须绑定内置默认 CKQClaw。admin 不具有跨 owner bypass。
 
 Runtime 的权限更严格：
 
 | 上下文                                       | 投影                | 修改                  |
 | -------------------------------------------- | ------------------- | --------------------- |
-| Home 内置 Miniclaw + actual owner turn      | 允许                | 当前 active turn 允许 |
-| Home 内置 Miniclaw + 非 owner 群成员 turn   | 拒绝                | 拒绝                  |
-| Home 内置 Miniclaw 普通 Runtime Session     | actual owner 时允许 | 当前 active turn 允许 |
+| Home 内置 CKQClaw + actual owner turn        | 允许                | 当前 active turn 允许 |
+| Home 内置 CKQClaw + 非 owner 群成员 turn     | 拒绝                | 拒绝                  |
+| Home 内置 CKQClaw 普通 Runtime Session       | actual owner 时允许 | 当前 active turn 允许 |
 | 自定义 AgentProfile / Scheduled / Task/Spawn | 拒绝                | 拒绝                  |
 | SDK Sub-Agent                                | 拒绝                | 拒绝                  |
 
@@ -257,18 +257,18 @@ Owner Claim：
 命令由主进程 `handleCommand()` 处理，不经过 Web Middleware，但使用渠道 sender ID
 执行独立 Owner Gate。
 
-| 命令                                 | 权限                                         |
-| ------------------------------------ | -------------------------------------------- |
-| `/list`、`/ls`、`/status`、`/where`  | 只读                                         |
-| `/recall`、`/rc`                     | 只读，带节流                                 |
-| `/allowlist`                         | 只读                                         |
-| `/clear`、`/bind`、`/unbind`、`/new` | IM Owner                                     |
-| `/sw`、`/spawn`                      | IM Owner                                     |
-| `/release_owner`                     | IM Owner                                     |
+| 命令                                 | 权限                                           |
+| ------------------------------------ | ---------------------------------------------- |
+| `/list`、`/ls`、`/status`、`/where`  | 只读                                           |
+| `/recall`、`/rc`                     | 只读，带节流                                   |
+| `/allowlist`                         | 只读                                           |
+| `/clear`、`/bind`、`/unbind`、`/new` | IM Owner                                       |
+| `/sw`、`/spawn`                      | IM Owner                                       |
+| `/release_owner`                     | IM Owner                                       |
 | `/approve`、`/deny`                  | IM Owner（工具审批决定，与 Web 决定 API 同权） |
-| `/owner_mention`                     | 未认领群的 bootstrap，不可被 Owner Gate 锁死 |
-| `/allow`、`/disallow`                | Handler 内检查 IM Owner                      |
-| `/require_mention`                   | Handler 内按当前 owner/策略检查              |
+| `/owner_mention`                     | 未认领群的 bootstrap，不可被 Owner Gate 锁死   |
+| `/allow`、`/disallow`                | Handler 内检查 IM Owner                        |
+| `/require_mention`                   | Handler 内按当前 owner/策略检查                |
 
 不同 Provider 的原生 sender ID namespace 不得混用。例如 QQ C2C 与 Group 使用不同
 ID 空间；owner 比对必须使用渠道适配器传入的规范化 ID。
@@ -344,4 +344,3 @@ Runner 的工具审批门禁是独立于本矩阵的运行时边界：工具调�
 按钮回调复用与 `/approve` 相同的 IM Owner 门禁（`checkImOwnerCommand`），
 非 owner 点击收到拒绝提示且不落决定；三条决定路径（Web API、卡片按钮、IM 命令）
 收敛到同一 `decideApproval` 落盘。
-

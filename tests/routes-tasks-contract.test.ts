@@ -49,9 +49,9 @@ vi.mock('../src/middleware/auth.ts', async (importOriginal) => {
     ...actual,
     authMiddleware: async (c: any, next: any) => {
       c.set('user', {
-        id: process.env.MINICLAW_TEST_USER_ID ?? 'alice',
-        username: process.env.MINICLAW_TEST_USER_ID ?? 'alice',
-        role: process.env.MINICLAW_TEST_USER_ROLE ?? 'member',
+        id: process.env.CKQCLAW_TEST_USER_ID ?? 'alice',
+        username: process.env.CKQCLAW_TEST_USER_ID ?? 'alice',
+        role: process.env.CKQCLAW_TEST_USER_ROLE ?? 'member',
         status: 'active',
         permissions: [],
       });
@@ -75,8 +75,8 @@ const GROUP_JID = 'web:tasks-contract';
 const GROUP_FOLDER = 'tasks-contract';
 
 function asUser(userId: string, role: 'admin' | 'member' = 'member'): void {
-  process.env.MINICLAW_TEST_USER_ID = userId;
-  process.env.MINICLAW_TEST_USER_ROLE = role;
+  process.env.CKQCLAW_TEST_USER_ID = userId;
+  process.env.CKQCLAW_TEST_USER_ROLE = role;
 }
 
 function seedGroup(): void {
@@ -210,8 +210,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  delete process.env.MINICLAW_TEST_USER_ID;
-  delete process.env.MINICLAW_TEST_USER_ROLE;
+  delete process.env.CKQCLAW_TEST_USER_ID;
+  delete process.env.CKQCLAW_TEST_USER_ROLE;
 });
 
 afterAll(() => {

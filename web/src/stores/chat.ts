@@ -2833,7 +2833,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (typeof document === 'undefined' || !document.hidden) {
           showToast(`${desc} ${status}`, event.taskSummary);
         }
-        notifyIfHidden(`Miniclaw: ${desc} ${status}`, event.taskSummary);
+        notifyIfHidden(`CKQClaw: ${desc} ${status}`, event.taskSummary);
       }
 
       set((s) => {
@@ -3559,9 +3559,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // Apply saved conversation order from localStorage (only to conversations)
         let orderedAgents = visibleAgents;
         try {
-          const savedOrder = localStorage.getItem(
-            `miniclaw-agent-order-${jid}`,
-          );
+          const savedOrder = localStorage.getItem(`ckqclaw-agent-order-${jid}`);
           if (savedOrder) {
             const ids: string[] = JSON.parse(savedOrder);
             const conversations = visibleAgents.filter(
@@ -3665,7 +3663,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // Persist to localStorage
     try {
       localStorage.setItem(
-        `miniclaw-agent-order-${jid}`,
+        `ckqclaw-agent-order-${jid}`,
         JSON.stringify(orderedIds),
       );
     } catch {

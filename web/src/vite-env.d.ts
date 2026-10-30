@@ -6,5 +6,5 @@ declare module '*.css' {
 }
 
 interface Window {
-  __MINICLAW_HASH_ROUTER__?: boolean;
+  __CKQCLAW_HASH_ROUTER__?: boolean;
 }

@@ -204,7 +204,7 @@ describe('pre-commit secret 扫描（真相源 = src/ 与 agent-runner 的 redac
     expect(scanText('placeholder="Bearer token..."')).toHaveLength(0);
     // cookie 名常量（无数字混排）
     expect(
-      scanText('const SESSION_COOKIE_NAME_PLAIN = "miniclaw_session"'),
+      scanText('const SESSION_COOKIE_NAME_PLAIN = "ckqclaw_session"'),
     ).toHaveLength(0);
   });
 

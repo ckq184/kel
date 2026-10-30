@@ -1,14 +1,14 @@
 import { describe, expect, test } from 'vitest';
 
 import {
-  buildMiniclawPromptPlan,
+  buildCkqclawPromptPlan,
   createPromptPlan,
 } from '../container/agent-runner/src/prompt-plan.js';
 
-describe('Miniclaw PromptPlan', () => {
+describe('CKQClaw PromptPlan', () => {
   test('keeps identity first and includes only capabilities that are active', () => {
-    const plan = buildMiniclawPromptPlan({
-      platformIdentity: 'built-in Miniclaw identity',
+    const plan = buildCkqclawPromptPlan({
+      platformIdentity: 'built-in CKQClaw identity',
       platformBootstrap: 'first wake',
       agentIdentity: '<agent-identity>MAIN_MARKER</agent-identity>',
       interaction: 'interaction',
@@ -21,8 +21,8 @@ describe('Miniclaw PromptPlan', () => {
     });
 
     expect(plan.blocks.map((block) => block.id)).toEqual([
-      'identity.miniclaw',
-      'bootstrap.miniclaw',
+      'identity.ckqclaw',
+      'bootstrap.ckqclaw',
       'agent-profile',
       'interaction',
       'security-rules',
@@ -59,7 +59,7 @@ describe('Miniclaw PromptPlan', () => {
   });
 
   test('does not inject built-in identity or bootstrap into a custom Agent', () => {
-    const plan = buildMiniclawPromptPlan({
+    const plan = buildCkqclawPromptPlan({
       agentIdentity: 'custom identity',
       interaction: 'interaction',
       security: 'security',

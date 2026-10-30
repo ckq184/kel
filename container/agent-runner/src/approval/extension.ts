@@ -26,7 +26,7 @@ import {
  * Pi extension: host-enforced tool approval gate.
  *
  * Loaded via extensionPaths like @tintinweb/pi-subagents. The SDK routes
- * EVERY tool call (native read/bash/edit/write, Miniclaw MCP tools, and MCP
+ * EVERY tool call (native read/bash/edit/write, CKQClaw MCP tools, and MCP
  * tools from user-configured external servers) through the `tool_call`
  * extension event before execution, so this is the single choke point where
  * policy is enforced. The model cannot bypass it: the gate runs in the
@@ -106,26 +106,44 @@ export default function approvalGateExtension(pi: ExtensionAPI): void {
       );
       switch (outcome.kind) {
         case 'approved':
-          audit({ kind: 'approval_granted', id: request.id, tool: event.toolName });
+          audit({
+            kind: 'approval_granted',
+            id: request.id,
+            tool: event.toolName,
+          });
           return undefined;
         case 'denied':
-          audit({ kind: 'approval_denied', id: request.id, tool: event.toolName });
+          audit({
+            kind: 'approval_denied',
+            id: request.id,
+            tool: event.toolName,
+          });
           return {
             block: true,
             terminate: false,
             reason: `The user did not approve "${event.toolName}"${
-              outcome.decision?.decidedBy ? ` (decided by ${outcome.decision.decidedBy})` : ''
+              outcome.decision?.decidedBy
+                ? ` (decided by ${outcome.decision.decidedBy})`
+                : ''
             }. Do not retry the same call; continue without it or ask the user.`,
           } satisfies ToolCallEventResult;
         case 'timeout':
-          audit({ kind: 'approval_timeout', id: request.id, tool: event.toolName });
+          audit({
+            kind: 'approval_timeout',
+            id: request.id,
+            tool: event.toolName,
+          });
           return {
             block: true,
             terminate: true,
             reason: `Approval for "${event.toolName}" timed out after ${Math.round(timeoutMs / 1000)}s and was denied (fail-closed). Report this to the user and stop.`,
           } satisfies ToolCallEventResult;
         case 'aborted':
-          audit({ kind: 'approval_cancelled', id: request.id, tool: event.toolName });
+          audit({
+            kind: 'approval_cancelled',
+            id: request.id,
+            tool: event.toolName,
+          });
           return {
             block: true,
             terminate: true,

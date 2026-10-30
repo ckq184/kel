@@ -157,17 +157,17 @@ export function LoginPage() {
           <div className="w-9 h-9 rounded-xl overflow-hidden">
             <img
               src={`${import.meta.env.BASE_URL}icons/icon-192.png`}
-              alt="Miniclaw"
+              alt="CKQClaw"
               className="w-full h-full object-cover"
             />
           </div>
           <span className="text-lg font-semibold text-foreground tracking-tight">
-            Miniclaw
+            CKQClaw
           </span>
         </div>
         <div className="flex items-center gap-2">
           <a
-            href="https://github.com/ckq184/miniclaw"
+            href="https://github.com/ckq184/ckqclaw"
             target="_blank"
             rel="noopener noreferrer"
           >
@@ -235,7 +235,7 @@ export function LoginPage() {
                   <div className="w-12 h-12 lg:w-14 lg:h-14 rounded-2xl overflow-hidden shadow-lg">
                     <img
                       src={`${import.meta.env.BASE_URL}icons/icon-192.png`}
-                      alt="Miniclaw"
+                      alt="CKQClaw"
                       className="w-full h-full object-cover"
                     />
                   </div>
@@ -246,7 +246,7 @@ export function LoginPage() {
                 </h2>
                 <p className="text-muted-foreground text-xs lg:text-sm text-center mb-5 lg:mb-6">
                   {tab === 'login'
-                    ? '登录以继续使用 Miniclaw'
+                    ? '登录以继续使用 CKQClaw'
                     : regStatus.requireInviteCode
                       ? '需要邀请码才能注册'
                       : '创建你的账户'}

@@ -57,7 +57,7 @@ interface ApprovalHolderState {
   context: ApprovalRequestContext;
 }
 
-const HOLDER_KEY = '__miniclawApprovalHolder__';
+const HOLDER_KEY = '__ckqclawApprovalHolder__';
 
 function holder(): ApprovalHolderState {
   const globalScope = globalThis as Record<string, unknown>;

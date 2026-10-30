@@ -33,7 +33,7 @@ const GOOD_EMBEDDER = {
 
 describe('auto memory host config', () => {
   afterEach(() => {
-    delete process.env.MINICLAW_AUTO_MEMORY;
+    delete process.env.CKQCLAW_AUTO_MEMORY;
     resetAutoMemoryConfigCache();
   });
 
@@ -48,7 +48,7 @@ describe('auto memory host config', () => {
   });
 
   test('complete endpoint pair enables the feature', () => {
-    process.env.MINICLAW_AUTO_MEMORY = JSON.stringify({
+    process.env.CKQCLAW_AUTO_MEMORY = JSON.stringify({
       enabled: true,
       llm: GOOD_LLM,
       embedder: GOOD_EMBEDDER,
@@ -61,7 +61,7 @@ describe('auto memory host config', () => {
   });
 
   test('embedder alone is rejected — extraction and embedding are a pair', () => {
-    process.env.MINICLAW_AUTO_MEMORY = JSON.stringify({
+    process.env.CKQCLAW_AUTO_MEMORY = JSON.stringify({
       enabled: true,
       embedder: GOOD_EMBEDDER,
     });
@@ -70,7 +70,7 @@ describe('auto memory host config', () => {
   });
 
   test('non-http baseUrl or missing fields are dropped', () => {
-    process.env.MINICLAW_AUTO_MEMORY = JSON.stringify({
+    process.env.CKQCLAW_AUTO_MEMORY = JSON.stringify({
       enabled: true,
       llm: { baseUrl: 'ftp://x', apiKey: 'k', model: 'm' },
       embedder: GOOD_EMBEDDER,
@@ -80,7 +80,7 @@ describe('auto memory host config', () => {
   });
 
   test('invalid JSON stays disabled', () => {
-    process.env.MINICLAW_AUTO_MEMORY = '{ broken';
+    process.env.CKQCLAW_AUTO_MEMORY = '{ broken';
     resetAutoMemoryConfigCache();
     const config = getAutoMemoryHostConfig();
     expect(config.enabled).toBe(false);

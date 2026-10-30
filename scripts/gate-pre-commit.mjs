@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Miniclaw pre-commit 门禁（任务 L 批次 2，宪法第 3 条敏感信息的机审化第一道）。
+// CKQClaw pre-commit 门禁（任务 L 批次 2，宪法第 3 条敏感信息的机审化第一道）。
 //
 // 两段检查，秒级完成：
 //   1. secret 扫描：只扫暂存区新增行（git diff --cached -U0 的 + 行），
@@ -98,7 +98,7 @@ const PLACEHOLDER_VALUE =
 //   - URL 形态的值跳过（内嵌凭据的 URL 由 url-userinfo 模式单独覆盖）；
 //   - process.* 引用（argv/env）与点路径标识符（v3.officialSecrets.x）是代码；
 //   - 值必须字母数字混排且达最小长度：真实凭据几乎必然混排，而
-//     `__Host-miniclaw_session` 常量名、`password: string` 类型注解不混排；
+//     `__Host-ckqclaw_session` 常量名、`password: string` 类型注解不混排；
 //   - 占位符（*** / <your-key> / example… 等）豁免。
 function sensitiveAssignmentHits(line) {
   const hits = [];

@@ -1,5 +1,5 @@
 /**
- * Shared types for Miniclaw Agent Runner.
+ * Shared types for CKQClaw Agent Runner.
  *
  * These types are used across index.ts, stream-processor.ts, and mcp-tools.ts.
  */
@@ -9,7 +9,7 @@ export type { StreamEventType, StreamEvent } from './stream-event.types.js';
 import type { ClaudeContextAudit, StreamEvent } from './stream-event.types.js';
 
 /**
- * Sanitized, per-input-turn channel identity supplied by the Miniclaw host.
+ * Sanitized, per-input-turn channel identity supplied by the CKQClaw host.
  *
  * This is deliberately a capability context rather than a credential bag:
  * tokens, app secrets and provider client objects must never cross the runner
@@ -184,7 +184,7 @@ export function formatChannelTurnContextForPrompt(
 ): string {
   if (!context) return '';
   return [
-    '<channel_context source="miniclaw_host" trust="verified">',
+    '<channel_context source="ckqclaw_host" trust="verified">',
     JSON.stringify(context),
     '</channel_context>',
     'Use this context for the current input only. Never guess IDs or credentials that are absent.',
@@ -217,7 +217,7 @@ export interface ContainerInput {
   isAdminHome?: boolean;
   isScheduledTask?: boolean;
   /** Host-computed tool approval policy. Enforced by the Pi approval gate
-   * extension for every tool call (native, Miniclaw MCP, external MCP). */
+   * extension for every tool call (native, CKQClaw MCP, external MCP). */
   approvalPolicy?: {
     default?: 'allow' | 'ask' | 'deny';
     tools?: Record<string, 'allow' | 'ask' | 'deny'>;
@@ -260,7 +260,7 @@ export interface ContainerInput {
     id: string;
     name: string;
     version: number;
-    /** Host-authoritative marker for the built-in Miniclaw AgentProfile. */
+    /** Host-authoritative marker for the built-in CKQClaw AgentProfile. */
     isDefault: boolean;
     identityHash: string;
     identityPrompt: string;
@@ -269,15 +269,15 @@ export interface ContainerInput {
     runtimePolicy?: unknown;
   };
   /**
-   * True only for an interactive turn in the built-in Miniclaw Home
+   * True only for an interactive turn in the built-in CKQClaw Home
    * Workspace before the owner-preferred-address memory has been established.
    */
-  miniclawBootstrapPending?: boolean;
+  ckqclawBootstrapPending?: boolean;
   /**
    * Initial host-authoritative projection for the actual owner turn. A
    * dedicated IPC read refreshes this before every cold/warm model turn.
    */
-  miniclawOwnerProfile?: {
+  ckqclawOwnerProfile?: {
     workspaceJid: string;
     preferredAddress: string | null;
     revision: number | null;
@@ -291,9 +291,9 @@ export interface ContainerInput {
   };
   /** Structural capability; the host re-authorizes the actual sender on every
    * cold/warm Owner Profile IPC request. */
-  miniclawOwnerProfileEnabled?: boolean;
+  ckqclawOwnerProfileEnabled?: boolean;
   /** Host-derived capability flag. True only for an interactive session whose
-   * effective top-level AgentProfile is the built-in main Miniclaw. */
+   * effective top-level AgentProfile is the built-in main CKQClaw. */
   agentBuilderEnabled?: boolean;
   agentId?: string;
   agentName?: string;
@@ -306,7 +306,7 @@ export interface ContainerInput {
   plugins?: Array<{ type: 'local'; path: string }>;
   /** Runtime context audit bootstrap from the host/container launcher. */
   contextAudit?: ClaudeContextAudit;
-  /** Canonical effective Skill set resolved by the Miniclaw host. */
+  /** Canonical effective Skill set resolved by the CKQClaw host. */
   skillManifest?: { hash: string; selectedSkillIds: string[] };
 }
 

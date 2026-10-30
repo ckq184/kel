@@ -10,7 +10,7 @@ fi
 IMAGE_REF="$1"
 EXPECTED_ARCHITECTURE="${2:-}"
 SMOKE_TIMEOUT_SECONDS="${SMOKE_TIMEOUT_SECONDS:-120}"
-SMOKE_CONTAINER_NAME="${SMOKE_CONTAINER_NAME:-miniclaw-image-smoke-${GITHUB_RUN_ID:-local}-${RANDOM}}"
+SMOKE_CONTAINER_NAME="${SMOKE_CONTAINER_NAME:-ckqclaw-image-smoke-${GITHUB_RUN_ID:-local}-${RANDOM}}"
 
 # shellcheck disable=SC2317 # invoked indirectly by trap
 cleanup() {
@@ -73,13 +73,13 @@ esac
 
 if [ "$smoke_host_uid" -eq 0 ]; then
   smoke_identity_args=(
-    --env MINICLAW_HOST_IDENTITY_MODE=host-root
+    --env CKQCLAW_HOST_IDENTITY_MODE=host-root
   )
 else
   smoke_identity_args=(
-    --env MINICLAW_HOST_IDENTITY_MODE=direct
-    --env "MINICLAW_HOST_UID=$smoke_host_uid"
-    --env "MINICLAW_HOST_GID=$smoke_host_gid"
+    --env CKQCLAW_HOST_IDENTITY_MODE=direct
+    --env "CKQCLAW_HOST_UID=$smoke_host_uid"
+    --env "CKQCLAW_HOST_GID=$smoke_host_gid"
   )
 fi
 

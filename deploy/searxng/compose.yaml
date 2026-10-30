@@ -1,4 +1,4 @@
-# Self-hosted SearXNG for Miniclaw web search (no API key required).
+# Self-hosted SearXNG for CKQClaw web search (no API key required).
 # Binds to loopback only — do NOT publish this instance to the public
 # internet: it is a private meta-search backend for the mcp-searxng bridge.
 # Required settings live in ./settings.yml (json output format enabled);
@@ -7,7 +7,7 @@
 services:
   searxng:
     image: searxng/searxng:latest
-    container_name: miniclaw-searxng
+    container_name: ckqclaw-searxng
     restart: unless-stopped
     ports:
       # Loopback only. Change the host port here and SEARXNG_URL in the

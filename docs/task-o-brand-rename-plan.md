@@ -31,17 +31,17 @@
 ## 4. 范围
 
 - 改：src/、web/、container/、shared/、scripts/、tests/、electron/、.github/、
-  .githooks/、deploy/、Makefile、start-desktop.bat、根 package*.json、
+  .githooks/、deploy/、Makefile、start-desktop.bat、根 package\*.json、
   现行文档（README、CLAUDE、AGENTS、SECURITY、docs/{API,ACL-MATRIX,BUILTIN-MCP,constitution,workflow}.md、
   web/public/icons/README.md、LICENSE）、.gitignore、.gatesecretsignore。
 - 文件重命名（11 个）：`src/miniclaw-bootstrap.ts`、
   `container/agent-runner/prompts/{identity,bootstrap}.miniclaw.md`、
   5 个 `tests/miniclaw-*.test.ts`、`electron/assets/miniclaw.{icns,-icon.png}`。
-- 不改（历史审计记录，保留原样）：docs/ 下 TASK-*-ACCEPTANCE.md、
-  task-*-plan.md、REMAINING-WORK.md、runtime-migration.md、
+- 不改（历史审计记录，保留原样）：docs/ 下 TASK-_-ACCEPTANCE.md、
+  task-_-plan.md、REMAINING-WORK.md、runtime-migration.md、
   workspace-memory-v2.md、miniclaw-migration-cleanup.md、
   claude-code-plugin-automation-design.md、agent-first-architecture-plan.md、
-  auto-memory-*.md、PROMPT-SKILL-RUNTIME-TEST-PLAN.md、审查记录.md；
+  auto-memory-\*.md、PROMPT-SKILL-RUNTIME-TEST-PLAN.md、审查记录.md；
   二进制文件内容；`personal agent 综述.pdf`。
 
 ## 5. 验收
@@ -63,7 +63,7 @@
 
 ## 7. 已知影响（如实告知用户）
 
-- 已登录会话失效、前端本地偏好重置；部署侧 env 需 MINICLAW_* → CKQCLAW_*。
+- 已登录会话失效、前端本地偏好重置；部署侧 env 需 MINICLAW*\* → CKQCLAW*\*。
 - 镜像名变更后需 Actions 发布新镜像，期间容器模式不可用。
 - 旧数据库字面量（owner-profile 键、sender、默认 Agent 名）与新代码不匹配。
 - Electron appId 变更 = 新应用身份；微信 bot_agent / WhatsApp 设备名变更；

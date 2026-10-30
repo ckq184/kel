@@ -1,5 +1,5 @@
 /**
- * Miniclaw's production Agent Runner entry point.
+ * CKQClaw's production Agent Runner entry point.
  *
  * This module intentionally imports only the runtime-neutral contracts, Pi,
  * and the existing capability/IPC layer. The former Claude runner remains in
@@ -23,13 +23,13 @@ import {
   type IpcInputMessage,
 } from './ipc-delivery.js';
 import {
-  acknowledgeMiniclawOwnerProfileFirstWake,
+  acknowledgeCkqclawOwnerProfileFirstWake,
   createMcpTools,
-  fetchMiniclawOwnerProfileTurn,
+  fetchCkqclawOwnerProfileTurn,
   fetchWorkspaceMemorySnapshot,
   type McpContext,
 } from './mcp-tools.js';
-import { loadMiniclawOwnerProfileTurnContext } from './owner-profile-context.js';
+import { loadCkqclawOwnerProfileTurnContext } from './owner-profile-context.js';
 import { loadWorkspaceMemoryTurnContext } from './workspace-memory-context.js';
 import {
   isPolicyEnforced,
@@ -37,7 +37,7 @@ import {
   setApprovalPolicy,
   setApprovalRequestContext,
 } from './approval/policy.js';
-import { buildMiniclawPromptPlan } from './prompt-plan.js';
+import { buildCkqclawPromptPlan } from './prompt-plan.js';
 import { resolveClaudeProviderRuntime } from './provider-runtime.js';
 import { resolveAgentRuntimeKind } from './runtime-config.js';
 import { adaptClaudeMcpToolsToPi } from './runtime/pi/pi-tools.js';
@@ -45,17 +45,17 @@ import { PiRuntimeAdapter } from './runtime/pi/pi-runtime.js';
 import { runPiQueryAttempt } from './runtime/pi/pi-runner.js';
 
 const WORKSPACE_GROUP =
-  process.env.MINICLAW_WORKSPACE_GROUP || '/workspace/group';
+  process.env.CKQCLAW_WORKSPACE_GROUP || '/workspace/group';
 const WORKSPACE_IPC =
-  process.env.MINICLAW_WORKSPACE_IPC ||
-  process.env.MINICLAW_WORKSPACE_IPC ||
+  process.env.CKQCLAW_WORKSPACE_IPC ||
+  process.env.CKQCLAW_WORKSPACE_IPC ||
   '/workspace/ipc';
 const INPUT_DIR = path.join(WORKSPACE_IPC, 'input');
 const CLOSE_SENTINEL = path.join(INPUT_DIR, '_close');
 const INTERRUPT_SENTINEL = path.join(INPUT_DIR, '_interrupt');
 const DRAIN_SENTINEL = path.join(INPUT_DIR, '_drain');
-const OUTPUT_START = '---MINICLAW_OUTPUT_START---';
-const OUTPUT_END = '---MINICLAW_OUTPUT_END---';
+const OUTPUT_START = '---CKQCLAW_OUTPUT_START---';
+const OUTPUT_END = '---CKQCLAW_OUTPUT_END---';
 const DEFAULT_ALLOWED_TOOLS = [
   'Bash',
   'Read',
@@ -68,7 +68,7 @@ const DEFAULT_ALLOWED_TOOLS = [
   'Task',
   'TaskOutput',
   'TaskStop',
-  'mcp__miniclaw__*',
+  'mcp__ckqclaw__*',
   // External MCP servers configured via /mcp-servers (host-injected env).
   // Pi filters MCP tools once any mcp__-prefixed entry is present, so the
   // wildcard must be explicit; per-call gating stays with the approval gate.
@@ -255,13 +255,13 @@ function buildSystemPrompt(input: ContainerInput, ctx: McpContext): string {
     ? loadPrompt(`channels/${channel}.md`)
     : undefined;
   const identity = input.agentProfile?.identityPrompt?.trim();
-  const plan = buildMiniclawPromptPlan({
+  const plan = buildCkqclawPromptPlan({
     platformIdentity: input.agentProfile?.isDefault
-      ? loadPrompt('identity.miniclaw.md')
+      ? loadPrompt('identity.ckqclaw.md')
       : undefined,
     platformBootstrap:
-      input.agentProfile?.isDefault && input.miniclawOwnerProfileEnabled
-        ? loadPrompt('bootstrap.miniclaw.md')
+      input.agentProfile?.isDefault && input.ckqclawOwnerProfileEnabled
+        ? loadPrompt('bootstrap.ckqclaw.md')
         : undefined,
     agentIdentity: identity
       ? `<agent-identity profile_id="${input.agentProfile?.id}"><profile-prompt>${identity}</profile-prompt></agent-identity>`
@@ -316,9 +316,7 @@ async function runTurn(
     loadWorkspaceMemoryTurnContext(prompt, (query) =>
       fetchWorkspaceMemorySnapshot(ctx, query),
     ),
-    loadMiniclawOwnerProfileTurnContext(() =>
-      fetchMiniclawOwnerProfileTurn(ctx),
-    ),
+    loadCkqclawOwnerProfileTurnContext(() => fetchCkqclawOwnerProfileTurn(ctx)),
   ]);
   if (!memory.snapshot)
     logWarn(
@@ -334,7 +332,7 @@ async function runTurn(
     .join('\n\n');
   const tracker = new IpcTurnDeliveryTracker(initialMessages);
   const customTools = adaptClaudeMcpToolsToPi(createMcpTools(ctx), {
-    namespace: 'mcp__miniclaw',
+    namespace: 'mcp__ckqclaw',
   });
   const provider = resolveClaudeProviderRuntime(process.env);
   const runtime = new PiRuntimeAdapter();
@@ -388,7 +386,7 @@ async function runTurn(
           Number.isInteger(leaseToken) &&
           leaseToken > 0
         ) {
-          void acknowledgeMiniclawOwnerProfileFirstWake(
+          void acknowledgeCkqclawOwnerProfileFirstWake(
             ctx,
             leaseToken,
             activeInputTurnId || input.turnId || generateTurnId(),
@@ -482,7 +480,7 @@ async function main(): Promise<void> {
     isHome: input.isHome ?? input.isMain ?? false,
     isAdminHome: input.isAdminHome ?? input.isMain ?? false,
     agentBuilderEnabled: input.agentBuilderEnabled ?? false,
-    ownerProfileEnabled: input.miniclawOwnerProfileEnabled === true,
+    ownerProfileEnabled: input.ckqclawOwnerProfileEnabled === true,
     interactionMode: input.interactionMode ?? 'assistant',
     isScheduledTask: input.isScheduledTask === true,
     currentTaskId: input.messageTaskId ?? null,

@@ -238,7 +238,7 @@ install_mem0ai() {
 
 # ── Main ─────────────────────────────────────────────────────
 
-echo "=== Miniclaw Host Tools Installer ==="
+echo "=== CKQClaw Host Tools Installer ==="
 echo "    OS=$OS  ARCH=$ARCH"
 echo ""
 
@@ -265,4 +265,4 @@ install_mem0ai
 
 echo ""
 echo "=== Done ==="
-echo "Restart Miniclaw to pick up the new tools."
+echo "Restart CKQClaw to pick up the new tools."

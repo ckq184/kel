@@ -29,12 +29,12 @@ const CONFIG_PATH = path.join(tmpDir, 'config', 'task-continuation.json');
 beforeEach(() => {
   resetTaskContinuationConfigCache();
   fs.rmSync(path.dirname(CONFIG_PATH), { recursive: true, force: true });
-  delete process.env.MINICLAW_TASK_CONTINUATION;
+  delete process.env.CKQCLAW_TASK_CONTINUATION;
 });
 
 afterEach(() => {
   resetTaskContinuationConfigCache();
-  delete process.env.MINICLAW_TASK_CONTINUATION;
+  delete process.env.CKQCLAW_TASK_CONTINUATION;
 });
 
 describe('decideContinuationOutcome — table driven', () => {
@@ -250,7 +250,7 @@ describe('getTaskContinuationConfig precedence', () => {
   test('env beats file', () => {
     fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
     fs.writeFileSync(CONFIG_PATH, '{"maxContinuations": 5}');
-    process.env.MINICLAW_TASK_CONTINUATION = '{"maxContinuations": 1}';
+    process.env.CKQCLAW_TASK_CONTINUATION = '{"maxContinuations": 1}';
     resetTaskContinuationConfigCache();
     expect(getTaskContinuationConfig().maxContinuations).toBe(1);
   });
@@ -258,7 +258,7 @@ describe('getTaskContinuationConfig precedence', () => {
   test('invalid env JSON falls back to built-in defaults without throwing', () => {
     fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
     fs.writeFileSync(CONFIG_PATH, '{"maxContinuations": 4}');
-    process.env.MINICLAW_TASK_CONTINUATION = 'not-json';
+    process.env.CKQCLAW_TASK_CONTINUATION = 'not-json';
     resetTaskContinuationConfigCache();
     // Parity with approval-policy: a set-but-broken env never silently falls
     // through to the file — the built-in default applies.

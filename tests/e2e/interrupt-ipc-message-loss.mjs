@@ -12,7 +12,7 @@
 
 import WebSocket from 'ws';
 
-const BASE = process.env.MINICLAW_URL || 'http://localhost:3000';
+const BASE = process.env.CKQCLAW_URL || 'http://localhost:3000';
 const WS_URL = BASE.replace(/^http/, 'ws') + '/ws';
 const USERNAME = process.argv[2];
 const PASSWORD = process.argv[3];
@@ -20,7 +20,9 @@ const JID = process.env.JID || 'web:main';
 const TIMEOUT_MS = parseInt(process.env.TIMEOUT_MS || '120000', 10);
 
 if (!USERNAME || !PASSWORD) {
-  console.error('Usage: node interrupt-ipc-message-loss.mjs <username> <password>');
+  console.error(
+    'Usage: node interrupt-ipc-message-loss.mjs <username> <password>',
+  );
   process.exit(1);
 }
 
@@ -37,7 +39,10 @@ async function login() {
 }
 
 async function api(cookie, method, path, body) {
-  const opts = { method, headers: { Cookie: cookie, 'Content-Type': 'application/json' } };
+  const opts = {
+    method,
+    headers: { Cookie: cookie, 'Content-Type': 'application/json' },
+  };
   if (body) opts.body = JSON.stringify(body);
   return (await fetch(`${BASE}${path}`, opts)).json();
 }
@@ -56,12 +61,17 @@ function sendMessage(ws, content) {
 
 function waitForStreamStart(ws, timeoutMs = 30000) {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => { ws.off('message', handler); reject(new Error('Timeout stream start')); }, timeoutMs);
+    const timer = setTimeout(() => {
+      ws.off('message', handler);
+      reject(new Error('Timeout stream start'));
+    }, timeoutMs);
     const handler = (data) => {
       try {
         const msg = JSON.parse(data.toString());
         if (msg.type === 'stream_event' && msg.chatJid === JID) {
-          clearTimeout(timer); ws.off('message', handler); resolve();
+          clearTimeout(timer);
+          ws.off('message', handler);
+          resolve();
         }
       } catch {}
     };
@@ -71,22 +81,39 @@ function waitForStreamStart(ws, timeoutMs = 30000) {
 
 function waitForReplyContaining(ws, keyword, timeoutMs) {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => { ws.off('message', handler); reject(new Error(`Timeout waiting for "${keyword}"`)); }, timeoutMs);
+    const timer = setTimeout(() => {
+      ws.off('message', handler);
+      reject(new Error(`Timeout waiting for "${keyword}"`));
+    }, timeoutMs);
     const handler = (data) => {
       try {
         const msg = JSON.parse(data.toString());
         // DEBUG: log all incoming events
         if (msg.type === 'new_message' || msg.type === 'agent_reply') {
-          console.log(`      [ws] type=${msg.type} chatJid=${msg.chatJid} is_from_me=${msg.is_from_me} sender=${msg.message?.sender} content="${(msg.message?.content || msg.text || '').substring(0, 60)}"`);
+          console.log(
+            `      [ws] type=${msg.type} chatJid=${msg.chatJid} is_from_me=${msg.is_from_me} sender=${msg.message?.sender} content="${(msg.message?.content || msg.text || '').substring(0, 60)}"`,
+          );
         }
-        if (msg.type === 'new_message' && msg.chatJid === JID && msg.is_from_me) {
+        if (
+          msg.type === 'new_message' &&
+          msg.chatJid === JID &&
+          msg.is_from_me
+        ) {
           if (msg.message?.sender === '__system__') return;
           const text = msg.message?.content || '';
-          if (text.includes(keyword)) { clearTimeout(timer); ws.off('message', handler); resolve(text); }
+          if (text.includes(keyword)) {
+            clearTimeout(timer);
+            ws.off('message', handler);
+            resolve(text);
+          }
         }
         if (msg.type === 'agent_reply' && msg.chatJid === JID) {
           const text = msg.text || '';
-          if (text.includes(keyword)) { clearTimeout(timer); ws.off('message', handler); resolve(text); }
+          if (text.includes(keyword)) {
+            clearTimeout(timer);
+            ws.off('message', handler);
+            resolve(text);
+          }
         }
       } catch {}
     };
@@ -115,17 +142,23 @@ async function main() {
   await waitForStreamStart(ws);
   console.log('      Started');
 
-  await new Promise(r => setTimeout(r, 3000));
+  await new Promise((r) => setTimeout(r, 3000));
   const msgB = `忽略上一条，直接回复 ${kB}`;
   console.log(`[5/7] Send B: "${msgB}"`);
   sendMessage(ws, msgB);
 
-  await new Promise(r => setTimeout(r, 3000));
+  await new Promise((r) => setTimeout(r, 3000));
   console.log('[6/7] Interrupt...');
-  const result = await api(cookie, 'POST', `/api/groups/${encodeURIComponent(JID)}/interrupt`);
+  const result = await api(
+    cookie,
+    'POST',
+    `/api/groups/${encodeURIComponent(JID)}/interrupt`,
+  );
   console.log(`      ${JSON.stringify(result)}\n`);
 
-  console.log(`[7/7] Waiting for reply with "${kB}" (up to ${TIMEOUT_MS / 1000}s)...`);
+  console.log(
+    `[7/7] Waiting for reply with "${kB}" (up to ${TIMEOUT_MS / 1000}s)...`,
+  );
   try {
     const text = await waitForReplyContaining(ws, kB, TIMEOUT_MS);
     console.log(`      Reply: "${text.substring(0, 120)}"`);
@@ -139,4 +172,7 @@ async function main() {
   }
 }
 
-main().catch(err => { console.error('Error:', err.message); process.exit(2); });
+main().catch((err) => {
+  console.error('Error:', err.message);
+  process.exit(2);
+});

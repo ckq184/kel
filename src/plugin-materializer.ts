@@ -12,7 +12,7 @@
  *
  * Materialize strategy per plugin:
  *   1. target = runtime/{userId}/snapshots/{snapshotId}/{mp}/{plugin}
- *      marker = runtime/{userId}/snapshots/{snapshotId}/@miniclaw-runtime-markers/{mp}/{plugin}.json
+ *      marker = runtime/{userId}/snapshots/{snapshotId}/@ckqclaw-runtime-markers/{mp}/{plugin}.json
  *   2. if target has plugin.json AND marker exists/validates → skip (already
  *      isolated-inode)
  *   3. else copyTreeIsolated catalog → tmp:
@@ -45,10 +45,7 @@ import path from 'path';
 
 import { logger } from './logger.js';
 import { isValidNameSegment } from './plugin-manifest.js';
-import {
-  getSnapshotPath,
-  type CatalogPluginEntry,
-} from './plugin-catalog.js';
+import { getSnapshotPath, type CatalogPluginEntry } from './plugin-catalog.js';
 import {
   getUserRuntimeRoot as getUserRuntimeRootFromUtils,
   readUserPluginsV2,
@@ -65,7 +62,7 @@ import {
  * `@` is rejected by NAME_SEGMENT_RE (/^[\w.-]+$/), so this directory name
  * can never collide with a marketplace / plugin / snapshot segment.
  */
-const MARKER_DIRNAME = '@miniclaw-runtime-markers';
+const MARKER_DIRNAME = '@ckqclaw-runtime-markers';
 
 /**
  * Bumped only on a *semantic* change to the materialize strategy (e.g. swap
@@ -308,8 +305,12 @@ export function cleanupOrphanRuntime(
   isSnapshotInUse?: ActiveRuntimeRefCheck,
   report?: MaterializeReport,
 ): MaterializeReport {
-  const out: MaterializeReport =
-    report ?? { reused: 0, built: 0, cleaned: 0, warnings: [] };
+  const out: MaterializeReport = report ?? {
+    reused: 0,
+    built: 0,
+    cleaned: 0,
+    warnings: [],
+  };
 
   if (!userId || !isValidNameSegment(userId)) return out;
 
@@ -344,9 +345,7 @@ export function cleanupOrphanRuntime(
       fs.rmSync(dir, { recursive: true, force: true });
       out.cleaned += 1;
     } catch (err) {
-      out.warnings.push(
-        `Cleanup of ${dir} failed: ${describe(err)}`,
-      );
+      out.warnings.push(`Cleanup of ${dir} failed: ${describe(err)}`);
       logger.warn(
         { userId, snapshot: name, err },
         'plugin-materializer: cleanup failed',
@@ -477,7 +476,7 @@ function copyTreeIsolated(src: string, dst: string): void {
   }
 }
 
-/** runtime/{userId}/snapshots/{snapshotId}/@miniclaw-runtime-markers/{mp}/{plugin}.json */
+/** runtime/{userId}/snapshots/{snapshotId}/@ckqclaw-runtime-markers/{mp}/{plugin}.json */
 function getRuntimeMarkerPath(
   userId: string,
   snapshotId: string,

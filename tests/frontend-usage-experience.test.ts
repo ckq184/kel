@@ -268,7 +268,7 @@ describe('usage analytics frontend contract', () => {
           agents: [
             {
               key: '__main__',
-              name: 'Miniclaw',
+              name: 'CKQClaw',
               inputTokens: 10,
               outputTokens: 2,
               cacheReadTokens: 3,
@@ -286,7 +286,7 @@ describe('usage analytics frontend contract', () => {
     );
     expect(normalized.attributions.agents[0]).toMatchObject({
       key: '__main__',
-      name: 'Miniclaw',
+      name: 'CKQClaw',
     });
     expect(
       buildUsageQueryParams({ ...DEFAULT_QUERY, agentId: '__main__' }).get(

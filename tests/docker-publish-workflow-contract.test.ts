@@ -62,12 +62,10 @@ describe('Docker image distribution contract', () => {
   });
 
   test('builds only in GitHub Actions and pulls published images at runtime', () => {
-    expect(read('src/config.ts')).toContain(
-      "'ckq184/miniclaw-agent:latest'",
-    );
+    expect(read('src/config.ts')).toContain("'ckq184/ckqclaw-agent:latest'");
     const makefile = read('Makefile');
     expect(makefile).toContain(
-      'CONTAINER_IMAGE ?= ckq184/miniclaw-agent:latest',
+      'CONTAINER_IMAGE ?= ckq184/ckqclaw-agent:latest',
     );
     expect(makefile).toContain('docker-pull:');
     expect(makefile).toContain('docker pull "$(CONTAINER_IMAGE)"');
@@ -110,15 +108,13 @@ describe('Docker image distribution contract', () => {
 
     expect(smoke).toContain('docker run --detach --interactive');
     expect(smoke).not.toContain('--entrypoint');
-    expect(smoke).toContain('--env MINICLAW_HOST_IDENTITY_MODE=host-root');
-    expect(smoke).toContain('--env MINICLAW_HOST_IDENTITY_MODE=direct');
-    expect(smoke).toContain('--env "MINICLAW_HOST_UID=$smoke_host_uid"');
-    expect(smoke).toContain('--env "MINICLAW_HOST_GID=$smoke_host_gid"');
+    expect(smoke).toContain('--env CKQCLAW_HOST_IDENTITY_MODE=host-root');
+    expect(smoke).toContain('--env CKQCLAW_HOST_IDENTITY_MODE=direct');
+    expect(smoke).toContain('--env "CKQCLAW_HOST_UID=$smoke_host_uid"');
+    expect(smoke).toContain('--env "CKQCLAW_HOST_GID=$smoke_host_gid"');
     expect(smoke).toContain('"${smoke_identity_args[@]}"');
-    expect(smoke).not.toContain(
-      '--env MINICLAW_HOST_IDENTITY_MODE=virtualized',
-    );
-    expect(smoke).not.toContain('--env MINICLAW_HOST_IDENTITY_MODE=rootless');
+    expect(smoke).not.toContain('--env CKQCLAW_HOST_IDENTITY_MODE=virtualized');
+    expect(smoke).not.toContain('--env CKQCLAW_HOST_IDENTITY_MODE=rootless');
     expect(smoke).toContain(
       '--tmpfs /home/node/.claude:rw,nosuid,nodev,noexec',
     );

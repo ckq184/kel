@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 
 import {
   MCP_SERVERS_ENV,
-  createMiniclawMcpExtension,
+  createCkqclawMcpExtension,
   parseExternalMcpServers,
 } from '../src/runtime/pi/pi-mcp.js';
 
@@ -141,7 +141,7 @@ describe('parseExternalMcpServers', () => {
     expect(good.servers[0]?.config).toMatchObject({ timeout: 120 });
   });
 
-  test('createMiniclawMcpExtension returns a usable extension factory', () => {
-    expect(createMiniclawMcpExtension()).toBeTruthy();
+  test('createCkqclawMcpExtension returns a usable extension factory', () => {
+    expect(createCkqclawMcpExtension()).toBeTruthy();
   });
 });

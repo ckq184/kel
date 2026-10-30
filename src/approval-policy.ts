@@ -11,7 +11,7 @@ import { logger } from './logger.js';
  * ContainerInput; the runner's approval gate extension enforces it for all
  * tool calls. Resolution order:
  *
- *   1. MINICLAW_APPROVAL_POLICY env var (JSON object)
+ *   1. CKQCLAW_APPROVAL_POLICY env var (JSON object)
  *   2. data/config/approval-policy.json
  *   3. Built-in default: irreversible outbound actions require approval.
  *
@@ -94,9 +94,15 @@ function sanitizePolicy(raw: unknown): ApprovalPolicyConfig | null {
   const input = raw as Record<string, unknown>;
   const policy: ApprovalPolicyConfig = {};
   if (isAction(input.default)) policy.default = input.default;
-  if (input.tools && typeof input.tools === 'object' && !Array.isArray(input.tools)) {
+  if (
+    input.tools &&
+    typeof input.tools === 'object' &&
+    !Array.isArray(input.tools)
+  ) {
     policy.tools = {};
-    for (const [key, value] of Object.entries(input.tools as Record<string, unknown>)) {
+    for (const [key, value] of Object.entries(
+      input.tools as Record<string, unknown>,
+    )) {
       if (typeof key === 'string' && key.length > 0 && isAction(value)) {
         policy.tools[key] = value;
       }
@@ -110,10 +116,18 @@ function sanitizePolicy(raw: unknown): ApprovalPolicyConfig | null {
   ) {
     policy.timeoutMs = Math.floor(input.timeoutMs);
   }
-  if (input.shell && typeof input.shell === 'object' && !Array.isArray(input.shell)) {
+  if (
+    input.shell &&
+    typeof input.shell === 'object' &&
+    !Array.isArray(input.shell)
+  ) {
     const rawShell = input.shell as Record<string, unknown>;
     const shell: ShellPolicyConfig = {};
-    if (rawShell.mode === 'off' || rawShell.mode === 'audit' || rawShell.mode === 'enforce') {
+    if (
+      rawShell.mode === 'off' ||
+      rawShell.mode === 'audit' ||
+      rawShell.mode === 'enforce'
+    ) {
       shell.mode = rawShell.mode;
     }
     if (rawShell.redAction === 'ask' || rawShell.redAction === 'deny') {
@@ -168,14 +182,14 @@ export function getEffectiveApprovalPolicy(): ApprovalPolicyConfig {
   if (cached && Date.now() - cached.loadedAt < 30_000) return cached.policy;
 
   let policy: ApprovalPolicyConfig = DEFAULT_APPROVAL_POLICY;
-  const envRaw = process.env.MINICLAW_APPROVAL_POLICY;
+  const envRaw = process.env.CKQCLAW_APPROVAL_POLICY;
   if (envRaw) {
     try {
       policy = sanitizePolicy(JSON.parse(envRaw)) ?? DEFAULT_APPROVAL_POLICY;
     } catch (error) {
       logger.warn(
         { err: error },
-        'MINICLAW_APPROVAL_POLICY is not valid JSON — using default approval policy',
+        'CKQCLAW_APPROVAL_POLICY is not valid JSON — using default approval policy',
       );
     }
   } else {

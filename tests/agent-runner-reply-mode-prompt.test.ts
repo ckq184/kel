@@ -39,9 +39,7 @@ describe('Agent Runner reply-mode prompt contract', () => {
     const hostPolicy = read('src/workspace-interaction-runtime.ts');
 
     expect(assistant).toContain('automatically publishes');
-    expect(proactive).toContain(
-      '`mcp__miniclaw__send_message` is the only way',
-    );
+    expect(proactive).toContain('`mcp__ckqclaw__send_message` is the only way');
     // The tool descriptions must gate on the same three conditions as the
     // prompt selector in the runner, including `currentTaskId`: a
     // message-triggered task run takes the task contract, not the interactive

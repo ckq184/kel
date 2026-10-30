@@ -81,11 +81,11 @@ const RESERVED_CLAUDE_ENV_KEYS = new Set([
   'ANTHROPIC_BASE_URL',
   'ANTHROPIC_AUTH_TOKEN',
   'ANTHROPIC_MODEL',
-  'MINICLAW_CLAUDE_ENDPOINT_KIND',
-  'MINICLAW_FALLBACK_MODEL',
+  'CKQCLAW_CLAUDE_ENDPOINT_KIND',
+  'CKQCLAW_FALLBACK_MODEL',
 ]);
 
-export const CLAUDE_ENDPOINT_KIND_ENV = 'MINICLAW_CLAUDE_ENDPOINT_KIND';
+export const CLAUDE_ENDPOINT_KIND_ENV = 'CKQCLAW_CLAUDE_ENDPOINT_KIND';
 
 const INHERITED_CLAUDE_PROVIDER_ENV_KEYS = [
   CLAUDE_ENDPOINT_KIND_ENV,
@@ -106,7 +106,7 @@ const INHERITED_CLAUDE_PROVIDER_ENV_KEYS = [
 ] as const;
 
 /**
- * Remove provider-owned values inherited from the Miniclaw parent process.
+ * Remove provider-owned values inherited from the CKQClaw parent process.
  * The selected provider is reapplied afterwards from buildContainerEnvLines().
  * Without this reset, switching to an official provider in host mode can retain
  * a previous ANTHROPIC_BASE_URL/model/token and silently use the wrong endpoint.
@@ -181,26 +181,26 @@ const DANGEROUS_ENV_VARS = new Set([
   'TMPDIR',
   'TEMP',
   'TMP',
-  // Miniclaw 内部路径映射
-  'MINICLAW_WORKSPACE_GROUP',
-  'MINICLAW_WORKSPACE_GLOBAL',
-  'MINICLAW_WORKSPACE_MEMORY',
-  'MINICLAW_WORKSPACE_IPC',
+  // CKQClaw 内部路径映射
+  'CKQCLAW_WORKSPACE_GROUP',
+  'CKQCLAW_WORKSPACE_GLOBAL',
+  'CKQCLAW_WORKSPACE_MEMORY',
+  'CKQCLAW_WORKSPACE_IPC',
   'CLAUDE_CONFIG_DIR',
 ]);
 
 function isDangerousEnvKey(key: string): boolean {
   return (
     DANGEROUS_ENV_VARS.has(key) ||
-    key.startsWith('MINICLAW_SESSION_') ||
-    key.startsWith('MINICLAW_INTERNAL_') ||
-    key === 'MINICLAW_HOST_IDENTITY_MODE' ||
-    key === 'MINICLAW_HOST_UID' ||
-    key === 'MINICLAW_HOST_GID' ||
-    key === 'MINICLAW_PASSWD_FILE' ||
-    key === 'MINICLAW_RECONCILE_SESSION_PERMISSIONS' ||
-    key === 'MINICLAW_MOUNT_PREPARE_MODE' ||
-    key === 'MINICLAW_RUNTIME_USER'
+    key.startsWith('CKQCLAW_SESSION_') ||
+    key.startsWith('CKQCLAW_INTERNAL_') ||
+    key === 'CKQCLAW_HOST_IDENTITY_MODE' ||
+    key === 'CKQCLAW_HOST_UID' ||
+    key === 'CKQCLAW_HOST_GID' ||
+    key === 'CKQCLAW_PASSWD_FILE' ||
+    key === 'CKQCLAW_RECONCILE_SESSION_PERMISSIONS' ||
+    key === 'CKQCLAW_MOUNT_PREPARE_MODE' ||
+    key === 'CKQCLAW_RUNTIME_USER'
   );
 }
 const MAX_CUSTOM_ENV_ENTRIES = 50;
@@ -850,7 +850,7 @@ function fromStoredProfile(
     anthropicBaseUrl: normalizeBaseUrl(stored.anthropicBaseUrl),
     anthropicAuthToken: secrets.anthropicAuthToken,
     anthropicModel: normalizeModel(
-      stored.anthropicModel ?? (stored as any).miniclawModel ?? '',
+      stored.anthropicModel ?? (stored as any).ckqclawModel ?? '',
     ),
     updatedAt: stored.updatedAt || null,
     customEnv: sanitizeCustomEnvMap(stored.customEnv || {}, {
@@ -2845,14 +2845,14 @@ export function getContainerEnvConfig(folder: string): ContainerEnvConfig {
     if (fs.existsSync(filePath)) {
       const stored = JSON.parse(
         fs.readFileSync(filePath, 'utf-8'),
-      ) as ContainerEnvConfig & { miniclawModel?: string };
+      ) as ContainerEnvConfig & { ckqclawModel?: string };
       // Backward compat: migrate old field name
       if (
         stored.anthropicModel === undefined &&
-        stored.miniclawModel !== undefined
+        stored.ckqclawModel !== undefined
       ) {
-        stored.anthropicModel = stored.miniclawModel;
-        delete stored.miniclawModel;
+        stored.anthropicModel = stored.ckqclawModel;
+        delete stored.ckqclawModel;
       }
       return stored;
     }

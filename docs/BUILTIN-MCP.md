@@ -10,7 +10,7 @@
 
 `/mcp-servers` 的配置由宿主 `resolveRuntimeMcpServers` 解析（合并 managed /
 工作区 / Agent Profile 策略层），与写入 session `.claude/settings.json` 的
-`mcpServers` 同源，并以 `MINICLAW_USER_MCP_SERVERS_JSON` 环境变量注入
+`mcpServers` 同源，并以 `CKQCLAW_USER_MCP_SERVERS_JSON` 环境变量注入
 runner（Host 与 Container 两条路径都注入，逐 run 替换不合并）。Pi runner
 通过 `container/agent-runner/src/runtime/pi/pi-mcp.ts` 把该 env 接进 Pi 1.3
 内置 MCP 扩展（`createMcpExtension({ loadConfig })`，不读任何 `mcp.json`

@@ -18,7 +18,7 @@ import {
 } from '../src/approval/policy.js';
 
 function makeTempIpcRoot(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'miniclaw-approvals-'));
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'ckqclaw-approvals-'));
 }
 
 describe('resolveApprovalAction', () => {
@@ -41,10 +41,10 @@ describe('resolveApprovalAction', () => {
     const policy: ApprovalPolicy = {
       tools: {
         'mcp__*': 'ask',
-        mcp__miniclaw__read: 'allow',
+        mcp__ckqclaw__read: 'allow',
       },
     };
-    expect(resolveApprovalAction(policy, 'mcp__miniclaw__read')).toBe('allow');
+    expect(resolveApprovalAction(policy, 'mcp__ckqclaw__read')).toBe('allow');
     expect(
       resolveApprovalAction(policy, 'mcp__playwright__browser_click'),
     ).toBe('ask');
@@ -65,13 +65,13 @@ describe('resolveApprovalAction', () => {
       default: 'allow',
       tools: { send_file: 'ask', browser_evaluate: 'ask' },
     };
-    expect(resolveApprovalAction(policy, 'mcp__miniclaw__send_file')).toBe(
+    expect(resolveApprovalAction(policy, 'mcp__ckqclaw__send_file')).toBe(
       'ask',
     );
     expect(
       resolveApprovalAction(policy, 'mcp__playwright__browser_evaluate'),
     ).toBe('ask');
-    expect(resolveApprovalAction(policy, 'mcp__miniclaw__read')).toBe('allow');
+    expect(resolveApprovalAction(policy, 'mcp__ckqclaw__read')).toBe('allow');
   });
 
   test('agent-browser tool names are gated by bare keys', () => {
@@ -95,7 +95,10 @@ describe('resolveApprovalAction', () => {
     expect(resolveApprovalAction(policy, 'js')).toBe('ask');
     expect(resolveApprovalAction(policy, 'new_tab')).toBe('ask');
     expect(
-      resolveApprovalAction(policy, 'mcp__agent-browser__agent_browser_snapshot'),
+      resolveApprovalAction(
+        policy,
+        'mcp__agent-browser__agent_browser_snapshot',
+      ),
     ).toBe('allow');
   });
 });
