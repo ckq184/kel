@@ -5,6 +5,5 @@
   "description": "Electron Desktop Shell for CKQClaw",
   "main": "dist/main.cjs",
   "author": "ckq184",
-  "license": "MIT",
-  "homepage": "https://github.com/ckq184/ckqclaw#readme"
+  "license": "MIT"
 }

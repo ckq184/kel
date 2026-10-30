@@ -78,14 +78,6 @@
     "node": ">=20"
   },
   "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/ckq184/ckqclaw.git"
-  },
-  "homepage": "https://github.com/ckq184/ckqclaw#readme",
-  "bugs": {
-    "url": "https://github.com/ckq184/ckqclaw/issues"
-  },
   "author": "ckq184",
   "keywords": [
     "pi-agent",
