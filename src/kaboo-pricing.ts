@@ -29,6 +29,16 @@ export interface KabooModelPricing {
   reasoningPricePerMTok: number;
 }
 
+/**
+ * Admin-managed override set (task V). Resolution order: custom patterns →
+ * built-in table → custom fallback → built-in Sonnet fallback. The optional
+ * parameter keeps every existing call site on the historical behaviour.
+ */
+export interface CustomPricingRules {
+  patterns: readonly KabooModelPricing[];
+  fallback?: KabooModelPricing;
+}
+
 export interface KabooModelTokenUsage extends Omit<
   KabooTokenUsage,
   'reasoningTokens'
@@ -230,13 +240,14 @@ export function normalizeKabooTokenUsage(
 }
 
 /** Kaboo matching: case-insensitive substring, trailing '%' ignored, longest wins. */
-export function matchKabooModelPricing(
+function longestSubstringMatch(
   modelName: string,
+  candidates: readonly KabooModelPricing[],
 ): KabooModelPricing | undefined {
   const lower = String(modelName || '').toLowerCase();
   let matched: KabooModelPricing | undefined;
   let bestLength = 0;
-  for (const candidate of KABOO_MODEL_PRICING) {
+  for (const candidate of candidates) {
     const pattern = candidate.pattern.toLowerCase().replace(/%+$/, '');
     if (pattern.length > bestLength && lower.includes(pattern)) {
       matched = candidate;
@@ -246,13 +257,44 @@ export function matchKabooModelPricing(
   return matched;
 }
 
+/**
+ * Resolve one model against custom rules then the built-in table. Returns
+ * undefined only when neither tier matches; fallbacks are resolved by
+ * resolveKabooPricing so pattern matching stays observable on its own.
+ */
+export function matchKabooModelPricing(
+  modelName: string,
+  custom?: CustomPricingRules,
+): KabooModelPricing | undefined {
+  if (custom?.patterns.length) {
+    // An explicit admin rule wins outright: the custom tier is checked to
+    // exhaustion before the built-in table is consulted, even when the
+    // built-in table has the longer match.
+    const matched = longestSubstringMatch(modelName, custom.patterns);
+    if (matched) return matched;
+  }
+  return longestSubstringMatch(modelName, KABOO_MODEL_PRICING);
+}
+
+function resolveKabooPricing(
+  modelName: string,
+  custom?: CustomPricingRules,
+): KabooModelPricing {
+  return (
+    matchKabooModelPricing(modelName, custom) ??
+    custom?.fallback ??
+    KABOO_SONNET_FALLBACK
+  );
+}
+
 /** Return the five-category model cost before applying any rounding boundary. */
 export function estimateKabooModelCostUSD(
   modelName: string,
   rawUsage: Partial<KabooTokenUsage>,
+  custom?: CustomPricingRules,
 ): number {
   const usage = normalizeKabooTokenUsage(rawUsage);
-  const pricing = matchKabooModelPricing(modelName) ?? KABOO_SONNET_FALLBACK;
+  const pricing = resolveKabooPricing(modelName, custom);
   return (
     (usage.inputTokens / 1_000_000) * pricing.inputPricePerMTok +
     (usage.outputTokens / 1_000_000) * pricing.outputPricePerMTok +
@@ -266,10 +308,11 @@ export function estimateKabooModelCostUSD(
 export function estimateKabooModelCostCents(
   modelName: string,
   rawUsage: Partial<KabooTokenUsage>,
+  custom?: CustomPricingRules,
 ): number {
   return Math.min(
     Number.MAX_SAFE_INTEGER,
-    Math.round(estimateKabooModelCostUSD(modelName, rawUsage) * 100),
+    Math.round(estimateKabooModelCostUSD(modelName, rawUsage, custom) * 100),
   );
 }
 
@@ -289,6 +332,7 @@ export function kabooCostCentsToUSD(costCents: number): number {
 export function priceKabooUsageByModel(
   rootUsage: Partial<KabooTokenUsage>,
   rawModelUsage?: Record<string, KabooModelTokenUsage>,
+  custom?: CustomPricingRules,
 ): KabooPricedUsage {
   const merged = new Map<string, KabooTokenUsage>();
   for (const [rawModel, rawTokens] of Object.entries(rawModelUsage || {})) {
@@ -319,9 +363,13 @@ export function priceKabooUsageByModel(
   }
 
   const models = reconciled.map<KabooPricedModelUsage>((row) => {
-    const pricing = matchKabooModelPricing(row.model) ?? KABOO_SONNET_FALLBACK;
-    const unroundedCostUSD = estimateKabooModelCostUSD(row.model, row.usage);
-    const costCents = estimateKabooModelCostCents(row.model, row.usage);
+    const pricing = resolveKabooPricing(row.model, custom);
+    const unroundedCostUSD = estimateKabooModelCostUSD(
+      row.model,
+      row.usage,
+      custom,
+    );
+    const costCents = estimateKabooModelCostCents(row.model, row.usage, custom);
     return {
       model: row.model,
       ...row.usage,

@@ -1,6 +1,7 @@
 # 任务 V 立项：自定义模型单价（规则 + 兜底价）——交接文档
 
-> **状态**：2026-11-09 用户批准立项（两决策见 §1），**本文档即新窗口开发交接**。
+> **状态**：2026-11-09 用户批准立项（两决策见 §1）；**同日实现完成**（按 §4 顺序 TDD 六步，测试 `tests/custom-pricing.test.ts` 11 用例、`tests/pricing-routes.test.ts` 19 用例、`tests/custom-pricing-frontend.test.ts` 8 用例全绿）。
+> **范围扩宽说明（超出 §5 清单的仅两个测试文件）**：`tests/db-upgrade-safety.test.ts` 与 `tests/task-continuation-scheduler.test.ts` —— 两者均以字面量 pin 住 `CURRENT_SCHEMA_VERSION`（前者注释自带「每次迁移必须同 commit 更新 pin」的维护义务），版本 72→73 的机械联动更新，无行为变更。
 > **用途**：新窗口开发 Agent 通读本文档 + AGENTS.md 后按 §4 顺序 TDD 执行，无需重新排查。所有事实均带文件行号（2026-11-09 本机 macOS arm64 取证；行号若漂移以符号名为准）。
 > **回滚点**：立项提交本身（`.gatescope.json` 的 base=立项提交的父 HEAD `ca787e4`；实现 diff 基线=立项提交）。
 

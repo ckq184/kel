@@ -1299,3 +1299,55 @@ export const WhatsAppConfigSchema = z
       typeof data.enabled === 'boolean',
     { message: 'At least one config field must be provided' },
   );
+
+// --- Custom model pricing schemas (task V) ---
+
+/** USD per million tokens: non-negative, finite, capped at $10k/MTok. */
+const pricePerMTok = z.number().min(0).max(10_000).finite();
+
+const customPricingFields = {
+  // 2-char minimum keeps single-character substrings from matching half the
+  // fleet; trailing '%' follows the built-in table's semantics.
+  pattern: z.string().min(2).max(100),
+  displayName: z.string().max(100),
+  family: z.string().min(1).max(64),
+  inputPricePerMTok: pricePerMTok,
+  outputPricePerMTok: pricePerMTok,
+  cacheReadPricePerMTok: pricePerMTok,
+  cacheCreationPricePerMTok: pricePerMTok,
+  reasoningPricePerMTok: pricePerMTok,
+  enabled: z.boolean(),
+};
+
+export const CustomPricingCreateSchema = z
+  .object({
+    kind: z.enum(['pattern', 'fallback']),
+    pattern: customPricingFields.pattern.optional(),
+    displayName: customPricingFields.displayName.optional(),
+    family: customPricingFields.family.optional(),
+    inputPricePerMTok: customPricingFields.inputPricePerMTok.optional(),
+    outputPricePerMTok: customPricingFields.outputPricePerMTok.optional(),
+    cacheReadPricePerMTok: customPricingFields.cacheReadPricePerMTok.optional(),
+    cacheCreationPricePerMTok:
+      customPricingFields.cacheCreationPricePerMTok.optional(),
+    reasoningPricePerMTok: customPricingFields.reasoningPricePerMTok.optional(),
+    enabled: customPricingFields.enabled.optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.kind !== 'pattern') return;
+    const pattern = data.pattern?.trim() ?? '';
+    if (pattern.length < 2 || pattern.length > 100) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['pattern'],
+        message: 'Pattern rules require a 2-100 character pattern',
+      });
+    }
+  });
+
+/** PATCH payload; kind is immutable once created. */
+export const CustomPricingPatchSchema = z.object(customPricingFields).partial();
+
+export const CustomPricingPreviewSchema = z.object({
+  model: z.string().min(1).max(200),
+});

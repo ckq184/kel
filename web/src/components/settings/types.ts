@@ -135,6 +135,7 @@ export type SettingsTab =
   | 'main-agent'
   | 'host-integration'
   | 'billing'
+  | 'pricing'
   | 'profile'
   | 'preferences'
   | 'my-channels'

@@ -226,6 +226,8 @@ describe('schema version head', () => {
     // v71: long-task continuation chain (task_runs continuation_* columns).
     // v72: approval-gate rollback — drops the now-unused pending_approvals
     // table (task U survey-module rollback).
-    expect(db.CURRENT_SCHEMA_VERSION).toBe(72);
+    // v73: custom_model_pricing table + partial unique indexes, created
+    // idempotently by the base schema block (task V; no data migration).
+    expect(db.CURRENT_SCHEMA_VERSION).toBe(73);
   });
 });

@@ -17,6 +17,7 @@ import {
   kabooCostCentsToUSD,
   priceKabooUsageByModel,
 } from './kaboo-pricing.js';
+import { getEffectiveCustomPricing } from './custom-pricing-store.js';
 
 export interface UsagePayload {
   eventId?: string;
@@ -132,6 +133,9 @@ export function recordUsageEvent(options: RecordUsageEventOptions): {
   const usage = options.usage;
   const source = options.source?.trim() || 'agent';
   const createdAt = options.createdAt || new Date().toISOString();
+  // One synchronous snapshot per event keeps all pricing calls below on the
+  // same rule set even if an admin mutates rules mid-event.
+  const customPricing = getEffectiveCustomPricing();
   const priced = priceKabooUsageByModel(
     {
       inputTokens: usage.inputTokens,
@@ -141,6 +145,7 @@ export function recordUsageEvent(options: RecordUsageEventOptions): {
       reasoningTokens: usage.reasoningTokens || 0,
     },
     usage.modelUsage,
+    customPricing,
   );
   const user = getUserById(options.userId);
   const effective = user ? getUserEffectivePlan(options.userId) : null;
@@ -163,16 +168,21 @@ export function recordUsageEvent(options: RecordUsageEventOptions): {
     const previousCostCents = estimateKabooModelCostCents(
       model.model,
       previous,
+      customPricing,
     );
-    const nextCostCents = estimateKabooModelCostCents(model.model, {
-      inputTokens: previous.inputTokens + model.inputTokens,
-      outputTokens: previous.outputTokens + model.outputTokens,
-      cacheReadInputTokens:
-        previous.cacheReadInputTokens + model.cacheReadInputTokens,
-      cacheCreationInputTokens:
-        previous.cacheCreationInputTokens + model.cacheCreationInputTokens,
-      reasoningTokens: previous.reasoningTokens + model.reasoningTokens,
-    });
+    const nextCostCents = estimateKabooModelCostCents(
+      model.model,
+      {
+        inputTokens: previous.inputTokens + model.inputTokens,
+        outputTokens: previous.outputTokens + model.outputTokens,
+        cacheReadInputTokens:
+          previous.cacheReadInputTokens + model.cacheReadInputTokens,
+        cacheCreationInputTokens:
+          previous.cacheCreationInputTokens + model.cacheCreationInputTokens,
+        reasoningTokens: previous.reasoningTokens + model.reasoningTokens,
+      },
+      customPricing,
+    );
     // Store this event's increment to the raw-model/UTC-half-hour headline.
     // Summing all increments in the bucket equals Kaboo's single rounded cent
     // value, including the sub-cent carry between small API calls.

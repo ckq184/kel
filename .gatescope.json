@@ -22,6 +22,8 @@
     "tests/frontend-settings-information-architecture.test.ts",
     "docs/API.md",
     "docs/ACL-MATRIX.md",
-    "docs/task-v-custom-model-pricing-plan.md"
+    "docs/task-v-custom-model-pricing-plan.md",
+    "tests/db-upgrade-safety.test.ts",
+    "tests/task-continuation-scheduler.test.ts"
   ]
 }

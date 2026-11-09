@@ -32,6 +32,7 @@
 | `/api/plugins`                     | `src/routes/plugins.ts`          | Plugin Catalog 与用户启用状态 |
 | `/api/usage`                       | `src/routes/usage.ts`            | Token 用量                    |
 | `/api/billing`                     | `src/routes/billing.ts`          | 订阅、余额和计费管理          |
+| `/api/pricing`                     | `src/routes/pricing.ts`          | 自定义模型单价规则            |
 | `/api/admin`                       | `src/routes/admin.ts`            | 用户、邀请和审计              |
 | `/api/bug-report`                  | `src/routes/bug-report.ts`       | 脱敏问题报告                  |
 | `/api/browse`                      | `src/routes/browse.ts`           | Host 目录选择                 |
@@ -523,6 +524,20 @@ Web 和 Runtime 不再把它们当作第二个可写真相源。
 - `POST /api/billing/my/cancel-subscription`
 
 计费管理接口位于 `/api/billing/admin/*`，统一要求 `manage_billing`。
+
+自定义模型单价（全部要求 `manage_system_config`）：
+
+- `GET /api/pricing/rules`：列出全部规则（含停用）与可选的自定义兜底价
+- `POST /api/pricing/rules`：创建；`kind` 为 `pattern`（模式串 2-100 字符）或
+  `fallback`（全仓至多一条，重复 409）；五类单价为 ≥0 的有限数（USD/MTok，上限 1e4）
+- `PATCH /api/pricing/rules/:id`：部分更新（`kind` 不可改；pattern 撞唯一 409）
+- `DELETE /api/pricing/rules/:id`
+- `POST /api/pricing/preview`：`{ model }` →
+  `{ source: custom|builtin|fallback-custom|fallback-sonnet, rule?, pricing }`
+
+新事件的计价解析优先级：自定义模式串（tier 内最长匹配）→ 内置 Kaboo 表 →
+自定义兜底 → 内置 Sonnet 兜底。规则变更即时生效（缓存显式失效），只影响新事件，
+历史用量行金额不回算。
 
 ## 管理、监控与问题报告
 

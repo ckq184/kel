@@ -103,7 +103,7 @@ let db: InstanceType<typeof Database>;
  * restating the number. Hardcoding it meant every schema bump edited a dozen
  * unrelated test files, which is churn that hides real assertion changes.
  */
-export const CURRENT_SCHEMA_VERSION = 72;
+export const CURRENT_SCHEMA_VERSION = 73;
 
 export function isDatabaseInitialized(): boolean {
   return Boolean(db?.open);
@@ -1134,6 +1134,32 @@ export function initDatabase(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_daily_usage_date ON daily_usage(date);
     CREATE INDEX IF NOT EXISTS idx_daily_usage_user_date ON daily_usage(user_id, date);
+  `);
+
+  // Custom model pricing (task V): admin-managed per-model unit prices.
+  // Prices are USD per million tokens and are resolved by the pure pricing
+  // module before any usage event is recorded; history rows are immutable.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS custom_model_pricing (
+      id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL DEFAULT 'pattern' CHECK (kind IN ('pattern','fallback')),
+      pattern TEXT NOT NULL DEFAULT '',
+      display_name TEXT NOT NULL DEFAULT '',
+      family TEXT NOT NULL DEFAULT 'custom',
+      input_price_per_mtok REAL NOT NULL DEFAULT 0,
+      output_price_per_mtok REAL NOT NULL DEFAULT 0,
+      cache_read_price_per_mtok REAL NOT NULL DEFAULT 0,
+      cache_creation_price_per_mtok REAL NOT NULL DEFAULT 0,
+      reasoning_price_per_mtok REAL NOT NULL DEFAULT 0,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    -- At most one custom fallback rule; duplicate pattern strings collide.
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_pricing_fallback
+      ON custom_model_pricing (kind) WHERE kind = 'fallback';
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_pricing_pattern
+      ON custom_model_pricing (pattern) WHERE kind = 'pattern';
   `);
 
   // Token usage tracking tables
@@ -2511,6 +2537,11 @@ export function initDatabase(): void {
       );
     }
   }
+
+  // v72 -> v73 (task V): custom_model_pricing only. The table and its partial
+  // unique indexes are created idempotently by the base schema block above
+  // (CREATE TABLE/INDEX IF NOT EXISTS), so this bump carries no data migration
+  // and needs no versioned step; existing usage rows are never repriced.
 
   db.prepare(
     'INSERT OR REPLACE INTO router_state (key, value) VALUES (?, ?)',
@@ -13545,6 +13576,200 @@ function safeParseJsonArray(val: unknown): string[] {
   } catch {
     return [];
   }
+}
+
+// --- Custom model pricing CRUD (task V) ---
+
+/**
+ * Admin-managed unit price rule. Field names intentionally mirror
+ * KabooModelPricing in kaboo-pricing.ts so the effective-rule cache can
+ * project rows onto the pure pricing module without a translation layer.
+ */
+export interface CustomModelPricing {
+  id: string;
+  kind: 'pattern' | 'fallback';
+  pattern: string;
+  displayName: string;
+  family: string;
+  inputPricePerMTok: number;
+  outputPricePerMTok: number;
+  cacheReadPricePerMTok: number;
+  cacheCreationPricePerMTok: number;
+  reasoningPricePerMTok: number;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CustomModelPricingInput {
+  kind: 'pattern' | 'fallback';
+  /** Required for pattern rules (validated at the API layer); '' for fallback. */
+  pattern?: string;
+  displayName?: string;
+  family?: string;
+  inputPricePerMTok?: number;
+  outputPricePerMTok?: number;
+  cacheReadPricePerMTok?: number;
+  cacheCreationPricePerMTok?: number;
+  reasoningPricePerMTok?: number;
+  enabled?: boolean;
+}
+
+/** PATCH payload; kind is immutable once created. */
+export type CustomModelPricingUpdates = Partial<
+  Omit<CustomModelPricingInput, 'kind'>
+>;
+
+function mapCustomPricingRow(row: Record<string, unknown>): CustomModelPricing {
+  return {
+    id: String(row.id),
+    kind: row.kind === 'fallback' ? 'fallback' : 'pattern',
+    pattern: String(row.pattern ?? ''),
+    displayName: String(row.display_name ?? ''),
+    family: String(row.family ?? 'custom'),
+    inputPricePerMTok: Number(row.input_price_per_mtok) || 0,
+    outputPricePerMTok: Number(row.output_price_per_mtok) || 0,
+    cacheReadPricePerMTok: Number(row.cache_read_price_per_mtok) || 0,
+    cacheCreationPricePerMTok: Number(row.cache_creation_price_per_mtok) || 0,
+    reasoningPricePerMTok: Number(row.reasoning_price_per_mtok) || 0,
+    enabled: !!(row.enabled as number),
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
+  };
+}
+
+/** Lower-cased because rule matching is case-insensitive; this keeps the
+ * pattern uniqueness index aligned with what the matcher can actually see. */
+function normalizePricingPattern(pattern: string): string {
+  return pattern.trim().toLowerCase();
+}
+
+export function listCustomModelPricingRules(): CustomModelPricing[] {
+  return (
+    db
+      .prepare(
+        'SELECT * FROM custom_model_pricing ORDER BY created_at ASC, id ASC',
+      )
+      .all() as Record<string, unknown>[]
+  ).map(mapCustomPricingRow);
+}
+
+export function getCustomModelPricingRule(
+  id: string,
+): CustomModelPricing | undefined {
+  const row = db
+    .prepare('SELECT * FROM custom_model_pricing WHERE id = ?')
+    .get(id) as Record<string, unknown> | undefined;
+  return row ? mapCustomPricingRow(row) : undefined;
+}
+
+export function createCustomModelPricingRule(
+  input: CustomModelPricingInput,
+): CustomModelPricing {
+  const now = new Date().toISOString();
+  const rule: CustomModelPricing = {
+    id: `cmp_${crypto.randomUUID()}`,
+    kind: input.kind === 'fallback' ? 'fallback' : 'pattern',
+    pattern:
+      input.kind === 'fallback'
+        ? ''
+        : normalizePricingPattern(input.pattern ?? ''),
+    displayName: input.displayName ?? '',
+    family: input.family ?? 'custom',
+    inputPricePerMTok: input.inputPricePerMTok ?? 0,
+    outputPricePerMTok: input.outputPricePerMTok ?? 0,
+    cacheReadPricePerMTok: input.cacheReadPricePerMTok ?? 0,
+    cacheCreationPricePerMTok: input.cacheCreationPricePerMTok ?? 0,
+    reasoningPricePerMTok: input.reasoningPricePerMTok ?? 0,
+    enabled: input.enabled ?? true,
+    createdAt: now,
+    updatedAt: now,
+  };
+  db.prepare(
+    `INSERT INTO custom_model_pricing (id, kind, pattern, display_name, family,
+       input_price_per_mtok, output_price_per_mtok, cache_read_price_per_mtok,
+       cache_creation_price_per_mtok, reasoning_price_per_mtok, enabled,
+       created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    rule.id,
+    rule.kind,
+    rule.pattern,
+    rule.displayName,
+    rule.family,
+    rule.inputPricePerMTok,
+    rule.outputPricePerMTok,
+    rule.cacheReadPricePerMTok,
+    rule.cacheCreationPricePerMTok,
+    rule.reasoningPricePerMTok,
+    rule.enabled ? 1 : 0,
+    rule.createdAt,
+    rule.updatedAt,
+  );
+  return rule;
+}
+
+export function updateCustomModelPricingRule(
+  id: string,
+  updates: CustomModelPricingUpdates,
+): CustomModelPricing | undefined {
+  const fields: string[] = [];
+  const values: unknown[] = [];
+  if (updates.pattern !== undefined) {
+    fields.push('pattern = ?');
+    values.push(normalizePricingPattern(updates.pattern));
+  }
+  if (updates.displayName !== undefined) {
+    fields.push('display_name = ?');
+    values.push(updates.displayName);
+  }
+  if (updates.family !== undefined) {
+    fields.push('family = ?');
+    values.push(updates.family);
+  }
+  if (updates.inputPricePerMTok !== undefined) {
+    fields.push('input_price_per_mtok = ?');
+    values.push(updates.inputPricePerMTok);
+  }
+  if (updates.outputPricePerMTok !== undefined) {
+    fields.push('output_price_per_mtok = ?');
+    values.push(updates.outputPricePerMTok);
+  }
+  if (updates.cacheReadPricePerMTok !== undefined) {
+    fields.push('cache_read_price_per_mtok = ?');
+    values.push(updates.cacheReadPricePerMTok);
+  }
+  if (updates.cacheCreationPricePerMTok !== undefined) {
+    fields.push('cache_creation_price_per_mtok = ?');
+    values.push(updates.cacheCreationPricePerMTok);
+  }
+  if (updates.reasoningPricePerMTok !== undefined) {
+    fields.push('reasoning_price_per_mtok = ?');
+    values.push(updates.reasoningPricePerMTok);
+  }
+  if (updates.enabled !== undefined) {
+    fields.push('enabled = ?');
+    values.push(updates.enabled ? 1 : 0);
+  }
+  if (fields.length === 0) return getCustomModelPricingRule(id);
+
+  fields.push('updated_at = ?');
+  values.push(new Date().toISOString());
+  values.push(id);
+  const result = db
+    .prepare(
+      `UPDATE custom_model_pricing SET ${fields.join(', ')} WHERE id = ?`,
+    )
+    .run(...values);
+  if (result.changes === 0) return undefined;
+  return getCustomModelPricingRule(id);
+}
+
+export function deleteCustomModelPricingRule(id: string): boolean {
+  const result = db
+    .prepare('DELETE FROM custom_model_pricing WHERE id = ?')
+    .run(id);
+  return result.changes > 0;
 }
 
 // --- User Subscriptions ---

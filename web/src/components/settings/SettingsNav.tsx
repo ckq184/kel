@@ -1,4 +1,5 @@
 import {
+  Coins,
   CreditCard,
   Gauge,
   Info,
@@ -75,6 +76,11 @@ const systemItems: NavItem[] = [
     key: 'billing',
     label: '计费管理',
     icon: <CreditCard className="size-4" />,
+  },
+  {
+    key: 'pricing',
+    label: '模型单价',
+    icon: <Coins className="size-4" />,
   },
 ];
 
