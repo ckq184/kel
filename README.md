@@ -91,7 +91,7 @@ CKQClaw 采用本地优先和显式集成的思路：数据库、工作区元数
 - Plugin Catalog 支持扫描、导入、版本快照和用户启用配置。
 - Agent 运行前会计算有效能力 Manifest，并把 Skills、MCP、Memory、Workspace 与渠道上下文按策略注入。
 - 路径穿越、符号链接逃逸、越权 Workspace 与未授权 capability 会在边界层拒绝。
-- 常用 MCP 服务器（Playwright 浏览器操控、SearXNG 搜索、网页抓取）与 mem0 自动记忆库由 `scripts/builtin-mcp-catalog.mjs` 固定版本预置，在能力库中按需启用。
+- mem0 自动记忆库由 `scripts/builtin-mcp-catalog.mjs` 固定版本预置；外部 MCP 服务器可经 `/mcp-servers` 自行配置。
 
 ### 渠道与自动化
 
@@ -264,7 +264,6 @@ CKQClaw 当前处于持续开发阶段。仓库已经包含：
 
 ### 近期
 
-- 完善内置 MCP 网页能力（Playwright MCP / SearXNG / fetch）的 onboarding 引导与默认启停策略。
 - 完善渠道 onboarding、运行监控和失败恢复提示。
 - 增加更多 Electron 打包、签名和发布验证路径。
 - 持续收敛 Workspace、Memory、Skills 与 Scheduler 的产品文档。
@@ -279,7 +278,6 @@ CKQClaw 当前处于持续开发阶段。仓库已经包含：
 ## 文档
 
 - [`docs/API.md`](docs/API.md) — HTTP API、认证和主要资源接口
-- [`docs/BUILTIN-MCP.md`](docs/BUILTIN-MCP.md) — 内置 MCP 服务器（浏览器/搜索/抓取）与 SearXNG 部署
 - [`docs/ACL-MATRIX.md`](docs/ACL-MATRIX.md) — 用户、Workspace、Channel、Host 与任务权限矩阵
 - [`docs/workspace-memory-v2.md`](docs/workspace-memory-v2.md) — Workspace Memory 的数据模型、版本与交互边界
 - [`docs/runtime-migration.md`](docs/runtime-migration.md) — 从旧运行时到 Pi Agent Runtime 的迁移记录

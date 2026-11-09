@@ -328,7 +328,7 @@ export function buildFollowUpActionResultCard(
 
 /**
  * Extract the bare card object from prebuilt interactive card text
- * (`{"type":"interactive","card":{...}}` — the agent-authored / approval-card
+ * (`{"type":"interactive","card":{...}}` — the agent-authored card
  * convention). im/v1/message.create rejects the wrapper with Feishu 200621
  * "parse card json err": the wire content must be the bare card object
  * (verified against the live API 2026-10-22). Returns null when the text is
@@ -394,44 +394,5 @@ export function parseCardCallbackEnvelope(
     cardMessageId: (context?.open_message_id as string) ?? '',
     operatorImId:
       (operator?.open_id as string) ?? (operator?.openId as string) ?? '',
-  };
-}
-
-export interface ApprovalResultCardInput {
-  approved: boolean;
-  message: string;
-}
-
-/**
- * v1-format result card returned in the `card.action.trigger` callback
- * response (`card: { type: 'raw', data }`). The approval request card is a
- * v1 card, and the response card MUST stay v1: Feishu rejects version
- * switches on the card entity (live-verified 2026-10-23 — patching the
- * message with a schema-2.0 card via im/v1/message.patch returns code 0 and
- * rewrites the row, but every client keeps rendering the old v1 card, and a
- * follow-up v1 payload is rejected with 230099/200830 "schemaV2 card can not
- * change schemaV1"). The callback-response channel renders natively.
- */
-export function buildApprovalResultCardV1(
-  input: ApprovalResultCardInput,
-): object {
-  return {
-    config: { wide_screen_mode: true },
-    header: {
-      title: {
-        tag: 'plain_text',
-        content: input.approved ? '✅ 已批准' : '⛔ 已拒绝',
-      },
-      template: input.approved ? 'green' : 'red',
-    },
-    elements: [
-      { tag: 'markdown', content: input.message },
-      {
-        tag: 'note',
-        elements: [
-          { tag: 'plain_text', content: '该审批已处理，按钮不再生效' },
-        ],
-      },
-    ],
   };
 }

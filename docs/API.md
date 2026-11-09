@@ -37,7 +37,6 @@
 | `/api/browse`                      | `src/routes/browse.ts`           | Host 目录选择                 |
 | `/api`                             | `src/routes/monitor.ts`          | 健康、状态和 Docker 构建      |
 | `/api/messages`、`/api/follow-ups` | `src/web.ts`                     | 消息发送和 Follow-up          |
-| `/api/approvals`                   | `src/routes/approvals.ts`        | 工具审批请求与决定            |
 
 ## 认证
 
@@ -592,49 +591,10 @@ Agent 镜像只由 `main` 分支的 GitHub Actions 构建并发布。该接口�
 - `terminal_error`
 - `docker_pull_log`
 - `docker_pull_complete`
-- `approval_requested`
-- `approval_decided`
 
 精确联合类型和字段以 `src/web.ts`、`src/types.ts` 与 `shared/stream-event.ts` 为准。
 
-## Tool Approvals
-
-Runner 的审批门禁把高危工具调用挂起为审批请求；文件传输真相在
-`data/ipc/{folder}/approvals/`，以下接口读写其数据库投影。
-
-| 路由                          | 方法 | 权限                  | 说明                                         |
-| ----------------------------- | ---- | --------------------- | -------------------------------------------- |
-| `/api/approvals`              | GET  | Login + Workspace ACL | 列出当前用户可见工作区的审批请求             |
-| `/api/approvals/:id/decision` | POST | Login + 工作区 owner  | 记录批准/拒绝；body: `{"approved": boolean}` |
-
-- 决定写入 `approvals/decisions/{id}.json`，挂起的 Runner 在 500ms 轮询内取用。
-- 已决定或不存在返回 `409`/`404`；重复决定幂等拒绝。
-- **通知与决定入口**（三条路径全部收敛到同一决定落盘逻辑）：
-  - **WS 实时事件**：新请求镜像入 DB 时广播 `approval_requested`，决定落盘后
-    广播 `approval_decided`；均为顶层 WS 消息，受众按工作区 owner 过滤
-    （与 GET 列表可见性一致，解析失败 default-deny）。载荷类型见
-    `shared/stream-event.ts` 的 `ApprovalRequestedPayload`/`ApprovalDecidedPayload`。
-  - **Web 审批页**：`/approvals`（侧栏「审批」入口），列表 + 批准/拒绝按钮，
-    WS 实时刷新 + 有待审批时 5s 轮询兜底；`409` 时提示已被处理。
-  - **IM 渠道卡片与命令**：新请求推送到工作区绑定的各渠道（飞书为带
-    批准/拒绝按钮的交互卡片，其余渠道为文本通知，含工具名、参数摘要与审批号
-    前 8 位）。任何渠道可回复 `/approve <审批号前缀>` 或 `/deny <审批号前缀>`
-    决定（前缀至少 4 位且需唯一命中一个待审批请求）；飞书卡片按钮回调与
-    `/approve`、`/deny` 命令同样仅限工作区 IM Owner（见 `docs/ACL-MATRIX.md`
-    §9）。推送走 Turn Outbox（按 `approval:{id}:{mountJid}` 幂等），失败仅记日志，
-    Web 页与 WS 始终可用。
-- 策略来源优先级：`CKQCLAW_APPROVAL_POLICY` 环境变量 >
-  `data/config/approval-policy.json` > 内置默认（send_file/send_image/
-  edit_message/recall_message/api_request/install_skill 为 `ask`，其余放行，
-  超时默认 5 分钟，超时即拒绝）。
-- **Shell 红线分类**：`approvalPolicy.shell` 控制 bash 命令分类器——
-  `mode: off|audit|enforce`（默认 enforce）、`redAction: ask|deny`（默认 ask）。
-  红线（`rm -rf /`、凭据篡改、密钥外发、`curl | sh`、持久化机制）在 enforce
-  模式下挂起审批或拒绝；黄线（sudo、docker、全局包安装、防火墙、服务管理）
-  放行并写入 `data/ipc/{folder}/approvals/audit.jsonl`。混淆形态（base64 管道
-  入 shell、eval 命令替换）按红线处理，宁误报不漏报。
-- **重复刹车（loopGuard）**：`approvalPolicy.loopGuard` 控制 turn 内重复检测——
-  同一（工具+参数哈希）调用在滑动窗口（默认 12）内达到 `maxIdenticalCalls`
-  （默认 3）次时，第 3 次被阻止并要求换路，第 4 次起终止 turn 并如实上报。
-  参数不同不会碰撞（批量循环安全）；`allowedTools` 白名单放行显式轮询；
-  `disabled: true` 关闭。阻止事件写入 approvals/audit.jsonl。
+> 历史：Runner 曾带「工具审批门禁」（Tool Approvals：`/api/approvals` 路由、
+> `approval_requested`/`approval_decided` WS 事件、Web 审批页与 IM `/approve`/
+> `/deny` 决定入口、shell 红线分类与 loop guard 重复刹车），已随任务 U
+> （2026-11-09 综述改造回退）整体移除——工具调用不再有人工审批环节。

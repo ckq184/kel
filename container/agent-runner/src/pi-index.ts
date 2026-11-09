@@ -31,12 +31,6 @@ import {
 } from './mcp-tools.js';
 import { loadCkqclawOwnerProfileTurnContext } from './owner-profile-context.js';
 import { loadWorkspaceMemoryTurnContext } from './workspace-memory-context.js';
-import {
-  isPolicyEnforced,
-  setApprovalIpcRoot,
-  setApprovalPolicy,
-  setApprovalRequestContext,
-} from './approval/policy.js';
 import { buildCkqclawPromptPlan } from './prompt-plan.js';
 import { resolveClaudeProviderRuntime } from './provider-runtime.js';
 import { resolveAgentRuntimeKind } from './runtime-config.js';
@@ -71,7 +65,7 @@ const DEFAULT_ALLOWED_TOOLS = [
   'mcp__ckqclaw__*',
   // External MCP servers configured via /mcp-servers (host-injected env).
   // Pi filters MCP tools once any mcp__-prefixed entry is present, so the
-  // wildcard must be explicit; per-call gating stays with the approval gate.
+  // wildcard must be explicit.
   'mcp__*',
 ];
 const PROMPTS_DIR = path.join(
@@ -450,28 +444,6 @@ async function main(): Promise<void> {
     });
     process.exitCode = 1;
     return;
-  }
-  // Install the host-computed tool approval policy before any session is
-  // created; the Pi approval gate extension evaluates every tool call
-  // against it. Fail fast when the policy is enforced but the IPC directory
-  // is unavailable — without it there is no way to collect decisions.
-  // (Mirrors the legacy runner's main(); without this install the gate and
-  // loop-guard audit see an empty IPC root and silently allow everything.)
-  setApprovalPolicy(input.approvalPolicy);
-  setApprovalIpcRoot(WORKSPACE_IPC);
-  setApprovalRequestContext({
-    groupFolder: input.groupFolder,
-    chatJid: input.chatJid,
-    ...(input.sessionId ? { sessionId: input.sessionId } : {}),
-    ...(input.turnId ? { turnId: input.turnId } : {}),
-  });
-  if (isPolicyEnforced(input.approvalPolicy) && !fs.existsSync(WORKSPACE_IPC)) {
-    writeOutput({
-      status: 'error',
-      result: null,
-      error: `Tool approval policy is enforced but the IPC directory is unavailable: ${WORKSPACE_IPC}`,
-    });
-    process.exit(1);
   }
   const ctx: McpContext = {
     chatJid: input.currentSourceJid || input.chatJid,

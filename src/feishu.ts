@@ -26,7 +26,6 @@ import {
 import { optimizeMarkdownStyle } from './feishu-markdown-style.js';
 import {
   buildAgentReplyCard,
-  buildApprovalResultCardV1,
   buildFollowUpActionResultCard,
   buildQueuedFollowUpCard,
   parseCardCallbackEnvelope,
@@ -162,13 +161,6 @@ export interface ConnectOptions {
     chatJid: string,
     operatorImId: string,
   ) => FollowUpActionResult;
-  /** 审批卡片按钮回调：宿主校验 operator 是工作区 owner 后落决定 */
-  onApprovalCardAction?: (input: {
-    approvalId: string;
-    approved: boolean;
-    operatorImId: string;
-    chatJid: string;
-  }) => Promise<FollowUpActionResult> | FollowUpActionResult;
   /** P2P（私聊）消息到达时调用，用于自动检测 bot owner 的 open_id */
   onP2pSender?: (senderOpenId: string) => void;
   normalizeIncomingJid?: (jid: string) => string;
@@ -3358,42 +3350,6 @@ export function createFeishuConnection(
                 expectedRunId: value.expectedRunId,
                 operatorImId,
               });
-            } else if (action === 'approval_decide') {
-              // Tool approval card buttons. The mount JID rides in the button
-              // value so the host can resolve the workspace and owner-gate the
-              // operator exactly like the /approve slash command.
-              if (
-                typeof value.approvalId !== 'string' ||
-                typeof value.chatJid !== 'string'
-              ) {
-                return;
-              }
-              result = await connectOptions?.onApprovalCardAction?.({
-                approvalId: value.approvalId,
-                approved: value.approved === true,
-                operatorImId,
-                chatJid: value.chatJid,
-              });
-              // 审批卡是 v1 卡片，点击后的换卡必须走回调响应通道：
-              // im/v1/message.patch 把卡片换成 schema-2.0 时行内容会更新
-              // （code 0）但所有客户端仍渲染旧 v1 卡，且实体转 2.0 后 v1
-              // payload 会被 230099/200830 拒绝（真机实测 2026-10-23）。
-              // 响应卡必须保持 v1，由飞书在点击端原生渲染替换。
-              if (result?.ok) {
-                return {
-                  toast: {
-                    type: 'success',
-                    content: result.message,
-                  },
-                  card: {
-                    type: 'raw',
-                    data: buildApprovalResultCardV1({
-                      approved: result.approved === true,
-                      message: result.message,
-                    }),
-                  },
-                };
-              }
             }
 
             if (!result) return;

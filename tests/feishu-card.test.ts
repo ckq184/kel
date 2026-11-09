@@ -1138,7 +1138,7 @@ describe('parsePrebuiltInteractiveCardText (task B IM recheck fix)', () => {
   });
 });
 
-describe('parseCardCallbackEnvelope (task B IM recheck: card callback shape)', () => {
+describe('parseCardCallbackEnvelope (card callback shape)', () => {
   test('normalizes the schema-2.0 event envelope with stringified sections', async () => {
     const { parseCardCallbackEnvelope } =
       await import('../src/feishu-cards/builder.js');
@@ -1150,10 +1150,9 @@ describe('parseCardCallbackEnvelope (task B IM recheck: card callback shape)', (
       operator: { open_id: 'ou_123' },
       action: JSON.stringify({
         value: {
-          action: 'approval_decide',
-          approvalId: 'abc-123',
-          approved: false,
-          chatJid: 'feishu:oc_x#account:a1',
+          action: 'followup_execute',
+          targetJid: 'feishu:oc_x#account:a1',
+          messageId: 'abc-123',
         },
         tag: 'button',
       }),
@@ -1165,9 +1164,8 @@ describe('parseCardCallbackEnvelope (task B IM recheck: card callback shape)', (
     const env = parseCardCallbackEnvelope(data);
     expect(env).not.toBeNull();
     expect(env!.value).toMatchObject({
-      action: 'approval_decide',
-      approvalId: 'abc-123',
-      approved: false,
+      action: 'followup_execute',
+      messageId: 'abc-123',
     });
     expect(env!.cardMessageId).toBe('om_456');
     expect(env!.operatorImId).toBe('ou_123');
@@ -1177,12 +1175,12 @@ describe('parseCardCallbackEnvelope (task B IM recheck: card callback shape)', (
     const { parseCardCallbackEnvelope } =
       await import('../src/feishu-cards/builder.js');
     const env = parseCardCallbackEnvelope({
-      action: { value: { action: 'approval_decide', approvalId: 'a' } },
+      action: { value: { action: 'followup_execute', messageId: 'a' } },
       context: { open_message_id: 'om_1' },
       operator: { open_id: 'ou_9' },
     });
     expect(env).not.toBeNull();
-    expect(env!.value.approvalId).toBe('a');
+    expect(env!.value.messageId).toBe('a');
     expect(env!.cardMessageId).toBe('om_1');
     expect(env!.operatorImId).toBe('ou_9');
   });
@@ -1194,41 +1192,5 @@ describe('parseCardCallbackEnvelope (task B IM recheck: card callback shape)', (
     expect(
       parseCardCallbackEnvelope({ action: JSON.stringify({ tag: 'button' }) }),
     ).toBeNull();
-  });
-});
-
-describe('buildApprovalResultCardV1 (task B IM recheck: click-update via callback response)', () => {
-  test('returns a v1-format card (no schema 2.0) with version-matching header', async () => {
-    const { buildApprovalResultCardV1 } =
-      await import('../src/feishu-cards/builder.js');
-    const denied = buildApprovalResultCardV1({
-      approved: false,
-      message: '已拒绝，Agent 将收到拒绝结果',
-    }) as Record<string, unknown>;
-    // The approval request card is a v1 card; the response card MUST stay v1 —
-    // Feishu rejects version switches on the card entity (live-verified
-    // 2026-10-23: patching v1→2.0 updates the row but clients keep rendering
-    // the old card, and a follow-up v1 payload is rejected with 230099/200830).
-    expect(denied.schema).toBeUndefined();
-    const header = denied.header as {
-      title: { content: string };
-      template: string;
-    };
-    expect(header.template).toBe('red');
-    expect(header.title.content).toBe('⛔ 已拒绝');
-    const elements = denied.elements as Array<{
-      tag: string;
-      content?: string;
-    }>;
-    expect(
-      elements.some((el) => el.content === '已拒绝，Agent 将收到拒绝结果'),
-    ).toBe(true);
-
-    const approved = buildApprovalResultCardV1({
-      approved: true,
-      message: '已批准，Agent 将继续执行',
-    }) as { header: { title: { content: string }; template: string } };
-    expect(approved.header.template).toBe('green');
-    expect(approved.header.title.content).toBe('✅ 已批准');
   });
 });

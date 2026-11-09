@@ -159,11 +159,13 @@ Host 模式没有 `maxConcurrentHostProcesses`。旧客户端提交该字段时�
 `data/builtin-skills/`，并由 `scripts/builtin-skill-catalog.mjs` 校验清单和 payload hash。
 仓库不再维护或注入另一套容器内未治理 Skills。
 
-内置 MCP 服务器（playwright-mcp、mcp-searxng、mcp-server-fetch）与 mem0ai 库由
-`scripts/builtin-mcp-catalog.mjs` 固定版本并校验产物 SHA256。镜像经
-`container/Dockerfile` 预装但默认不启用，用户在 `/mcp-servers` 自行添加后生效；
-宿主机用 `scripts/install-host-tools.sh mcp` 安装。mem0ai 是自动记忆侧车的库依赖，
-不是 MCP 服务器（官方 mem0-mcp 已归档且仅对接 mem0 平台 API，不采用）。
+mem0ai 库（自动记忆侧车的 Python 依赖）由 `scripts/builtin-mcp-catalog.mjs` 固定
+版本并校验产物 SHA256；镜像经 `container/Dockerfile` 预装，宿主机由
+`scripts/install-host-tools.sh` 全量路径安装（Windows 手动
+`py -3 -m pip install mem0ai==2.2.1`）。mem0ai 不是 MCP 服务器（官方 mem0-mcp
+已归档且仅对接 mem0 平台 API，不采用）。历史注：该目录曾同时治理
+playwright-mcp / mcp-searxng / mcp-server-fetch 三件套，已随任务 U（2026-11-09
+综述改造回退）移除。
 
 ## 6. 渠道、账号和上下文
 

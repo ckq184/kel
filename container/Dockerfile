@@ -146,28 +146,6 @@ RUN set -eu; \
     ln -s /app/node_modules/.bin/agent-browser /usr/local/bin/agent-browser; \
     node -e "const fs=require('node:fs'); for (const p of ['@earendil-works/pi-coding-agent','@tintinweb/pi-subagents','agent-browser']) { const j=JSON.parse(fs.readFileSync('/app/node_modules/'+p+'/package.json','utf8')); console.log(p+' '+j.version); }"
 
-# Builtin MCP servers (Playwright browser automation + SearXNG meta-search),
-# pre-installed but disabled until the user adds them in /mcp-servers — same
-# enablement model as headroom below. Versions are pinned by
-# scripts/builtin-mcp-catalog.mjs (which also records the verified artifact
-# SHA256s); bump that catalog and these ARG defaults in the same commit.
-# playwright-mcp should be configured with --executable-path /usr/bin/chromium
-# so it attaches to the managed Chromium instead of downloading its own.
-# playwright-mcp and mcp-searxng are standalone tool servers, not app
-# dependencies: install them under an isolated prefix so their dependency
-# resolution can never re-reify /app/node_modules (same pi-ai float hazard
-# documented on the agent-browser layer above). Bins are symlinked onto PATH.
-ARG PLAYWRIGHT_MCP_VERSION=0.0.83
-ARG MCP_SEARXNG_VERSION=2.6.0
-RUN mkdir -p /opt/builtin-mcp \
-    && npm install --prefix /opt/builtin-mcp \
-      "@playwright/mcp@${PLAYWRIGHT_MCP_VERSION}" \
-      "mcp-searxng@${MCP_SEARXNG_VERSION}" \
-    && npm cache clean --force \
-    && ln -s /opt/builtin-mcp/node_modules/.bin/playwright-mcp /usr/local/bin/playwright-mcp \
-    && ln -s /opt/builtin-mcp/node_modules/.bin/mcp-searxng /usr/local/bin/mcp-searxng \
-    && node -e "const fs=require('node:fs'); for (const p of ['@playwright/mcp','mcp-searxng']) { const j=JSON.parse(fs.readFileSync('/opt/builtin-mcp/node_modules/'+p+'/package.json','utf8')); console.log(p+' '+j.version); }"
-
 # Headroom (https://github.com/chopratejas/headroom) - 工具输出/RAG/日志压缩.
 # 装上 binary 但默认不启用——用户在 /mcp-servers 自行添加才生效, 配置:
 #   { "command": "headroom", "args": ["mcp", "serve"] }
@@ -207,38 +185,6 @@ RUN set -eu; \
     pip install --no-cache-dir "$WHEEL"; \
     rm -rf /tmp/mem0ai-whl; \
     python3 -c "from importlib.metadata import version; print('mem0ai', version('mem0ai'))"
-
-# mcp-server-fetch — official reference fetch MCP server, installed as a uv
-# tool from the digest-verified wheel. Version pinned by
-# scripts/builtin-mcp-catalog.mjs.
-# UV_TOOL_DIR must live outside /root: the entrypoint runs the agent (and its
-# MCP stdio servers) as the non-root node user, and /root is mode 0700 — a
-# venv under /root/.local makes the /usr/local/bin wrapper EACCES for the
-# node user even though root's build-time probe passes. readabilipy (a fetch
-# dependency) lazily runs `npm install` inside site-packages on first use
-# with check=True and no working fallback, which cannot succeed for the node
-# user at runtime — pre-install its readability.js deps here instead, where
-# have_node()'s node_modules check then skips the runtime install entirely.
-ARG MCP_SERVER_FETCH_VERSION=2026.10.10
-ENV UV_TOOL_DIR=/opt/uv-tools
-RUN set -eu; \
-    EXPECTED="$(curl -fsSL --retry 3 "https://pypi.org/pypi/mcp-server-fetch/${MCP_SERVER_FETCH_VERSION}/json" \
-      | jq -r --arg f "mcp_server_fetch-${MCP_SERVER_FETCH_VERSION}-py3-none-any.whl" \
-          '.urls[] | select(.filename == $f) | .digests.sha256')"; \
-    test -n "$EXPECTED"; \
-    pip download --no-cache-dir --no-deps -q -d /tmp/fetch-whl "mcp-server-fetch==${MCP_SERVER_FETCH_VERSION}"; \
-    WHEEL="$(find /tmp/fetch-whl -name 'mcp_server_fetch-*.whl' | head -n1)"; \
-    echo "${EXPECTED}  ${WHEEL}" | sha256sum -c -; \
-    uv tool install "$WHEEL"; \
-    FETCH_SP="$(echo /opt/uv-tools/mcp-server-fetch/lib/python3*/site-packages)"; \
-    cd "$FETCH_SP/readabilipy/javascript"; \
-    npm install --no-audit --no-fund; \
-    cd /; chmod -R a+rX /opt/uv-tools; \
-    printf '%s\n' "${MCP_SERVER_FETCH_VERSION}" > /usr/local/share/mcp-server-fetch-version; \
-    rm -rf /tmp/fetch-whl; \
-    mcp-server-fetch --help >/dev/null; \
-    runuser -u node -- /usr/local/bin/mcp-server-fetch --help >/dev/null; \
-    runuser -u node -- /opt/uv-tools/mcp-server-fetch/bin/python -c "import readabilipy.simple_json as s; r = s.simple_json_from_html_string('<html><body><article><h1>t</h1><p>probe text</p></article></body></html>', use_readability=True); assert 'probe text' in str(r); print('readability-js-ok')"
 
 # Resolve the newest stable feishu-cli GitHub release by default, then verify
 # the selected archive against the checksums file published with that release.
@@ -331,11 +277,9 @@ RUN set -eu; \
       printf 'npm=%s\n' "$(npm --version)"; \
       printf 'uv=%s\n' "$(uv --version | awk '{print $2}')"; \
       node -e "const fs=require('node:fs'); for (const p of ['@earendil-works/pi-coding-agent','@tintinweb/pi-subagents','agent-browser']) { const j=JSON.parse(fs.readFileSync('/app/node_modules/'+p+'/package.json','utf8')); console.log(p+'='+j.version); }"; \
-      node -e "const fs=require('node:fs'); for (const p of ['@playwright/mcp','mcp-searxng']) { const j=JSON.parse(fs.readFileSync('/opt/builtin-mcp/node_modules/'+p+'/package.json','utf8')); console.log(p+'='+j.version); }"; \
       printf 'feishu-cli=%s\n' "$(cat /usr/local/share/feishu-cli-version)"; \
       printf 'headroom=%s\n' "$(python3 -c "from importlib.metadata import version; print(version('headroom-ai'))")"; \
       printf 'mem0ai=%s\n' "$(python3 -c "from importlib.metadata import version; print(version('mem0ai'))")"; \
-      printf 'mcp-server-fetch=%s\n' "$(cat /usr/local/share/mcp-server-fetch-version)"; \
       printf 'chromium=%s\n' "$(chromium --version | awk '{print $2}')"; \
       printf 'oh-my-zsh=%s\n' "$(cat /usr/local/share/oh-my-zsh-version)"; \
     } > /usr/local/share/ckqclaw-tool-versions.txt; \

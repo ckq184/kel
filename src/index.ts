@@ -118,7 +118,6 @@ import {
   getLastGroupSync,
   getRegisteredGroup,
   listChannelMountsByWorkspace,
-  listApprovals,
   getAgentBuilderInputMessage,
   getMessageChannelTurnContext,
   getMessage,
@@ -520,17 +519,6 @@ import {
   isUnknownFeishuSenderAllowed,
 } from './im-audience-policy.js';
 import { logger } from './logger.js';
-import { decideApproval, startApprovalService } from './approval-service.js';
-import {
-  matchApprovalByIdPrefix,
-  onApprovalEvent,
-  resolveApprovalWorkspaceJid,
-  type ApprovalRequestedPayload,
-} from './approval-notify.js';
-import {
-  approvalShortId,
-  buildApprovalRequestCardText,
-} from './feishu-cards/approval-card.js';
 import { resolveTaskOwner } from './task-utils.js';
 import { checkOwnerActive } from './owner-gate.js';
 import {
@@ -560,8 +548,6 @@ import {
   broadcastTitleGenerating,
   broadcastGroupCreated,
   broadcastBillingUpdate,
-  broadcastApprovalDecided,
-  broadcastApprovalRequested,
   broadcastWhatsAppStatus,
   broadcastChannelAccountStatus,
   shutdownTerminals,
@@ -2916,7 +2902,7 @@ async function deliverIndependentChannelSystemNotice(input: {
   externalMessageId?: string;
   /** Outbox operation prefix; defaults to 'system-notice'. */
   operationPrefix?: string;
-  /** Store a web-chat copy of the notice; default true. Approval cards skip it. */
+  /** Store a web-chat copy of the notice; default true. */
   storeMessage?: boolean;
   messageMeta?: {
     turnId?: string;
@@ -3041,121 +3027,6 @@ async function deliverIndependentChannelSystemNotice(input: {
     activeChannelOutboxScopes.unbind(input.scopeKey, scope);
     noticeRuntime.dispose();
   }
-}
-
-// ─── Tool approval fan-out (审批通知：WS 广播 + 渠道卡片) ──────────
-
-function buildApprovalNoticeText(approval: ApprovalRequestedPayload): string {
-  const shortId = approvalShortId(approval.id);
-  return [
-    '🔔 工具审批请求',
-    `工具：${approval.toolName}`,
-    `工作区：${approval.groupFolder}`,
-    `参数：${approval.inputSummary}`,
-    `回复 /approve ${shortId} 批准，或 /deny ${shortId} 拒绝`,
-  ].join('\n');
-}
-
-/**
- * Push an approval card to every channel mount bound to the approval's
- * workspace. Feishu gets an interactive card with owner-gated buttons; every
- * other channel gets a plain-text notice with the /approve prefix. Delivery
- * goes through the Turn Outbox (independent-notice template) so retries and
- * uncertainty are handled by the same machinery as agent output. Failures
- * only log — the Web approvals page and WS broadcast are the primary surface.
- */
-async function deliverApprovalChannelNotices(
-  approval: ApprovalRequestedPayload,
-): Promise<void> {
-  try {
-    const workspaceJid = resolveApprovalWorkspaceJid(approval.groupFolder);
-    if (!workspaceJid) return;
-    const mounts = listChannelMountsByWorkspace(workspaceJid);
-    for (const mount of mounts) {
-      const delivered = await deliverApprovalMountNotice(
-        approval,
-        mount.channel_jid,
-        workspaceJid,
-      );
-      if (!delivered) {
-        logger.warn(
-          { approvalId: approval.id, mountJid: mount.channel_jid },
-          'Approval channel notice not delivered',
-        );
-      }
-    }
-  } catch (error) {
-    logger.warn(
-      { err: error, approvalId: approval.id },
-      'Approval channel push failed',
-    );
-  }
-}
-
-async function deliverApprovalMountNotice(
-  approval: ApprovalRequestedPayload,
-  mountJid: string,
-  workspaceJid: string,
-): Promise<boolean> {
-  const address = parseChannelAddress(mountJid);
-  if (!address) return false;
-  const accountId =
-    address.channelAccountId ??
-    getRegisteredGroup(channelConversationJid(mountJid))?.channel_account_id;
-  if (!accountId) {
-    logger.warn(
-      { mountJid, approvalId: approval.id },
-      'Approval notice skipped: no channel account',
-    );
-    return false;
-  }
-  const isFeishu = address.provider === 'feishu';
-  const text = isFeishu
-    ? buildApprovalRequestCardText({
-        approvalId: approval.id,
-        toolName: approval.toolName,
-        inputSummary: approval.inputSummary,
-        groupFolder: approval.groupFolder,
-        chatJid: mountJid,
-      })
-    : buildApprovalNoticeText(approval);
-  return deliverIndependentChannelSystemNotice({
-    logicalChatJid: workspaceJid,
-    scopeKey: channelTurnScope(approval.groupFolder, null),
-    targetJid: mountJid,
-    originalInputTurnId: approval.id,
-    originalRunId: approval.id,
-    noticeKey: `${approval.id}:${mountJid}`,
-    // Per-mount idempotency: a host restart replays the scan, but the turn
-    // runtime dedupes on this external message id instead of re-sending.
-    externalMessageId: `approval:${approval.id}:${mountJid}`,
-    operationPrefix: 'approval-notice',
-    storeMessage: false,
-    text,
-    route: {
-      provider: address.provider,
-      accountId,
-      sourceJid: mountJid,
-      chatId: address.externalChatId,
-      rootId: address.rootMessageId,
-      threadId: address.threadId,
-    },
-  });
-}
-
-/**
- * Wire approval events to WS broadcast + IM channel push. Registered before
- * startApprovalService so no mirrored request misses its notification.
- */
-function registerApprovalNotifications(): void {
-  onApprovalEvent((event) => {
-    if (event.kind === 'approval_requested') {
-      broadcastApprovalRequested(event.approval);
-      void deliverApprovalChannelNotices(event.approval);
-    } else {
-      broadcastApprovalDecided(event.approval);
-    }
-  });
 }
 
 async function deliverProactiveTailInterruptionNotice(input: {
@@ -3799,64 +3670,9 @@ async function handleCommand(
       return handleDisallowCommand(chatJid, senderImId, mentions);
     case 'allowlist':
       return handleAllowlistCommand(chatJid);
-    case 'approve':
-      return handleApprovalDecisionCommand(chatJid, true, rawArgs, senderImId);
-    case 'deny':
-      return handleApprovalDecisionCommand(chatJid, false, rawArgs, senderImId);
     default:
       return null;
   }
-}
-
-/**
- * `/approve <id前缀>` / `/deny <id前缀>` — decide a pending tool approval from
- * any IM channel. Owner-gated via OWNER_REQUIRED_IM_COMMANDS like every other
- * workspace-mutating command; the decision funnels into decideApproval so the
- * Web API, Feishu card buttons, and this command share one decision path.
- */
-async function handleApprovalDecisionCommand(
-  chatJid: string,
-  approved: boolean,
-  rawArgs: string,
-  senderImId?: string,
-): Promise<string> {
-  const group = registeredGroups[chatJid] ?? getRegisteredGroup(chatJid);
-  if (!group) return '未找到当前工作区';
-  const rows = listApprovals(group.folder);
-  const match = matchApprovalByIdPrefix(rawArgs, rows);
-  if (!match.ok) return `⚠️ ${match.reason}`;
-  const decidedBy = senderImId ? `im:${senderImId}` : null;
-  if (!decideApproval(match.id, approved, decidedBy)) {
-    return '⚠️ 该审批已被处理或不存在';
-  }
-  const toolName = rows.find((row) => row.id === match.id)?.tool_name ?? '';
-  return approved
-    ? `✅ 已批准（工具 ${toolName}），Agent 将继续执行`
-    : `⛔ 已拒绝（工具 ${toolName}），Agent 将收到拒绝结果`;
-}
-
-/** Feishu approval card button callback — same owner gate as /approve. */
-async function handleApprovalCardAction(input: {
-  approvalId: string;
-  approved: boolean;
-  operatorImId: string;
-  chatJid: string;
-}): Promise<FollowUpActionResult> {
-  const group =
-    registeredGroups[input.chatJid] ?? getRegisteredGroup(input.chatJid);
-  const gate = checkImOwnerCommand('approve', group, input.operatorImId);
-  if (!gate.ok) return { ok: false, message: gate.reason };
-  const decidedBy = input.operatorImId ? `im:${input.operatorImId}` : null;
-  if (!decideApproval(input.approvalId, input.approved, decidedBy)) {
-    return { ok: false, message: '该审批已被处理或不存在' };
-  }
-  return {
-    ok: true,
-    approved: input.approved,
-    message: input.approved
-      ? '已批准，Agent 将继续执行'
-      : '已拒绝，Agent 将收到拒绝结果',
-  };
 }
 
 async function handleClearCommand(chatJid: string): Promise<string> {
@@ -19488,7 +19304,6 @@ async function reloadChannelAccountById(accountId: string): Promise<boolean> {
           onFollowUpMessage: handleIncomingFollowUp,
           onFollowUpCardAction: handleFollowUpCardAction,
           onCardInterrupt: handleCardInterrupt,
-          onApprovalCardAction: handleApprovalCardAction,
           onP2pSender: (senderOpenId: string) => {
             // First valid DM claims this bot. Never let a later arbitrary DM
             // replace the account owner.
@@ -20001,8 +19816,6 @@ async function main(): Promise<void> {
   migrateDataDirectories();
   initDatabase();
   logger.info('Database initialized');
-  registerApprovalNotifications();
-  startApprovalService();
 
   const migratedAutoCompactProfiles = migrateAgentProfileAutoCompactWindow(
     getLegacySystemAutoCompactWindow(),
@@ -20361,7 +20174,6 @@ async function main(): Promise<void> {
             onFollowUpMessage: handleIncomingFollowUp,
             onFollowUpCardAction: handleFollowUpCardAction,
             onCardInterrupt: handleCardInterrupt,
-            onApprovalCardAction: handleApprovalCardAction,
             onP2pSender: onReloadP2pSender,
           },
         );

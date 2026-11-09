@@ -15,10 +15,7 @@ import {
  *
  * Tools surface as `mcp__<server>__<tool>` with `direct` exposure: declared
  * to the model like built-in tools, which matches the product capability
- * model and keeps every call flowing through the `tool_call` approval gate
- * (Pi routes all MCP calls through the tool pipeline, and the bare-name
- * policy fallback in approval/policy.ts resolves `mcp__<server>__<name>`
- * against bare entries like `browser_evaluate`).
+ * model (Pi routes all MCP calls through the tool pipeline).
  *
  * Fail-closed mapping: entries that are not unambiguously stdio or HTTP are
  * reported as errors and skipped — a malformed server never degrades into a

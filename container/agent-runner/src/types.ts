@@ -216,23 +216,6 @@ export interface ContainerInput {
   /** Whether this is the admin's home container (full privileges). */
   isAdminHome?: boolean;
   isScheduledTask?: boolean;
-  /** Host-computed tool approval policy. Enforced by the Pi approval gate
-   * extension for every tool call (native, CKQClaw MCP, external MCP). */
-  approvalPolicy?: {
-    default?: 'allow' | 'ask' | 'deny';
-    tools?: Record<string, 'allow' | 'ask' | 'deny'>;
-    timeoutMs?: number;
-    shell?: {
-      mode?: 'off' | 'audit' | 'enforce';
-      redAction?: 'ask' | 'deny';
-    };
-    loopGuard?: {
-      disabled?: boolean;
-      maxIdenticalCalls?: number;
-      windowSize?: number;
-      allowedTools?: string[];
-    };
-  };
   /** Per-workspace auto-memory enable flag from the host stdin bootstrap.
    * The host owns the sidecar process and its llm/embedder endpoints; those
    * secrets never enter this runner or its IPC (host-side container-runner

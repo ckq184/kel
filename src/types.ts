@@ -1,9 +1,4 @@
-import type {
-  ApprovalDecidedPayload,
-  ApprovalRequestedPayload,
-  StreamEvent,
-  WorkflowRunSnapshot,
-} from './stream-event.types.js';
+import type { StreamEvent, WorkflowRunSnapshot } from './stream-event.types.js';
 
 export interface AdditionalMount {
   hostPath: string; // Absolute canonical path on host
@@ -999,16 +994,6 @@ export type WsMessageOut =
       type: 'billing_update';
       userId: string;
       usage: BillingAccessResult;
-    }
-  | {
-      /** Tool approval gate: a new request was mirrored from the file protocol. */
-      type: 'approval_requested';
-      approval: ApprovalRequestedPayload;
-    }
-  | {
-      /** Tool approval gate: a pending request was approved or denied. */
-      type: 'approval_decided';
-      approval: ApprovalDecidedPayload;
     }
   | { type: 'ws_error'; error: string; chatJid?: string }
   | {

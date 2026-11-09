@@ -15,7 +15,6 @@ import type {
   RuntimeSession,
   RuntimeSessionOptions,
 } from '../types.js';
-import { isPolicyEnforced } from '../../approval/policy.js';
 import { resolvePiProvider } from './pi-provider.js';
 import { createCkqclawMcpExtension } from './pi-mcp.js';
 import { PiRuntimeSession } from './pi-session.js';
@@ -56,25 +55,6 @@ function resolveSubagentsExtension(): string | undefined {
   return undefined;
 }
 
-/**
- * Host-enforced tool approval gate (approval/extension.ts, compiled next to
- * this file). Loaded like any Pi extension so the SDK's beforeToolCall hook
- * covers native tools AND external MCP tools. When the policy can block or
- * hold a call, a missing or unloadable gate must fail session creation —
- * silently running ungated is not an option for a security control.
- */
-function resolveApprovalGateExtension(): string {
-  return fs
-    .realpathSync(new URL('../../approval/extension.js', import.meta.url))
-    .replace(/\\/g, '/');
-}
-
-function resolveLoopGuardExtension(): string {
-  return fs
-    .realpathSync(new URL('../../approval/loop-guard.js', import.meta.url))
-    .replace(/\\/g, '/');
-}
-
 export class PiRuntimeAdapter implements AgentRuntime {
   readonly kind = 'pi' as const;
 
@@ -107,30 +87,6 @@ export class PiRuntimeAdapter implements AgentRuntime {
     if (subagentsExtension && !extensionPaths.includes(subagentsExtension)) {
       extensionPaths.push(subagentsExtension);
     }
-    // The approval gate is a security control: when the effective policy can
-    // block or hold tool calls, it must be present. An allow-everything
-    // policy still loads it, but a missing extension only fails the session
-    // when enforcement is actually required.
-    const approvalGatePath = resolveApprovalGateExtension();
-    if (fs.existsSync(approvalGatePath)) {
-      if (!extensionPaths.includes(approvalGatePath)) {
-        extensionPaths.push(approvalGatePath);
-      }
-    } else if (isPolicyEnforced()) {
-      throw new Error(
-        'Tool approval policy is enforced but the approval gate extension is missing',
-      );
-    }
-    const loopGuardPath = resolveLoopGuardExtension();
-    if (fs.existsSync(loopGuardPath)) {
-      if (!extensionPaths.includes(loopGuardPath)) {
-        extensionPaths.push(loopGuardPath);
-      }
-    } else {
-      // The loop guard is the budget brake for unattended runs — a turn
-      // without it can spin until the hard timeout. Fail closed.
-      throw new Error('Loop guard extension is missing');
-    }
     let resourceLoader = new DefaultResourceLoader({
       cwd: options.cwd,
       agentDir,
@@ -141,7 +97,7 @@ export class PiRuntimeAdapter implements AgentRuntime {
       additionalExtensionPaths: extensionPaths,
       // External MCP servers from the host-injected env config. SDK sessions
       // do not load built-in extensions, so the MCP extension must be added
-      // explicitly; every tool it registers flows through the approval gate.
+      // explicitly.
       extensionFactories: [createCkqclawMcpExtension()],
     });
     try {
@@ -210,8 +166,7 @@ export class PiRuntimeAdapter implements AgentRuntime {
             customTools.some((tool) => tool.name === name) ||
             ['Agent', 'get_subagent_result', 'steer_subagent'].includes(name) ||
             // External MCP names/patterns (`mcp__*`, `mcp__<server>__*`) are
-            // resolved by Pi against the servers configured for this run;
-            // per-call safety is the approval gate's job, not this allowlist.
+            // resolved by Pi against the servers configured for this run.
             name.startsWith('mcp__'),
         )
       : undefined;
@@ -235,7 +190,7 @@ export class PiRuntimeAdapter implements AgentRuntime {
     });
     // Pi 1.x does not bind extensions in createAgentSession: session_start
     // (which connects external MCP servers and arms extension lifecycle
-    // hooks, including the approval gate's) only fires from bindExtensions.
+    // hooks) only fires from bindExtensions.
     await session.bindExtensions({});
     return new PiRuntimeSession(session, eventBus);
   }

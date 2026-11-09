@@ -103,7 +103,7 @@ let db: InstanceType<typeof Database>;
  * restating the number. Hardcoding it meant every schema bump edited a dozen
  * unrelated test files, which is churn that hides real assertion changes.
  */
-export const CURRENT_SCHEMA_VERSION = 71;
+export const CURRENT_SCHEMA_VERSION = 72;
 
 export function isDatabaseInitialized(): boolean {
   return Boolean(db?.open);
@@ -538,22 +538,7 @@ export function initDatabase(): void {
     logger.error({ err }, 'Failed to enable foreign-key enforcement');
   }
   db.exec(`
-    CREATE TABLE IF NOT EXISTS pending_approvals (
-    id TEXT PRIMARY KEY,
-    group_folder TEXT NOT NULL,
-    chat_jid TEXT NOT NULL,
-    tool_name TEXT NOT NULL,
-    input_json TEXT,
-    session_id TEXT,
-    turn_id TEXT,
-    status TEXT NOT NULL DEFAULT 'pending',
-    created_at TEXT NOT NULL,
-    decided_at TEXT,
-    decided_by TEXT
-  );
-  CREATE INDEX IF NOT EXISTS idx_pending_approvals_folder
-    ON pending_approvals(group_folder, status);
-  CREATE TABLE IF NOT EXISTS chats (
+    CREATE TABLE IF NOT EXISTS chats (
       jid TEXT PRIMARY KEY,
       name TEXT,
       last_message_time TEXT
@@ -2507,6 +2492,22 @@ export function initDatabase(): void {
     if (hadLegacyChunks) {
       logger.info(
         'Dropped legacy memory_chunks tables superseded by Workspace Memory v2',
+      );
+    }
+  }
+
+  // v71 -> v72: drop the tool-approval gate's audit table. The approval gate
+  // (policy/extension/loop guard) was rolled back with the survey-driven
+  // modules (task U); no code path reads or writes pending_approvals anymore.
+  const pendingApprovalsSchemaVersion = Number(
+    getRouterStateInternal('schema_version') ?? '0',
+  );
+  if (pendingApprovalsSchemaVersion < 72) {
+    const hadPendingApprovals = tableExists('pending_approvals');
+    db.exec('DROP TABLE IF EXISTS pending_approvals;');
+    if (hadPendingApprovals) {
+      logger.info(
+        'Dropped pending_approvals table superseded by the approval-gate rollback',
       );
     }
   }
@@ -14672,105 +14673,6 @@ export function tryIncrementRedeemCodeUsage(
     ).run(code, userId, now);
     return true;
   })();
-}
-
-// v70: tool approval requests surfaced by the runner approval gate. One row
-// per pending/decided action; the durable request/decision files under
-// data/ipc/{folder}/approvals/ remain the transport truth, this table is the
-// queryable audit surface for the Web approval UI.
-export interface PendingApprovalRow {
-  id: string;
-  group_folder: string;
-  chat_jid: string;
-  tool_name: string;
-  input_json: string | null;
-  session_id: string | null;
-  turn_id: string | null;
-  status: 'pending' | 'approved' | 'denied' | 'expired';
-  created_at: string;
-  decided_at: string | null;
-  decided_by: string | null;
-}
-
-/**
- * Insert a pending approval row. Returns true only when a new row was
- * actually inserted — the caller uses this to distinguish a genuinely new
- * request from a rescan replay after a host restart (ON CONFLICT DO NOTHING).
- */
-export function upsertPendingApproval(row: {
-  id: string;
-  group_folder: string;
-  chat_jid: string;
-  tool_name: string;
-  input_json?: string | null;
-  session_id?: string | null;
-  turn_id?: string | null;
-  created_at: string;
-}): boolean {
-  return (
-    db
-      .prepare(
-        `INSERT INTO pending_approvals
-           (id, group_folder, chat_jid, tool_name, input_json, session_id, turn_id, status, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)
-         ON CONFLICT(id) DO NOTHING`,
-      )
-      .run(
-        row.id,
-        row.group_folder,
-        row.chat_jid,
-        row.tool_name,
-        row.input_json ?? null,
-        row.session_id ?? null,
-        row.turn_id ?? null,
-        row.created_at,
-      ).changes > 0
-  );
-}
-
-/**
- * All approval records for a workspace (or every workspace), newest first —
- * pending AND already decided. The pending_approvals table keeps decided rows
- * as history; callers that only want actionable requests must filter on
- * `status === 'pending'` themselves. (Renamed from listPendingApprovals: the
- * old name claimed pending-only semantics the query never had.)
- */
-export function listApprovals(groupFolder?: string): PendingApprovalRow[] {
-  if (groupFolder !== undefined) {
-    return db
-      .prepare(
-        `SELECT * FROM pending_approvals WHERE group_folder = ?
-         ORDER BY created_at DESC LIMIT 200`,
-      )
-      .all(groupFolder) as PendingApprovalRow[];
-  }
-  return db
-    .prepare(
-      'SELECT * FROM pending_approvals ORDER BY created_at DESC LIMIT 200',
-    )
-    .all() as PendingApprovalRow[];
-}
-
-export function decidePendingApproval(
-  id: string,
-  status: 'approved' | 'denied' | 'expired',
-  decidedBy: string | null,
-): boolean {
-  return (
-    db
-      .prepare(
-        `UPDATE pending_approvals
-         SET status = ?, decided_at = ?, decided_by = ?
-         WHERE id = ? AND status = 'pending'`,
-      )
-      .run(status, new Date().toISOString(), decidedBy, id).changes > 0
-  );
-}
-
-export function getPendingApproval(id: string): PendingApprovalRow | undefined {
-  return db.prepare('SELECT * FROM pending_approvals WHERE id = ?').get(id) as
-    | PendingApprovalRow
-    | undefined;
 }
 
 /**

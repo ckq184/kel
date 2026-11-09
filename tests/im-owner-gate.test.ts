@@ -15,10 +15,8 @@ const UNOWNED_GROUP = { owner_im_id: null };
 describe('OWNER_REQUIRED_IM_COMMANDS set', () => {
   test('locks destructive commands only', () => {
     expect([...OWNER_REQUIRED_IM_COMMANDS].sort()).toEqual([
-      'approve',
       'bind',
       'clear',
-      'deny',
       'new',
       'release_owner',
       'spawn',

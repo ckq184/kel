@@ -188,13 +188,6 @@ export interface ConnectFeishuOptions {
     chatJid: string,
     operatorImId: string,
   ) => FollowUpActionResult;
-  /** 审批卡片按钮回调：宿主校验 operator 是工作区 owner 后落决定 */
-  onApprovalCardAction?: (input: {
-    approvalId: string;
-    approved: boolean;
-    operatorImId: string;
-    chatJid: string;
-  }) => Promise<FollowUpActionResult> | FollowUpActionResult;
   onP2pSender?: (senderOpenId: string) => void;
 }
 
@@ -528,21 +521,6 @@ export class IMConnectionManager {
             onCardInterrupt: (jid: string, operatorImId: string) =>
               inboundAllowed()
                 ? opts.onCardInterrupt!(scope(jid), operatorImId)
-                : { ok: false, message: '当前连接已停用，无法执行操作。' },
-          }
-        : {}),
-      // chatJid rides verbatim in the button value (generated from the stored
-      // mount JID), so no scope() rewrite here — the host matches it against
-      // registered groups directly.
-      ...(opts.onApprovalCardAction
-        ? {
-            onApprovalCardAction: (
-              input: Parameters<
-                NonNullable<IMChannelConnectOpts['onApprovalCardAction']>
-              >[0],
-            ) =>
-              inboundAllowed()
-                ? opts.onApprovalCardAction!(input)
                 : { ok: false, message: '当前连接已停用，无法执行操作。' },
           }
         : {}),
@@ -1242,7 +1220,6 @@ export class IMConnectionManager {
         isGroupOwnerMessage: options?.isGroupOwnerMessage,
         isSenderAllowedInGroup: options?.isSenderAllowedInGroup,
         onCardInterrupt: options?.onCardInterrupt,
-        onApprovalCardAction: options?.onApprovalCardAction,
         onP2pSender: options?.onP2pSender,
       },
       options?.accountId,

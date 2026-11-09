@@ -127,22 +127,6 @@ describe('IM manager account lifecycle', () => {
     expect(connect.mock.calls[1]?.[6]).toBe('dingtalk-client-id');
   });
 
-  test('connectUserFeishu forwards onApprovalCardAction to the channel opts', async () => {
-    const manager = new IMConnectionManager();
-    const connect = vi.spyOn(manager, 'connectChannel').mockResolvedValue(true);
-    const onApprovalCardAction = vi.fn();
-
-    await manager.connectUserFeishu(
-      'approval-owner',
-      { appId: 'feishu-app-id', appSecret: 'feishu-secret' },
-      vi.fn(),
-      { onApprovalCardAction },
-    );
-
-    const opts = connect.mock.calls[0]?.[3] as IMChannelConnectOpts;
-    expect(opts.onApprovalCardAction).toBe(onApprovalCardAction);
-  });
-
   test.each([
     ['feishu', 'shared-feishu-app'],
     ['dingtalk', 'shared-dingtalk-client'],

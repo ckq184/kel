@@ -239,13 +239,6 @@ reset-init: ## 完全重置为首装状态（清空所有运行时数据）
 
 # ─── Backup / Restore ────────────────────────────────────────
 
-searxng-up: ## 启动自托管 SearXNG（仅 127.0.0.1:8080，供 mcp-searxng 使用）
-	@docker compose -f deploy/searxng/compose.yaml up -d
-	@echo "SearXNG: http://127.0.0.1:8080 (json 格式已启用，配合 mcp-searxng 使用)"
-
-searxng-down: ## 停止并移除 SearXNG 容器
-	@docker compose -f deploy/searxng/compose.yaml down
-
 backup: ## 备份运行时数据到 ckqclaw-backup-{date}.tar.gz
 	@set -eu; \
 	DATE=$$(date +%Y%m%d-%H%M%S); \

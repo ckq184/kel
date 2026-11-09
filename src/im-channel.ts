@@ -157,13 +157,6 @@ export interface IMChannelConnectOpts {
     chatJid: string,
     operatorImId: string,
   ) => FollowUpActionResult;
-  /** 审批卡片按钮回调（仅飞书）：宿主校验 operator 是工作区 owner 后落决定 */
-  onApprovalCardAction?: (input: {
-    approvalId: string;
-    approved: boolean;
-    operatorImId: string;
-    chatJid: string;
-  }) => Promise<FollowUpActionResult> | FollowUpActionResult;
   /** P2P（私聊）消息到达时调用，用于自动检测 owner open_id（仅飞书） */
   onP2pSender?: (senderOpenId: string) => void;
   /** Canonicalize an inbound provider JID before persistence/callbacks. */
@@ -289,7 +282,6 @@ export function createFeishuChannel(config: FeishuConnectionConfig): IMChannel {
         isGroupOwnerMessage: opts.isGroupOwnerMessage,
         isSenderAllowedInGroup: opts.isSenderAllowedInGroup,
         onCardInterrupt: opts.onCardInterrupt,
-        onApprovalCardAction: opts.onApprovalCardAction,
         onP2pSender: opts.onP2pSender,
         normalizeIncomingJid: opts.normalizeIncomingJid,
         shouldDeferInbound: opts.shouldDeferInbound,

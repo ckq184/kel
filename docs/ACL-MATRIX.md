@@ -257,18 +257,17 @@ Owner Claim：
 命令由主进程 `handleCommand()` 处理，不经过 Web Middleware，但使用渠道 sender ID
 执行独立 Owner Gate。
 
-| 命令                                 | 权限                                           |
-| ------------------------------------ | ---------------------------------------------- |
-| `/list`、`/ls`、`/status`、`/where`  | 只读                                           |
-| `/recall`、`/rc`                     | 只读，带节流                                   |
-| `/allowlist`                         | 只读                                           |
-| `/clear`、`/bind`、`/unbind`、`/new` | IM Owner                                       |
-| `/sw`、`/spawn`                      | IM Owner                                       |
-| `/release_owner`                     | IM Owner                                       |
-| `/approve`、`/deny`                  | IM Owner（工具审批决定，与 Web 决定 API 同权） |
-| `/owner_mention`                     | 未认领群的 bootstrap，不可被 Owner Gate 锁死   |
-| `/allow`、`/disallow`                | Handler 内检查 IM Owner                        |
-| `/require_mention`                   | Handler 内按当前 owner/策略检查                |
+| 命令                                 | 权限                                         |
+| ------------------------------------ | -------------------------------------------- |
+| `/list`、`/ls`、`/status`、`/where`  | 只读                                         |
+| `/recall`、`/rc`                     | 只读，带节流                                 |
+| `/allowlist`                         | 只读                                         |
+| `/clear`、`/bind`、`/unbind`、`/new` | IM Owner                                     |
+| `/sw`、`/spawn`                      | IM Owner                                     |
+| `/release_owner`                     | IM Owner                                     |
+| `/owner_mention`                     | 未认领群的 bootstrap，不可被 Owner Gate 锁死 |
+| `/allow`、`/disallow`                | Handler 内检查 IM Owner                      |
+| `/require_mention`                   | Handler 内按当前 owner/策略检查              |
 
 不同 Provider 的原生 sender ID namespace 不得混用。例如 QQ C2C 与 Group 使用不同
 ID 空间；owner 比对必须使用渠道适配器传入的规范化 ID。
@@ -332,15 +331,7 @@ Agent MCP 调用没有 Cookie，但必须携带由主进程创建的运行上下
 - `tests/mcp-runtime-secret-boundary.test.ts`
 - `tests/host-execution-policy.test.ts`
 
-## 工具审批（Approval Gate）
-
-Runner 的工具审批门禁是独立于本矩阵的运行时边界：工具调用按策略
-（allow/ask/deny）放行、挂起或拒绝，策略由宿主计算并注入 Runner，模型不可
-绕过。审批决定仅限工作区 owner（`created_by`），可见性遵循 Access 规则。
-接口见 `docs/API.md` 的 Tool Approvals 一节。
-
-审批通知与 IM 侧决定（2026-10-17 任务 B 起）：新审批请求会推送到工作区绑定的
-各渠道（飞书交互卡片按钮、其他渠道文本 + `/approve`/`/deny` 命令）。飞书卡片
-按钮回调复用与 `/approve` 相同的 IM Owner 门禁（`checkImOwnerCommand`），
-非 owner 点击收到拒绝提示且不落决定；三条决定路径（Web API、卡片按钮、IM 命令）
-收敛到同一 `decideApproval` 落盘。
+> 历史：本矩阵曾含「工具审批（Approval Gate）」一节（工具调用按策略
+> allow/ask/deny 放行/挂起/拒绝、决定仅限工作区 owner、任务 B 起 IM 卡片与
+> `/approve`/`/deny` 决定入口）。该门禁已随任务 U（2026-11-09 综述改造回退）
+> 整体移除——工具调用不再有人工审批环节。

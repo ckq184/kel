@@ -161,6 +161,50 @@ describe('database upgrade safety gate', () => {
       backupCountAfterRetry,
     );
   });
+
+  test('v72 drops the approval-gate audit table on upgrade from v71', () => {
+    db.initDatabase();
+    db.closeDatabase();
+
+    // Fabricate a v71 database that still carries pending_approvals.
+    const legacy = new Database(dbPath);
+    legacy.exec(`
+      CREATE TABLE pending_approvals (
+        id TEXT PRIMARY KEY,
+        group_folder TEXT NOT NULL,
+        chat_jid TEXT NOT NULL,
+        tool_name TEXT NOT NULL,
+        input_json TEXT,
+        session_id TEXT,
+        turn_id TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        created_at TEXT NOT NULL,
+        decided_at TEXT,
+        decided_by TEXT
+      );
+      INSERT INTO pending_approvals VALUES (
+        'legacy-approval', 'audit-workspace', 'jid', 'send_file',
+        '{}', null, null, 'pending', '2026-10-17T00:00:00.000Z', null, null
+      );
+      UPDATE router_state SET value = '71' WHERE key = 'schema_version';
+    `);
+    legacy.close();
+
+    db.initDatabase();
+    db.closeDatabase();
+
+    const migrated = new Database(dbPath, { readonly: true });
+    expect(tableExists(migrated, 'pending_approvals')).toBe(false);
+    migrated.close();
+
+    // A fresh database must not recreate the table (baseline creation was
+    // removed together with the CRUD layer).
+    db.initDatabase();
+    db.closeDatabase();
+    const fresh = new Database(dbPath, { readonly: true });
+    expect(tableExists(fresh, 'pending_approvals')).toBe(false);
+    fresh.close();
+  });
 });
 
 describe('schema version head', () => {
@@ -180,6 +224,8 @@ describe('schema version head', () => {
     // tests/schema-v69-agent-effort.test.ts for migration coverage.
     // v70: runner approval-gate requests (pending_approvals audit table).
     // v71: long-task continuation chain (task_runs continuation_* columns).
-    expect(db.CURRENT_SCHEMA_VERSION).toBe(71);
+    // v72: approval-gate rollback — drops the now-unused pending_approvals
+    // table (task U survey-module rollback).
+    expect(db.CURRENT_SCHEMA_VERSION).toBe(72);
   });
 });

@@ -14,7 +14,6 @@ import os from 'os';
 import path from 'path';
 import { randomUUID } from 'node:crypto';
 
-import { getEffectiveApprovalPolicy } from './approval-policy.js';
 import { getAutoMemoryHostConfig } from './auto-memory-config.js';
 import { CONTAINER_IMAGE, DATA_DIR, GROUPS_DIR, TIMEZONE } from './config.js';
 import {
@@ -377,23 +376,6 @@ export interface ContainerInput {
   isHome?: boolean;
   isAdminHome?: boolean;
   isScheduledTask?: boolean;
-  /** Host-computed tool approval policy. Mirrored in agent-runner types;
-   * enforced by the runner's Pi approval gate extension. */
-  approvalPolicy?: {
-    default?: 'allow' | 'ask' | 'deny';
-    tools?: Record<string, 'allow' | 'ask' | 'deny'>;
-    timeoutMs?: number;
-    shell?: {
-      mode?: 'off' | 'audit' | 'enforce';
-      redAction?: 'ask' | 'deny';
-    };
-    loopGuard?: {
-      disabled?: boolean;
-      maxIdenticalCalls?: number;
-      windowSize?: number;
-      allowedTools?: string[];
-    };
-  };
   /** Per-workspace auto-memory enable flag. Mirrored in agent-runner types;
    * the host owns the sidecar and its endpoints — keep both in sync. */
   autoMemory?: {
@@ -1867,7 +1849,6 @@ export async function runContainerAgent(
       // the caller's `input` object (queue/log/retry paths reuse the same ref).
       const dockerInput: ContainerInput = {
         ...input,
-        approvalPolicy: getEffectiveApprovalPolicy(),
         autoMemory: buildAutoMemoryInput(),
         workspaceMemoryMutationSigningSecret,
         workspaceMemoryRunnerInstanceId,
@@ -2904,7 +2885,6 @@ export async function runHostAgent(
       // plugins.
       const hostInput: ContainerInput = {
         ...input,
-        approvalPolicy: getEffectiveApprovalPolicy(),
         autoMemory: buildAutoMemoryInput(),
         workspaceMemoryMutationSigningSecret,
         workspaceMemoryRunnerInstanceId,

@@ -30,12 +30,6 @@ import {
   type SDKControlGetContextUsageResponse,
   type SDKRateLimitInfo,
 } from '@anthropic-ai/claude-agent-sdk';
-import {
-  isPolicyEnforced,
-  setApprovalIpcRoot,
-  setApprovalPolicy,
-  setApprovalRequestContext,
-} from './approval/policy.js';
 import { detectImageMimeTypeFromBase64Strict } from './image-detector.js';
 import { pruneProcessedHistoryImagesInTranscript as pruneProcessedHistoryImagesInTranscriptFile } from './history-image-prune.js';
 import { getChannelFromJid } from './channel-prefixes.js';
@@ -3952,29 +3946,6 @@ async function main(): Promise<void> {
     containerInput.currentSourceJid,
     containerInput.channelContext,
   );
-
-  // Install the host-computed tool approval policy before any session is
-  // created; the Pi approval gate extension evaluates every tool call
-  // against it. Fail fast when the policy is enforced but the IPC directory
-  // is unavailable — without it there is no way to collect decisions.
-  setApprovalPolicy(containerInput.approvalPolicy);
-  setApprovalIpcRoot(WORKSPACE_IPC);
-  setApprovalRequestContext({
-    groupFolder: containerInput.groupFolder,
-    chatJid: containerInput.chatJid,
-    ...(containerInput.sessionId
-      ? { sessionId: containerInput.sessionId }
-      : {}),
-    ...(containerInput.turnId ? { turnId: containerInput.turnId } : {}),
-  });
-  if (isPolicyEnforced() && !fs.existsSync(WORKSPACE_IPC)) {
-    writeOutput({
-      status: 'error',
-      result: null,
-      error: `Tool approval policy is enforced but the IPC directory is unavailable: ${WORKSPACE_IPC}`,
-    });
-    process.exit(1);
-  }
 
   // 第三方端点没有通用的官方默认模型，缺失时必须 fail-fast；官方
   // Claude 未指定模型则交给 SDK/CLI 选择默认模型。

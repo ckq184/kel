@@ -6,6 +6,7 @@
 
 ## 状态快照（2026-10-17）
 
+- **任务 U（综述改造模块回退，保留 mem0）已完成（2026-11-09，用户批准，计划见 `docs/task-u-survey-rollback-plan.md`）**：摘除本台账 §0 步骤 0/1/2/4A/5 与任务 B 的全部交付——runner `approval/` 四件套（门禁/红线/loop guard）+ 宿主 approval-policy/service/notify/路由/飞书卡 + Web 审批页/侧栏/`/approve` `/deny` IM 命令 + WS `approval_requested`/`approval_decided` + `pending_approvals` 表（**schema v71→v72 前向迁移 DROP**，循 v67 先例，钉死测试与迁移测试同 commit）+ 供应链目录缩至 mem0ai 单条目（`install-host-tools.sh` 删 `mcp` 子命令、Dockerfile 删 playwright-mcp/mcp-searxng/mcp-server-fetch 段、smoke 探针缩至 mem0ai、`deploy/searxng/` 与 `docs/BUILTIN-MCP.md` 整删）。**mem0 全链保留**（sidecar/IPC/配置/工具/测试/Dockerfile mem0ai 段）。历史 task-_/TASK-_ 审计文档按任务 O 裁决保留原样；本条目为唯一台账更新。安全后果（用户已确认接受）：工具调用不再有人工审批环节，无人值守任务失去重复刹车。
 - 任务 D（搜索/浏览器真机验收）**已完成**，验收报告与 3 处阻塞缺陷修复记录见 `docs/TASK-D-ACCEPTANCE.md`（提交 `165ecd1`/`43152db`/`9e72a93`）。
 - 任务 D 衍生的两个后续也已落地：门禁补 agent-browser 工具名 + shell 红线（`26389f7`）、SearXNG 默认引擎白名单（`fb7f52d`，默认查询由 0 条恢复 137 条）。
 - 仓库已是 git 仓库（基线 `97a3abc` 起），`docs:check`/diff 门槛可用；remote 尚未配置（见 TASK-D §10 账号侧待办）。

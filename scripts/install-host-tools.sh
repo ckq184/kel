@@ -2,14 +2,13 @@
 # install-host-tools.sh — Install external tools required by host-mode agents.
 #
 # This script brings the host environment closer to what the Docker container
-# provides (feishu-cli, agent-browser, uv, builtin MCP servers).  It is safe
-# to re-run — it skips tools that are already installed and updates the
-# builtin-skills cache.
+# provides (feishu-cli, agent-browser, uv, mem0ai).  It is safe to re-run —
+# it skips tools that are already installed and updates the builtin-skills
+# cache.
 #
 # Usage:
 #   ./scripts/install-host-tools.sh          # install everything
 #   ./scripts/install-host-tools.sh skills   # only refresh builtin-skills cache
-#   ./scripts/install-host-tools.sh mcp      # only install builtin MCP servers
 
 set -euo pipefail
 
@@ -17,7 +16,6 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DATA_DIR="$PROJECT_ROOT/data"
 BUILTIN_SKILLS_DIR="$DATA_DIR/builtin-skills"
-BUILTIN_MCP_DIR="$DATA_DIR/builtin-mcp"
 FEISHU_CLI_VERSION="v1.35.0"
 FEISHU_CLI_SOURCE_SHA256="91b5575833f003527c7b60a26f08703ebfdb348098deecfa9ceed1dcf230f253"
 
@@ -126,7 +124,7 @@ install_uv() {
   fi
 }
 
-# ── builtin MCP servers (versions & hashes: scripts/builtin-mcp-catalog.mjs) ──
+# ── mem0ai (host-owned auto-memory sidecar library; pin: scripts/builtin-mcp-catalog.mjs) ──
 
 catalog_query() {
   node "$PROJECT_ROOT/scripts/builtin-mcp-catalog.mjs" "$@"
@@ -136,66 +134,6 @@ catalog_query() {
 component_field() {
   catalog_query component "$1" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{const v=JSON.parse(d)[process.argv[1]];console.log(v===null||v===undefined?'':String(v))})" "$2"
 }
-
-install_builtin_mcp_npm() {
-  local id="$1" bin_name="$2"
-  if has_cmd "$bin_name"; then
-    skip "$id already installed ($(command -v "$bin_name"))"
-    return
-  fi
-  local url tarball
-  url="$(component_field "$id" tarballUrl)"
-  tarball="$TMP_MCP_DIR/$(basename "$url")"
-  info "Installing $id from verified tarball..."
-  curl -fsSL --retry 3 -o "$tarball" "$url"
-  catalog_query verify "$id" "$tarball"
-  npm install -g "$tarball"
-  ok "$id installed"
-}
-
-install_builtin_mcp_uv_tool() {
-  local id="$1" bin_name="$2"
-  if has_cmd "$bin_name" && uv tool list 2>/dev/null | grep -q "^$id "; then
-    skip "$id already installed"
-    return
-  fi
-  local spec filename
-  spec="$(component_field "$id" pypiPackage)==$(component_field "$id" version)"
-  filename="$(component_field "$id" artifactFilename)"
-  info "Installing $id from verified wheel..."
-  if has_cmd pip; then
-    pip download --no-deps -q -d "$TMP_MCP_DIR" "$spec"
-    local wheel
-    wheel="$(find "$TMP_MCP_DIR" -name "$filename" | head -n1)"
-    if [ -z "$wheel" ]; then
-      warn "$id wheel $filename not found after pip download"; exit 1
-    fi
-    catalog_query verify "$id" "$wheel"
-    uv tool install "$wheel"
-  else
-    warn "pip not found — falling back to direct index install (artifact hash not verified)"
-    uv tool install "$spec"
-  fi
-  ok "$id installed"
-}
-
-install_builtin_mcp() {
-  if ! has_cmd node; then
-    warn "node not found — cannot install builtin MCP servers"; return 1
-  fi
-  mkdir -p "$DATA_DIR"
-  install_builtin_mcp_npm "playwright-mcp" "playwright-mcp"
-  install_builtin_mcp_npm "mcp-searxng" "mcp-searxng"
-  if has_cmd uv; then
-    install_builtin_mcp_uv_tool "mcp-server-fetch" "mcp-server-fetch"
-  else
-    warn "uv not found — skipping mcp-server-fetch (run install_uv first)"
-  fi
-  catalog_query write "$BUILTIN_MCP_DIR"
-  ok "builtin MCP catalog marker written to $BUILTIN_MCP_DIR"
-}
-
-# ── mem0ai (host-owned auto-memory sidecar library) ──────────
 
 install_mem0ai() {
   # The auto-memory sidecar is host-owned (src/auto-memory-sidecar-manager.ts):
@@ -250,17 +188,10 @@ if [ "${1:-}" = "skills" ]; then
   exit 0
 fi
 
-if [ "${1:-}" = "mcp" ]; then
-  install_uv
-  install_builtin_mcp
-  exit 0
-fi
-
 install_feishu_cli
 refresh_builtin_skills
 install_agent_browser
 install_uv
-install_builtin_mcp
 install_mem0ai
 
 echo ""

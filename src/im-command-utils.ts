@@ -277,10 +277,6 @@ export const OWNER_REQUIRED_IM_COMMANDS: ReadonlySet<string> = new Set([
   // release_owner is the reclaim path: only the current owner can release;
   // gate handles the "must equal current owner_im_id" check uniformly.
   'release_owner',
-  // Tool approval decisions mutate workspace state through the approval gate;
-  // same owner-only rule as the Web decision API (routes/approvals.ts).
-  'approve',
-  'deny',
 ]);
 
 export interface ImOwnerCheckGroup {

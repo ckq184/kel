@@ -260,8 +260,8 @@ describe('getTaskContinuationConfig precedence', () => {
     fs.writeFileSync(CONFIG_PATH, '{"maxContinuations": 4}');
     process.env.CKQCLAW_TASK_CONTINUATION = 'not-json';
     resetTaskContinuationConfigCache();
-    // Parity with approval-policy: a set-but-broken env never silently falls
-    // through to the file — the built-in default applies.
+    // A set-but-broken env never silently falls through to the file — the
+    // built-in default applies.
     expect(getTaskContinuationConfig().maxContinuations).toBe(3);
   });
 });

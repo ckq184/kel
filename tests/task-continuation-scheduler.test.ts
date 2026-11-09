@@ -217,7 +217,8 @@ afterAll(() => {
 
 describe('schema v71 continuation columns', () => {
   test('task_runs carries the continuation columns with safe defaults', () => {
-    expect(db.CURRENT_SCHEMA_VERSION).toBe(71);
+    // v71 columns survive at head (72 = approval-gate rollback, unrelated).
+    expect(db.CURRENT_SCHEMA_VERSION).toBe(72);
     const task = createDefinition('schema-defaults-task');
     const run = runToSuccess(task);
     // New columns exist on every row (legacy rows migrate to these defaults).

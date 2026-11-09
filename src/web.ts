@@ -47,7 +47,6 @@ import {
 
 // Route modules
 import authRoutes from './routes/auth.js';
-import approvalsRoutes from './routes/approvals.js';
 import groupRoutes from './routes/groups.js';
 import memoryRoutes from './routes/memory.js';
 import configRoutes, { injectConfigDeps } from './routes/config.js';
@@ -91,11 +90,6 @@ import {
   setMessageFollowUp,
 } from './db.js';
 import { getGroupAllowedUserIds } from './group-broadcast-acl.js';
-import { resolveApprovalWorkspaceJid } from './approval-notify.js';
-import type {
-  ApprovalDecidedPayload,
-  ApprovalRequestedPayload,
-} from './stream-event.types.js';
 import {
   hasBoundWorkspaceReference,
   resolveBoundWorkspaceJid,
@@ -271,7 +265,6 @@ let deps: WebDeps | null = null;
 // --- Route Mounting ---
 
 app.route('/api/auth', authRoutes);
-app.route('/api/approvals', approvalsRoutes);
 app.route('/api/groups', groupRoutes);
 app.route('/api/groups', fileRoutes); // File routes also under /api/groups
 app.route('/api/memory', memoryRoutes);
@@ -2995,42 +2988,6 @@ export function broadcastBillingUpdate(
   // Send only to the specific user
   const allowedUserIds = new Set([userId]);
   safeBroadcast(msg, false, allowedUserIds);
-}
-
-/**
- * Tool approval broadcasts. These are top-level WS messages rather than
- * `stream_event` wrappers on purpose: broadcastStreamEvent's run fence drops
- * events without a turnId while the workspace has an active run — and an
- * approval request exists precisely because a run is suspended mid-flight.
- * Audience follows the GET /api/approvals visibility (workspace owner,
- * default-deny when the workspace cannot be resolved).
- */
-function resolveApprovalBroadcastAudience(
-  groupFolder: string,
-): Set<string> | null {
-  const workspaceJid = resolveApprovalWorkspaceJid(groupFolder);
-  if (!workspaceJid) return null;
-  return getGroupAllowedUserIds(workspaceJid);
-}
-
-export function broadcastApprovalRequested(
-  approval: ApprovalRequestedPayload,
-): void {
-  safeBroadcast(
-    { type: 'approval_requested', approval },
-    false,
-    resolveApprovalBroadcastAudience(approval.groupFolder),
-  );
-}
-
-export function broadcastApprovalDecided(
-  approval: ApprovalDecidedPayload,
-): void {
-  safeBroadcast(
-    { type: 'approval_decided', approval },
-    false,
-    resolveApprovalBroadcastAudience(approval.groupFolder),
-  );
 }
 
 export function broadcastWhatsAppStatus(

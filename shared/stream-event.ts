@@ -24,8 +24,6 @@ export type StreamEventType =
   | 'task_updated'
   | 'task_notification'
   | 'permission_denied'
-  | 'approval_requested'
-  | 'approval_decided'
   | 'memory_recall'
   | 'compact_boundary'
   | 'notification'
@@ -288,31 +286,6 @@ export interface ClaudeContextAudit {
   warnings: string[];
 }
 
-/** A tool approval request surfaced by the runner approval gate. */
-export interface ApprovalRequestedPayload {
-  id: string;
-  groupFolder: string;
-  chatJid: string;
-  toolName: string;
-  /** Truncated JSON of the tool input, for card/list rendering only. */
-  inputSummary: string;
-  sessionId: string | null;
-  turnId: string | null;
-  createdAt: string;
-  timeoutMs: number;
-}
-
-/** A recorded approve/deny decision on a tool approval request. */
-export interface ApprovalDecidedPayload {
-  id: string;
-  groupFolder: string;
-  toolName: string;
-  approved: boolean;
-  decidedBy: string | null;
-  decidedAt: string;
-  status: 'approved' | 'denied';
-}
-
 export interface StreamEvent {
   eventType: StreamEventType;
   /** Which runtime actor produced the event. */
@@ -383,10 +356,6 @@ export interface StreamEvent {
     reason?: string;
     message: string;
   };
-  /** Payload for `approval_requested` events (tool approval gate). */
-  approvalRequested?: ApprovalRequestedPayload;
-  /** Payload for `approval_decided` events (tool approval gate). */
-  approvalDecided?: ApprovalDecidedPayload;
   isBackground?: boolean;
   isTeammate?: boolean;
   toolInput?: Record<string, unknown>;
