@@ -506,7 +506,7 @@ export function CreateTaskForm({
                 <p className="mt-1 text-xs text-muted-foreground">
                   {isScript
                     ? '直接执行 Shell 命令，零 API 消耗，适合确定性任务'
-                    : '启动完整 Claude Agent，消耗 API tokens'}
+                    : '启动完整 CKQClaw 智能体，消耗 API tokens'}
                 </p>
               </div>
             )}

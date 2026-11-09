@@ -68,5 +68,3 @@
 - 旧数据库字面量（owner-profile 键、sender、默认 Agent 名）与新代码不匹配。
 - Electron appId 变更 = 新应用身份；微信 bot_agent / WhatsApp 设备名变更；
   GitHub 链接需实际建立 ckq184/ckqclaw 仓库。
-  （决策更新 2026-10-30：用户决定不建该仓库，README 与四个 package.json
-  的 GitHub 链接已移除；Web UI 内的 GitHub 入口不在本次移除范围。）

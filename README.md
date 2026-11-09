@@ -10,6 +10,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/ckq184/ckqclaw">GitHub</a> ·
   <a href="docs/API.md">API</a> ·
   <a href="docs/ACL-MATRIX.md">权限模型</a> ·
   <a href="SECURITY.md">安全策略</a>
@@ -145,6 +146,9 @@ Web Client / Electron Desktop / Message Channels
 ### 启动 Backend 与 Web Client
 
 ```bash
+git clone https://github.com/ckq184/ckqclaw.git
+cd ckqclaw
+
 npm install
 npm --prefix web install
 npm --prefix container/agent-runner install

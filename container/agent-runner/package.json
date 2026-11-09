@@ -24,6 +24,15 @@
     "typescript": "^5.9.3"
   },
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ckq184/ckqclaw.git",
+    "directory": "container/agent-runner"
+  },
+  "homepage": "https://github.com/ckq184/ckqclaw#readme",
+  "bugs": {
+    "url": "https://github.com/ckq184/ckqclaw/issues"
+  },
   "author": "ckq184",
   "keywords": [
     "agent-runner",
