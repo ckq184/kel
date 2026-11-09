@@ -1,8 +1,10 @@
 {
-  "task": "任务R - task-runs-v2 通知重试用例第5次claim缺租约过期等待的时序竞态修复（测试侧，用户 2026-11-09 批准，计划见 docs/task-r-taskruns-v2-lease-race-plan.md）",
-  "base": "ffb5b9a",
+  "task": "任务Q - 模型服务认证错误（401/403）即时透出与快速失败（用户 2026-11-09 批准，计划见 docs/task-q-provider-auth-error-fastfail-plan.md）",
+  "base": "e360b1c",
   "allow": [
-    "tests/task-runs-v2.test.ts",
-    "docs/task-r-taskruns-v2-lease-race-plan.md"
+    "src/provider-failure.ts",
+    "src/index.ts",
+    "tests/provider-auth-error.test.ts",
+    "docs/task-q-provider-auth-error-fastfail-plan.md"
   ]
 }

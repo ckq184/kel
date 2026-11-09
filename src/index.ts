@@ -94,7 +94,11 @@ import {
 } from './stuck-runner-recovery.js';
 import { resolveFeishuCliBoundAccountId } from './feishu-cli-runtime.js';
 import { isValidWorkspaceFolderName } from './workspace-folder.js';
-import { PROVIDER_FAILURE_USER_NOTICE } from './provider-failure.js';
+import {
+  PROVIDER_AUTH_USER_NOTICE,
+  isPermanentProviderAuthError,
+  PROVIDER_FAILURE_USER_NOTICE,
+} from './provider-failure.js';
 import {
   closeDatabase,
   createTask,
@@ -9434,6 +9438,22 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       logger.warn(
         { group: group.name, error: profileMsg },
         'AgentProfile references unavailable skill/MCP, skipping retry',
+      );
+      commitCursor();
+      await clearProcessingIndicatorForInput(ipcReplyTurnTracker.inputTurnId);
+      return true;
+    }
+
+    // 模型服务认证/授权类永久性错误（401/403、无效 Key）：Key 无效是确定性
+    // 状态，指数退避重试 5 轮注定全部失败且用户全程零反馈（2026-11-09 智谱
+    // 401 实测：静默退避数分钟，无任何提示）。跳过重试，即时透出并收尾。
+    if (isPermanentProviderAuthError(errorDetail)) {
+      const authNotice = `${PROVIDER_AUTH_USER_NOTICE}（${errorDetail.slice(0, 120)}）`;
+      sendSystemMessage(chatJid, 'agent_error', authNotice);
+      await projectCurrentScheduledGroupTerminal('failed', authNotice);
+      logger.warn(
+        { group: group.name, chatJid, error: errorDetail },
+        'Provider auth error (invalid/expired API key); skipping retry',
       );
       commitCursor();
       await clearProcessingIndicatorForInput(ipcReplyTurnTracker.inputTurnId);
