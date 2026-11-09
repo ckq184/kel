@@ -1,11 +1,8 @@
 {
-  "task": "任务P - macOS 桌面端菜单补 editMenu 修复复制粘贴并清理 darwin 重复品牌菜单（用户 2026-11-09 批准，计划见 docs/task-p-desktop-clipboard-triage-plan.md）",
-  "base": "a15d9f5",
+  "task": "任务R - task-runs-v2 通知重试用例第5次claim缺租约过期等待的时序竞态修复（测试侧，用户 2026-11-09 批准，计划见 docs/task-r-taskruns-v2-lease-race-plan.md）",
+  "base": "ffb5b9a",
   "allow": [
-    "electron/src/main/index.ts",
-    "electron/src/main/menu-template.ts",
-    "tests/electron-menu-contract.test.ts",
-    "tests/scope-check-contract.test.ts",
-    "docs/task-p-desktop-clipboard-triage-plan.md"
+    "tests/task-runs-v2.test.ts",
+    "docs/task-r-taskruns-v2-lease-race-plan.md"
   ]
 }

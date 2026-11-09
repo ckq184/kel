@@ -949,11 +949,21 @@ describe('notification-only retry state', () => {
       );
       expect(expired.attempt).toBe(attempt);
     }
-    const exhausted = db.claimTaskRunNotificationById(
-      created.run.id,
-      'final-budget-worker',
-      60_000,
-    )!;
+    // 第 5 次 claim 同样以 waitFor 轮询包裹：裸调用与第 4 次 claim（2ms
+    // 租约）仅隔微秒级断言开销，快机器上租约未过期 → claim 返回 undefined
+    // （任务 R：任务 K 档案 §8 遗留竞态，Windows 慢机器侥幸绿）。
+    const exhausted = await vi.waitFor(
+      () => {
+        const claim = db.claimTaskRunNotificationById(
+          created.run.id,
+          'final-budget-worker',
+          60_000,
+        );
+        expect(claim).toBeTruthy();
+        return claim!;
+      },
+      { timeout: 10_000, interval: 5 },
+    );
     expect(exhausted.attempt).toBe(5);
     expect(
       db.completeTaskRunNotificationAttempt(
