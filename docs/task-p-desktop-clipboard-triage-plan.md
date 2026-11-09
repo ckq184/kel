@@ -38,12 +38,12 @@ Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 
 ### 2.2 已排除/降权的方向
 
-| 方向 | 证据 | 结论 |
-| :--- | :--- | :--- |
-| 前端 keydown 拦截 Cmd+C/V | `grep metaKey|ctrlKey × keydown|preventDefault` 于 `web/src/` 零命中 | 基本排除 |
-| 前端剪贴板 API 实现问题 | `web/src/utils/clipboard.ts` 为标准 `writeText` + `execCommand` 兜底 | 正常实现；仅影响按钮复制场景 |
-| `will-navigate`/`setWindowOpenHandler` 拦截 | 只拦导航与新窗口，与键盘无关（代码审阅） | 排除 |
-| sandbox / contextIsolation | `sandbox: true` 不影响菜单派发型快捷键 | 非主因 |
+| 方向                                        | 证据                                                                 | 结论                         |
+| :------------------------------------------ | :------------------------------------------------------------------- | :--------------------------- | ---------------------------------- | -------- |
+| 前端 keydown 拦截 Cmd+C/V                   | `grep metaKey                                                        | ctrlKey × keydown            | preventDefault`于`web/src/` 零命中 | 基本排除 |
+| 前端剪贴板 API 实现问题                     | `web/src/utils/clipboard.ts` 为标准 `writeText` + `execCommand` 兜底 | 正常实现；仅影响按钮复制场景 |
+| `will-navigate`/`setWindowOpenHandler` 拦截 | 只拦导航与新窗口，与键盘无关（代码审阅）                             | 排除                         |
+| sandbox / contextIsolation                  | `sandbox: true` 不影响菜单派发型快捷键                               | 非主因                       |
 
 ### 2.3 运行时鉴别验证（执行修复前建议先做，5 分钟）
 
@@ -54,14 +54,14 @@ Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 
 ## 3. 根因假设排序总表
 
-| # | 假设 | 概率 | 验证方式 | 预期结果 |
-| :-: | :--- | :--- | :--- | :--- |
-| 1 | 应用菜单缺 `editMenu`，macOS 快捷键派发失效 | **已实锤 ✅** | §2.3-1/2/3 | 菜单栏无 Edit；execCommand 可复制；浏览器正常 |
+|  #  | 假设                                        | 概率          | 验证方式   | 预期结果                                      |
+| :-: | :------------------------------------------ | :------------ | :--------- | :-------------------------------------------- |
+|  1  | 应用菜单缺 `editMenu`，macOS 快捷键派发失效 | **已实锤 ✅** | §2.3-1/2/3 | 菜单栏无 Edit；execCommand 可复制；浏览器正常 |
 
 > **验证结果（2026-11-09，用户实测）**：桌面端顶部菜单栏确认**没有 Edit 菜单**——§2.3-1 命中，假设 1 由 ~90% 升级为确认根因。§6 执行时无需重复验证，直接进入步骤 2（立项）。
-| 2 | 前端快捷键拦截 | ~7% | §2.3-3 浏览器对照 | 浏览器正常即排除 |
-| 3 | sandbox 下 `navigator.clipboard` 权限 | ~2% | devtools 跑 `navigator.clipboard.writeText('test')` | 仅当症状为"按钮复制"失败才相关 |
-| 4 | IME/系统权限吞键 | ~1% | 切英文输入法重试 | 切换后正常即相关 |
+> | 2 | 前端快捷键拦截 | ~7% | §2.3-3 浏览器对照 | 浏览器正常即排除 |
+> | 3 | sandbox 下 `navigator.clipboard` 权限 | ~2% | devtools 跑 `navigator.clipboard.writeText('test')` | 仅当症状为"按钮复制"失败才相关 |
+> | 4 | IME/系统权限吞键 | ~1% | 切英文输入法重试 | 切换后正常即相关 |
 
 ## 4. 修复方案（用户已要求：确认后才执行）
 
@@ -124,3 +124,5 @@ darwin 下模板同时含 `{ role: 'appMenu' }` 与自定义 `CKQClaw` 菜单（
 - 本文档为唯一上下文来源；工程命令以 `AGENTS.md` §1 / `CLAUDE.md` §10 为准。
 - 排查会话未改任何代码；唯一落盘产物 = 本文档（未提交）。
 - 若用户在确认时选择附带 §4.3 清理，请将其纳入 allow 范围与测试断言。
+- **执行扩宽记录（2026-11-09）**：`tests/scope-check-contract.test.ts` 纳入 allow——任务L dogfood 用例断言 `allow.length > 5`，与任务P 窄范围声明（4 条）冲突；真实验证点（allow 非空、base 合法可解析）保留，阈值修为 `> 0`。
+- **预存失败记录（2026-11-09）**：`tests/task-runs-v2.test.ts > notification-only retry state > a late payload gets a fresh retry budget…` 在任务P base（a15d9f5/5310c5d 干净树）即确定性失败（本机 4 次观测同点位；第 5 次 claim 未包 `vi.waitFor`，快机器上循环短于 1s 退避窗即撞 `next_attempt_at`），与本任务改动无关。处置由用户拍板（治理层）。

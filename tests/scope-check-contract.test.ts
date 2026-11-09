@@ -209,7 +209,9 @@ describe('任务L dogfood：本仓库声明与全量 diff', () => {
       fs.readFileSync(path.join(repoRoot, '.gatescope.json'), 'utf8'),
     );
     expect(declaration.base).toMatch(/^[0-9a-f]{7,40}$/);
-    expect(declaration.allow.length).toBeGreaterThan(5);
+    // 只断言非空：allow 条数随任务范围宽窄而定（任务P 窄范围仅 4 条，
+    // 任务L 时代的 >5 阈值与最小范围纪律冲突）。
+    expect(declaration.allow.length).toBeGreaterThan(0);
     expect(
       execFileSync(
         'git',

@@ -1,14 +1,7 @@
-import {
-  app,
-  BrowserWindow,
-  dialog,
-  ipcMain,
-  Menu,
-  shell,
-  type MenuItemConstructorOptions,
-} from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
+import { buildMenuTemplate } from './menu-template';
 
 const APP_NAME = 'CKQClaw';
 const DEFAULT_SERVER_URL = 'http://127.0.0.1:3000';
@@ -288,37 +281,16 @@ function registerIpcHandlers(): void {
 }
 
 function createApplicationMenu(): void {
-  const viewMenu: MenuItemConstructorOptions = {
-    label: 'View',
-    submenu: [
-      { role: 'reload' },
-      { role: 'togglefullscreen' },
-      ...(app.isPackaged ? [] : [{ role: 'toggleDevTools' as const }]),
-    ],
-  };
-  const template: MenuItemConstructorOptions[] = [
-    ...(process.platform === 'darwin' ? [{ role: 'appMenu' as const }] : []),
-    {
-      label: 'CKQClaw',
-      submenu: [
-        { label: 'About CKQClaw', click: () => void showAbout() },
-        { type: 'separator' },
-        { role: 'quit' },
-      ],
-    },
-    viewMenu,
-    {
-      label: 'Help',
-      submenu: [
-        {
-          label: 'CKQClaw on GitHub',
-          click: () =>
-            void openExternalUrl('https://github.com/ckq184/ckqclaw'),
-        },
-      ],
-    },
-  ];
-  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate(
+      buildMenuTemplate({
+        platform: process.platform,
+        isPackaged: app.isPackaged,
+        showAbout: () => void showAbout(),
+        openExternalUrl: (url) => void openExternalUrl(url),
+      }),
+    ),
+  );
 }
 
 app.setName(APP_NAME);

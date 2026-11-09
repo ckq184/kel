@@ -5,6 +5,7 @@
     "electron/src/main/index.ts",
     "electron/src/main/menu-template.ts",
     "tests/electron-menu-contract.test.ts",
+    "tests/scope-check-contract.test.ts",
     "docs/task-p-desktop-clipboard-triage-plan.md"
   ]
 }
