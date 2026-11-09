@@ -18,7 +18,18 @@ export type RuntimeInput = {
   images?: RuntimeImage[];
 };
 
+export type RuntimeModelUsage = {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadInputTokens: number;
+  cacheCreationInputTokens: number;
+  reasoningTokens: number;
+  costUSD: number;
+};
+
 export type RuntimeUsage = {
+  /** Stable logical run id used by the host usage ledger for replay dedup. */
+  eventId?: string;
   inputTokens: number;
   outputTokens: number;
   reasoningTokens?: number;
@@ -27,6 +38,8 @@ export type RuntimeUsage = {
   costUSD?: number;
   durationMs?: number;
   numTurns?: number;
+  /** Per-model attribution; the root totals must stay the sum of all rows. */
+  modelUsage?: Record<string, RuntimeModelUsage>;
 };
 
 export type RuntimeResult = {

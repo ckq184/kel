@@ -9,6 +9,7 @@ import type {
   RuntimeInput,
   RuntimeResult,
   RuntimeSession,
+  RuntimeUsage,
 } from '../types.js';
 import { PiSubAgentAdapter } from './pi-subagents.js';
 
@@ -28,23 +29,108 @@ function textFromMessage(message: unknown): string {
     .join('');
 }
 
-function usageFromMessage(message: unknown) {
-  const usage = (message as { usage?: Record<string, unknown> } | undefined)
-    ?.usage;
-  if (!usage) return undefined;
+function nonNegative(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.max(0, value)
+    : 0;
+}
+
+/**
+ * Aggregate one Pi agent turn's billable usage across every assistant message.
+ *
+ * Pi attaches a per-API-call usage snapshot to each assistant message, so a
+ * tool-using turn spans several snapshots; the last message alone undercounts.
+ * Semantics that must stay aligned with the host ledger (usage-service /
+ * kaboo-pricing, see the Claude path in assistant-usage.ts):
+ * - `reasoning` is a subset of Pi's `output` → carve it out so output and
+ *   reasoning stay disjoint token classes.
+ * - `cacheWrite1h` is a subset of `cacheWrite` (a retention split, not an
+ *   increment) → never add it on top.
+ * - model attribution prefers `responseModel` (the model that actually served).
+ *
+ * The event id seeds the host's `usage_events` idempotency key: session id +
+ * the turn's first assistant timestamp survive runner restarts and session
+ * replays, so a re-delivered turn deduplicates instead of double charging.
+ */
+export function aggregatePiTurnUsage(
+  messages: ReadonlyArray<unknown>,
+  sessionId?: string,
+): RuntimeUsage | undefined {
+  const modelUsage: NonNullable<RuntimeUsage['modelUsage']> = {};
+  const root = {
+    inputTokens: 0,
+    outputTokens: 0,
+    reasoningTokens: 0,
+    cacheReadInputTokens: 0,
+    cacheCreationInputTokens: 0,
+    costUSD: 0,
+  };
+  let durationMs = 0;
+  let numTurns = 0;
+  let firstTimestamp: number | undefined;
+
+  for (const message of messages) {
+    if (!message || typeof message !== 'object') continue;
+    if ((message as { role?: unknown }).role !== 'assistant') continue;
+    const usage = (message as { usage?: Record<string, unknown> }).usage;
+    if (!usage || typeof usage !== 'object') continue;
+
+    const reasoning = nonNegative(usage.reasoning);
+    const output = Math.max(0, nonNegative(usage.output) - reasoning);
+    const input = nonNegative(usage.input);
+    const cacheRead = nonNegative(usage.cacheRead);
+    const cacheWrite = nonNegative(usage.cacheWrite);
+    const cost = nonNegative(
+      (usage.cost as { total?: unknown } | undefined)?.total,
+    );
+    const model =
+      (
+        (message as { responseModel?: unknown }).responseModel ||
+        (message as { model?: unknown }).model ||
+        ''
+      )
+        .toString()
+        .trim() || 'unknown';
+
+    const row = modelUsage[model] ?? {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadInputTokens: 0,
+      cacheCreationInputTokens: 0,
+      reasoningTokens: 0,
+      costUSD: 0,
+    };
+    row.inputTokens += input;
+    row.outputTokens += output;
+    row.cacheReadInputTokens += cacheRead;
+    row.cacheCreationInputTokens += cacheWrite;
+    row.reasoningTokens += reasoning;
+    row.costUSD += cost;
+    modelUsage[model] = row;
+
+    root.inputTokens += input;
+    root.outputTokens += output;
+    root.reasoningTokens += reasoning;
+    root.cacheReadInputTokens += cacheRead;
+    root.cacheCreationInputTokens += cacheWrite;
+    root.costUSD += cost;
+    durationMs += nonNegative((message as { durationMs?: unknown }).durationMs);
+    numTurns += 1;
+    const timestamp = (message as { timestamp?: unknown }).timestamp;
+    if (typeof timestamp === 'number' && firstTimestamp === undefined) {
+      firstTimestamp = timestamp;
+    }
+  }
+
+  if (numTurns === 0) return undefined;
   return {
-    inputTokens: Number(usage.input ?? 0),
-    outputTokens: Number(usage.output ?? 0),
-    reasoningTokens:
-      typeof usage.reasoning === 'number' ? usage.reasoning : undefined,
-    cacheReadInputTokens:
-      typeof usage.cacheRead === 'number' ? usage.cacheRead : undefined,
-    cacheCreationInputTokens:
-      typeof usage.cacheWrite === 'number' ? usage.cacheWrite : undefined,
-    costUSD:
-      typeof (usage.cost as { total?: unknown } | undefined)?.total === 'number'
-        ? (usage.cost as { total: number }).total
-        : undefined,
+    ...(sessionId !== undefined && firstTimestamp !== undefined
+      ? { eventId: `pi:${sessionId}:${firstTimestamp}` }
+      : {}),
+    ...root,
+    durationMs,
+    numTurns,
+    modelUsage,
   };
 }
 
@@ -144,7 +230,7 @@ function mapPiEvent(
               ? 'error'
               : 'completed',
         stopReason: assistant.stopReason,
-        usage: usageFromMessage(assistant),
+        usage: aggregatePiTurnUsage(event.messages, sessionId),
         ...(error ? { error } : {}),
       };
       return { type: 'result', sessionId, result };

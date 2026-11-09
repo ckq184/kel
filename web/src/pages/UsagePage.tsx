@@ -344,6 +344,9 @@ function metricValue(
   return formatCost(summary.averageCostPerRunUSD);
 }
 
+/** 常开页面的统计轮询间隔；仅页面可见时才发起请求（对照 UsageBars 的模式）。 */
+const USAGE_POLL_INTERVAL_MS = 60_000;
+
 export function UsagePage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const user = useAuthStore((state) => state.user);
@@ -410,6 +413,24 @@ export function UsagePage() {
     void loadStats(query);
     void loadFilters(query);
   }, [authUserId, ensureOwner, loadFilters, loadStats, queryKey, setQuery]);
+
+  // 用量在后台持续产生：常开页面按间隔轮询统计；筛选选项低频，不参与轮询。
+  // store 侧的 requestId 竞态丢弃保证轮询与手动刷新/筛选切换互不污染。
+  useEffect(() => {
+    const refreshStats = () => {
+      if (document.visibilityState !== 'visible') return;
+      void loadStats(query);
+    };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refreshStats();
+    };
+    const pollTimer = setInterval(refreshStats, USAGE_POLL_INTERVAL_MS);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(pollTimer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [loadStats, query]);
 
   const updateFilter = (name: string, value: string | null) => {
     const next = new URLSearchParams(searchParams);

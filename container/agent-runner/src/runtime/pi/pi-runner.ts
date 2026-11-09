@@ -248,6 +248,52 @@ export async function runPiQueryAttempt(
     completionPublished = true;
     const receipts = options.tracker.completeNextTurn();
     const inputTurnCompleted = result.finalizationReason === 'completed';
+    // The Pi runtime folds turn usage into RuntimeResult instead of streaming
+    // it. Re-emit it as the same `usage` StreamEvent the Claude path produces
+    // (and the host ledger consumes) BEFORE the terminal output, mirroring the
+    // legacy runner's "ledger first, result second" ordering.
+    if (result.usage) {
+      const usage = result.usage;
+      options.emit({
+        status: 'stream',
+        result: null,
+        streamEvent: {
+          eventType: 'usage',
+          agentScope: 'main',
+          displayLevel: 'detail',
+          usage: {
+            ...(usage.eventId ? { eventId: usage.eventId } : {}),
+            inputTokens: usage.inputTokens,
+            outputTokens: usage.outputTokens,
+            cacheReadInputTokens: usage.cacheReadInputTokens ?? 0,
+            cacheCreationInputTokens: usage.cacheCreationInputTokens ?? 0,
+            reasoningTokens: usage.reasoningTokens ?? 0,
+            costUSD: usage.costUSD ?? 0,
+            durationMs: usage.durationMs ?? 0,
+            numTurns: usage.numTurns ?? 0,
+            ...(usage.modelUsage
+              ? {
+                  modelUsage: Object.fromEntries(
+                    Object.entries(usage.modelUsage).map(([model, row]) => [
+                      model,
+                      {
+                        inputTokens: row.inputTokens,
+                        outputTokens: row.outputTokens,
+                        cacheReadInputTokens: row.cacheReadInputTokens ?? 0,
+                        cacheCreationInputTokens:
+                          row.cacheCreationInputTokens ?? 0,
+                        reasoningTokens: row.reasoningTokens ?? 0,
+                        costUSD: row.costUSD ?? 0,
+                      },
+                    ]),
+                  ),
+                }
+              : {}),
+          },
+          sessionId: result.sessionId,
+        },
+      });
+    }
     options.emit({
       status: inputTurnCompleted ? 'success' : 'error',
       result: result.text || null,

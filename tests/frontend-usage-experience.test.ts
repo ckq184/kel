@@ -333,4 +333,20 @@ describe('usage page product and accessibility surface', () => {
     expect(page).not.toMatch(/PieChart|<Pie|模型用量分布/);
     expect(auth).toContain('useUsageStore.getState().reset()');
   });
+
+  test('auto-refreshes stats on an interval and when the tab becomes visible', () => {
+    const page = read('web/src/pages/UsagePage.tsx');
+    expect(page).toMatch(/USAGE_POLL_INTERVAL_MS = 60_000/);
+    expect(page).toMatch(/setInterval\(refreshStats, USAGE_POLL_INTERVAL_MS\)/);
+    expect(page).toMatch(/clearInterval\(pollTimer\)/);
+    expect(page).toMatch(
+      /document\.addEventListener\('visibilitychange', onVisible\)/,
+    );
+    expect(page).toMatch(
+      /removeEventListener\('visibilitychange', onVisible\)/,
+    );
+    // 轮询仅在页面可见时刷新统计；筛选选项低频，不参与轮询。
+    expect(page).toMatch(/document\.visibilityState !== 'visible'/);
+    expect(page).toMatch(/void loadStats\(query\)/);
+  });
 });
