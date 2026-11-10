@@ -1,11 +1,13 @@
 {
-  "task": "任务Y2 - 多会话选择提炼记忆：capture/preview 扩展为多会话合并（用户 2026-11-10 确认三项裁决：共享预算封顶 400 条/60k 字 / API 纯复数 agentIds / 独立选择对话框；计划见 docs/task-y2-multi-session-capture-plan.md）",
-  "base": "c4e808f",
+  "task": "任务Y3 - 会话内按消息选择提炼：capture 增加 messageIds 精确模式（用户 2026-11-10 确认三项裁决：对话框内按消息模式 / 宁拒勿截 400 / 按 id 直查不限 400 条窗口并动 db.ts 只读函数；计划见 docs/task-y3-message-pick-capture-plan.md）",
+  "base": "47b895f",
   "allow": [
-    "docs/task-y2-multi-session-capture-plan.md",
+    "docs/task-y3-message-pick-capture-plan.md",
+    "src/db.ts",
     "src/routes/auto-memory.ts",
     "web/src/stores/auto-memory.ts",
     "web/src/components/chat/CaptureMemoryDialog.tsx",
+    "web/src/components/chat/CaptureMessagePicker.tsx",
     "web/src/components/chat/ChatView.tsx",
     "tests/auto-memory-routes.test.ts",
     "tests/auto-memory-frontend.test.ts",

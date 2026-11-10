@@ -112,6 +112,11 @@ interface AutoMemoryState {
     workspaceJid: string,
     agentIds: string[],
   ) => Promise<AutoMemoryCaptureReceipt>;
+  captureMessages: (
+    workspaceJid: string,
+    agentId: string,
+    messageIds: string[],
+  ) => Promise<AutoMemoryCaptureReceipt>;
 }
 
 const errorMessage = (err: unknown, fallback: string) =>
@@ -293,6 +298,22 @@ export const useAutoMemoryStore = create<AutoMemoryState>((set, get) => ({
       );
     } catch (err) {
       set({ actionError: errorMessage(err, '提炼记忆失败') });
+      throw err;
+    }
+  },
+
+  // 任务 Y3 消息级精确提炼：agentId 空串 = 主会话（省略字段）；合计与
+  // 上限由服务端兜底（宁拒勿截），前端对话框本地合计只是前置提示。
+  captureMessages: async (workspaceJid, agentId, messageIds) => {
+    set({ actionError: null });
+    try {
+      return await api.post<AutoMemoryCaptureReceipt>(
+        `/api/auto-memory/workspaces/${encodedJid(workspaceJid)}/capture`,
+        { ...(agentId ? { agentId } : {}), messageIds },
+        AUTO_MEMORY_CAPTURE_TIMEOUT_MS,
+      );
+    } catch (err) {
+      set({ actionError: errorMessage(err, '提炼所选消息失败') });
       throw err;
     }
   },

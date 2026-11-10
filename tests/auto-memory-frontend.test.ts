@@ -489,3 +489,95 @@ describe('chat capture button (task Y2)', () => {
     expect(dialog).not.toContain('/api/auto-memory');
   });
 });
+
+describe('message-pick capture store action (task Y3)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useAutoMemoryStore.setState({ actionError: null });
+  });
+
+  test('captureMessages POSTs messageIds with the 90s extraction timeout', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({
+      ok: true,
+      captured: 4,
+      added: 3,
+      intercepted: 0,
+    });
+
+    const receipt = await useAutoMemoryStore
+      .getState()
+      .captureMessages('web:ws1', 'agent-7', ['m1', 'm2', 'm3', 'm4']);
+
+    expect(api.post).toHaveBeenCalledWith(
+      '/api/auto-memory/workspaces/web%3Aws1/capture',
+      { agentId: 'agent-7', messageIds: ['m1', 'm2', 'm3', 'm4'] },
+      90_000,
+    );
+    expect(receipt).toMatchObject({ ok: true, captured: 4, added: 3 });
+  });
+
+  test('captureMessages omits agentId for the main conversation', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({
+      ok: true,
+      captured: 1,
+      added: 1,
+      intercepted: 0,
+    });
+
+    await useAutoMemoryStore.getState().captureMessages('web:ws1', '', ['m1']);
+
+    expect(api.post).toHaveBeenCalledWith(
+      '/api/auto-memory/workspaces/web%3Aws1/capture',
+      { messageIds: ['m1'] },
+      90_000,
+    );
+  });
+
+  test('captureMessages failures set actionError and rethrow', async () => {
+    vi.mocked(api.post).mockRejectedValueOnce(
+      new Error('selected messages total 62,000 chars'),
+    );
+
+    await expect(
+      useAutoMemoryStore.getState().captureMessages('web:ws1', '', ['m1']),
+    ).rejects.toThrow('62,000');
+    expect(useAutoMemoryStore.getState().actionError).toContain('62,000');
+  });
+});
+
+describe('message-pick capture UI (task Y3)', () => {
+  test('dialog offers a message-pick mode backed by the picker component', () => {
+    const dialog = read('web/src/components/chat/CaptureMemoryDialog.tsx');
+
+    // Mode switch between session-merge (Y2) and message-pick (Y3).
+    expect(dialog).toMatch(/按会话/);
+    expect(dialog).toMatch(/按消息/);
+    expect(dialog).toContain('messagePicker');
+    expect(dialog).toContain('<CaptureMessagePicker');
+    // Message mode uses the exact-mode store action with a local budget
+    // guard (refuse-not-trim, mirrored from the server's 60k check).
+    expect(dialog).toContain('captureMessages');
+    expect(dialog).toMatch(/60_000/);
+    expect(dialog).toMatch(/超过/);
+    expect(dialog).not.toContain('/api/auto-memory');
+  });
+
+  test('CaptureMessagePicker lists, checks, and paginates messages', () => {
+    const picker = read('web/src/components/chat/CaptureMessagePicker.tsx');
+
+    expect(picker).toMatch(/Checkbox/);
+    expect(picker).toContain('onLoadMore');
+    expect(picker).toContain('加载更早');
+    // Newest-first listing with truncated text preview and role labels.
+    expect(picker).toMatch(/reverse/);
+    expect(picker).toMatch(/slice/);
+    expect(picker).toMatch(/用户|助手/);
+    expect(picker).not.toContain('/api/auto-memory');
+  });
+
+  test('ChatView wires the current conversation into the picker', () => {
+    const view = read('web/src/components/chat/ChatView.tsx');
+    expect(view).toMatch(/messagePicker=\{\{/);
+    expect(view).not.toContain('/api/auto-memory');
+  });
+});

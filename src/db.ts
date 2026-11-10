@@ -11788,6 +11788,31 @@ export function getMessagesPage(
 }
 
 /**
+ * Fetch specific messages of ONE chat by id (task Y3 message-pick capture).
+ * The (id, chat_jid) composite primary key binds the lookup to a single
+ * conversation — ids belonging to other chats simply miss. Returns in
+ * ascending timestamp order. Callers cap `ids` (SQL variable budget).
+ */
+export function getMessagesByIds(
+  chatJid: string,
+  ids: string[],
+): Array<NewMessage & { is_from_me: boolean }> {
+  if (ids.length === 0) return [];
+  const placeholders = ids.map(() => '?').join(', ');
+  const rows = db
+    .prepare(
+      `SELECT id, chat_jid, source_jid, sender, sender_name, content, timestamp, is_from_me, attachments, token_usage, channel_context,
+              turn_id, session_id, sdk_message_uuid, source_kind, finalization_reason,
+              delivery_mode, delivery_status, delivery_run_id, delivery_priority, delivery_updated_at
+       FROM messages
+       WHERE chat_jid = ? AND id IN (${placeholders})
+       ORDER BY timestamp ASC`,
+    )
+    .all(chatJid, ...ids) as Array<NewMessage & { is_from_me: number }>;
+  return rows.map((row) => normalizeMessageRow(row));
+}
+
+/**
  * Get messages after a given timestamp (for polling new messages).
  * Returns in ASC order (oldest first).
  */

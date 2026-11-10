@@ -4,7 +4,11 @@ import { bodyLimit } from 'hono/body-limit';
 import type { Variables } from '../web-context.js';
 import { authMiddleware, systemConfigMiddleware } from '../middleware/auth.js';
 import { canAccessGroup, canModifyGroup } from '../web-context.js';
-import { getMessagesPage, getRegisteredGroup } from '../db.js';
+import {
+  getMessagesByIds,
+  getMessagesPage,
+  getRegisteredGroup,
+} from '../db.js';
 import {
   clearAutoMemoryHostConfig,
   getAutoMemoryConfigSource,
@@ -626,6 +630,47 @@ autoMemoryRoutes.get('/workspaces/:workspaceJid/capture/preview', (c) => {
   return c.json({ messages: messages.length, chars });
 });
 
+/**
+ * Shared capture tail for both modes (session-merge task Y2, message-pick
+ * task Y3): sidecar add + receipt counting.
+ */
+async function captureViaSidecar(
+  c: Context,
+  group: GroupWithJid,
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+  metadata: Record<string, unknown>,
+): Promise<Response> {
+  const outcome = await callSidecar(group, 'add', { messages, metadata });
+  if (!outcome.available) return unavailableReceipt(c, outcome.reason);
+
+  // mem0 add receipt: a bare results list, or {results, intercepted?} once
+  // the sidecar attached its redaction findings (attach_intercepted).
+  const value = outcome.value;
+  const dict =
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+  const results = Array.isArray(value)
+    ? value
+    : dict && Array.isArray(dict.results)
+      ? dict.results
+      : [];
+  const intercepted =
+    dict && Array.isArray(dict.intercepted) ? dict.intercepted : [];
+  const added = results.filter(
+    (item) =>
+      item &&
+      typeof item === 'object' &&
+      (item as { event?: unknown }).event === 'ADD',
+  ).length;
+  return c.json({
+    ok: true,
+    captured: messages.length,
+    added,
+    intercepted: intercepted.length,
+  });
+}
+
 autoMemoryRoutes.post('/workspaces/:workspaceJid/capture', async (c) => {
   const resolved = resolveWorkspace(c, c.req.param('workspaceJid'), 'write');
   if ('error' in resolved) return resolved.error;
@@ -636,6 +681,79 @@ autoMemoryRoutes.post('/workspaces/:workspaceJid/capture', async (c) => {
   if (body !== null && (typeof body !== 'object' || Array.isArray(body))) {
     return invalidArgs(c, 'body must be a JSON object');
   }
+
+  // Task Y3 message-pick mode: exact rows of ONE conversation by id —
+  // exact budgets (refuse, never trim an explicit selection). The
+  // (id, chat_jid) composite primary key scopes the lookup to this
+  // conversation; other chats' ids simply miss.
+  if (body?.messageIds !== undefined) {
+    if (body.agentIds !== undefined) {
+      return invalidArgs(c, 'messageIds and agentIds are mutually exclusive');
+    }
+    if (
+      !Array.isArray(body.messageIds) ||
+      body.messageIds.length === 0 ||
+      !body.messageIds.every((v: unknown) => typeof v === 'string')
+    ) {
+      return invalidArgs(c, 'messageIds must be a non-empty array of strings');
+    }
+    const uniqueIds = [...new Set(body.messageIds as string[])];
+    if (uniqueIds.length > CAPTURE_MESSAGE_LIMIT) {
+      return invalidArgs(
+        c,
+        `messageIds must contain at most ${CAPTURE_MESSAGE_LIMIT} ids`,
+      );
+    }
+    if (body.agentId !== undefined && typeof body.agentId !== 'string') {
+      return invalidArgs(c, 'agentId must be a string');
+    }
+    const agentId = (body.agentId ?? '').trim();
+    if (agentId.length > CAPTURE_AGENT_ID_MAX) {
+      return invalidArgs(
+        c,
+        `agentId must be at most ${CAPTURE_AGENT_ID_MAX} characters`,
+      );
+    }
+    const targetJid = agentId
+      ? `${resolved.group.jid}#agent:${agentId}`
+      : resolved.group.jid;
+    const messages = getMessagesByIds(targetJid, uniqueIds)
+      .filter(
+        (row) =>
+          row.sender !== '__system__' &&
+          row.sender !== '__billing__' &&
+          row.content.trim().length > 0,
+      )
+      .map((row) => ({
+        role: (row.is_from_me ? 'assistant' : 'user') as 'user' | 'assistant',
+        content: row.content,
+      }));
+    if (messages.length === 0) {
+      return invalidArgs(
+        c,
+        'no capturable text messages among the selected ids',
+      );
+    }
+    const chars = messages.reduce(
+      (sum, message) => sum + message.content.length,
+      0,
+    );
+    if (chars > CAPTURE_CHAR_BUDGET) {
+      return invalidArgs(
+        c,
+        `selected messages total ${chars.toLocaleString('en-US')} chars, exceeding the ${CAPTURE_CHAR_BUDGET.toLocaleString('en-US')}-char budget; please select fewer`,
+      );
+    }
+    const metadata: Record<string, unknown> = {
+      source: 'chat_capture',
+      mode: 'message_pick',
+      messageCount: messages.length,
+      capturedAt: new Date().toISOString(),
+    };
+    if (agentId) metadata.agentId = agentId;
+    return captureViaSidecar(c, resolved.group, messages, metadata);
+  }
+
   let rawAgentIds: string[] | undefined;
   if (body?.agentIds !== undefined) {
     if (
@@ -668,39 +786,7 @@ autoMemoryRoutes.post('/workspaces/:workspaceJid/capture', async (c) => {
     agentIds: agent.agentIds,
     capturedAt: new Date().toISOString(),
   };
-
-  const outcome = await callSidecar(resolved.group, 'add', {
-    messages,
-    metadata,
-  });
-  if (!outcome.available) return unavailableReceipt(c, outcome.reason);
-
-  // mem0 add receipt: a bare results list, or {results, intercepted?} once
-  // the sidecar attached its redaction findings (attach_intercepted).
-  const value = outcome.value;
-  const dict =
-    value && typeof value === 'object' && !Array.isArray(value)
-      ? (value as Record<string, unknown>)
-      : null;
-  const results = Array.isArray(value)
-    ? value
-    : dict && Array.isArray(dict.results)
-      ? dict.results
-      : [];
-  const intercepted =
-    dict && Array.isArray(dict.intercepted) ? dict.intercepted : [];
-  const added = results.filter(
-    (item) =>
-      item &&
-      typeof item === 'object' &&
-      (item as { event?: unknown }).event === 'ADD',
-  ).length;
-  return c.json({
-    ok: true,
-    captured: messages.length,
-    added,
-    intercepted: intercepted.length,
-  });
+  return captureViaSidecar(c, resolved.group, messages, metadata);
 });
 
 export default autoMemoryRoutes;

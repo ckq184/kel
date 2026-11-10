@@ -81,6 +81,7 @@ const TERMINAL_MAX_RATIO = 0.7;
 // Stable empty references to avoid infinite re-render loops in Zustand selectors
 const EMPTY_AGENTS: import('../../types').AgentInfo[] = [];
 const EMPTY_FOLLOW_UPS: QueuedFollowUp[] = [];
+const EMPTY_MESSAGES: import('../../stores/chat').Message[] = [];
 
 interface ChatViewProps {
   groupJid: string;
@@ -631,6 +632,29 @@ export function ChatView({ groupJid, onBack, headerLeft }: ChatViewProps) {
         .map((a) => ({ id: a.id, name: a.name || a.id })),
     ],
     [group?.name, groupJid, agents],
+  );
+
+  // 任务 Y3：「按消息」模式的数据源 = 当前所在会话（主/子会话）的已加载
+  // 文本消息；系统/计费/空行与后端同样剔除，翻页可加载更早历史。
+  const captureMessageList = activeAgentTab
+    ? (agentMessages[activeAgentTab] ?? EMPTY_MESSAGES)
+    : (groupMessages ?? EMPTY_MESSAGES);
+  const pickerMessages = useMemo(
+    () =>
+      captureMessageList
+        .filter(
+          (m) =>
+            m.sender !== '__system__' &&
+            m.sender !== '__billing__' &&
+            (m.content ?? '').trim().length > 0,
+        )
+        .map((m) => ({
+          id: m.id,
+          role: (m.is_from_me ? 'assistant' : 'user') as 'user' | 'assistant',
+          content: m.content,
+          timestamp: m.timestamp,
+        })),
+    [captureMessageList],
   );
 
   const handleCreateSession = useCallback(async () => {
@@ -1409,13 +1433,27 @@ export function ChatView({ groupJid, onBack, headerLeft }: ChatViewProps) {
         loading={resetLoading}
       />
 
-      {/* Multi-session capture dialog (task Y2): selection, merged-cost
-          preview, confirmation, and receipt toasts live inside it. */}
+      {/* Multi-session capture dialog (task Y2 session-merge + task Y3
+          message-pick): selection, previews, confirmation, and receipt
+          toasts live inside it. */}
       <CaptureMemoryDialog
         open={showCaptureDialog}
         groupJid={groupJid}
         targets={captureTargets}
         defaultSelected={[activeAgentTab ?? '']}
+        messagePicker={{
+          agentId: activeAgentTab ?? '',
+          messages: pickerMessages,
+          hasMore: activeAgentTab
+            ? !!agentHasMore[activeAgentTab]
+            : !!hasMoreMessages,
+          loadingMore: !activeAgentTab && loading,
+          onLoadMore: () => {
+            if (activeAgentTab)
+              loadAgentMessages(groupJid, activeAgentTab, true);
+            else loadMessages(groupJid, true);
+          },
+        }}
         onClose={() => setShowCaptureDialog(false)}
       />
 

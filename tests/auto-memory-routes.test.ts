@@ -1179,3 +1179,207 @@ describe('chat capture endpoints (task Y)', () => {
     expect(await res.json()).toMatchObject({ error: 'invalid_args' });
   });
 });
+
+describe('message-pick capture (task Y3)', () => {
+  let seq = 0;
+  const seedWorkspace = (): string => {
+    seq += 1;
+    const jid = `web:ws-pick-${seq}`;
+    db.setRegisteredGroup(jid, {
+      name: `Pick ${seq}`,
+      folder: `ws-pick-${seq}`,
+      added_at: new Date().toISOString(),
+      created_by: 'user-1',
+    });
+    return jid;
+  };
+  const ts = (second: number) =>
+    new Date(Date.UTC(2026, 10, 11, 9, 0, second)).toISOString();
+  const seedMessage = (
+    chatJid: string,
+    id: string,
+    content: string,
+    opts?: { fromMe?: boolean; sender?: string; timestamp?: string },
+  ) => {
+    db.ensureChatExists(chatJid);
+    db.storeMessageDirect(
+      id,
+      chatJid,
+      opts?.sender ?? 'web-user',
+      'tester',
+      content,
+      opts?.timestamp ?? ts(0),
+      !!opts?.fromMe,
+    );
+  };
+  const post = (jid: string, body: unknown) =>
+    autoMemoryRoutes.request(`/workspaces/${jid}/capture`, {
+      method: 'POST',
+      headers: OWNER,
+      body: JSON.stringify(body),
+    });
+
+  test('sends exactly the selected messages in timestamp order', async () => {
+    const jid = seedWorkspace();
+    seedMessage(jid, 'main-1', '主会话干扰行', { timestamp: ts(0) });
+    seedMessage(`${jid}#agent:a1`, 'sub-1', '选中第一条', { timestamp: ts(1) });
+    seedMessage(`${jid}#agent:a1`, 'sub-2', '选中第二条', {
+      fromMe: true,
+      timestamp: ts(2),
+    });
+
+    // Ids passed out of order; output must come back chronologically.
+    const res = await post(jid, {
+      agentId: 'a1',
+      messageIds: ['sub-2', 'sub-1'],
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      ok: true,
+      captured: 2,
+      added: 2,
+      intercepted: 1,
+    });
+    expect(sidecarCalls).toHaveLength(1);
+    expect(sidecarCalls[0].op).toBe('add');
+    expect(sidecarCalls[0].args.messages).toEqual([
+      { role: 'user', content: '选中第一条' },
+      { role: 'assistant', content: '选中第二条' },
+    ]);
+    expect(sidecarCalls[0].args.metadata).toMatchObject({
+      source: 'chat_capture',
+      mode: 'message_pick',
+      agentId: 'a1',
+      messageCount: 2,
+      capturedAt: expect.any(String),
+    });
+  });
+
+  test('messageIds without agentId reads the main conversation', async () => {
+    const jid = seedWorkspace();
+    seedMessage(jid, 'main-1', '主会话一', { timestamp: ts(0) });
+    seedMessage(`${jid}#agent:a1`, 'sub-1', '子会话一', { timestamp: ts(1) });
+
+    const res = await post(jid, { messageIds: ['main-1'] });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ captured: 1 });
+    expect(sidecarCalls[0].args.messages).toEqual([
+      { role: 'user', content: '主会话一' },
+    ]);
+    expect(sidecarCalls[0].args.metadata).not.toHaveProperty('agentId');
+    expect(sidecarCalls[0].args.metadata).toMatchObject({ messageCount: 1 });
+  });
+
+  test('drops ids from other conversations and unknown ids', async () => {
+    const jid = seedWorkspace();
+    seedMessage(jid, 'main-1', '主会话一', { timestamp: ts(0) });
+    seedMessage(jid, 'main-2', '主会话二', { timestamp: ts(1) });
+    seedMessage(`${jid}#agent:a1`, 'sub-1', '子会话一', { timestamp: ts(2) });
+
+    // sub-1 belongs to a different conversation under this agentId scope.
+    const res = await post(jid, {
+      messageIds: ['main-1', 'sub-1', 'no-such-id'],
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ captured: 1 });
+
+    // All ids invalid → same empty-selection receipt as task Y.
+    const allInvalid = await post(jid, { messageIds: ['no-such-id'] });
+    expect(allInvalid.status).toBe(400);
+    expect(await allInvalid.json()).toMatchObject({ error: 'invalid_args' });
+    expect(sidecarCalls).toHaveLength(1);
+  });
+
+  test('drops system/billing/blank rows picked by id (server fallback)', async () => {
+    const jid = seedWorkspace();
+    seedMessage(jid, 'sys-1', 'context_reset', {
+      sender: '__system__',
+      timestamp: ts(0),
+    });
+    seedMessage(jid, 'bill-1', '配额提醒', {
+      sender: '__billing__',
+      timestamp: ts(1),
+    });
+    seedMessage(jid, 'blank-1', '   ', { timestamp: ts(2) });
+    seedMessage(jid, 'ok-1', '正常消息', { timestamp: ts(3) });
+
+    const res = await post(jid, {
+      messageIds: ['sys-1', 'bill-1', 'blank-1', 'ok-1'],
+    });
+    expect(res.status).toBe(200);
+    expect(sidecarCalls[0].args.messages).toEqual([
+      { role: 'user', content: '正常消息' },
+    ]);
+
+    const onlyJunk = await post(jid, { messageIds: ['sys-1', 'bill-1'] });
+    expect(onlyJunk.status).toBe(400);
+    expect(await onlyJunk.json()).toMatchObject({ error: 'invalid_args' });
+  });
+
+  test('has no 400-message window — the oldest row stays selectable', async () => {
+    const jid = seedWorkspace();
+    for (let i = 0; i < 405; i++) {
+      seedMessage(jid, `cap-${i}`, `第${i}条`, { timestamp: ts(i) });
+    }
+
+    const res = await post(jid, { messageIds: ['cap-0'] });
+    expect(res.status).toBe(200);
+    expect(sidecarCalls[0].args.messages).toEqual([
+      { role: 'user', content: '第0条' },
+    ]);
+  });
+
+  test('rejects over-budget selections without truncating', async () => {
+    const jid = seedWorkspace();
+    seedMessage(jid, 'big-1', '巨'.repeat(31_000), { timestamp: ts(0) });
+    seedMessage(jid, 'big-2', '大'.repeat(31_000), { timestamp: ts(1) });
+
+    // 62k chars > 60k budget — refuse (message-pick is exact by design),
+    // never silently trim what the user explicitly chose.
+    const res = await post(jid, { messageIds: ['big-1', 'big-2'] });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe('invalid_args');
+    expect(body.message).toContain('60,000');
+    expect(sidecarCalls).toHaveLength(0);
+
+    // >400 ids also refuses.
+    const manyIds = Array.from({ length: 401 }, (_, i) => `id-${i}`);
+    seedMessage(jid, 'filler', '占位', { timestamp: ts(2) });
+    const tooMany = await post(jid, { messageIds: manyIds });
+    expect(tooMany.status).toBe(400);
+    expect(await tooMany.json()).toMatchObject({ error: 'invalid_args' });
+    expect(sidecarCalls).toHaveLength(0);
+  });
+
+  test('messageIds and agentIds are mutually exclusive', async () => {
+    const jid = seedWorkspace();
+    seedMessage(jid, 'main-1', '主会话一', { timestamp: ts(0) });
+
+    const res = await post(jid, {
+      messageIds: ['main-1'],
+      agentIds: [''],
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: 'invalid_args' });
+    expect(sidecarCalls).toHaveLength(0);
+  });
+
+  test('rejects malformed messageIds and agentId inputs', async () => {
+    const jid = seedWorkspace();
+    seedMessage(jid, 'main-1', '主会话一', { timestamp: ts(0) });
+
+    for (const bad of [
+      { messageIds: 'x' },
+      { messageIds: [] },
+      { messageIds: [1] },
+      { messageIds: ['ok'], agentId: 5 },
+      { messageIds: ['ok'], agentId: 'x'.repeat(129) },
+    ]) {
+      const res = await post(jid, bad);
+      expect(res.status, JSON.stringify(bad)).toBe(400);
+      expect(await res.json()).toMatchObject({ error: 'invalid_args' });
+    }
+    expect(sidecarCalls).toHaveLength(0);
+  });
+});

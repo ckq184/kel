@@ -550,33 +550,45 @@ workspace 端点先要求 Login，再按 `:workspaceJid` 执行与 v2 相同的�
 `not_configured`；侧车不可用返回 503 `unavailable`（带 reason）；参数非法返回
 400 `invalid_args`。
 
-### 会话提炼采集（任务 Y，多会话合并为任务 Y2）
+### 会话提炼采集（任务 Y，多会话合并为任务 Y2，按消息选择为任务 Y3）
 
-手动把会话全文提炼入自动记忆的两端点（聊天窗口「提炼记忆」按钮 → 多会话
-选择对话框）：preview 为读权限（`canAccessGroup()`），capture 为写权限
-（`canModifyGroup()`），无权与不存在统一 404。采集目标 = 一个工作区内的
-**主会话 + 各 conversation 子会话**（可多选合并）；会话标识约定
-`agentIds` 元素 `''`（空串）= 主会话、其余 = agentId（子会话虚拟 jid
-`${jid}#agent:{agentId}`），值 trim 后去重，未知/已删除的 agentId 贡献
-0 条静默跳过。合并后按**共享预算**封顶：各目标各取最新 400 条 → 按
-timestamp 全局正序合并 → 剔除 `context_reset` 分隔行与配额通知行（仅文本
-content，附件不参与；角色按 `is_from_me` 映射 user/assistant）→ **总条数
-≤400 且总字符 ≤60k**，从最新往回保留（先触先停）；上限服务端固定，不接受
-客户端传入。
+手动把会话内容提炼入自动记忆的两端点（聊天窗口「提炼记忆」按钮 → 选择
+对话框，支持按会话/按消息两种模式）：preview 为读权限（`canAccessGroup()`），
+capture 为写权限（`canModifyGroup()`），无权与不存在统一 404。
+
+**按会话模式（任务 Y2）**——采集目标 = 一个工作区内的**主会话 + 各
+conversation 子会话**（可多选合并）；会话标识约定 `agentIds` 元素 `''`
+（空串）= 主会话、其余 = agentId（子会话虚拟 jid `${jid}#agent:{agentId}`），
+值 trim 后去重，未知/已删除的 agentId 贡献 0 条静默跳过。合并后按**共享
+预算**封顶：各目标各取最新 400 条 → 按 timestamp 全局正序合并 → 剔除
+`context_reset` 分隔行与配额通知行（仅文本 content，附件不参与；角色按
+`is_from_me` 映射 user/assistant）→ **总条数 ≤400 且总字符 ≤60k**，从最新
+往回保留（先触先停）；上限服务端固定，不接受客户端传入。
 
 - `GET /api/auto-memory/workspaces/:workspaceJid/capture/preview`
   - 可选 Query：重复参数 `agentId`（可多次出现，`agentId=` 空值即主会话；
     缺省 = 仅主会话）。只读 DB 组装、不触发侧车（未配置时也可预览），
     返回 `{ messages, chars }`（合并后将提炼的条数与总字符数）。
 - `POST /api/auto-memory/workspaces/:workspaceJid/capture`
-  - Body `{ agentIds?: string[] }`（缺省 = 仅主会话；显式空数组或含非
-    字符串元素 → 400）。组装后经侧车 `add` 送 mem0 提炼（一次 LLM 提炼 +
-    embedding，入侧车前先机械 redact）；metadata 携带
+  - 按会话模式 Body `{ agentIds?: string[] }`（缺省 = 仅主会话；显式空
+    数组或含非字符串元素 → 400）。组装后经侧车 `add` 送 mem0 提炼（一次
+    LLM 提炼 + embedding，入侧车前先机械 redact）；metadata 携带
     `{ source: 'chat_capture', agentIds, capturedAt }`。返回
     `{ ok: true, captured, added, intercepted }`（added = mem0 ADD 事件数，
     intercepted = 脱敏命中数）。所选目标全部无可提炼消息 400 `invalid_args`；
     未配置 503 `not_configured`；提炼一次可能 10-60s（manager 每请求 60s
     超时杀侧车为既有语义，下次调用自动 respawn）。
+  - **按消息模式（任务 Y3）** Body `{ messageIds: string[], agentId? }`：
+    `agentId` 定位单一会话（缺省/空 = 主会话），`messageIds` 为该会话内的
+    消息 id（去重后 ≤400）。与 `agentIds` 互斥，同传 400。服务端按
+    `WHERE chat_jid = 目标 jid AND id IN (...)` 直取行（复合主键天然完成
+    归属校验，其他会话/工作区的 id 查不到即剔除；**不限最新 400 条窗口**，
+    翻页加载到的更早历史均可选）；系统/计费/空行剔除、角色映射、timestamp
+    正序同上；**预算宁拒勿截**——合计字符 >60,000 直接 400（提示减少选择，
+    不静默截断），与按会话模式的截断语义明确分叉。metadata 携带
+    `{ source: 'chat_capture', mode: 'message_pick', agentId?, messageCount,
+capturedAt }`（不存 messageIds 全量）。preview 无对应端点——前端以
+    已加载消息本地合计，服务端 capture 兜底校验。
 
 ## 用量与计费
 
