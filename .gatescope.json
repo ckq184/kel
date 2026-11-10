@@ -1,9 +1,14 @@
 {
-  "task": "修复 - 多侧车并存互斥：mem0ai 2.2.1 遥测分支给每个 Memory 实例开启固定共享路径 ~/.mem0/migrations_qdrant 的 qdrant local 存储（只创建零消费），qdrant local 单写者导致第二个工作区侧车 init 必报 already accessed by another instance（任务X真机测试发现 2026-11-10；manager spawn 注入 MEM0_TELEMETRY=false 跳过该分支）",
-  "base": "a34b76e",
+  "task": "任务Y - 会话窗口「提炼记忆」按钮：全文手动采集入自动记忆（用户 2026-11-10 批准立项，两项设计已拍板：全部历史上限 400 条/60k 字 / 确认框显示条数后执行；计划/交接见 docs/task-y-chat-capture-plan.md）",
+  "base": "18b9125",
   "allow": [
-    "src/auto-memory-sidecar-manager.ts",
-    "tests/auto-memory-sidecar-manager.test.ts",
-    "tests/fixtures/fake-auto-memory-sidecar.mjs"
+    "docs/task-y-chat-capture-plan.md",
+    "src/routes/auto-memory.ts",
+    "web/src/stores/auto-memory.ts",
+    "web/src/components/chat/ChatView.tsx",
+    "tests/auto-memory-routes.test.ts",
+    "tests/auto-memory-frontend.test.ts",
+    "docs/API.md",
+    "docs/ACL-MATRIX.md"
   ]
 }
