@@ -19,7 +19,7 @@ export function AboutSection() {
       <div>
         <h2 className="text-lg font-semibold text-foreground mb-1">CKQClaw</h2>
         <p className="text-sm text-muted-foreground">
-          基于 Claude Agent SDK 的自托管多智能体工作平台
+          基于 Pi Agent SDK 的自托管多智能体工作平台
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
           版本 1.0.0 · MIT License
@@ -98,7 +98,7 @@ export function AboutSection() {
               <ExternalLink className="w-3 h-3" />
             </a>
             <p className="mt-1 leading-relaxed">
-              自托管个人智能体产品方向的重要参考。CKQClaw 选择复用 Claude Agent
+              自托管个人智能体产品方向的重要参考。CKQClaw 选择复用 Pi Agent
               SDK，并在此基础上构建工作区、渠道与多智能体管理能力。
             </p>
           </div>
@@ -114,7 +114,7 @@ export function AboutSection() {
           <h3 className="text-sm font-medium text-foreground">设计哲学</h3>
         </div>
         <p className="text-sm text-muted-foreground leading-relaxed">
-          复用成熟的 Claude Agent
+          复用成熟的 Pi Agent
           SDK，把产品重心放在工作区、渠道连接、能力治理和多用户协作体验上。
         </p>
       </div>
