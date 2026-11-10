@@ -1358,6 +1358,55 @@ export function initDatabase(): void {
   db.prepare(
     "UPDATE scheduled_tasks SET updated_at = created_at WHERE updated_at = '' OR updated_at IS NULL",
   ).run();
+  // Migration: remove UNIQUE constraint from registered_groups.folder
+  // Multiple groups (web:main + feishu chats) share folder='main' by design.
+  // The old UNIQUE constraint caused INSERT OR REPLACE to silently delete
+  // the conflicting row, making web:main and feishu groups mutually exclusive.
+  //
+  // ORDERING CONTRACT (task Z follow-up fix): this rebuild DROPs and
+  // recreates registered_groups, so it must run BEFORE every additive
+  // registered_groups ensureColumn below (selected_skills … sender_allowlist,
+  // channel_account_id, auto_memory_recall) — formerly it sat below them, and
+  // an ancient DB's first boot both wiped those columns and then hard-failed
+  // the assertSchema('registered_groups', …) pin, only converging after a
+  // second boot. Its SELECT depends only on columns guaranteed above:
+  // execution_mode (l.~1277), custom_cwd (l.~1282) and avatar_url (l.~1291);
+  // everything else is inserted as NULL/0 literals.
+  const hasUniqueFolder =
+    (
+      db
+        .prepare(
+          `SELECT COUNT(*) as cnt FROM sqlite_master
+         WHERE type='index' AND tbl_name='registered_groups'
+         AND name='sqlite_autoindex_registered_groups_2'`,
+        )
+        .get() as { cnt: number }
+    ).cnt > 0;
+  if (hasUniqueFolder) {
+    db.transaction(() => {
+      db.exec(`
+        CREATE TABLE registered_groups_new (
+          jid TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          folder TEXT NOT NULL,
+          added_at TEXT NOT NULL,
+          avatar_url TEXT,
+          container_config TEXT,
+          execution_mode TEXT DEFAULT 'container',
+          custom_cwd TEXT,
+          init_source_path TEXT,
+          init_git_url TEXT,
+          created_by TEXT,
+          owner_claim_source TEXT,
+          is_home INTEGER DEFAULT 0
+        );
+        INSERT INTO registered_groups_new SELECT jid, name, folder, added_at, avatar_url, container_config, execution_mode, custom_cwd, NULL, NULL, NULL, NULL, 0 FROM registered_groups;
+        DROP TABLE registered_groups;
+        ALTER TABLE registered_groups_new RENAME TO registered_groups;
+      `);
+    })();
+  }
+
   ensureColumn('registered_groups', 'selected_skills', 'TEXT');
   ensureColumn('sessions', 'agent_id', "TEXT NOT NULL DEFAULT ''");
   ensureColumn('agents', 'kind', "TEXT NOT NULL DEFAULT 'task'");
@@ -1487,45 +1536,6 @@ export function initDatabase(): void {
   db.exec(
     'CREATE INDEX IF NOT EXISTS idx_rg_target_main ON registered_groups(target_main_jid)',
   );
-
-  // Migration: remove UNIQUE constraint from registered_groups.folder
-  // Multiple groups (web:main + feishu chats) share folder='main' by design.
-  // The old UNIQUE constraint caused INSERT OR REPLACE to silently delete
-  // the conflicting row, making web:main and feishu groups mutually exclusive.
-  const hasUniqueFolder =
-    (
-      db
-        .prepare(
-          `SELECT COUNT(*) as cnt FROM sqlite_master
-         WHERE type='index' AND tbl_name='registered_groups'
-         AND name='sqlite_autoindex_registered_groups_2'`,
-        )
-        .get() as { cnt: number }
-    ).cnt > 0;
-  if (hasUniqueFolder) {
-    db.transaction(() => {
-      db.exec(`
-        CREATE TABLE registered_groups_new (
-          jid TEXT PRIMARY KEY,
-          name TEXT NOT NULL,
-          folder TEXT NOT NULL,
-          added_at TEXT NOT NULL,
-          avatar_url TEXT,
-          container_config TEXT,
-          execution_mode TEXT DEFAULT 'container',
-          custom_cwd TEXT,
-          init_source_path TEXT,
-          init_git_url TEXT,
-          created_by TEXT,
-          owner_claim_source TEXT,
-          is_home INTEGER DEFAULT 0
-        );
-        INSERT INTO registered_groups_new SELECT jid, name, folder, added_at, avatar_url, container_config, execution_mode, custom_cwd, NULL, NULL, NULL, NULL, 0 FROM registered_groups;
-        DROP TABLE registered_groups;
-        ALTER TABLE registered_groups_new RENAME TO registered_groups;
-      `);
-    })();
-  }
 
   // v19→v20 migration: add token_usage column to messages
   ensureColumn('messages', 'token_usage', 'TEXT');
