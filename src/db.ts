@@ -1370,8 +1370,14 @@ export function initDatabase(): void {
   // an ancient DB's first boot both wiped those columns and then hard-failed
   // the assertSchema('registered_groups', …) pin, only converging after a
   // second boot. Its SELECT depends only on columns guaranteed above:
-  // execution_mode (l.~1277), custom_cwd (l.~1282) and avatar_url (l.~1291);
-  // everything else is inserted as NULL/0 literals.
+  // execution_mode (l.~1277), custom_cwd (l.~1282) and avatar_url (l.~1291).
+  //
+  // VALUE CARRYING (task Z follow-up fix 2): the optional columns below are
+  // carried from the source table when present instead of being reset to
+  // NULL/0 — a middle-era DB (populated created_by / owner_claim_source /
+  // is_home but still carrying the folder UNIQUE index) must not lose its
+  // ownership and home markers through the rebuild. Absent columns keep the
+  // historical NULL/0 defaults.
   const hasUniqueFolder =
     (
       db
@@ -1383,6 +1389,30 @@ export function initDatabase(): void {
         .get() as { cnt: number }
     ).cnt > 0;
   if (hasUniqueFolder) {
+    const sourceColumns = new Set(
+      (
+        db.prepare('PRAGMA table_info(registered_groups)').all() as Array<{
+          name: string;
+        }>
+      ).map((column) => column.name),
+    );
+    const carry = (column: string, missing: string): string =>
+      sourceColumns.has(column) ? column : missing;
+    const carrySelect = [
+      'jid',
+      'name',
+      'folder',
+      'added_at',
+      'avatar_url',
+      'container_config',
+      'execution_mode',
+      'custom_cwd',
+      carry('init_source_path', 'NULL'),
+      carry('init_git_url', 'NULL'),
+      carry('created_by', 'NULL'),
+      carry('owner_claim_source', 'NULL'),
+      carry('is_home', '0'),
+    ].join(', ');
     db.transaction(() => {
       db.exec(`
         CREATE TABLE registered_groups_new (
@@ -1400,7 +1430,7 @@ export function initDatabase(): void {
           owner_claim_source TEXT,
           is_home INTEGER DEFAULT 0
         );
-        INSERT INTO registered_groups_new SELECT jid, name, folder, added_at, avatar_url, container_config, execution_mode, custom_cwd, NULL, NULL, NULL, NULL, 0 FROM registered_groups;
+        INSERT INTO registered_groups_new SELECT ${carrySelect} FROM registered_groups;
         DROP TABLE registered_groups;
         ALTER TABLE registered_groups_new RENAME TO registered_groups;
       `);

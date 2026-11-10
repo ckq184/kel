@@ -1,5 +1,5 @@
 {
-  "task": "任务Z后续修复 - unique-folder 重建迁移顺序：古代 DB 首启时 registered_groups 重建块（src/db.ts hasUniqueFolder 分支）DROP+重建表，洗掉位于其之前的 ensureColumn（selected_skills…sender_allowlist 等）与 target_agent 索引，二次启动才自愈；修复=重建块前移至 registered_groups ensureColumn 列族之前（依赖列 execution_mode/custom_cwd/avatar_url 的 ensureColumn 保持在其之前）。用户 2026-11-10 于任务 Z 收尾时指示修复。",
-  "base": "d7dc2c7",
+  "task": "任务Z后续修复2 - folder 重建迁移携带既有列值：重建 INSERT 对 init_source_path/init_git_url/created_by/owner_claim_source 写死 NULL、is_home 写死 0，中间版本 DB（已有这些列真实数据但仍带 folder UNIQUE 约束）首启会被清空；修复=按 PRAGMA table_info 列存在性动态携带，列缺失时维持 NULL/0 字面量。用户 2026-11-10 拍板执行。",
+  "base": "d959fbc",
   "allow": ["src/db.ts", "tests/db-folder-unique-rebuild-order.test.ts"]
 }

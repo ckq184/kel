@@ -61,6 +61,52 @@ function seedAncientDatabase(): void {
   legacy.close();
 }
 
+/** A middle-era DB: still carries the folder UNIQUE constraint (the rebuild
+ * migration predates its last boot) but already has populated
+ * owner/home-anchoring columns. The rebuild must carry their values, not
+ * reset them to NULL/0. */
+function seedMiddleEraDatabase(): void {
+  const legacy = new Database(dbPath);
+  legacy.exec(`
+    CREATE TABLE registered_groups (
+      jid TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      folder TEXT NOT NULL UNIQUE,
+      added_at TEXT NOT NULL,
+      container_config TEXT,
+      avatar_url TEXT,
+      execution_mode TEXT,
+      custom_cwd TEXT,
+      init_source_path TEXT,
+      init_git_url TEXT,
+      created_by TEXT,
+      owner_claim_source TEXT,
+      is_home INTEGER
+    );
+    INSERT INTO registered_groups (
+        jid, name, folder, added_at, execution_mode, custom_cwd,
+        init_source_path, init_git_url, created_by, owner_claim_source, is_home)
+      VALUES ('web:middle', 'Middle Era', 'middle-folder',
+              '2025-06-01T00:00:00.000Z', 'host', '/data/cwd',
+              '/srv/source', 'https://git.example/x.git',
+              'user-42', 'explicit', 1);
+  `);
+  legacy.close();
+}
+
+/** Give the next test a pristine store: drop the database file (plus sqlite
+ * sidecars) so each seed starts from a fresh disk state. */
+function resetDatabaseFile(): void {
+  try {
+    db.closeDatabase();
+  } catch {
+    // Not open yet on the very first call.
+  }
+  for (const suffix of ['', '-wal', '-shm']) {
+    fs.rmSync(`${dbPath}${suffix}`, { force: true });
+  }
+}
+
 function tableColumns(probe: Database.Database): Set<string> {
   return new Set(
     (
@@ -85,6 +131,7 @@ function indexNames(probe: Database.Database): Set<string> {
 
 describe('unique-folder rebuild migration ordering', () => {
   test('one initDatabase on an ancient DB converges to the full head schema', () => {
+    resetDatabaseFile();
     seedAncientDatabase();
 
     expect(() => db.initDatabase()).not.toThrow();
@@ -155,6 +202,43 @@ describe('unique-folder rebuild migration ordering', () => {
       expect(tableColumns(recheck)).toContain('sender_allowlist');
     } finally {
       recheck.close();
+    }
+  });
+
+  test('a middle-era DB keeps its owner and home values through the rebuild', () => {
+    resetDatabaseFile();
+    seedMiddleEraDatabase();
+
+    expect(() => db.initDatabase()).not.toThrow();
+    db.closeDatabase();
+
+    const probe = new Database(dbPath, { readonly: true });
+    try {
+      // The rebuild ran on this database too.
+      expect(indexNames(probe)).not.toContain(
+        'sqlite_autoindex_registered_groups_2',
+      );
+      const row = probe
+        .prepare(
+          `SELECT execution_mode, custom_cwd, init_source_path, init_git_url,
+                  created_by, owner_claim_source, is_home
+           FROM registered_groups WHERE jid = 'web:middle'`,
+        )
+        .get() as Record<string, unknown>;
+      // Every carried column must survive with its pre-rebuild value —
+      // the old INSERT hardcoded NULL for five of these and 0 for is_home,
+      // silently stripping workspace ownership and home markers.
+      expect(row).toMatchObject({
+        execution_mode: 'host',
+        custom_cwd: '/data/cwd',
+        init_source_path: '/srv/source',
+        init_git_url: 'https://git.example/x.git',
+        created_by: 'user-42',
+        owner_claim_source: 'explicit',
+        is_home: 1,
+      });
+    } finally {
+      probe.close();
     }
   });
 });
