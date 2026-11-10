@@ -550,27 +550,33 @@ workspace 端点先要求 Login，再按 `:workspaceJid` 执行与 v2 相同的�
 `not_configured`；侧车不可用返回 503 `unavailable`（带 reason）；参数非法返回
 400 `invalid_args`。
 
-### 会话提炼采集（任务 Y）
+### 会话提炼采集（任务 Y，多会话合并为任务 Y2）
 
-手动把会话全文提炼入自动记忆的两端点（聊天窗口「提炼记忆」按钮）：
-preview 为读权限（`canAccessGroup()`），capture 为写权限（`canModifyGroup()`），
-无权与不存在统一 404。采集范围 = 该会话（含跨会话历史）**最新 400 条文本
-消息 / 60k 字符**——服务端固定上限，不接受客户端传入，超出保留最新部分；
-`context_reset` 会话分隔行与配额通知行剔除，仅文本 content（附件不参与），
-角色按 `is_from_me` 映射 user/assistant。
+手动把会话全文提炼入自动记忆的两端点（聊天窗口「提炼记忆」按钮 → 多会话
+选择对话框）：preview 为读权限（`canAccessGroup()`），capture 为写权限
+（`canModifyGroup()`），无权与不存在统一 404。采集目标 = 一个工作区内的
+**主会话 + 各 conversation 子会话**（可多选合并）；会话标识约定
+`agentIds` 元素 `''`（空串）= 主会话、其余 = agentId（子会话虚拟 jid
+`${jid}#agent:{agentId}`），值 trim 后去重，未知/已删除的 agentId 贡献
+0 条静默跳过。合并后按**共享预算**封顶：各目标各取最新 400 条 → 按
+timestamp 全局正序合并 → 剔除 `context_reset` 分隔行与配额通知行（仅文本
+content，附件不参与；角色按 `is_from_me` 映射 user/assistant）→ **总条数
+≤400 且总字符 ≤60k**，从最新往回保留（先触先停）；上限服务端固定，不接受
+客户端传入。
 
 - `GET /api/auto-memory/workspaces/:workspaceJid/capture/preview`
-  - 可选 Query：`agentId`（指定 agent 子会话，缺省 = 主会话）。只读 DB
-    组装、不触发侧车（未配置时也可预览），返回 `{ messages, chars }`
-    （将提炼的条数与总字符数，供确认框显示成本）。
+  - 可选 Query：重复参数 `agentId`（可多次出现，`agentId=` 空值即主会话；
+    缺省 = 仅主会话）。只读 DB 组装、不触发侧车（未配置时也可预览），
+    返回 `{ messages, chars }`（合并后将提炼的条数与总字符数）。
 - `POST /api/auto-memory/workspaces/:workspaceJid/capture`
-  - Body `{ agentId? }`。组装后经侧车 `add` 送 mem0 提炼（一次 LLM 提炼 +
+  - Body `{ agentIds?: string[] }`（缺省 = 仅主会话；显式空数组或含非
+    字符串元素 → 400）。组装后经侧车 `add` 送 mem0 提炼（一次 LLM 提炼 +
     embedding，入侧车前先机械 redact）；metadata 携带
-    `{ source: 'chat_capture', agentId?, capturedAt }`。返回
+    `{ source: 'chat_capture', agentIds, capturedAt }`。返回
     `{ ok: true, captured, added, intercepted }`（added = mem0 ADD 事件数，
-    intercepted = 脱敏命中数）。空会话 400 `invalid_args`；未配置 503
-    `not_configured`；提炼一次可能 10-60s（manager 每请求 60s 超时杀侧车为
-    既有语义，下次调用自动 respawn）。
+    intercepted = 脱敏命中数）。所选目标全部无可提炼消息 400 `invalid_args`；
+    未配置 503 `not_configured`；提炼一次可能 10-60s（manager 每请求 60s
+    超时杀侧车为既有语义，下次调用自动 respawn）。
 
 ## 用量与计费
 

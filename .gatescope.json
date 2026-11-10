@@ -1,14 +1,14 @@
 {
-  "task": "任务Y - 会话窗口「提炼记忆」按钮：全文手动采集入自动记忆（用户 2026-11-10 批准立项，两项设计已拍板：全部历史上限 400 条/60k 字 / 确认框显示条数后执行；计划/交接见 docs/task-y-chat-capture-plan.md）",
-  "base": "18b9125",
+  "task": "任务Y2 - 多会话选择提炼记忆：capture/preview 扩展为多会话合并（用户 2026-11-10 确认三项裁决：共享预算封顶 400 条/60k 字 / API 纯复数 agentIds / 独立选择对话框；计划见 docs/task-y2-multi-session-capture-plan.md）",
+  "base": "c4e808f",
   "allow": [
-    "docs/task-y-chat-capture-plan.md",
+    "docs/task-y2-multi-session-capture-plan.md",
     "src/routes/auto-memory.ts",
     "web/src/stores/auto-memory.ts",
+    "web/src/components/chat/CaptureMemoryDialog.tsx",
     "web/src/components/chat/ChatView.tsx",
     "tests/auto-memory-routes.test.ts",
     "tests/auto-memory-frontend.test.ts",
-    "docs/API.md",
-    "docs/ACL-MATRIX.md"
+    "docs/API.md"
   ]
 }

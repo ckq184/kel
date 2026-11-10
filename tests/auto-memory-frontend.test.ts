@@ -362,29 +362,29 @@ describe('auto-memory config store actions (task X)', () => {
   });
 });
 
-describe('chat capture store actions (task Y)', () => {
+describe('chat capture store actions (task Y/Y2)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useAutoMemoryStore.setState({ actionError: null });
   });
 
-  test('previewCapture GETs the preview endpoint with an encoded JID', async () => {
+  test('previewCapture GETs with repeated agentId params (multi-session)', async () => {
     vi.mocked(api.get).mockResolvedValueOnce({ messages: 12, chars: 3400 });
 
     const preview = await useAutoMemoryStore
       .getState()
-      .previewCapture('web:ws1', 'agent-7');
+      .previewCapture('web:ws1', ['', 'agent-7']);
 
     expect(api.get).toHaveBeenCalledWith(
-      '/api/auto-memory/workspaces/web%3Aws1/capture/preview?agentId=agent-7',
+      '/api/auto-memory/workspaces/web%3Aws1/capture/preview?agentId=&agentId=agent-7',
     );
     expect(preview).toEqual({ messages: 12, chars: 3400 });
   });
 
-  test('previewCapture without an agent tab targets the main conversation', async () => {
+  test('previewCapture with an empty selection targets the main conversation', async () => {
     vi.mocked(api.get).mockResolvedValueOnce({ messages: 3, chars: 90 });
 
-    await useAutoMemoryStore.getState().previewCapture('web:ws1');
+    await useAutoMemoryStore.getState().previewCapture('web:ws1', []);
 
     expect(api.get).toHaveBeenCalledWith(
       '/api/auto-memory/workspaces/web%3Aws1/capture/preview',
@@ -395,14 +395,14 @@ describe('chat capture store actions (task Y)', () => {
     vi.mocked(api.get).mockRejectedValueOnce(new Error('not_configured'));
 
     await expect(
-      useAutoMemoryStore.getState().previewCapture('web:ws1'),
+      useAutoMemoryStore.getState().previewCapture('web:ws1', ['']),
     ).rejects.toThrow('not_configured');
     expect(useAutoMemoryStore.getState().actionError).toContain(
       'not_configured',
     );
   });
 
-  test('captureConversation POSTs with the 90s extraction timeout', async () => {
+  test('captureConversation POSTs agentIds with the 90s extraction timeout', async () => {
     vi.mocked(api.post).mockResolvedValueOnce({
       ok: true,
       captured: 12,
@@ -412,18 +412,18 @@ describe('chat capture store actions (task Y)', () => {
 
     const receipt = await useAutoMemoryStore
       .getState()
-      .captureConversation('web:ws1', 'agent-7');
+      .captureConversation('web:ws1', ['', 'agent-7']);
 
     // 60k 字一次 LLM 提炼可能 10-60s——默认 8s 会误杀，钉住 90s。
     expect(api.post).toHaveBeenCalledWith(
       '/api/auto-memory/workspaces/web%3Aws1/capture',
-      { agentId: 'agent-7' },
+      { agentIds: ['', 'agent-7'] },
       90_000,
     );
     expect(receipt).toMatchObject({ ok: true, captured: 12, added: 5 });
   });
 
-  test('captureConversation without agentId posts an empty body', async () => {
+  test('captureConversation main-only posts an explicit empty-string marker', async () => {
     vi.mocked(api.post).mockResolvedValueOnce({
       ok: true,
       captured: 1,
@@ -431,11 +431,11 @@ describe('chat capture store actions (task Y)', () => {
       intercepted: 0,
     });
 
-    await useAutoMemoryStore.getState().captureConversation('web:ws1');
+    await useAutoMemoryStore.getState().captureConversation('web:ws1', ['']);
 
     expect(api.post).toHaveBeenCalledWith(
       '/api/auto-memory/workspaces/web%3Aws1/capture',
-      {},
+      { agentIds: [''] },
       90_000,
     );
   });
@@ -444,7 +444,7 @@ describe('chat capture store actions (task Y)', () => {
     vi.mocked(api.post).mockRejectedValueOnce(new Error('Request timeout'));
 
     await expect(
-      useAutoMemoryStore.getState().captureConversation('web:ws1'),
+      useAutoMemoryStore.getState().captureConversation('web:ws1', ['']),
     ).rejects.toThrow('Request timeout');
     expect(useAutoMemoryStore.getState().actionError).toContain(
       'Request timeout',
@@ -452,25 +452,40 @@ describe('chat capture store actions (task Y)', () => {
   });
 });
 
-describe('chat capture button (task Y)', () => {
-  test('ChatView gates the button, confirms, and reports via toast', () => {
+describe('chat capture button (task Y2)', () => {
+  test('ChatView opens the multi-session capture dialog behind the gated button', () => {
     const view = read('web/src/components/chat/ChatView.tsx');
 
     // Header button on the workspace-config template: icon + label + gate.
     expect(view).toContain('BrainCircuit');
     expect(view).toContain('提炼记忆');
     expect(view).toMatch(/canModifyWorkspaceConfig && \(/);
-    // Click → preview → confirm dialog showing counts and the cost hint.
-    expect(view).toContain('capturePreview');
-    expect(view).toMatch(/含跨会话历史/);
-    expect(view).toMatch(/一次模型调用/);
-    expect(view).toMatch(/超时/);
-    // Receipt toast: captured/added counts + redaction note.
-    expect(view).toMatch(/提炼完成/);
-    expect(view).toMatch(/已脱敏/);
-    // In-flight re-entry guard (busy state disables both button and dialog).
-    expect(view).toMatch(/captureBusy/);
+    // The inline single-session confirm flow is gone; the dialog owns it.
+    expect(view).toContain('<CaptureMemoryDialog');
+    expect(view).not.toContain('capturePreview');
     // All /api/auto-memory calls go through the store, never direct.
     expect(view).not.toContain('/api/auto-memory');
+  });
+
+  test('CaptureMemoryDialog selects sessions, previews merged cost, confirms', () => {
+    const dialog = read('web/src/components/chat/CaptureMemoryDialog.tsx');
+
+    // Checkbox list with the current session preselected.
+    expect(dialog).toMatch(/Checkbox/);
+    expect(dialog).toContain('defaultSelected');
+    // Debounced re-preview so checkbox churn does not spam requests.
+    expect(dialog).toMatch(/300/);
+    // Merged-budget wording + cost + timeout hints (user decisions).
+    expect(dialog).toMatch(/合并后最新/);
+    expect(dialog).toMatch(/一次模型调用/);
+    expect(dialog).toMatch(/超时/);
+    // Receipt toast: captured/added counts + redaction note; busy guard.
+    expect(dialog).toMatch(/提炼完成/);
+    expect(dialog).toMatch(/已脱敏/);
+    expect(dialog).toMatch(/busy/);
+    // Both store actions used, never a direct API call.
+    expect(dialog).toContain('previewCapture');
+    expect(dialog).toContain('captureConversation');
+    expect(dialog).not.toContain('/api/auto-memory');
   });
 });

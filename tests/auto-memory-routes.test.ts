@@ -818,9 +818,10 @@ describe('chat capture endpoints (task Y)', () => {
     ]);
     expect(call.args.metadata).toMatchObject({
       source: 'chat_capture',
+      // No agentIds in the body → main conversation only, recorded as [''].
+      agentIds: [''],
       capturedAt: expect.any(String),
     });
-    expect(call.args.metadata).not.toHaveProperty('agentId');
   });
 
   test('capture keeps the newest 400 messages (server-fixed limit)', async () => {
@@ -901,7 +902,7 @@ describe('chat capture endpoints (task Y)', () => {
     expect(messages[0].content).toBe(huge.slice(huge.length - 60_000));
   });
 
-  test('agentId scopes capture to the agent sub-conversation jid', async () => {
+  test('agentIds scopes capture to the agent sub-conversation jid', async () => {
     const jid = seedWorkspace();
     seedMessage(jid, 'main-1', '主会话消息', { timestamp: ts(0) });
     seedMessage(jid, 'main-2', '另一条主会话消息', { timestamp: ts(1) });
@@ -924,7 +925,7 @@ describe('chat capture endpoints (task Y)', () => {
     const res = await autoMemoryRoutes.request(`/workspaces/${jid}/capture`, {
       method: 'POST',
       headers: OWNER,
-      body: JSON.stringify({ agentId: 'agent-1' }),
+      body: JSON.stringify({ agentIds: ['agent-1'] }),
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ ok: true, captured: 2 });
@@ -934,19 +935,22 @@ describe('chat capture endpoints (task Y)', () => {
     ]);
     expect(sidecarCalls[0].args.metadata).toMatchObject({
       source: 'chat_capture',
-      agentId: 'agent-1',
+      agentIds: ['agent-1'],
     });
   });
 
-  test('capture rejects malformed bodies and oversized agentId', async () => {
+  test('capture rejects malformed bodies and invalid agentIds', async () => {
     const jid = seedWorkspace();
     seedMessage(jid, 'cap-1', '可提炼内容', { timestamp: ts(0) });
 
     for (const bad of [
       JSON.stringify('not-an-object'),
       JSON.stringify([1, 2]),
-      JSON.stringify({ agentId: 123 }),
-      JSON.stringify({ agentId: 'x'.repeat(129) }),
+      JSON.stringify({ agentIds: 123 }),
+      JSON.stringify({ agentIds: [123] }),
+      // Explicit-but-empty array is a caller bug — omit it for main-only.
+      JSON.stringify({ agentIds: [] }),
+      JSON.stringify({ agentIds: ['x'.repeat(129)] }),
     ]) {
       const res = await autoMemoryRoutes.request(`/workspaces/${jid}/capture`, {
         method: 'POST',
@@ -992,5 +996,186 @@ describe('chat capture endpoints (task Y)', () => {
     expect(res.status).toBe(503);
     expect(await res.json()).toMatchObject({ error: 'not_configured' });
     expect(sidecarCalls).toHaveLength(0);
+  });
+
+  // ── Multi-session capture (task Y2) ─────────────────────────────────────
+
+  test('multi-session capture merges targets in global timestamp order', async () => {
+    const jid = seedWorkspace();
+    seedMessage(jid, 'main-0', '主会话最早', { timestamp: ts(0) });
+    seedMessage(`${jid}#agent:a1`, 'a1-1', '子会话一第二条', {
+      timestamp: ts(1),
+    });
+    seedMessage(`${jid}#agent:a2`, 'a2-2', '子会话二消息', {
+      fromMe: true,
+      timestamp: ts(2),
+    });
+    seedMessage(`${jid}#agent:a1`, 'a1-3', '子会话一最新', {
+      fromMe: true,
+      timestamp: ts(3),
+    });
+    seedMessage(jid, 'main-4', '主会话最新', { timestamp: ts(4) });
+
+    const agentIds = ['', 'a1', 'a2'];
+    const preview = await autoMemoryRoutes.request(
+      `/workspaces/${jid}/capture/preview?agentId=&agentId=a1&agentId=a2`,
+      { headers: OWNER },
+    );
+    const contents = [
+      '主会话最早',
+      '子会话一第二条',
+      '子会话二消息',
+      '子会话一最新',
+      '主会话最新',
+    ];
+    const chars = contents.reduce((sum, c) => sum + c.length, 0);
+    expect(await preview.json()).toEqual({ messages: 5, chars });
+
+    const res = await autoMemoryRoutes.request(`/workspaces/${jid}/capture`, {
+      method: 'POST',
+      headers: OWNER,
+      body: JSON.stringify({ agentIds }),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ ok: true, captured: 5 });
+    // Interleaved timestamps from three targets come out globally sorted
+    // with per-row roles intact.
+    expect(sidecarCalls[0].args.messages).toEqual([
+      { role: 'user', content: '主会话最早' },
+      { role: 'user', content: '子会话一第二条' },
+      { role: 'assistant', content: '子会话二消息' },
+      { role: 'assistant', content: '子会话一最新' },
+      { role: 'user', content: '主会话最新' },
+    ]);
+    expect(sidecarCalls[0].args.metadata).toMatchObject({
+      source: 'chat_capture',
+      agentIds,
+    });
+  });
+
+  test('shared char budget keeps the newest content across sessions', async () => {
+    const jid = seedWorkspace();
+    // Main alone fits the 60k budget, but a1's newer messages crowd it out
+    // once merged — per-session budgets would keep all three rows.
+    seedMessage(jid, 'main-0', '旧'.repeat(30_000), { timestamp: ts(0) });
+    seedMessage(`${jid}#agent:a1`, 'a1-1', '中'.repeat(30_000), {
+      timestamp: ts(1),
+    });
+    seedMessage(`${jid}#agent:a1`, 'a1-2', '新'.repeat(100), {
+      timestamp: ts(2),
+    });
+
+    const preview = await autoMemoryRoutes.request(
+      `/workspaces/${jid}/capture/preview?agentId=&agentId=a1`,
+      { headers: OWNER },
+    );
+    expect(await preview.json()).toEqual({ messages: 2, chars: 30_100 });
+
+    const res = await autoMemoryRoutes.request(`/workspaces/${jid}/capture`, {
+      method: 'POST',
+      headers: OWNER,
+      body: JSON.stringify({ agentIds: ['', 'a1'] }),
+    });
+    expect(res.status).toBe(200);
+    const messages = sidecarCalls[0].args.messages as Array<{
+      content: string;
+    }>;
+    expect(messages.map((m) => m.content)).toEqual([
+      '中'.repeat(30_000),
+      '新'.repeat(100),
+    ]);
+  });
+
+  test('shared 400-message cap mixes the newest rows across sessions', async () => {
+    const jid = seedWorkspace();
+    // Two sessions × 300 short rows = 600 merged; the 400-cap keeps the
+    // newest 400 interleaved rows (main even seconds, a1 odd seconds).
+    for (let i = 0; i < 300; i++) {
+      seedMessage(jid, `main-${i}`, `主${i}`, { timestamp: ts(i * 2) });
+      seedMessage(`${jid}#agent:a1`, `a1-${i}`, `子${i}`, {
+        timestamp: ts(i * 2 + 1),
+      });
+    }
+
+    const preview = await autoMemoryRoutes.request(
+      `/workspaces/${jid}/capture/preview?agentId=&agentId=a1`,
+      { headers: OWNER },
+    );
+    expect(await preview.json()).toMatchObject({ messages: 400 });
+
+    const res = await autoMemoryRoutes.request(`/workspaces/${jid}/capture`, {
+      method: 'POST',
+      headers: OWNER,
+      body: JSON.stringify({ agentIds: ['', 'a1'] }),
+    });
+    expect(res.status).toBe(200);
+    const messages = sidecarCalls[0].args.messages as Array<{
+      content: string;
+    }>;
+    expect(messages).toHaveLength(400);
+    // Newest 400 of 600 = timestamps 200..599 (even=主, odd=子), so the
+    // oldest 200 rows (主0..99, 子0..99) fell out.
+    expect(messages[0].content).toBe('主100');
+    expect(messages[399].content).toBe('子299');
+    expect(messages.some((m) => m.content === '主99')).toBe(false);
+    expect(messages.some((m) => m.content === '子99')).toBe(false);
+  });
+
+  test('duplicate agentIds are deduplicated before capture', async () => {
+    const jid = seedWorkspace();
+    seedMessage(`${jid}#agent:a1`, 'a1-1', '子会话唯一消息', {
+      timestamp: ts(0),
+    });
+
+    const res = await autoMemoryRoutes.request(`/workspaces/${jid}/capture`, {
+      method: 'POST',
+      headers: OWNER,
+      body: JSON.stringify({ agentIds: ['a1', 'a1', ''] }),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ captured: 1 });
+    expect(sidecarCalls[0].args.metadata).toMatchObject({
+      agentIds: ['a1', ''],
+    });
+  });
+
+  test('unknown agentIds contribute zero rows; all-empty targets reject 400', async () => {
+    const jid = seedWorkspace();
+    seedMessage(jid, 'main-1', '主会话消息', { timestamp: ts(0) });
+
+    // Unknown agent (deleted sub-conversation) is skipped silently.
+    const preview = await autoMemoryRoutes.request(
+      `/workspaces/${jid}/capture/preview?agentId=agent-x&agentId=`,
+      { headers: OWNER },
+    );
+    expect(await preview.json()).toEqual({
+      messages: 1,
+      chars: '主会话消息'.length,
+    });
+
+    const emptyPreview = await autoMemoryRoutes.request(
+      `/workspaces/${jid}/capture/preview?agentId=agent-x`,
+      { headers: OWNER },
+    );
+    expect(await emptyPreview.json()).toEqual({ messages: 0, chars: 0 });
+
+    const res = await autoMemoryRoutes.request(`/workspaces/${jid}/capture`, {
+      method: 'POST',
+      headers: OWNER,
+      body: JSON.stringify({ agentIds: ['agent-x'] }),
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: 'invalid_args' });
+    expect(sidecarCalls).toHaveLength(0);
+  });
+
+  test('preview rejects an oversized agentId query value', async () => {
+    const jid = seedWorkspace();
+    const res = await autoMemoryRoutes.request(
+      `/workspaces/${jid}/capture/preview?agentId=${'x'.repeat(129)}`,
+      { headers: OWNER },
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: 'invalid_args' });
   });
 });

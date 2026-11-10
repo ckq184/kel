@@ -106,11 +106,11 @@ interface AutoMemoryState {
   clearConfig: () => Promise<void>;
   previewCapture: (
     workspaceJid: string,
-    agentId?: string,
+    agentIds: string[],
   ) => Promise<AutoMemoryCapturePreview>;
   captureConversation: (
     workspaceJid: string,
-    agentId?: string,
+    agentIds: string[],
   ) => Promise<AutoMemoryCaptureReceipt>;
 }
 
@@ -265,11 +265,15 @@ export const useAutoMemoryStore = create<AutoMemoryState>((set, get) => ({
     }
   },
 
-  // ── Chat capture channel (task Y) ─────────────────────────────────────
-  previewCapture: async (workspaceJid, agentId) => {
+  // ── Chat capture channel (task Y, multi-session merge in task Y2) ─────
+  previewCapture: async (workspaceJid, agentIds) => {
     set({ actionError: null });
     try {
-      const query = agentId ? `?agentId=${encodeURIComponent(agentId)}` : '';
+      // Repeated `agentId` params; '' marks the main conversation. An empty
+      // selection sends no param (= main-only, same server semantics).
+      const query = agentIds.length
+        ? `?${agentIds.map((id) => `agentId=${encodeURIComponent(id)}`).join('&')}`
+        : '';
       return await api.get<AutoMemoryCapturePreview>(
         `/api/auto-memory/workspaces/${encodedJid(workspaceJid)}/capture/preview${query}`,
       );
@@ -279,12 +283,12 @@ export const useAutoMemoryStore = create<AutoMemoryState>((set, get) => ({
     }
   },
 
-  captureConversation: async (workspaceJid, agentId) => {
+  captureConversation: async (workspaceJid, agentIds) => {
     set({ actionError: null });
     try {
       return await api.post<AutoMemoryCaptureReceipt>(
         `/api/auto-memory/workspaces/${encodedJid(workspaceJid)}/capture`,
-        agentId ? { agentId } : {},
+        { agentIds },
         AUTO_MEMORY_CAPTURE_TIMEOUT_MS,
       );
     } catch (err) {

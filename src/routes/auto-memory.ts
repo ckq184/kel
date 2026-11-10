@@ -518,23 +518,31 @@ autoMemoryRoutes.delete('/workspaces/:workspaceJid/memories', async (c) => {
   return c.json({ deletedAll: true });
 });
 
-// ── Chat capture endpoints (task Y) ──────────────────────────────────────────
+// ── Chat capture endpoints (task Y, multi-session merge in task Y2) ──────────
 
 /**
- * Assemble the text-message payload for a chat capture: the newest
- * CAPTURE_MESSAGE_LIMIT rows in chronological order, non-conversation rows
- * (session separators, billing notices, empty bodies) dropped, roles mapped
- * from is_from_me, then the char budget filled from the newest message
- * backwards so overflow trims the oldest content (user decision 2026-11-10:
- * capture everything, keep the newest part). Never logs message content.
+ * Assemble the text-message payload for a chat capture over one or more
+ * conversation targets (main + agent sub-conversations, task Y2): each
+ * target contributes its newest CAPTURE_MESSAGE_LIMIT rows, the merge is
+ * sorted globally by timestamp (rows from different sessions interleave),
+ * non-conversation rows (session separators, billing notices, empty
+ * bodies) are dropped, roles map from is_from_me, then the shared budget —
+ * at most CAPTURE_MESSAGE_LIMIT rows and CAPTURE_CHAR_BUDGET chars — fills
+ * from the newest message backwards so overflow trims the oldest content
+ * (user decision 2026-11-10: one merged cost cap, one model call). Never
+ * logs message content.
  */
-function assembleCaptureMessages(chatJid: string): {
+function assembleCaptureMessages(chatJids: string[]): {
   messages: Array<{ role: 'user' | 'assistant'; content: string }>;
   chars: number;
 } {
-  const rows = getMessagesPage(chatJid, undefined, CAPTURE_MESSAGE_LIMIT)
-    .slice()
-    .reverse()
+  const rows = chatJids
+    .flatMap((chatJid) =>
+      getMessagesPage(chatJid, undefined, CAPTURE_MESSAGE_LIMIT),
+    )
+    .sort((a, b) =>
+      a.timestamp < b.timestamp ? -1 : a.timestamp > b.timestamp ? 1 : 0,
+    )
     .filter(
       (row) =>
         row.sender !== '__system__' &&
@@ -550,6 +558,7 @@ function assembleCaptureMessages(chatJid: string): {
   let chars = 0;
   for (let i = rows.length - 1; i >= 0; i--) {
     const row = rows[i];
+    if (kept.length >= CAPTURE_MESSAGE_LIMIT) break;
     if (chars + row.content.length > CAPTURE_CHAR_BUDGET) {
       if (kept.length === 0) {
         // The newest message alone busts the budget — keep its tail so a
@@ -569,33 +578,51 @@ function assembleCaptureMessages(chatJid: string): {
   return { messages: kept, chars };
 }
 
-/** agentId is optional; blank-after-trim means the main conversation. */
-function parseCaptureAgentId(
-  raw: string | undefined,
-): { agentId?: string } | { error: string } {
-  const agentId = raw?.trim();
-  if (!agentId) return {};
-  if (agentId.length > CAPTURE_AGENT_ID_MAX) {
-    return {
-      error: `agentId must be at most ${CAPTURE_AGENT_ID_MAX} characters`,
-    };
+/**
+ * agentIds semantics (task Y2): '' (empty string) = main conversation,
+ * anything else = an agent sub-conversation. Missing input = main-only;
+ * values are trimmed and deduplicated preserving order. Unknown ids simply
+ * contribute zero rows.
+ */
+function parseCaptureAgentIds(
+  raw: string[] | undefined,
+): { agentIds: string[] } | { error: string } {
+  // queries() yields undefined when the parameter is absent; both that and
+  // an empty list mean "main conversation only".
+  if (!raw || raw.length === 0) return { agentIds: [''] };
+  const agentIds: string[] = [];
+  for (const value of raw) {
+    const agentId = value.trim();
+    if (agentId.length > CAPTURE_AGENT_ID_MAX) {
+      return {
+        error: `agentId must be at most ${CAPTURE_AGENT_ID_MAX} characters`,
+      };
+    }
+    if (!agentIds.includes(agentId)) agentIds.push(agentId);
   }
-  return { agentId };
+  return { agentIds };
+}
+
+/** Map parsed agentIds ('' = main) onto real chat JIDs. */
+function captureTargetJids(groupJid: string, agentIds: string[]): string[] {
+  return agentIds.map((agentId) =>
+    agentId === '' ? groupJid : `${groupJid}#agent:${agentId}`,
+  );
 }
 
 autoMemoryRoutes.get('/workspaces/:workspaceJid/capture/preview', (c) => {
   const resolved = resolveWorkspace(c, c.req.param('workspaceJid'), 'read');
   if ('error' in resolved) return resolved.error;
 
-  const agent = parseCaptureAgentId(c.req.query('agentId'));
+  // Repeated `agentId` query params ('' = main conversation); no params =
+  // main-only. Cost preview only — assembles from the DB, never spawns the
+  // sidecar (works even when auto memory is not configured yet).
+  const agent = parseCaptureAgentIds(c.req.queries('agentId'));
   if ('error' in agent) return invalidArgs(c, agent.error);
 
-  // Cost preview only — assembles from the DB, never spawns the sidecar
-  // (works even when auto memory is not configured yet).
-  const chatJid = agent.agentId
-    ? `${resolved.group.jid}#agent:${agent.agentId}`
-    : resolved.group.jid;
-  const { messages, chars } = assembleCaptureMessages(chatJid);
+  const { messages, chars } = assembleCaptureMessages(
+    captureTargetJids(resolved.group.jid, agent.agentIds),
+  );
   return c.json({ messages: messages.length, chars });
 });
 
@@ -603,30 +630,44 @@ autoMemoryRoutes.post('/workspaces/:workspaceJid/capture', async (c) => {
   const resolved = resolveWorkspace(c, c.req.param('workspaceJid'), 'write');
   if ('error' in resolved) return resolved.error;
 
-  // Absent body = {}; present body must be a JSON object (agentId optional).
+  // Absent body = {} (main-only); present body must be a JSON object with
+  // an optional non-empty agentIds string array (task Y2 plural form).
   const body = await c.req.json().catch(() => null);
   if (body !== null && (typeof body !== 'object' || Array.isArray(body))) {
     return invalidArgs(c, 'body must be a JSON object');
   }
-  if (body?.agentId !== undefined && typeof body.agentId !== 'string') {
-    return invalidArgs(c, 'agentId must be a string');
+  let rawAgentIds: string[] | undefined;
+  if (body?.agentIds !== undefined) {
+    if (
+      !Array.isArray(body.agentIds) ||
+      body.agentIds.length === 0 ||
+      !body.agentIds.every((v: unknown) => typeof v === 'string')
+    ) {
+      return invalidArgs(
+        c,
+        'agentIds must be a non-empty array of strings (omit it to capture the main conversation)',
+      );
+    }
+    rawAgentIds = body.agentIds;
   }
-  const agent = parseCaptureAgentId(body?.agentId);
+  const agent = parseCaptureAgentIds(rawAgentIds ?? ['']);
   if ('error' in agent) return invalidArgs(c, agent.error);
 
-  const chatJid = agent.agentId
-    ? `${resolved.group.jid}#agent:${agent.agentId}`
-    : resolved.group.jid;
-  const { messages } = assembleCaptureMessages(chatJid);
+  const { messages } = assembleCaptureMessages(
+    captureTargetJids(resolved.group.jid, agent.agentIds),
+  );
   if (messages.length === 0) {
-    return invalidArgs(c, 'no capturable text messages in this conversation');
+    return invalidArgs(
+      c,
+      'no capturable text messages in the selected conversations',
+    );
   }
 
   const metadata: Record<string, unknown> = {
     source: 'chat_capture',
+    agentIds: agent.agentIds,
     capturedAt: new Date().toISOString(),
   };
-  if (agent.agentId) metadata.agentId = agent.agentId;
 
   const outcome = await callSidecar(resolved.group, 'add', {
     messages,
