@@ -2,10 +2,16 @@ import { Hono, type Context } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 
 import type { Variables } from '../web-context.js';
-import { authMiddleware } from '../middleware/auth.js';
+import { authMiddleware, systemConfigMiddleware } from '../middleware/auth.js';
 import { canAccessGroup, canModifyGroup } from '../web-context.js';
 import { getRegisteredGroup } from '../db.js';
-import { getAutoMemoryHostConfig } from '../auto-memory-config.js';
+import {
+  clearAutoMemoryHostConfig,
+  getAutoMemoryConfigSource,
+  getAutoMemoryHostConfig,
+  writeAutoMemoryHostConfig,
+  type AutoMemoryEndpointConfig,
+} from '../auto-memory-config.js';
 import {
   autoMemorySidecarConfig,
   getAutoMemorySidecarManager,
@@ -19,21 +25,27 @@ import { logger } from '../logger.js';
 import type { AuthUser, RegisteredGroup } from '../types.js';
 
 /**
- * Auto-memory (mem0) management API — task W.
+ * Auto-memory (mem0) management API — task W, config endpoints — task X.
  *
- * The sidecar protocol already carries delete/delete_all but no caller could
+ * The sidecar protocol already carried delete/delete_all but no caller could
  * reach them, and there was no list op: the auto layer could only store.
  * These routes close that gap for the settings UI: status (three-state
  * degradation), paginated list, keyword search, single delete, and a
- * destructive delete-all passthrough. Config-level endpoint information
- * (llm/embedder) never appears in any response.
+ * destructive delete-all passthrough. Workspace responses never carry
+ * config-level endpoint information; the /config family (task X) exposes a
+ * masked view (baseUrl/model plaintext, apiKey masked) for admins to
+ * manage the file channel, plus a write path that stops live sidecars so
+ * the next call respawns with the new endpoints.
  *
- * Permission model (user decision 2026-11-10): authMiddleware + the same
- * workspace resource ACL as Workspace Memory v2 — reads need
- * canAccessGroup, deletes need canModifyGroup, and both hide existence
- * behind 404. Folder and execution mode always come from the registered
- * group row and flow through the shared autoMemorySidecarConfig resolver,
- * so container/host data layouts stay identical to the IPC dispatcher's.
+ * Permission model (user decision 2026-11-10): workspace endpoints use
+ * authMiddleware + the same resource ACL as Workspace Memory v2 — reads
+ * need canAccessGroup, deletes need canModifyGroup, and both hide
+ * existence behind 404. The /config endpoints are system config
+ * (systemConfigMiddleware / manage_system_config), mounted per path
+ * segment; the two faces must not leak into each other. Folder and
+ * execution mode always come from the registered group row and flow
+ * through the shared autoMemorySidecarConfig resolver, so container/host
+ * data layouts stay identical to the IPC dispatcher's.
  */
 
 const autoMemoryRoutes = new Hono<{ Variables: Variables }>();
@@ -54,6 +66,21 @@ autoMemoryRoutes.use(
   '/workspaces/*',
   bodyLimit({
     maxSize: 64 * 1024,
+    onError: (c) =>
+      c.json(
+        { error: 'request_too_large', message: 'Request is too large' },
+        413,
+      ),
+  }),
+);
+// Task X config endpoints: system-config permission + a tighter credential
+// body budget (OpenDot discipline — same 8KB). Registered after the global
+// authMiddleware so the permission check sees the resolved user.
+autoMemoryRoutes.use(
+  '/config',
+  systemConfigMiddleware,
+  bodyLimit({
+    maxSize: 8 * 1024,
     onError: (c) =>
       c.json(
         { error: 'request_too_large', message: 'Request is too large' },
@@ -207,17 +234,21 @@ function parsePagination(query: Record<string, string | undefined>): {
 }
 
 autoMemoryRoutes.get('/status', async (c) => {
+  // `source` (env/file/none, task X) is non-sensitive and lets the UI mark
+  // the env-overridden state as read-only.
+  const source = getAutoMemoryConfigSource();
   if (!configuredEndpoints()) {
     return c.json({
       enabled: false,
       available: false,
       reason: 'not_configured',
+      source,
     });
   }
   const workspaceJid = c.req.query('workspaceJid');
   if (!workspaceJid) {
     // Global state only: no workspace to probe, no sidecar spawn.
-    return c.json({ enabled: true, available: true });
+    return c.json({ enabled: true, available: true, source });
   }
   const resolved = resolveWorkspace(c, workspaceJid, 'read');
   if ('error' in resolved) return resolved.error;
@@ -234,9 +265,175 @@ autoMemoryRoutes.get('/status', async (c) => {
       enabled: true,
       available: false,
       reason: outcome.reason,
+      source,
     });
   }
-  return c.json({ enabled: true, available: true });
+  return c.json({ enabled: true, available: true, source });
+});
+
+// ── Config endpoints (task X) ────────────────────────────────────────────────
+
+/** Same mask shape as src/routes/config.ts credentials (≤8 chars → '***'). */
+function maskApiKey(key: string): string {
+  if (key.length <= 8) return '***';
+  return `${key.slice(0, 4)}***${key.slice(-4)}`;
+}
+
+interface ConfigEndpointInput {
+  baseUrl: string;
+  /** Absent/blank/mask-verbatim all mean "keep the stored key" (PUT only). */
+  apiKey?: string;
+  model: string;
+}
+
+/**
+ * Strict field validation (OpenDot discipline): types, no surrounding
+ * whitespace, http(s) baseUrl. Blank apiKey is allowed here — the route
+ * resolves keep-old semantics against the current config before writing.
+ */
+function parseEndpointInput(
+  raw: unknown,
+  label: string,
+): { value: ConfigEndpointInput } | { error: string } {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { error: `${label} must be an object` };
+  }
+  const { baseUrl, apiKey, model } = raw as Record<string, unknown>;
+  if (
+    typeof baseUrl !== 'string' ||
+    typeof model !== 'string' ||
+    (apiKey !== undefined && typeof apiKey !== 'string')
+  ) {
+    return { error: `${label}.baseUrl/model/apiKey must be strings` };
+  }
+  if (apiKey !== undefined && apiKey !== apiKey.trim()) {
+    return { error: `${label}.apiKey must not have surrounding whitespace` };
+  }
+  if (!baseUrl.trim() || !model.trim()) {
+    return { error: `${label}.baseUrl and ${label}.model must not be empty` };
+  }
+  if (baseUrl !== baseUrl.trim() || model !== model.trim()) {
+    return {
+      error: `${label}.baseUrl/model must not have surrounding whitespace`,
+    };
+  }
+  if (!/^https?:\/\//i.test(baseUrl)) {
+    return { error: `${label}.baseUrl must start with http:// or https://` };
+  }
+  return { value: { baseUrl, apiKey, model } };
+}
+
+/**
+ * Config writes must take effect: live sidecars hold their spawn-time
+ * endpoints, so stop them all and let the next call respawn with the new
+ * config. A stop failure never rolls back the persisted file — it only
+ * means existing sidecars keep serving until they idle out.
+ */
+async function stopAllSidecars(): Promise<boolean> {
+  try {
+    await getAutoMemorySidecarManager().stopAll();
+    return true;
+  } catch (error) {
+    logger.warn(
+      { err: error },
+      'auto-memory sidecar stopAll failed after a config change',
+    );
+    return false;
+  }
+}
+
+function envOverride(c: Context) {
+  return c.json(
+    {
+      error: 'env_override',
+      message:
+        'CKQCLAW_AUTO_MEMORY is set — the env channel owns the config; clear it to use the file channel',
+    },
+    409,
+  );
+}
+
+autoMemoryRoutes.get('/config', (c) => {
+  // Masked credential view — baseUrl/model plaintext for form prefill,
+  // apiKey masked. Never cached.
+  c.header('Cache-Control', 'private, no-store');
+  const source = getAutoMemoryConfigSource();
+  const config = getAutoMemoryHostConfig();
+  const view = (endpoint: AutoMemoryEndpointConfig | undefined) =>
+    endpoint
+      ? {
+          baseUrl: endpoint.baseUrl,
+          model: endpoint.model,
+          apiKeyMasked: maskApiKey(endpoint.apiKey),
+        }
+      : undefined;
+  return c.json({
+    source,
+    enabled: config.enabled,
+    ...(config.llm ? { llm: view(config.llm) } : {}),
+    ...(config.embedder ? { embedder: view(config.embedder) } : {}),
+  });
+});
+
+autoMemoryRoutes.put('/config', async (c) => {
+  if (getAutoMemoryConfigSource() === 'env') return envOverride(c);
+  const body = await c.req.json().catch(() => null);
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return invalidArgs(c, 'body must be a JSON object with llm and embedder');
+  }
+  const raw = body as Record<string, unknown>;
+  const llm = parseEndpointInput(raw.llm, 'llm');
+  if ('error' in llm) return invalidArgs(c, llm.error);
+  const embedder = parseEndpointInput(raw.embedder, 'embedder');
+  if ('error' in embedder) return invalidArgs(c, embedder.error);
+
+  // Keep-old resolution: blank (UI left empty) or the prefill mask sent back
+  // verbatim both retain the stored key — a mask must never be persisted as
+  // if it were a plaintext credential.
+  const current = getAutoMemoryHostConfig();
+  const resolveKey = (
+    input: ConfigEndpointInput,
+    old: AutoMemoryEndpointConfig | undefined,
+  ): string => {
+    if (input.apiKey === undefined || input.apiKey === '') {
+      return old?.apiKey ?? '';
+    }
+    if (old && input.apiKey === maskApiKey(old.apiKey)) return old.apiKey;
+    return input.apiKey;
+  };
+
+  const result = writeAutoMemoryHostConfig({
+    llm: {
+      baseUrl: llm.value.baseUrl,
+      apiKey: resolveKey(llm.value, current.llm),
+      model: llm.value.model,
+    },
+    embedder: {
+      baseUrl: embedder.value.baseUrl,
+      apiKey: resolveKey(embedder.value, current.embedder),
+      model: embedder.value.model,
+    },
+  });
+  if (!result.ok) {
+    if (result.error === 'env_override') return envOverride(c);
+    if (result.error === 'invalid_endpoints') {
+      return invalidArgs(c, result.message);
+    }
+    return c.json({ error: 'write_failed', message: result.message }, 500);
+  }
+  const sidecarsRestarted = await stopAllSidecars();
+  return c.json({ ok: true, sidecarsRestarted });
+});
+
+autoMemoryRoutes.delete('/config', async (c) => {
+  if (getAutoMemoryConfigSource() === 'env') return envOverride(c);
+  const result = clearAutoMemoryHostConfig();
+  if (!result.ok) {
+    if (result.error === 'env_override') return envOverride(c);
+    return c.json({ error: 'clear_failed', message: result.message }, 500);
+  }
+  const sidecarsRestarted = await stopAllSidecars();
+  return c.json({ ok: true, sidecarsRestarted });
 });
 
 autoMemoryRoutes.get('/workspaces/:workspaceJid/memories/search', async (c) => {

@@ -32,6 +32,7 @@ vi.mock('../src/logger.js', () => ({
 
 // Keep the real permission/ACL helpers; only swap session auth for a header
 // so 401 and hide-existence 404 paths exercise the genuine middleware gate.
+// user-admin carries manage_system_config (real systemConfigMiddleware runs).
 vi.mock('../src/middleware/auth.ts', async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>;
   return {
@@ -39,11 +40,12 @@ vi.mock('../src/middleware/auth.ts', async (importOriginal) => {
     authMiddleware: async (c: any, next: any) => {
       const userId = c.req.header('x-test-user');
       if (!userId) return c.json({ error: 'Unauthorized' }, 401);
+      const isAdmin = userId === 'user-admin';
       c.set('user', {
         id: userId,
         username: userId,
-        role: 'member',
-        permissions: [],
+        role: isAdmin ? 'admin' : 'member',
+        permissions: isAdmin ? ['manage_system_config'] : [],
       });
       return next();
     },
@@ -60,6 +62,7 @@ const sidecarCalls: Array<{
   args: Record<string, unknown>;
 }> = [];
 let sidecarBehavior: { available: false; reason: string } | null = null;
+const stopAllCalls: number[] = [];
 
 vi.mock('../src/auto-memory-ipc.js', async (importOriginal) => ({
   ...((await importOriginal()) as Record<string, unknown>),
@@ -89,6 +92,11 @@ vi.mock('../src/auto-memory-ipc.js', async (importOriginal) => ({
       }
       return { available: true, value: 'ok' };
     },
+    // Task X config writes stop live sidecars so the next call respawns
+    // with the new endpoints — the route must actually invoke this.
+    stopAll: async () => {
+      stopAllCalls.push(Date.now());
+    },
   }),
 }));
 
@@ -100,6 +108,8 @@ const { probeWithBudget } = await import('../src/routes/auto-memory.js');
 
 const OWNER = { 'x-test-user': 'user-1' } as Record<string, string>;
 const STRANGER = { 'x-test-user': 'user-2' } as Record<string, string>;
+const ADMIN = { 'x-test-user': 'user-admin' } as Record<string, string>;
+const CONFIG_FILE = path.join(dataDir, 'config', 'auto-memory.json');
 
 function seedWorkspaces(): void {
   db.initDatabase();
@@ -135,11 +145,14 @@ beforeEach(() => {
   seedWorkspaces();
   sidecarCalls.length = 0;
   sidecarBehavior = null;
+  stopAllCalls.length = 0;
+  fs.rmSync(CONFIG_FILE, { force: true });
   enableAutoMemory(true);
 });
 
 afterEach(() => {
   enableAutoMemory(false);
+  fs.rmSync(CONFIG_FILE, { force: true });
 });
 
 afterAll(() => {
@@ -231,6 +244,7 @@ describe('auto-memory management routes (task W)', () => {
       enabled: false,
       available: false,
       reason: 'not_configured',
+      source: 'none',
     });
 
     const list = await autoMemoryRoutes.request(
@@ -245,7 +259,11 @@ describe('auto-memory management routes (task W)', () => {
   test('status reports the global enabled flag without probing', async () => {
     const res = await autoMemoryRoutes.request('/status', { headers: OWNER });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ enabled: true, available: true });
+    expect(await res.json()).toEqual({
+      enabled: true,
+      available: true,
+      source: 'env',
+    });
     expect(sidecarCalls).toHaveLength(0);
   });
 
@@ -255,7 +273,11 @@ describe('auto-memory management routes (task W)', () => {
       { headers: OWNER },
     );
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ enabled: true, available: true });
+    expect(await res.json()).toEqual({
+      enabled: true,
+      available: true,
+      source: 'env',
+    });
     expect(sidecarCalls).toHaveLength(1);
     expect(sidecarCalls[0].op).toBe('list');
     expect(sidecarCalls[0].args).toEqual({ limit: 1, offset: 0 });
@@ -272,6 +294,7 @@ describe('auto-memory management routes (task W)', () => {
       enabled: true,
       available: false,
       reason: 'no usable python here',
+      source: 'env',
     });
   });
 
@@ -389,5 +412,254 @@ describe('auto-memory management routes (task W)', () => {
     const body = await res.json();
     expect(body.error).toBe('unavailable');
     expect(body.message).toContain('spawn failed');
+  });
+});
+
+describe('auto-memory config endpoints (task X)', () => {
+  const LLM_IN = {
+    baseUrl: 'https://llm.test/v1',
+    apiKey: 'sk-llm-secret-123456',
+    model: 'gpt-m',
+  };
+  const EMBEDDER_IN = {
+    baseUrl: 'https://embed.test/v1',
+    apiKey: 'sk-embed-secret-123456',
+    model: 'embed-m',
+  };
+
+  beforeEach(() => {
+    // The config family manages the file channel — env must stay unset.
+    enableAutoMemory(false);
+  });
+
+  function put(body: unknown, headers: Record<string, string> = ADMIN) {
+    return autoMemoryRoutes.request('/config', {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(body),
+    });
+  }
+
+  test('unauthenticated callers get 401 on every config endpoint', async () => {
+    const get = await autoMemoryRoutes.request('/config');
+    expect(get.status).toBe(401);
+
+    const putRes = await put(
+      { llm: LLM_IN, embedder: EMBEDDER_IN },
+      {} as Record<string, string>,
+    );
+    expect(putRes.status).toBe(401);
+
+    const del = await autoMemoryRoutes.request('/config', {
+      method: 'DELETE',
+    });
+    expect(del.status).toBe(401);
+  });
+
+  test('members without manage_system_config get 403 on every config endpoint', async () => {
+    const get = await autoMemoryRoutes.request('/config', {
+      headers: OWNER,
+    });
+    expect(get.status).toBe(403);
+
+    const putRes = await put({ llm: LLM_IN, embedder: EMBEDDER_IN }, OWNER);
+    expect(putRes.status).toBe(403);
+
+    const del = await autoMemoryRoutes.request('/config', {
+      method: 'DELETE',
+      headers: OWNER,
+    });
+    expect(del.status).toBe(403);
+    expect(fs.existsSync(CONFIG_FILE)).toBe(false);
+  });
+
+  test('GET /config reports the none state uncached with no endpoints', async () => {
+    const res = await autoMemoryRoutes.request('/config', { headers: ADMIN });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('cache-control')).toContain('no-store');
+    expect(await res.json()).toEqual({ source: 'none', enabled: false });
+  });
+
+  test('GET /config marks an incomplete file (file source, disabled, one-sided prefill)', async () => {
+    fs.mkdirSync(path.dirname(CONFIG_FILE), { recursive: true });
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify({ llm: LLM_IN }));
+    resetAutoMemoryConfigCache();
+    const res = await autoMemoryRoutes.request('/config', { headers: ADMIN });
+    expect(res.status).toBe(200);
+    // sanitizeConfig keeps the individually-valid llm for diagnostics; the
+    // view mirrors that (masked) while enabled stays false.
+    const body = await res.json();
+    expect(body.source).toBe('file');
+    expect(body.enabled).toBe(false);
+    expect(body.llm).toEqual({
+      baseUrl: 'https://llm.test/v1',
+      model: 'gpt-m',
+      apiKeyMasked: 'sk-l***3456',
+    });
+    expect(body.embedder).toBeUndefined();
+  });
+
+  test('PUT writes the pair, restarts sidecars, and GET masks the keys', async () => {
+    const write = await put({ llm: LLM_IN, embedder: EMBEDDER_IN });
+    expect(write.status).toBe(200);
+    expect(await write.json()).toEqual({ ok: true, sidecarsRestarted: true });
+    expect(stopAllCalls).toHaveLength(1);
+
+    // The plaintext key lands in the 0o600 file only — never a response.
+    const stored = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+    expect(stored.llm.apiKey).toBe('sk-llm-secret-123456');
+    expect(stored.embedder.apiKey).toBe('sk-embed-secret-123456');
+
+    const get = await autoMemoryRoutes.request('/config', { headers: ADMIN });
+    expect(get.headers.get('cache-control')).toContain('no-store');
+    const body = await get.json();
+    expect(body.source).toBe('file');
+    expect(body.enabled).toBe(true);
+    expect(body.llm).toEqual({
+      baseUrl: 'https://llm.test/v1',
+      model: 'gpt-m',
+      apiKeyMasked: 'sk-l***3456',
+    });
+    expect(body.embedder).toEqual({
+      baseUrl: 'https://embed.test/v1',
+      model: 'embed-m',
+      apiKeyMasked: 'sk-e***3456',
+    });
+    expect(JSON.stringify(body)).not.toContain('sk-llm-secret-123456');
+    expect(JSON.stringify(body)).not.toContain('sk-embed-secret-123456');
+  });
+
+  test('PUT keeps the old apiKey when blank or the untouched mask round-trips', async () => {
+    await put({ llm: LLM_IN, embedder: EMBEDDER_IN });
+    expect(stopAllCalls).toHaveLength(1);
+
+    // Blank apiKey = keep (UI leaves the field empty).
+    const blank = await put({
+      llm: { baseUrl: LLM_IN.baseUrl, apiKey: '', model: 'gpt-2' },
+      embedder: { baseUrl: EMBEDDER_IN.baseUrl, model: 'embed-2' },
+    });
+    expect(blank.status).toBe(200);
+
+    // Prefilled mask sent back verbatim = keep (UI round-trip).
+    const masked = await put({
+      llm: {
+        baseUrl: LLM_IN.baseUrl,
+        apiKey: 'sk-l***3456',
+        model: 'gpt-3',
+      },
+      embedder: {
+        baseUrl: EMBEDDER_IN.baseUrl,
+        apiKey: 'sk-e***3456',
+        model: 'embed-3',
+      },
+    });
+    expect(masked.status).toBe(200);
+
+    const stored = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+    expect(stored.llm.apiKey).toBe('sk-llm-secret-123456');
+    expect(stored.embedder.apiKey).toBe('sk-embed-secret-123456');
+    expect(stored.llm.model).toBe('gpt-3');
+    expect(stored.embedder.model).toBe('embed-3');
+    expect(stopAllCalls).toHaveLength(3);
+  });
+
+  test('PUT rejects invalid input without touching the file or sidecars', async () => {
+    for (const bad of [
+      {},
+      { llm: LLM_IN },
+      {
+        llm: { baseUrl: 'ftp://x', apiKey: 'k', model: 'm' },
+        embedder: EMBEDDER_IN,
+      },
+      { llm: { baseUrl: 'https://x', apiKey: 'k' }, embedder: EMBEDDER_IN },
+      // Strict field hygiene (OpenDot discipline): no surrounding whitespace.
+      {
+        llm: { baseUrl: ' https://x', apiKey: 'k', model: 'm' },
+        embedder: EMBEDDER_IN,
+      },
+      {
+        llm: { baseUrl: 'https://x', apiKey: 'k', model: 'm ' },
+        embedder: EMBEDDER_IN,
+      },
+      {
+        llm: { baseUrl: 'https://x', apiKey: ' k', model: 'm' },
+        embedder: EMBEDDER_IN,
+      },
+      // Blank apiKey cannot "keep" what does not exist yet.
+      {
+        llm: { baseUrl: 'https://x', apiKey: '', model: 'm' },
+        embedder: EMBEDDER_IN,
+      },
+    ]) {
+      const res = await put(bad);
+      expect(res.status, JSON.stringify(bad)).toBe(400);
+      expect(await res.json()).toMatchObject({ error: 'invalid_args' });
+    }
+    expect(fs.existsSync(CONFIG_FILE)).toBe(false);
+    expect(stopAllCalls).toHaveLength(0);
+  });
+
+  test('PUT bodies beyond 8KB are refused before parsing', async () => {
+    const res = await put({
+      llm: { ...LLM_IN, apiKey: 'x'.repeat(9 * 1024) },
+      embedder: EMBEDDER_IN,
+    });
+    expect(res.status).toBe(413);
+    expect(fs.existsSync(CONFIG_FILE)).toBe(false);
+  });
+
+  test('env override turns PUT/DELETE into 409 and GET into a read-only view', async () => {
+    enableAutoMemory(true);
+
+    const putRes = await put({ llm: LLM_IN, embedder: EMBEDDER_IN });
+    expect(putRes.status).toBe(409);
+    expect(await putRes.json()).toMatchObject({ error: 'env_override' });
+
+    const del = await autoMemoryRoutes.request('/config', {
+      method: 'DELETE',
+      headers: ADMIN,
+    });
+    expect(del.status).toBe(409);
+    expect(await del.json()).toMatchObject({ error: 'env_override' });
+
+    const get = await autoMemoryRoutes.request('/config', { headers: ADMIN });
+    expect(get.status).toBe(200);
+    const body = await get.json();
+    expect(body.source).toBe('env');
+    // Field-wise only (no whole-object snapshots): short keys mask to '***'
+    // and no plaintext apiKey field exists in the view.
+    expect(body.llm).toEqual({
+      baseUrl: 'https://llm.test/v1',
+      model: 'm',
+      apiKeyMasked: '***',
+    });
+    expect(body.llm.apiKey).toBeUndefined();
+
+    expect(fs.existsSync(CONFIG_FILE)).toBe(false);
+    expect(stopAllCalls).toHaveLength(0);
+  });
+
+  test('DELETE clears the file, restarts sidecars, and status follows', async () => {
+    await put({ llm: LLM_IN, embedder: EMBEDDER_IN });
+    expect(stopAllCalls).toHaveLength(1);
+
+    const del = await autoMemoryRoutes.request('/config', {
+      method: 'DELETE',
+      headers: ADMIN,
+    });
+    expect(del.status).toBe(200);
+    expect(await del.json()).toEqual({ ok: true, sidecarsRestarted: true });
+    expect(fs.existsSync(CONFIG_FILE)).toBe(false);
+    expect(stopAllCalls).toHaveLength(2);
+
+    const status = await autoMemoryRoutes.request('/status', {
+      headers: OWNER,
+    });
+    expect(await status.json()).toEqual({
+      enabled: false,
+      available: false,
+      reason: 'not_configured',
+      source: 'none',
+    });
   });
 });

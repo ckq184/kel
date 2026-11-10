@@ -21,6 +21,7 @@ import {
 import { UserChannelsSection } from '../components/settings/UserChannelsSection';
 import { ModelPricingSection } from '../components/settings/ModelPricingSection';
 import { AutoMemorySection } from '../components/settings/AutoMemorySection';
+import { AutoMemoryEndpointCard } from '../components/settings/AutoMemoryEndpointCard';
 import { UsersPage } from './UsersPage';
 import { MonitorPage } from './MonitorPage';
 import type { SettingsTab } from '../components/settings/types';
@@ -258,10 +259,15 @@ export function SettingsPage() {
               ) : (
                 <>
                   {activeTab === 'claude' && (
-                    <ClaudeProviderSection
-                      setNotice={(message) => message && toast.success(message)}
-                      setError={(message) => message && toast.error(message)}
-                    />
+                    <div className="space-y-8">
+                      <ClaudeProviderSection
+                        setNotice={(message) =>
+                          message && toast.success(message)
+                        }
+                        setError={(message) => message && toast.error(message)}
+                      />
+                      <AutoMemoryEndpointCard />
+                    </div>
                   )}
                   {activeTab === 'registration' && (
                     <div className="space-y-8">

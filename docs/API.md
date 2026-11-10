@@ -502,14 +502,15 @@ Web 和 Runtime 不再把它们当作第二个可写真相源。
 
 自动记忆层是 Workspace 范围内的 episodic 记忆（宿主 mem0 侧车 + Qdrant 本地
 存储），与 Workspace Memory v2 相互独立。管理端点供设置页「自动记忆」分区使用；
-所有端点先要求 Login，再按 `:workspaceJid` 执行与 v2 相同的资源级授权（读
-`canAccessGroup()`、删 `canModifyGroup()`；无权与不存在统一 404）。配置中的
-llm/embedder 端点信息不出现在任何响应里。
+workspace 端点先要求 Login，再按 `:workspaceJid` 执行与 v2 相同的资源级授权
+（读 `canAccessGroup()`、删 `canModifyGroup()`；无权与不存在统一 404）。管理
+响应不携带配置凭据；配置凭据只经 `/config` 端点族以掩码形式出现（任务 X）。
 
 - `GET /api/auto-memory/status`
   - 可选 Query：`workspaceJid`。不带时只报全局配置态
-    `{ enabled, available }`，不探测侧车；带时以一次轻量 `list` 探测该
-    Workspace，失败返回 `{ enabled, available: false, reason }`（始终 200，
+    `{ enabled, available, source }`（`source` = `env|file|none`，非敏感），
+    不探测侧车；带时以一次轻量 `list` 探测该 Workspace，失败返回
+    `{ enabled, available: false, reason, source }`（始终 200，
     探测有短超时预算）。
 - `GET /api/auto-memory/workspaces/:workspaceJid/memories`
   - Query：`limit=1..100`（默认 20）、`offset>=0`。返回 `{ items }`，每项为
@@ -523,6 +524,27 @@ llm/embedder 端点信息不出现在任何响应里。
 - `DELETE /api/auto-memory/workspaces/:workspaceJid/memories`
   - 破坏性清空该 Workspace 全部自动记忆（幂等直通，无软删除），返回
     `{ deletedAll: true }`；UI 层负责危险色二次确认。
+
+### 端点配置（任务 X）
+
+`/api/auto-memory/config` 三端点管理文件通道（`data/config/auto-memory.json`，
+0o600）：全部要求 `manage_system_config`（未登录 401、无权限 403），body 上限
+8KB，响应 `Cache-Control: private, no-store`。环境变量 `CKQCLAW_AUTO_MEMORY`
+设置时文件通道为只读：PUT/DELETE 返回 409 `env_override`，GET 标注
+`source: 'env'`（双通道永不静默互相覆盖）。
+
+- `GET /api/auto-memory/config`
+  - 返回 `{ source, enabled, llm?, embedder? }`；端点视图为
+    `{ baseUrl, model, apiKeyMasked }`（apiKey 掩码，≤8 位全 `***`），
+    baseUrl/model 明文供表单预填。
+- `PUT /api/auto-memory/config`
+  - 入参 `{ llm: { baseUrl, apiKey?, model }, embedder: { … } }`；两侧成对
+    合法（baseUrl 需 http(s)、字段非空且无首尾空白）才落盘，否则 400
+    `invalid_args` 且不写文件。apiKey 缺省、空串或掩码原样回传均表示保留
+    旧值（掩码永不当明文写回）。成功后停止全部运行中侧车（下次调用以新
+    配置 respawn），返回 `{ ok: true, sidecarsRestarted }`。
+- `DELETE /api/auto-memory/config`
+  - 清除文件配置（幂等）并停止全部侧车，返回 `{ ok: true, sidecarsRestarted }`。
 
 未配置（`data/config/auto-memory.json` 缺失或端点不完整）时管理端点返回 503
 `not_configured`；侧车不可用返回 503 `unavailable`（带 reason）；参数非法返回

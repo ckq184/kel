@@ -7,6 +7,7 @@ vi.mock('../web/src/api/client', () => ({
   api: {
     get: vi.fn(),
     post: vi.fn(),
+    put: vi.fn(),
     patch: vi.fn(),
     delete: vi.fn(),
   },
@@ -213,6 +214,150 @@ describe('auto-memory store', () => {
       '/api/auto-memory/workspaces/web%3Aws1/memories',
     );
     expect(useAutoMemoryStore.getState().items).toEqual([]);
+    expect(useAutoMemoryStore.getState().actionError).toBeNull();
+  });
+});
+
+describe('auto-memory endpoint card states (task X)', () => {
+  test('card renders the three config states with masked prefill', () => {
+    const card = read('web/src/components/settings/AutoMemoryEndpointCard.tsx');
+
+    // env 覆盖态：只读提示 + 表单禁用（CKQCLAW_AUTO_MEMORY 通道优先）
+    expect(card).toContain("source === 'env'");
+    expect(card).toContain('CKQCLAW_AUTO_MEMORY');
+    // 文件态：掩码预填（apiKeyMasked → apiKey 输入框）
+    expect(card).toContain('apiKeyMasked');
+    // 保留语义提示：留空/掩码不动 = 保留现有密钥
+    expect(card).toMatch(/留空|保留现有密钥|掩码/);
+    // 保存成功文案明示侧车促生效语义
+    expect(card).toContain('已停止全部自动记忆侧车');
+    // 清除走 danger 二次确认
+    expect(card).toContain('ConfirmDialog');
+    expect(card).toContain('confirmVariant="danger"');
+  });
+
+  test('card calls the config API only through the store', () => {
+    const card = read('web/src/components/settings/AutoMemoryEndpointCard.tsx');
+    expect(card).toContain('useAutoMemoryStore');
+    expect(card).not.toContain('/api/auto-memory');
+  });
+
+  test('section unconfigured state gates the jump by manage_system_config', () => {
+    const section = read('web/src/components/settings/AutoMemorySection.tsx');
+    // 有权用户：「去配置」跳模型配置 tab
+    expect(section).toContain('canManageSystemConfig');
+    expect(section).toContain('/settings?tab=claude');
+    expect(section).toContain('去配置');
+    // 普通用户：保留文件引导文案
+    expect(section).toContain('data/config/auto-memory.json');
+  });
+});
+
+describe('auto-memory config store actions (task X)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useAutoMemoryStore.setState({
+      config: null,
+      configLoading: false,
+      configError: null,
+      actionError: null,
+    });
+  });
+
+  const FILE_CONFIG = {
+    source: 'file',
+    enabled: true,
+    llm: {
+      baseUrl: 'https://llm.test/v1',
+      model: 'gpt-m',
+      apiKeyMasked: 'sk-l***3456',
+    },
+    embedder: {
+      baseUrl: 'https://embed.test/v1',
+      model: 'embed-m',
+      apiKeyMasked: 'sk-e***3456',
+    },
+  };
+
+  test('loadConfig fetches the masked view into state', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce(FILE_CONFIG);
+
+    const config = await useAutoMemoryStore.getState().loadConfig();
+
+    expect(api.get).toHaveBeenCalledWith('/api/auto-memory/config');
+    expect(config?.source).toBe('file');
+    expect(useAutoMemoryStore.getState().config?.llm?.apiKeyMasked).toBe(
+      'sk-l***3456',
+    );
+    expect(useAutoMemoryStore.getState().configLoading).toBe(false);
+  });
+
+  test('loadConfig failures land in configError, not a blank screen', async () => {
+    vi.mocked(api.get).mockRejectedValueOnce(new Error('Forbidden'));
+
+    const config = await useAutoMemoryStore.getState().loadConfig();
+
+    expect(config).toBeNull();
+    const state = useAutoMemoryStore.getState();
+    expect(state.configError).toContain('Forbidden');
+    expect(state.configLoading).toBe(false);
+  });
+
+  test('saveConfig PUTs the pair (blank keys keep old) then reloads', async () => {
+    vi.mocked(api.put).mockResolvedValueOnce({
+      ok: true,
+      sidecarsRestarted: true,
+    });
+    vi.mocked(api.get).mockResolvedValueOnce(FILE_CONFIG);
+
+    await useAutoMemoryStore.getState().saveConfig({
+      llm: { baseUrl: 'https://llm.test/v1', apiKey: '', model: 'gpt-m' },
+      embedder: {
+        baseUrl: 'https://embed.test/v1',
+        apiKey: 'sk-e***3456',
+        model: 'embed-m',
+      },
+    });
+
+    expect(api.put).toHaveBeenCalledWith('/api/auto-memory/config', {
+      llm: { baseUrl: 'https://llm.test/v1', apiKey: '', model: 'gpt-m' },
+      embedder: {
+        baseUrl: 'https://embed.test/v1',
+        apiKey: 'sk-e***3456',
+        model: 'embed-m',
+      },
+    });
+    expect(api.get).toHaveBeenCalledWith('/api/auto-memory/config');
+    expect(useAutoMemoryStore.getState().config?.source).toBe('file');
+  });
+
+  test('saveConfig failures set actionError and rethrow', async () => {
+    vi.mocked(api.put).mockRejectedValueOnce(new Error('env_override'));
+
+    await expect(
+      useAutoMemoryStore.getState().saveConfig({
+        llm: { baseUrl: 'https://x', apiKey: 'k', model: 'm' },
+        embedder: { baseUrl: 'https://y', apiKey: 'k', model: 'e' },
+      }),
+    ).rejects.toThrow('env_override');
+
+    expect(useAutoMemoryStore.getState().actionError).toContain('env_override');
+  });
+
+  test('clearConfig DELETEs then reloads the none state', async () => {
+    vi.mocked(api.delete).mockResolvedValueOnce({
+      ok: true,
+      sidecarsRestarted: true,
+    });
+    vi.mocked(api.get).mockResolvedValueOnce({
+      source: 'none',
+      enabled: false,
+    });
+
+    await useAutoMemoryStore.getState().clearConfig();
+
+    expect(api.delete).toHaveBeenCalledWith('/api/auto-memory/config');
+    expect(useAutoMemoryStore.getState().config?.source).toBe('none');
     expect(useAutoMemoryStore.getState().actionError).toBeNull();
   });
 });

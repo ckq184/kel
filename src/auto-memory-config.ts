@@ -109,3 +109,94 @@ export function getAutoMemoryHostConfig(): AutoMemoryHostConfig {
 export function resetAutoMemoryConfigCache(): void {
   cached = null;
 }
+
+// ── Write channel (task X) ──────────────────────────────────────────────────
+//
+// The settings UI manages the file channel through these helpers. The env
+// channel stays operator-owned: when CKQCLAW_AUTO_MEMORY is set, writes and
+// clears are refused so the two channels never silently overwrite each
+// other. Keys land on disk only as a validated endpoint pair (same
+// endpointFrom semantics as the read path) inside a 0o600 file — the
+// session-secret write precedent (src/config.ts).
+
+export type AutoMemoryConfigSource = 'env' | 'file' | 'none';
+
+export type AutoMemoryConfigWriteResult =
+  | { ok: true }
+  | {
+      ok: false;
+      error: 'env_override' | 'invalid_endpoints' | 'write_failed';
+      message: string;
+    };
+
+export type AutoMemoryConfigClearResult =
+  | { ok: true }
+  | { ok: false; error: 'env_override' | 'clear_failed'; message: string };
+
+/** Which channel currently owns the config (env wins, as in the read path). */
+export function getAutoMemoryConfigSource(): AutoMemoryConfigSource {
+  if (process.env.CKQCLAW_AUTO_MEMORY) return 'env';
+  return fs.existsSync(CONFIG_FILE) ? 'file' : 'none';
+}
+
+export function writeAutoMemoryHostConfig(input: {
+  llm: { baseUrl: string; apiKey: string; model: string };
+  embedder: { baseUrl: string; apiKey: string; model: string };
+}): AutoMemoryConfigWriteResult {
+  if (process.env.CKQCLAW_AUTO_MEMORY) {
+    return {
+      ok: false,
+      error: 'env_override',
+      message:
+        'CKQCLAW_AUTO_MEMORY is set — manage the env channel instead of the file',
+    };
+  }
+  const llm = endpointFrom(input.llm);
+  const embedder = endpointFrom(input.embedder);
+  if (!llm || !embedder) {
+    return {
+      ok: false,
+      error: 'invalid_endpoints',
+      message:
+        'llm and embedder must both provide baseUrl (http/https), apiKey, and model',
+    };
+  }
+  try {
+    fs.mkdirSync(path.dirname(CONFIG_FILE), { recursive: true });
+    fs.writeFileSync(
+      CONFIG_FILE,
+      `${JSON.stringify({ enabled: true, llm, embedder }, null, 2)}\n`,
+      { mode: 0o600 },
+    );
+  } catch (error) {
+    return {
+      ok: false,
+      error: 'write_failed',
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
+  resetAutoMemoryConfigCache();
+  return { ok: true };
+}
+
+export function clearAutoMemoryHostConfig(): AutoMemoryConfigClearResult {
+  if (process.env.CKQCLAW_AUTO_MEMORY) {
+    return {
+      ok: false,
+      error: 'env_override',
+      message:
+        'CKQCLAW_AUTO_MEMORY is set — manage the env channel instead of the file',
+    };
+  }
+  try {
+    fs.rmSync(CONFIG_FILE, { force: true });
+  } catch (error) {
+    return {
+      ok: false,
+      error: 'clear_failed',
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
+  resetAutoMemoryConfigCache();
+  return { ok: true };
+}

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
   BrainCircuit,
@@ -16,6 +17,7 @@ import {
   AUTO_MEMORY_PAGE_SIZE,
   type AutoMemoryItem,
 } from '../../stores/auto-memory';
+import { useAuthStore } from '../../stores/auth';
 import type { WorkspaceSummary } from '@/features/workspace-memory/model';
 
 /**
@@ -42,6 +44,12 @@ export function AutoMemorySection() {
     deleteMemory,
     deleteAll,
   } = useAutoMemoryStore();
+  // 任务 X：未配置态按权限分流——能管系统配置的用户直达端点表单，
+  // 其余成员保留文件引导文案。
+  const currentUser = useAuthStore((state) => state.user);
+  const canManageSystemConfig =
+    currentUser?.role === 'admin' ||
+    !!currentUser?.permissions.includes('manage_system_config');
 
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([]);
   const [workspacesLoading, setWorkspacesLoading] = useState(true);
@@ -51,6 +59,7 @@ export function AutoMemorySection() {
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [purgeOpen, setPurgeOpen] = useState(false);
   const [purgeBusy, setPurgeBusy] = useState(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
     let cancelled = false;
@@ -158,15 +167,33 @@ export function AutoMemorySection() {
           <BrainCircuit className="size-4 text-primary" />
           自动记忆未启用
         </div>
-        <p>
-          自动记忆由宿主机 mem0 侧车提供，需要在宿主机配置文件{' '}
-          <code className="rounded bg-muted px-1 font-mono text-xs">
-            data/config/auto-memory.json
-          </code>{' '}
-          中提供成对的 llm 与 embedder OpenAI 兼容端点（baseUrl / apiKey /
-          model），或通过环境变量 CKQCLAW_AUTO_MEMORY 提供。配置前，Agent
-          的自动记忆工具与管理界面均不可用。
-        </p>
+        {canManageSystemConfig ? (
+          <>
+            <p>
+              自动记忆需要成对的 llm 与 embedder OpenAI 兼容端点（baseUrl /
+              apiKey /
+              model）。你可以在「模型配置」页的「自动记忆端点」卡中填写并保存；保存后会停止全部运行中的自动记忆侧车，下次使用时以新配置启动。
+            </p>
+            <div className="mt-3">
+              <Button
+                size="sm"
+                onClick={() => navigate('/settings?tab=claude')}
+              >
+                去配置
+              </Button>
+            </div>
+          </>
+        ) : (
+          <p>
+            自动记忆由宿主机 mem0 侧车提供，需要在宿主机配置文件{' '}
+            <code className="rounded bg-muted px-1 font-mono text-xs">
+              data/config/auto-memory.json
+            </code>{' '}
+            中提供成对的 llm 与 embedder OpenAI 兼容端点（baseUrl / apiKey /
+            model），或通过环境变量 CKQCLAW_AUTO_MEMORY 提供。配置前，Agent
+            的自动记忆工具与管理界面均不可用。
+          </p>
+        )}
         <p className="mt-2">
           数据保存在本机（Qdrant
           local，按工作区目录隔离），不会上传到任何云端服务。

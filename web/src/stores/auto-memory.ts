@@ -24,6 +24,33 @@ export interface AutoMemoryStatus {
   enabled: boolean;
   available: boolean;
   reason?: string;
+  /** Which channel owns the config (task X): env wins over file. */
+  source?: AutoMemoryConfigSource;
+}
+
+/** Masked credential view for one endpoint (GET /api/auto-memory/config). */
+export interface AutoMemoryEndpointView {
+  baseUrl: string;
+  model: string;
+  apiKeyMasked: string;
+}
+
+export type AutoMemoryConfigSource = 'env' | 'file' | 'none';
+
+export interface AutoMemoryConfig {
+  source: AutoMemoryConfigSource;
+  enabled: boolean;
+  llm?: AutoMemoryEndpointView;
+  embedder?: AutoMemoryEndpointView;
+}
+
+/**
+ * PUT payload — apiKey 空串或掩码原样回传都表示保留旧值；只有非掩码新值
+ * 才会覆盖（服务端解析，前端只透传输入框内容）。
+ */
+export interface AutoMemoryConfigInput {
+  llm: { baseUrl: string; apiKey: string; model: string };
+  embedder: { baseUrl: string; apiKey: string; model: string };
 }
 
 /** UI page size; the API caps list limit at 100. */
@@ -44,6 +71,11 @@ interface AutoMemoryState {
   query: string;
   offset: number;
   hasMore: boolean;
+  /** Endpoint config view (task X) — masked keys only. */
+  config: AutoMemoryConfig | null;
+  configLoading: boolean;
+  /** Page-level config load error. */
+  configError: string | null;
 
   loadStatus: (workspaceJid?: string) => Promise<AutoMemoryStatus>;
   loadMemories: (
@@ -52,6 +84,9 @@ interface AutoMemoryState {
   ) => Promise<void>;
   deleteMemory: (workspaceJid: string, memoryId: string) => Promise<void>;
   deleteAll: (workspaceJid: string) => Promise<void>;
+  loadConfig: () => Promise<AutoMemoryConfig | null>;
+  saveConfig: (input: AutoMemoryConfigInput) => Promise<void>;
+  clearConfig: () => Promise<void>;
 }
 
 const errorMessage = (err: unknown, fallback: string) =>
@@ -67,6 +102,9 @@ export const useAutoMemoryStore = create<AutoMemoryState>((set, get) => ({
   query: '',
   offset: 0,
   hasMore: false,
+  config: null,
+  configLoading: false,
+  configError: null,
 
   loadStatus: async (workspaceJid) => {
     set({ statusLoading: true });
@@ -155,6 +193,49 @@ export const useAutoMemoryStore = create<AutoMemoryState>((set, get) => ({
       await get().loadMemories(workspaceJid, { query: '', offset: 0 });
     } catch (err) {
       set({ actionError: errorMessage(err, '清空失败') });
+      throw err;
+    }
+  },
+
+  // ── Config channel (task X) ────────────────────────────────────────────
+  loadConfig: async () => {
+    set({ configLoading: true, configError: null });
+    try {
+      const config = await api.get<AutoMemoryConfig>('/api/auto-memory/config');
+      set({ config, configLoading: false });
+      return config;
+    } catch (err) {
+      set({
+        configLoading: false,
+        configError: errorMessage(err, '自动记忆端点配置加载失败'),
+      });
+      return null;
+    }
+  },
+
+  saveConfig: async (input) => {
+    set({ actionError: null });
+    try {
+      await api.put<{ ok: boolean; sidecarsRestarted: boolean }>(
+        '/api/auto-memory/config',
+        input,
+      );
+      await get().loadConfig();
+    } catch (err) {
+      set({ actionError: errorMessage(err, '保存自动记忆端点配置失败') });
+      throw err;
+    }
+  },
+
+  clearConfig: async () => {
+    set({ actionError: null });
+    try {
+      await api.delete<{ ok: boolean; sidecarsRestarted: boolean }>(
+        '/api/auto-memory/config',
+      );
+      await get().loadConfig();
+    } catch (err) {
+      set({ actionError: errorMessage(err, '清除自动记忆端点配置失败') });
       throw err;
     }
   },

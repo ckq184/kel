@@ -162,10 +162,15 @@ URL 中的 Workspace JID 执行与 v2 相同的资源级授权：
 | ------------------------ | -------------------------------------------------- |
 | GET status、列表、搜索   | `canAccessGroup()`，当前用户必须是 Workspace owner |
 | DELETE 单条、DELETE 清空 | `canModifyGroup()`，当前用户必须是 Workspace owner |
+| GET/PUT/DELETE config    | `manage_system_config`（任务 X，凭据端点族）       |
 
 不带 `workspaceJid` 的 `GET /api/auto-memory/status` 只暴露全局启用开关，任何
 登录用户可读。admin 没有跨 owner bypass；目标 Workspace 不存在或授权失败均返回
 404。清空为破坏性操作：API 幂等直通，UI 层强制危险色二次确认。
+
+`/api/auto-memory/config` 三端点（任务 X）属系统配置面：apiKey 只以掩码回显
+（永不回明文），写/清除成功即停止全部侧车促生效；`CKQCLAW_AUTO_MEMORY` 环境
+变量设置时为只读（PUT/DELETE 409 `env_override`）。
 
 ### 4.7 CKQClaw Owner Profile
 
@@ -221,6 +226,7 @@ read-only 投影按 host-issued turn ID 精确匹配当前或已接纳的 queued
 | 审计日志和导出                                    | `view_audit_log`                                   |
 | `/api/billing/admin/*`                            | `manage_billing`                                   |
 | `/api/pricing/*` 自定义模型单价                   | `manage_system_config`                             |
+| `/api/auto-memory/config` 凭据端点（任务 X）      | `manage_system_config`                             |
 | `/api/docker/pull`、运行监控管理                  | `manage_system_config`                             |
 | `/api/status/channel-outbox/*` 人工裁决           | `manage_system_config`                             |
 | `POST /api/groups/:jid/reset-owner`               | admin break-glass，同时仍验证目标资源              |
