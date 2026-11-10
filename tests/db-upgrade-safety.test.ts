@@ -228,6 +228,8 @@ describe('schema version head', () => {
     // table (task U survey-module rollback).
     // v73: custom_model_pricing table + partial unique indexes, created
     // idempotently by the base schema block (task V; no data migration).
-    expect(db.CURRENT_SCHEMA_VERSION).toBe(73);
+    // v74: registered_groups.auto_memory_recall column (task Z; ensureColumn,
+    // no data migration).
+    expect(db.CURRENT_SCHEMA_VERSION).toBe(74);
   });
 });

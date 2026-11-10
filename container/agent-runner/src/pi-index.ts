@@ -31,6 +31,7 @@ import {
 } from './mcp-tools.js';
 import { loadCkqclawOwnerProfileTurnContext } from './owner-profile-context.js';
 import { loadWorkspaceMemoryTurnContext } from './workspace-memory-context.js';
+import { loadAutoMemoryRecallTurnContext } from './auto-memory-context.js';
 import { buildCkqclawPromptPlan } from './prompt-plan.js';
 import { resolveClaudeProviderRuntime } from './provider-runtime.js';
 import { resolveAgentRuntimeKind } from './runtime-config.js';
@@ -306,11 +307,12 @@ async function runTurn(
   interrupted: boolean;
   pending: IpcInputMessage[];
 }> {
-  const [memory, owner] = await Promise.all([
+  const [memory, owner, autoMemoryRecall] = await Promise.all([
     loadWorkspaceMemoryTurnContext(prompt, (query) =>
       fetchWorkspaceMemorySnapshot(ctx, query),
     ),
     loadCkqclawOwnerProfileTurnContext(() => fetchCkqclawOwnerProfileTurn(ctx)),
+    loadAutoMemoryRecallTurnContext(input, prompt, ctx),
   ]);
   if (!memory.snapshot)
     logWarn(
@@ -319,6 +321,7 @@ async function runTurn(
   const turnPrompt = [
     owner.block,
     memory.block,
+    autoMemoryRecall.block,
     formatChannelTurnContextForPrompt(input.channelContext),
     prompt,
   ]

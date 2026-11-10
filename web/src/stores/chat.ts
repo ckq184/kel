@@ -400,6 +400,7 @@ interface ChatState {
     jid: string,
     interactionMode: InteractionMode,
   ) => Promise<boolean>;
+  updateAutoMemoryRecall: (jid: string, enabled: boolean) => Promise<boolean>;
   togglePin: (jid: string) => Promise<void>;
   inspectDeleteFlow: (jid: string) => Promise<WorkspaceDeleteImpact>;
   deleteFlow: (
@@ -2365,6 +2366,34 @@ export const useChatStore = create<ChatState>((set, get) => ({
         return {
           ...groups,
           [jid]: { ...group, interaction_mode: interactionMode },
+        };
+      };
+      set((state) => ({
+        groups: patchGroups(state.groups),
+        error: null,
+      }));
+      useGroupsStore.setState((state) => ({
+        groups: patchGroups(state.groups),
+      }));
+      return true;
+    } catch (err) {
+      set({ error: err instanceof Error ? err.message : String(err) });
+      return false;
+    }
+  },
+
+  updateAutoMemoryRecall: async (jid, enabled) => {
+    try {
+      await api.patch<{ success: boolean }>(
+        `/api/groups/${encodeURIComponent(jid)}/auto-memory-recall`,
+        { enabled },
+      );
+      const patchGroups = (groups: Record<string, GroupInfo>) => {
+        const group = groups[jid];
+        if (!group) return groups;
+        return {
+          ...groups,
+          [jid]: { ...group, auto_memory_recall: enabled },
         };
       };
       set((state) => ({

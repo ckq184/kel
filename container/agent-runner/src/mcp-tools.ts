@@ -322,6 +322,57 @@ async function callCkqclawOwnerProfile(
 }
 
 /**
+ * Runner→host auto-memory bridge, shared by the `auto_memory_*` tools and the
+ * per-turn recall injection (`auto-memory-context.ts`). Availability is
+ * receipt-decided: a silent host or failed op degrades to
+ * `{ available: false }`, never a thrown turn.
+ */
+export async function callAutoMemory(
+  ctx: McpContext,
+  operation: 'search' | 'add' | 'get',
+  payload: Record<string, unknown>,
+): Promise<
+  { available: true; value: unknown } | { available: false; reason: string }
+> {
+  const tasksDir = path.join(ctx.workspaceIpc, 'tasks');
+  const request: Record<string, unknown> & { requestId: string } = {
+    type: 'auto_memory',
+    operation,
+    requestId: newRequestId(),
+    timestamp: new Date().toISOString(),
+    ...payload,
+  };
+  let result: Record<string, unknown>;
+  try {
+    result = await pollIpcResult(
+      tasksDir,
+      request,
+      AUTO_MEMORY_RESULT_PREFIX,
+      AUTO_MEMORY_IPC_TIMEOUT_MS,
+    );
+  } catch (err) {
+    // A silent host (old server image without the auto_memory case) must
+    // degrade the tool, not break the turn with the poll timeout.
+    return {
+      available: false,
+      reason: err instanceof Error ? err.message : String(err),
+    };
+  }
+  if (result.success !== true) {
+    const code = typeof result.code === 'string' ? ` (${result.code})` : '';
+    return {
+      available: false,
+      reason: `${
+        typeof result.error === 'string'
+          ? result.error
+          : 'auto memory request failed'
+      }${code}`,
+    };
+  }
+  return { available: true, value: result.result };
+}
+
+/**
  * Internal runner control-plane acknowledgement. This operation is
  * intentionally absent from createMcpTools(): the model can neither discover
  * nor invoke it, and the host additionally requires the exact active owner
@@ -2995,49 +3046,6 @@ Use the skills panel in the UI to find the skill ID (directory name, e.g. "memor
     ],
     isError: true,
   });
-  const callAutoMemory = async (
-    operation: 'search' | 'add' | 'get',
-    payload: Record<string, unknown>,
-  ): Promise<
-    { available: true; value: unknown } | { available: false; reason: string }
-  > => {
-    const tasksDir = path.join(ctx.workspaceIpc, 'tasks');
-    const request: Record<string, unknown> & { requestId: string } = {
-      type: 'auto_memory',
-      operation,
-      requestId: newRequestId(),
-      timestamp: new Date().toISOString(),
-      ...payload,
-    };
-    let result: Record<string, unknown>;
-    try {
-      result = await pollIpcResult(
-        tasksDir,
-        request,
-        AUTO_MEMORY_RESULT_PREFIX,
-        AUTO_MEMORY_IPC_TIMEOUT_MS,
-      );
-    } catch (err) {
-      // A silent host (old server image without the auto_memory case) must
-      // degrade the tool, not break the turn with the poll timeout.
-      return {
-        available: false,
-        reason: err instanceof Error ? err.message : String(err),
-      };
-    }
-    if (result.success !== true) {
-      const code = typeof result.code === 'string' ? ` (${result.code})` : '';
-      return {
-        available: false,
-        reason: `${
-          typeof result.error === 'string'
-            ? result.error
-            : 'auto memory request failed'
-        }${code}`,
-      };
-    }
-    return { available: true, value: result.result };
-  };
 
   tools.push(
     tool(
@@ -3048,7 +3056,7 @@ Use the skills panel in the UI to find the skill ID (directory name, e.g. "memor
         limit: z.number().int().min(1).max(50).optional().default(10),
       },
       async (args) => {
-        const outcome = await callAutoMemory('search', {
+        const outcome = await callAutoMemory(ctx, 'search', {
           query: args.query.trim(),
           limit: args.limit ?? 10,
         });
@@ -3085,7 +3093,7 @@ Use the skills panel in the UI to find the skill ID (directory name, e.g. "memor
             ),
         },
         async (args) => {
-          const outcome = await callAutoMemory('add', {
+          const outcome = await callAutoMemory(ctx, 'add', {
             messages: [{ role: 'user', content: args.content.trim() }],
             metadata: {
               sessionId: ctx.currentSessionId ?? undefined,
@@ -3113,7 +3121,7 @@ Use the skills panel in the UI to find the skill ID (directory name, e.g. "memor
           content: z.string().min(1).max(20_000),
         },
         async (args) => {
-          const exists = await callAutoMemory('get', {
+          const exists = await callAutoMemory(ctx, 'get', {
             memoryId: args.memory_id,
           });
           if (!exists.available) {

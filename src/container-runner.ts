@@ -347,12 +347,18 @@ function ensureSettingsJson(
   fs.writeFileSync(projectionFile, projectionContent, { mode: 0o600 });
 }
 
-export function buildAutoMemoryInput(): ContainerInput['autoMemory'] {
+export function buildAutoMemoryInput(
+  group?: Pick<RegisteredGroup, 'autoMemoryRecall'>,
+): ContainerInput['autoMemory'] {
   const config = getAutoMemoryHostConfig();
   if (!config.enabled) return undefined;
   // Endpoints stay host-side (they feed the host-owned sidecar); runners
-  // receive only the enable flag over the stdin bootstrap.
-  return { enabled: true };
+  // receive only the enable flag — plus the workspace recall opt-in (task Z)
+  // — over the stdin bootstrap.
+  return {
+    enabled: true,
+    recall: group?.autoMemoryRecall === true ? { enabled: true } : undefined,
+  };
 }
 
 export interface ContainerInput {
@@ -377,9 +383,14 @@ export interface ContainerInput {
   isAdminHome?: boolean;
   isScheduledTask?: boolean;
   /** Per-workspace auto-memory enable flag. Mirrored in agent-runner types;
-   * the host owns the sidecar and its endpoints — keep both in sync. */
+   * the host owns the sidecar and its endpoints — keep both in sync.
+   * `recall.enabled` opts the workspace into per-turn automatic memory
+   * recall injection (task Z). */
   autoMemory?: {
     enabled?: boolean;
+    recall?: {
+      enabled?: boolean;
+    };
   };
   /**
    * Internal per-runner HMAC secret delivered only in the stdin bootstrap.
@@ -1849,7 +1860,7 @@ export async function runContainerAgent(
       // the caller's `input` object (queue/log/retry paths reuse the same ref).
       const dockerInput: ContainerInput = {
         ...input,
-        autoMemory: buildAutoMemoryInput(),
+        autoMemory: buildAutoMemoryInput(group),
         workspaceMemoryMutationSigningSecret,
         workspaceMemoryRunnerInstanceId,
         plugins: group.created_by
@@ -2885,7 +2896,7 @@ export async function runHostAgent(
       // plugins.
       const hostInput: ContainerInput = {
         ...input,
-        autoMemory: buildAutoMemoryInput(),
+        autoMemory: buildAutoMemoryInput(group),
         workspaceMemoryMutationSigningSecret,
         workspaceMemoryRunnerInstanceId,
         plugins: preparedHostPlugins,

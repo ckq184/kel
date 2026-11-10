@@ -182,6 +182,7 @@ export function ChatView({ groupJid, onBack, headerLeft }: ChatViewProps) {
   const handleWsNewMessage = useChatStore((s) => s.handleWsNewMessage);
   const handleStreamSnapshot = useChatStore((s) => s.handleStreamSnapshot);
   const updateInteractionMode = useChatStore((s) => s.updateInteractionMode);
+  const updateAutoMemoryRecall = useChatStore((s) => s.updateAutoMemoryRecall);
 
   const agents = useChatStore((s) => s.agents[groupJid] ?? EMPTY_AGENTS);
   const activeAgentTab = useChatStore(
@@ -1385,6 +1386,10 @@ export function ChatView({ groupJid, onBack, headerLeft }: ChatViewProps) {
         open={showInteractionModeDialog}
         workspaceName={workspaceDisplayName}
         currentMode={interactionMode}
+        autoMemoryRecall={group?.auto_memory_recall === true}
+        onToggleAutoMemoryRecall={(enabled) =>
+          updateAutoMemoryRecall(groupJid, enabled)
+        }
         onClose={() => setShowInteractionModeDialog(false)}
         onSave={(mode) => updateInteractionMode(groupJid, mode)}
       />

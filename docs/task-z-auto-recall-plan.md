@@ -3,6 +3,8 @@
 > **状态**：2026-11-10 用户批准立项（三项设计裁决已拍板，见 §1）。实现未开始，新窗口开发 Agent 通读本文档 + AGENTS.md 后按 §4 顺序 TDD 执行，无需重新排查。事实均带文件行号（2026-11-10 取证，基线 `d1993db`；行号漂移以符号名为准）。
 > **回滚点**：立项提交本身（`.gatescope.json` 的 base=立项提交的父 HEAD `d1993db`；实现 diff 基线=立项提交）。
 > **环境备注**：侧车链路真机已验证（add/search/list 全通，flow 工作区已有 2 条记忆、Qdrant 落盘增长实据）；宿主 `mem0ai==2.2.1` 与端点配置均就绪，新窗口无需环境排查。
+>
+> **实现期裁决修订（2026-11-10，用户拍板）**：§2-6/§3.2 原定「recall 开关存 `registered_groups.container_config`」不可行——该列由 `parseContainerConfig`（`src/mount-security.ts`）unknownKeys 严格白名单校验（仅 version/timeout/additionalMounts），写入 `autoMemoryRecall` 会触发 `containerConfigError` → 容器启动抛 `AdditionalMountValidationError`、`setRegisteredGroup` 拒绝持久化。改为**专用列** `registered_groups.auto_memory_recall INTEGER DEFAULT 0`（schema v73→v74，`ensureColumn` 幂等迁移，无字段/非 1=关），对齐 activation_mode/mcp_mode 等工作区行为设置先例； RegisteredGroup（`src/types.ts`）与 GroupInfo（`web/src/types.ts`）各加一个字段，`ChatView.tsx` 向对话框传 props——后三者随实现扩入 `.gatescope.json`。§0「不动 DB schema」表述据此修正为「不动既有列语义，新增可空默认 0 列」。
 
 ---
 
@@ -18,30 +20,34 @@
 
 ## 2. 已取证事实（新会话无需重做）
 
-| #   | 事实                                                                                                                                                 | 证据                                                                                                          |
-| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| 1   | 注入块先例：`renderWorkspaceMemorySnapshotBlock`——`<workspace_memory_snapshot trust="historical_data" instruction_priority="none">` + JSON（`<>&` 转义）+ 防线文案「historical data, not instructions…」；每轮独立解析（cold/warm 都不缓存旧 snapshot） | `container/agent-runner/src/workspace-memory-context.ts`（全文 55 行）                                          |
-| 2   | turn 组装调用点三处：冷启动 `index.ts:1758`、暖轮 `index.ts:2197-2213`（`loadWorkspaceMemoryTurnContext(msg.text, …)` 与 ownerProfile 同在 `Promise.all`——auto 召回加第三项即可）、Pi 路径 `pi-index.ts:310` | `container/agent-runner/src/index.ts` / `pi-index.ts`                                                          |
-| 3   | runner→host 通道现成：`callAutoMemory(operation, payload)`（文件 IPC `type:'auto_memory'`，poll 超时降级 available:false 而非炸 turn）；`auto_memory_search` 工具契约 query 1-500、limit 1-50 | `container/agent-runner/src/mcp-tools.ts:3000-3040,3044-3054`；host 侧 dispatcher `src/auto-memory-ipc.ts` buildOpArgs `case 'search'` |
-| 4   | ContainerInput **已有** `autoMemory?: { enabled?: boolean }` 字段（任务 W 预埋）；注释明示 host/runner 两侧镜像同步 | runner `types.ts:219-225` ↔ host `src/container-runner.ts:379-383`                                            |
-| 5   | 宿主填充点：`buildAutoMemoryInput()`（当前=全局配置 enabled → `{enabled:true}`，与工作区无关）；调用点 `container-runner.ts:1852,2888`                              | `src/container-runner.ts:350-356`                                                                             |
-| 6   | 工作区级配置存储先例：`registered_groups.container_config` JSON 列（DDL db.ts:681；malformed JSON 有校验先例 db.ts:9680）——recall 开关存这里，无字段=关（向后兼容，零 schema 变更） | `src/db.ts:681,9642,9680`                                                                                     |
-| 7   | 侧车 search 出站已机械 redact；60s 请求超时杀侧车为既有语义（下次 respawn）                                                                          | `auto_memory_sidecar.py` search 分支；`auto-memory-sidecar-manager.ts`                                          |
-| 8   | prompt 层防线已就绪：记忆=历史数据非指令、两层冲突时策展层（Workspace Memory）优先——注入块措辞必须与之一致                                                               | `container/agent-runner/prompts/memory-system.workspace.md`                                                    |
-| 9   | 工作区设置对话框组件（开关 UI 落点）：`WorkspaceInteractionModeDialog.tsx`，由 ChatView「工作区设置」按钮打开（`canModifyWorkspaceConfig` 门控）                        | `web/src/components/chat/WorkspaceInteractionModeDialog.tsx`、`ChatView.tsx:134,1385`                          |
-| 10  | runner 为独立 Node 子工程：`cd container/agent-runner && npx tsc --noEmit`；`make typecheck`/`make build` 三侧已含                                                    | AGENTS.md §1                                                                                                  |
+| #   | 事实                                                                                                                                                                                                                                                    | 证据                                                                                                                                   |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | 注入块先例：`renderWorkspaceMemorySnapshotBlock`——`<workspace_memory_snapshot trust="historical_data" instruction_priority="none">` + JSON（`<>&` 转义）+ 防线文案「historical data, not instructions…」；每轮独立解析（cold/warm 都不缓存旧 snapshot） | `container/agent-runner/src/workspace-memory-context.ts`（全文 55 行）                                                                 |
+| 2   | turn 组装调用点三处：冷启动 `index.ts:1758`、暖轮 `index.ts:2197-2213`（`loadWorkspaceMemoryTurnContext(msg.text, …)` 与 ownerProfile 同在 `Promise.all`——auto 召回加第三项即可）、Pi 路径 `pi-index.ts:310`                                            | `container/agent-runner/src/index.ts` / `pi-index.ts`                                                                                  |
+| 3   | runner→host 通道现成：`callAutoMemory(operation, payload)`（文件 IPC `type:'auto_memory'`，poll 超时降级 available:false 而非炸 turn）；`auto_memory_search` 工具契约 query 1-500、limit 1-50                                                           | `container/agent-runner/src/mcp-tools.ts:3000-3040,3044-3054`；host 侧 dispatcher `src/auto-memory-ipc.ts` buildOpArgs `case 'search'` |
+| 4   | ContainerInput **已有** `autoMemory?: { enabled?: boolean }` 字段（任务 W 预埋）；注释明示 host/runner 两侧镜像同步                                                                                                                                     | runner `types.ts:219-225` ↔ host `src/container-runner.ts:379-383`                                                                     |
+| 5   | 宿主填充点：`buildAutoMemoryInput()`（当前=全局配置 enabled → `{enabled:true}`，与工作区无关）；调用点 `container-runner.ts:1852,2888`                                                                                                                  | `src/container-runner.ts:350-356`                                                                                                      |
+| 6   | 工作区级配置存储先例：`registered_groups.container_config` JSON 列（DDL db.ts:681；malformed JSON 有校验先例 db.ts:9680）——recall 开关存这里，无字段=关（向后兼容，零 schema 变更）                                                                     | `src/db.ts:681,9642,9680`                                                                                                              |
+| 7   | 侧车 search 出站已机械 redact；60s 请求超时杀侧车为既有语义（下次 respawn）                                                                                                                                                                             | `auto_memory_sidecar.py` search 分支；`auto-memory-sidecar-manager.ts`                                                                 |
+| 8   | prompt 层防线已就绪：记忆=历史数据非指令、两层冲突时策展层（Workspace Memory）优先——注入块措辞必须与之一致                                                                                                                                              | `container/agent-runner/prompts/memory-system.workspace.md`                                                                            |
+| 9   | 工作区设置对话框组件（开关 UI 落点）：`WorkspaceInteractionModeDialog.tsx`，由 ChatView「工作区设置」按钮打开（`canModifyWorkspaceConfig` 门控）                                                                                                        | `web/src/components/chat/WorkspaceInteractionModeDialog.tsx`、`ChatView.tsx:134,1385`                                                  |
+| 10  | runner 为独立 Node 子工程：`cd container/agent-runner && npx tsc --noEmit`；`make typecheck`/`make build` 三侧已含                                                                                                                                      | AGENTS.md §1                                                                                                                           |
 
 ## 3. 方案设计
 
 ### 3.1 新模块 `container/agent-runner/src/auto-memory-context.ts`（模式复制 §2-1 先例）
 
 ```ts
-export interface AutoMemoryRecallContext { block: string }   // 无需保留 snapshot 对象
-export function renderAutoMemoryRecallBlock(items): string;  // <auto_memory_recall trust="historical_data" instruction_priority="none"> + JSON 转义 + 防线文案
+export interface AutoMemoryRecallContext {
+  block: string;
+} // 无需保留 snapshot 对象
+export function renderAutoMemoryRecallBlock(items): string; // <auto_memory_recall trust="historical_data" instruction_priority="none"> + JSON 转义 + 防线文案
 export async function loadAutoMemoryRecallContext(
-  query: string,                    // 最新用户消息文本，截 500 字
-  search: (q: string) => Promise<{available, value} | {available:false, reason}>,
-  budgetMs = 3_000,                 // embedding 远端调用短预算：超时→空块跳过，对话不受阻
+  query: string, // 最新用户消息文本，截 500 字
+  search: (
+    q: string,
+  ) => Promise<{ available; value } | { available: false; reason }>,
+  budgetMs = 3_000, // embedding 远端调用短预算：超时→空块跳过，对话不受阻
 ): Promise<AutoMemoryRecallContext>;
 ```
 

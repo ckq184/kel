@@ -103,7 +103,7 @@ let db: InstanceType<typeof Database>;
  * restating the number. Hardcoding it meant every schema bump edited a dozen
  * unrelated test files, which is churn that hides real assertion changes.
  */
-export const CURRENT_SCHEMA_VERSION = 73;
+export const CURRENT_SCHEMA_VERSION = 74;
 
 export function isDatabaseInitialized(): boolean {
   return Boolean(db?.open);
@@ -2141,6 +2141,13 @@ export function initDatabase(): void {
   // SQLite behind secret_ref; routing projections retain the account ID so
   // two bots in the same external chat cannot share a JID/mount accidentally.
   ensureColumn('registered_groups', 'channel_account_id', 'TEXT');
+  // v73 → v74 (task Z): workspace-level per-turn auto-memory recall opt-in.
+  // 0/NULL = off (backward compatible); any non-1 value also reads as off —
+  // unlike container_config this flag must never be able to block a start.
+  // Placed after the unique-folder table rebuild above: that migration drops
+  // and recreates registered_groups, wiping ensureColumns registered before
+  // it on an ancient DB's first boot.
+  ensureColumn('registered_groups', 'auto_memory_recall', 'INTEGER DEFAULT 0');
   ensureColumn('channel_mounts', 'channel_account_id', 'TEXT');
   ensureColumn('agent_channel_mounts', 'channel_account_id', 'TEXT');
   ensureColumn(
@@ -9665,6 +9672,7 @@ type RegisteredGroupRow = {
   feishu_chat_mode: string | null;
   feishu_group_message_type: string | null;
   sender_allowlist: string | null;
+  auto_memory_recall: number | null;
 };
 
 function parsePersistedContainerConfig(
@@ -9776,6 +9784,7 @@ function parseGroupRow(
     feishu_chat_mode: row.feishu_chat_mode ?? undefined,
     feishu_group_message_type: row.feishu_group_message_type ?? undefined,
     sender_allowlist: senderAllowlist,
+    autoMemoryRecall: row.auto_memory_recall === 1,
   };
 }
 
@@ -10579,8 +10588,8 @@ export function setRegisteredGroup(jid: string, group: RegisteredGroup): void {
   db.transaction(() => {
     const existing = getRegisteredGroup(jid);
     db.prepare(
-      `INSERT INTO registered_groups (jid, name, folder, added_at, avatar_url, container_config, execution_mode, custom_cwd, init_source_path, init_git_url, created_by, channel_account_id, is_home, selected_skills, target_agent_id, target_main_jid, reply_policy, require_mention, activation_mode, audience_mode, owner_im_id, owner_claim_source, mcp_mode, selected_mcps, conversation_source, conversation_nav_mode, binding_mode, native_context_type, feishu_chat_mode, feishu_group_message_type, sender_allowlist)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO registered_groups (jid, name, folder, added_at, avatar_url, container_config, execution_mode, custom_cwd, init_source_path, init_git_url, created_by, channel_account_id, is_home, selected_skills, target_agent_id, target_main_jid, reply_policy, require_mention, activation_mode, audience_mode, owner_im_id, owner_claim_source, mcp_mode, selected_mcps, conversation_source, conversation_nav_mode, binding_mode, native_context_type, feishu_chat_mode, feishu_group_message_type, sender_allowlist, auto_memory_recall)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(jid) DO UPDATE SET
          name = excluded.name,
          folder = excluded.folder,
@@ -10611,7 +10620,8 @@ export function setRegisteredGroup(jid: string, group: RegisteredGroup): void {
          native_context_type = excluded.native_context_type,
          feishu_chat_mode = excluded.feishu_chat_mode,
          feishu_group_message_type = excluded.feishu_group_message_type,
-         sender_allowlist = excluded.sender_allowlist`,
+         sender_allowlist = excluded.sender_allowlist,
+         auto_memory_recall = excluded.auto_memory_recall`,
     ).run(
       jid,
       group.name,
@@ -10648,6 +10658,7 @@ export function setRegisteredGroup(jid: string, group: RegisteredGroup): void {
       group.sender_allowlist != null
         ? JSON.stringify(group.sender_allowlist)
         : null,
+      group.autoMemoryRecall === true ? 1 : 0,
     );
     syncWorkspaceFromRegisteredGroup(jid, group);
     syncChannelMountFromRegisteredGroup(jid, group);

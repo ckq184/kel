@@ -166,6 +166,10 @@ export interface RegisteredGroup {
   containerConfig?: ContainerConfig;
   /** Invalid persisted JSON is retained as a runtime safety block, never ignored. */
   containerConfigError?: string;
+  /** Workspace-level opt-in for per-turn automatic memory recall injection
+   * (task Z). Absent/false = off; the host folds this into the runner stdin
+   * bootstrap as `autoMemory.recall.enabled`. */
+  autoMemoryRecall?: boolean;
   executionMode?: ExecutionMode; // 默认 'container'
   customCwd?: string; // 宿主机模式的自定义工作目录（绝对路径）
   initSourcePath?: string; // 容器模式下复制来源的宿主机绝对路径

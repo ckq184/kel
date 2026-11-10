@@ -66,6 +66,7 @@ Public：
 - `GET|POST /api/groups`
 - `PATCH|DELETE /api/groups/:jid`
 - `PATCH /api/groups/:jid/agent-profile`
+- `PATCH /api/groups/:jid/auto-memory-recall`
 - `POST /api/groups/:jid/stop`
 - `POST /api/groups/:jid/interrupt`
 - `POST /api/groups/:jid/reset-session`
@@ -91,6 +92,29 @@ Workspace↔AgentProfile 绑定行上，因此：仅 `web:` 前缀工作区可�
 工作区没有 AgentProfile 绑定时返回 409 `WORKSPACE_AGENT_PROFILE_MISSING`。
 它与 `execution_mode` 共享同一道 quiesce 边界，暖 Runner 只能观察到旧契约或新
 契约；停机失败返回 503 并带 `persisted` 标记。
+
+### 工作区自动召回记忆（任务 Z）
+
+`PATCH /api/groups/:jid/auto-memory-recall` 切换工作区级「自动召回记忆」开关：
+
+```json
+{ "enabled": true }
+```
+
+- 语义：开启后，该工作区每轮用户 turn 组装时由 runner 自动做一次语义检索
+  （最新用户消息截 500 字 → 侧车 search top-5），命中条目以带防线的
+  `<auto_memory_recall>` 块注入上下文（≤2000 字符）；未开启/未配置/检索失败
+  一律零注入，对话不受影响。全局自动记忆（`CKQCLAW_AUTO_MEMORY`）未启用时
+  开关不产生任何效果。
+- 存储：`registered_groups.auto_memory_recall` 专用列（schema v74），无字段
+  =关（向后兼容）。
+- ACL：`canModifyGroup`（非属主/不存在统一 404 隐藏）；请求体非
+  `{enabled: boolean}` 返回 400。
+- 生效时机：与 `interaction_mode` 共享同一道 quiesce 边界——切换会先停该
+  工作区的暖 Runner 再提交，下一 turn 以新开关冷启动；停机失败返回 503 并带
+  `persisted` 标记。
+- `GET /api/groups` 每个工作区回显 `auto_memory_recall`（仅开启时为
+  `true`，未开启省略）。
 
 Home Workspace 固定归属当前用户的内置 CKQClaw。尝试通过
 `PATCH /api/groups/:jid/agent-profile` 将 Home 迁移到自定义 Agent 时返回：

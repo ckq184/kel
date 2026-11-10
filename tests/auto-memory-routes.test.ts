@@ -5,6 +5,7 @@ import path from 'node:path';
 import {
   afterAll,
   afterEach,
+  beforeAll,
   beforeEach,
   describe,
   expect,
@@ -64,6 +65,12 @@ const sidecarCalls: Array<{
 let sidecarBehavior: { available: false; reason: string } | null = null;
 const stopAllCalls: number[] = [];
 
+// Task Z: the workspace recall toggle rides on the groups routes; mock web.js
+// so importing them doesn't pull in the full Hono app.
+vi.mock('../src/web.js', () => ({
+  broadcastNewMessage: () => {},
+}));
+
 vi.mock('../src/auto-memory-ipc.js', async (importOriginal) => ({
   ...((await importOriginal()) as Record<string, unknown>),
   getAutoMemorySidecarManager: () => ({
@@ -120,6 +127,8 @@ const { resetAutoMemoryConfigCache } =
   await import('../src/auto-memory-config.js');
 const autoMemoryRoutes = (await import('../src/routes/auto-memory.js')).default;
 const { probeWithBudget } = await import('../src/routes/auto-memory.js');
+const groupRoutes = (await import('../src/routes/groups.js')).default;
+const webContext = await import('../src/web-context.js');
 
 const OWNER = { 'x-test-user': 'user-1' } as Record<string, string>;
 const STRANGER = { 'x-test-user': 'user-2' } as Record<string, string>;
@@ -1381,5 +1390,126 @@ describe('message-pick capture (task Y3)', () => {
       expect(await res.json()).toMatchObject({ error: 'invalid_args' });
     }
     expect(sidecarCalls).toHaveLength(0);
+  });
+});
+
+describe('workspace auto-memory recall toggle (task Z)', () => {
+  const JID = 'web:ws-recall';
+
+  function patch(body: unknown, headers: Record<string, string> = OWNER) {
+    return groupRoutes.request(
+      `/${encodeURIComponent(JID)}/auto-memory-recall`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+        headers: { 'content-type': 'application/json', ...headers },
+      },
+    );
+  }
+
+  beforeAll(() => {
+    // The toggle route only needs getWebDeps() to be initialized plus a
+    // quiesce-capable queue stub (toggle quiesces warm runners so the next
+    // turn respawns with the updated stdin bootstrap).
+    webContext.setWebDeps({
+      getRegisteredGroups: () => ({}),
+      queue: {
+        listDescendantJids: () => [],
+        pauseGroupsForMutation: () => ({ release: () => {} }),
+        resumeGroupsAfterMutation: () => {},
+        stopGroup: async () => {},
+        blockGroupsForRuntimeSafety: () => {},
+        unblockGroupsForRuntimeSafety: () => {},
+      },
+    } as unknown as Parameters<typeof webContext.setWebDeps>[0]);
+  });
+
+  beforeEach(() => {
+    db.setRegisteredGroup(JID, {
+      name: 'Recall Workspace',
+      folder: 'ws-recall',
+      added_at: new Date().toISOString(),
+      created_by: 'user-1',
+    });
+  });
+
+  afterEach(() => {
+    try {
+      db.deleteRegisteredGroup(JID);
+    } catch {
+      /* ignore */
+    }
+  });
+
+  test('unauthenticated callers get 401', async () => {
+    const res = await patch({ enabled: true }, {});
+    expect(res.status).toBe(401);
+  });
+
+  test('unknown workspace JID hides existence behind 404', async () => {
+    const res = await groupRoutes.request('/web:missing/auto-memory-recall', {
+      method: 'PATCH',
+      body: JSON.stringify({ enabled: true }),
+      headers: { 'content-type': 'application/json', ...OWNER },
+    });
+    expect(res.status).toBe(404);
+  });
+
+  test('non-owner member is hidden behind 404', async () => {
+    const res = await patch({ enabled: true }, STRANGER);
+    expect(res.status).toBe(404);
+    // A denied attempt must not flip the flag.
+    expect(db.getRegisteredGroup(JID)?.autoMemoryRecall).toBeFalsy();
+  });
+
+  test('rejects a body without a boolean enabled field', async () => {
+    for (const bad of [{}, { enabled: 'yes' }, { enabled: 1 }]) {
+      const res = await patch(bad);
+      expect(res.status, JSON.stringify(bad)).toBe(400);
+    }
+    expect(db.getRegisteredGroup(JID)?.autoMemoryRecall).toBeFalsy();
+  });
+
+  test('owner enables recall and the flag round-trips through the DB', async () => {
+    const res = await patch({ enabled: true });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({ success: true, auto_memory_recall: true });
+    expect(db.getRegisteredGroup(JID)?.autoMemoryRecall).toBe(true);
+  });
+
+  test('owner disables recall again', async () => {
+    await patch({ enabled: true });
+    const res = await patch({ enabled: false });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      success: true,
+      auto_memory_recall: false,
+    });
+    expect(db.getRegisteredGroup(JID)?.autoMemoryRecall).toBe(false);
+  });
+
+  test('workspaces without the setting default to off (no field = disabled)', () => {
+    const group = db.getRegisteredGroup(JID);
+    expect(group?.autoMemoryRecall).toBeFalsy();
+  });
+
+  test('toggle preserves the rest of the group row', async () => {
+    await patch({ enabled: true });
+    const after = db.getRegisteredGroup(JID);
+    expect(after?.name).toBe('Recall Workspace');
+    expect(after?.folder).toBe('ws-recall');
+    expect(after?.created_by).toBe('user-1');
+    expect(after?.executionMode ?? 'container').toBe('container');
+  });
+
+  test('group list payload exposes the flag to the workspace owner', async () => {
+    await patch({ enabled: true });
+    const res = await groupRoutes.request('/', { headers: OWNER });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      groups: Record<string, { auto_memory_recall?: boolean }>;
+    };
+    expect(body.groups[JID]?.auto_memory_recall).toBe(true);
   });
 });

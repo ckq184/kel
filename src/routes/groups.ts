@@ -312,6 +312,8 @@ interface GroupPayloadItem {
   agent_profile_avatar_emoji?: string | null;
   agent_profile_avatar_color?: string | null;
   agent_profile_avatar_url?: string | null;
+  /** Per-turn automatic memory recall opt-in (task Z); absent = disabled. */
+  auto_memory_recall?: boolean;
 }
 
 function buildGroupsPayload(user: AuthUser): Record<string, GroupPayloadItem> {
@@ -401,6 +403,7 @@ function buildGroupsPayload(user: AuthUser): Record<string, GroupPayloadItem> {
       agent_profile_avatar_emoji: agentProfile?.avatar_emoji,
       agent_profile_avatar_color: agentProfile?.avatar_color,
       agent_profile_avatar_url: agentProfile?.avatar_url,
+      auto_memory_recall: group.autoMemoryRecall === true || undefined,
     };
   }
 
@@ -1603,6 +1606,84 @@ groupRoutes.patch('/:jid/agent-profile', authMiddleware, async (c) => {
     agent_profile_version: committedProfile.version,
     interaction_mode: getWorkspaceInteractionMode(existing.folder),
     invalidated_runtime_jids: invalidatedRuntimeJids,
+  });
+});
+
+// PATCH /api/groups/:jid/auto-memory-recall — 工作区级「自动召回记忆」开关（任务 Z）。
+// recall 标志随 runner stdin bootstrap 下发，因此切换沿用 interaction_mode 的
+// quiesce 边界：先停热 runner 再提交，下一个 turn 以新 bootstrap 冷启动。
+groupRoutes.patch('/:jid/auto-memory-recall', authMiddleware, async (c) => {
+  const deps = getWebDeps();
+  if (!deps) return c.json({ error: 'Server not initialized' }, 500);
+
+  const jid = c.req.param('jid');
+  const existing = getRegisteredGroup(jid);
+  if (!existing) return c.json({ error: 'Group not found' }, 404);
+
+  const authUser = c.get('user') as AuthUser;
+  if (
+    !canModifyGroup(
+      { id: authUser.id, role: authUser.role },
+      { ...existing, jid },
+    )
+  ) {
+    return c.json({ error: 'Group not found' }, 404);
+  }
+
+  const body = await c.req.json().catch(() => ({}));
+  const validation = z.object({ enabled: z.boolean() }).safeParse(body);
+  if (!validation.success) {
+    return c.json({ error: 'Invalid request body' }, 400);
+  }
+
+  try {
+    await quiesceWorkspaceRunnersAroundCommit(
+      deps,
+      [{ folder: existing.folder, primaryJid: jid }],
+      {
+        reason: `Workspace ${jid} auto-memory recall toggled`,
+        onPostCommitFailure: (failedRuntimeJids) =>
+          deps.queue?.blockGroupsForRuntimeSafety?.(
+            failedRuntimeJids,
+            `Workspace ${jid} runtime cleanup failed after auto-memory recall toggle`,
+          ),
+      },
+      () => {
+        const updated: RegisteredGroup = {
+          ...existing,
+          autoMemoryRecall: validation.data.enabled,
+        };
+        setRegisteredGroup(jid, updated);
+        deps.getRegisteredGroups()[jid] = updated;
+      },
+    );
+  } catch (err) {
+    if (!(err instanceof WorkspaceRuntimeQuiesceError)) throw err;
+    if (err.persisted) {
+      // The flag is committed but a stale warm runner may serve one more
+      // turn with the old bootstrap; the safety block below already stopped
+      // new work, so surface a retryable error instead of a silent gap.
+      const runtimeJids = getWorkspaceRuntimeJids(deps, existing.folder, jid);
+      deps.queue?.blockGroupsForRuntimeSafety?.(
+        runtimeJids,
+        `Workspace ${jid} runtime cleanup failed after auto-memory recall toggle`,
+      );
+    }
+    return c.json(
+      {
+        error: err.persisted
+          ? '自动召回开关已保存，但运行时清理失败；请重试相同请求'
+          : '无法停止活动运行时；自动召回开关未更新',
+        persisted: err.persisted,
+        retryable: true,
+      },
+      503,
+    );
+  }
+
+  return c.json({
+    success: true,
+    auto_memory_recall: validation.data.enabled,
   });
 });
 

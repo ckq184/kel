@@ -12,10 +12,16 @@
     "src/container-runner.ts",
     "src/routes/groups.ts",
     "src/db.ts",
+    "src/types.ts",
     "web/src/components/chat/WorkspaceInteractionModeDialog.tsx",
+    "web/src/components/chat/ChatView.tsx",
     "web/src/stores/chat.ts",
+    "web/src/types.ts",
     "tests/auto-recall-context.test.ts",
     "tests/auto-memory-routes.test.ts",
+    "tests/db-upgrade-safety.test.ts",
+    "tests/pricing-routes.test.ts",
+    "tests/task-continuation-scheduler.test.ts",
     "docs/API.md"
   ]
 }
