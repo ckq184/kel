@@ -368,6 +368,99 @@ def run_list_cases(check):
     case("list-invalid-offset", bad_offset)
     return _EXPECTED_LIST_CASES
 
+# Protocol-level regression (found in task X live testing, 2026-11-10):
+# delete_all's reply line once passed flush=True into json.dumps(), so the
+# reply crashed AFTER the deletion had already succeeded and every caller
+# (IPC dispatcher, task W purge UI) reported failure for a completed wipe.
+# Drive the real main() loop with a stubbed Memory and require every op to
+# answer ok=true on one valid JSON line.
+class _StubProtoMemory:
+    def __init__(self):
+        self.ops = []
+
+    def add(self, **kwargs):
+        self.ops.append(("add", kwargs))
+        return {"results": []}
+
+    def search(self, **kwargs):
+        self.ops.append(("search", kwargs))
+        return {"results": []}
+
+    def get_all(self, **kwargs):
+        self.ops.append(("get_all", kwargs))
+        return {"results": []}
+
+    def get(self, **kwargs):
+        self.ops.append(("get", kwargs))
+        return {}
+
+    def delete(self, **kwargs):
+        self.ops.append(("delete", kwargs))
+
+    def delete_all(self, **kwargs):
+        self.ops.append(("delete_all", kwargs))
+
+
+_EXPECTED_PROTOCOL_CASES = 1
+
+def run_protocol_case(check):
+    import io
+
+    stub = _StubProtoMemory()
+    real_build = build_memory
+    real_stdin, real_stdout = sys.stdin, sys.stdout
+    requests = [
+        {"op": "init", "id": 1, "config": {"user_id": "workspace:t"}},
+        {
+            "op": "add",
+            "id": 2,
+            "args": {"messages": [{"role": "user", "content": "hi"}]},
+        },
+        {"op": "search", "id": 3, "args": {"query": "hi"}},
+        {"op": "list", "id": 4, "args": {}},
+        {"op": "get", "id": 5, "args": {"memory_id": "m1"}},
+        {"op": "delete", "id": 6, "args": {"memory_id": "m1"}},
+        {"op": "delete_all", "id": 7, "args": {}},
+        {"op": "ping", "id": 8},
+    ]
+    captured = ""
+    try:
+        globals()["build_memory"] = lambda config: stub
+        sys.stdin = io.StringIO(
+            "".join(json.dumps(r) + "\n" for r in requests)
+        )
+        sys.stdout = out = io.StringIO()
+        main()
+        captured = out.getvalue()
+    except SystemExit:
+        pass
+    finally:
+        globals()["build_memory"] = real_build
+        sys.stdin, sys.stdout = real_stdin, real_stdout
+
+    replies = {}
+    for line in captured.splitlines():
+        try:
+            reply = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if reply.get("id") is not None:
+            replies[reply["id"]] = reply
+    ok = (
+        sorted(replies) == list(range(1, 9))
+        and all(r.get("ok") is True for r in replies.values())
+        and stub.ops[-1] == ("delete_all", {"user_id": "workspace:t"})
+    )
+    oks = ", ".join(
+        "{}:{}".format(k, replies[k].get("ok")) for k in sorted(replies)
+    )
+    check(
+        "protocol-all-ops-reply-ok",
+        ok,
+        "oks={%s} ops=%s" % (oks, [op[0] for op in stub.ops]),
+    )
+    return _EXPECTED_PROTOCOL_CASES
+
 def run_self_test():
     failures = 0
 
@@ -431,10 +524,15 @@ def run_self_test():
         )
 
     list_case_count = run_list_cases(check)
+    protocol_case_count = run_protocol_case(check)
     total = (
-        len(_TEXT_CASES) + len(_JSON_CASES) + len(_RECEIPT_CASES) + list_case_count
+        len(_TEXT_CASES)
+        + len(_JSON_CASES)
+        + len(_RECEIPT_CASES)
+        + list_case_count
+        + protocol_case_count
     )
-    print(f"secret-filter self-test: {total - failures}/{total} cases passed")
+    print(f"sidecar self-test: {total - failures}/{total} cases passed")
     return 0 if failures == 0 else 1
 
 def build_memory(config):
@@ -673,10 +771,10 @@ def main():
                 print(json.dumps({"id": rid, "ok": True, "result": result}, default=str), flush=True)
             elif op == "delete":
                 memory.delete(memory_id=args.get("memory_id"))
-                print(json.dumps({"id": rid, "ok": True, "result": "deleted"}, flush=True))
+                print(json.dumps({"id": rid, "ok": True, "result": "deleted"}), flush=True)
             elif op == "delete_all":
                 memory.delete_all(user_id=user_id)
-                print(json.dumps({"id": rid, "ok": True, "result": "deleted-all"}, flush=True))
+                print(json.dumps({"id": rid, "ok": True, "result": "deleted-all"}), flush=True)
             else:
                 print(json.dumps({"id": rid, "ok": False, "error": f"unknown op: {op}"}), flush=True)
         except Exception as exc:  # noqa: BLE001 — surface op errors to the runner

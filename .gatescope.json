@@ -1,19 +1,5 @@
 {
-  "task": "任务X - 自动记忆端点配置UI化：模型配置 tab 加卡 + 凭据 PUT/DELETE 端点（manage_system_config，key 掩码不回显）+ 配置写文件促生效（用户 2026-11-10 批准立项，两项设计已拍板：写文件不迁 DB / 表单落模型配置 tab；计划/交接见 docs/task-x-auto-memory-endpoint-config-plan.md）",
-  "base": "3502cbf",
-  "allow": [
-    "web/src/components/settings/AutoMemoryEndpointCard.tsx",
-    "docs/task-x-auto-memory-endpoint-config-plan.md",
-    "src/auto-memory-config.ts",
-    "src/routes/auto-memory.ts",
-    "tests/auto-memory-config.test.ts",
-    "tests/auto-memory-routes.test.ts",
-    "web/src/pages/SettingsPage.tsx",
-    "web/src/components/settings/AutoMemorySection.tsx",
-    "web/src/stores/auto-memory.ts",
-    "tests/auto-memory-frontend.test.ts",
-    "tests/frontend-settings-information-architecture.test.ts",
-    "docs/API.md",
-    "docs/ACL-MATRIX.md"
-  ]
+  "task": "修复 - 侧车 delete_all 回复崩溃：auto_memory_sidecar.py:679 的 flush=True 误入 json.dumps()，删除已执行但回复必报错（任务X真机测试发现 2026-11-10；一行修复 + self-test 协议级回归用例）",
+  "base": "148719e",
+  "allow": ["container/agent-runner/python/auto_memory_sidecar.py"]
 }
