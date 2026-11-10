@@ -27,6 +27,7 @@
 | `/api/config`                      | `src/routes/config.ts`           | Provider、系统与兼容渠道配置  |
 | `/api/tasks`                       | `src/routes/tasks.ts`            | 定时任务和运行                |
 | `/api/memory`                      | `src/routes/memory.ts`           | Workspace Memory v2           |
+| `/api/auto-memory`                 | `src/routes/auto-memory.ts`      | 自动记忆（mem0）管理          |
 | `/api/skills`                      | `src/routes/skills.ts`           | 用户 Skills                   |
 | `/api/mcp-servers`                 | `src/routes/mcp-servers.ts`      | 用户/系统 MCP                 |
 | `/api/plugins`                     | `src/routes/plugins.ts`          | Plugin Catalog 与用户启用状态 |
@@ -496,6 +497,36 @@ Web 和 Runtime 不再把它们当作第二个可写真相源。
 
 完整产品边界与交互约定见
 [Workspace Memory v2](workspace-memory-v2.md)。
+
+## 自动记忆（mem0）管理
+
+自动记忆层是 Workspace 范围内的 episodic 记忆（宿主 mem0 侧车 + Qdrant 本地
+存储），与 Workspace Memory v2 相互独立。管理端点供设置页「自动记忆」分区使用；
+所有端点先要求 Login，再按 `:workspaceJid` 执行与 v2 相同的资源级授权（读
+`canAccessGroup()`、删 `canModifyGroup()`；无权与不存在统一 404）。配置中的
+llm/embedder 端点信息不出现在任何响应里。
+
+- `GET /api/auto-memory/status`
+  - 可选 Query：`workspaceJid`。不带时只报全局配置态
+    `{ enabled, available }`，不探测侧车；带时以一次轻量 `list` 探测该
+    Workspace，失败返回 `{ enabled, available: false, reason }`（始终 200，
+    探测有短超时预算）。
+- `GET /api/auto-memory/workspaces/:workspaceJid/memories`
+  - Query：`limit=1..100`（默认 20）、`offset>=0`。返回 `{ items }`，每项为
+    `{ id, memory, created_at, updated_at, metadata?, … }`；出站内容经 secret
+    redact。
+- `GET /api/auto-memory/workspaces/:workspaceJid/memories/search`
+  - Query：必填 `q`（1-500 字符）、可选 `limit=1..50`（默认 10）。返回
+    `{ items }`（含 `score`）。
+- `DELETE /api/auto-memory/workspaces/:workspaceJid/memories/:memoryId`
+  - 幂等直通删除单条，返回 `{ deleted: true }`。
+- `DELETE /api/auto-memory/workspaces/:workspaceJid/memories`
+  - 破坏性清空该 Workspace 全部自动记忆（幂等直通，无软删除），返回
+    `{ deletedAll: true }`；UI 层负责危险色二次确认。
+
+未配置（`data/config/auto-memory.json` 缺失或端点不完整）时管理端点返回 503
+`not_configured`；侧车不可用返回 503 `unavailable`（带 reason）；参数非法返回
+400 `invalid_args`。
 
 ## 用量与计费
 

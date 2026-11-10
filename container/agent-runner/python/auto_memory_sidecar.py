@@ -10,7 +10,8 @@ Protocol
 --------
 stdin  : one JSON object per line
          {"op": "init", "id": 1, "config": {...}}   (first line, required)
-         {"op": "add" | "search" | "get" | "delete" | "ping", "id": N, "args": {...}}
+         {"op": "add" | "search" | "get" | "list" | "delete" | "delete_all"
+              | "ping", "id": N, "args": {...}}
 stdout : one JSON object per line: {"id": N, "ok": true, "result": ...}
          or {"id": N, "ok": false, "error": "..."}
 
@@ -245,6 +246,128 @@ _RECEIPT_CASES = [
      [{"pattern": "openai_sk", "count": 1}], True, True),
 ]
 
+# Task W list op contract, run against a stubbed mem0 Memory.get_all.
+# Evidence (pinned mem0ai 2.2.1 wheel, mem0/memory/main.py): get_all is
+# keyword-only — entity scope must ride `filters={"user_id": ...}` (a
+# top-level user_id kwarg is rejected), `top_k` is the only size knob
+# (non-negative int), the return wraps items as {"results": [...]}, and
+# there is NO native offset anywhere in the chain (the qdrant wrapper
+# passes only limit to scroll). The sidecar therefore emulates offset by
+# fetching top_k=limit+offset and slicing.
+class _StubListMemory:
+    def __init__(self, results):
+        self.results = results
+        self.calls = []
+
+    def get_all(self, **kwargs):
+        self.calls.append(kwargs)
+        return {"results": list(self.results)}
+
+
+_LIST_ITEMS = [
+    {"id": "m1", "memory": "User prefers TypeScript", "created_at": "2026-01-01"},
+    {"id": "m2", "memory": "网关密码 Xq9z8y7w6u5 已轮换", "created_at": "2026-01-02"},
+    {"id": "m3", "memory": "Deploys on Fridays", "created_at": "2026-01-03"},
+    {
+        "id": "m4",
+        "memory": "Uses GLM for extraction",
+        "created_at": "2026-01-04",
+        "metadata": {"note": "token Zz9z8y7w6u5 已重置"},
+    },
+]
+
+_EXPECTED_LIST_CASES = 7
+
+def run_list_cases(check):
+    """Return the case count; each case reports through check()."""
+    def case(name, fn):
+        try:
+            ok, detail = fn()
+        except Exception as exc:  # noqa: BLE001 — red phase reports the stub
+            ok, detail = False, f"raised {type(exc).__name__}: {exc}"
+        check(name, ok, detail)
+
+    stub = _StubListMemory(_LIST_ITEMS)
+
+    def first_page():
+        page = list_memories(stub, "workspace:t", {"limit": 2})
+        expected_calls = [{"filters": {"user_id": "workspace:t"}, "top_k": 2}]
+        return (
+            stub.calls == expected_calls
+            and [m["id"] for m in page] == ["m1", "m2"],
+            f"calls={stub.calls} page_ids={[m.get('id') for m in page]}",
+        )
+
+    case("list-first-page", first_page)
+
+    def offset_page():
+        page = list_memories(stub, "workspace:t", {"limit": 2, "offset": 1})
+        last = stub.calls[-1] if stub.calls else {}
+        return (
+            last.get("top_k") == 3
+            and [m["id"] for m in page] == ["m2", "m3"],
+            f"last_call={last} page_ids={[m.get('id') for m in page]}",
+        )
+
+    case("list-offset-page", offset_page)
+
+    def defaults():
+        page = list_memories(stub, "workspace:t", {})
+        last = stub.calls[-1] if stub.calls else {}
+        return (
+            last.get("top_k") == 20
+            and [m["id"] for m in page] == ["m1", "m2", "m3", "m4"],
+            f"last_call={last} page_ids={[m.get('id') for m in page]}",
+        )
+
+    case("list-defaults", defaults)
+
+    def redacted():
+        page = list_memories(stub, "workspace:t", {"limit": 4})
+        flat = json.dumps(page, ensure_ascii=False)
+        return (
+            REDACTED_PLACEHOLDER in flat
+            and "Xq9z8y7w6u5" not in flat
+            and "Zz9z8y7w6u5" not in flat,
+            f"flat={flat}",
+        )
+
+    case("list-outbound-redact", redacted)
+
+    def bare_list_result():
+        bare = _StubListMemory(_LIST_ITEMS)
+        bare.get_all = lambda **kwargs: list(_LIST_ITEMS)
+        page = list_memories(bare, "workspace:t", {"limit": 2})
+        return (
+            [m["id"] for m in page] == ["m1", "m2"],
+            f"page_ids={[m.get('id') for m in page]}",
+        )
+
+    case("list-bare-result-tolerance", bare_list_result)
+
+    def bad_limit():
+        rejected = 0
+        for bad in (0, -1, "5", 2.5, True, None):
+            try:
+                list_memories(stub, "workspace:t", {"limit": bad})
+            except ValueError:
+                rejected += 1
+        return rejected == 6, f"rejected {rejected}/6 bad limits"
+
+    case("list-invalid-limit", bad_limit)
+
+    def bad_offset():
+        rejected = 0
+        for bad in (-1, "3", 1.5, True, None):
+            try:
+                list_memories(stub, "workspace:t", {"offset": bad})
+            except ValueError:
+                rejected += 1
+        return rejected == 5, f"rejected {rejected}/5 bad offsets"
+
+    case("list-invalid-offset", bad_offset)
+    return _EXPECTED_LIST_CASES
+
 def run_self_test():
     failures = 0
 
@@ -307,7 +430,10 @@ def run_self_test():
             f"out={out!r} expect_key={expect_key} expect_wrap={expect_wrap}",
         )
 
-    total = len(_TEXT_CASES) + len(_JSON_CASES) + len(_RECEIPT_CASES)
+    list_case_count = run_list_cases(check)
+    total = (
+        len(_TEXT_CASES) + len(_JSON_CASES) + len(_RECEIPT_CASES) + list_case_count
+    )
     print(f"secret-filter self-test: {total - failures}/{total} cases passed")
     return 0 if failures == 0 else 1
 
@@ -426,6 +552,43 @@ def probe_embedding_dims(embedder):
     return len(vector)
 
 
+def list_memories(memory, user_id, args):
+    """List a page of this workspace's memories (task W management base).
+
+    mem0ai 2.2.1 get_all is keyword-only: entity scope rides
+    `filters={"user_id": ...}` (top-level entity kwargs are rejected) and
+    `top_k` is the only size knob — the qdrant wrapper exposes no scroll
+    offset, so pagination is emulated by fetching top_k=limit+offset and
+    slicing. Scroll order is stable for a given storage state, so pages
+    behave like ordinary offset pagination (mutations between page fetches
+    can shift boundaries). Results pass outbound redact_json_strings like
+    search/get, covering plaintext stored by older builds.
+    """
+    limit = args.get("limit", 20)
+    offset = args.get("offset", 0)
+    if (
+        isinstance(limit, bool)
+        or not isinstance(limit, int)
+        or limit < 1
+        or limit > 1000
+    ):
+        raise ValueError("list limit must be an integer between 1 and 1000")
+    if (
+        isinstance(offset, bool)
+        or not isinstance(offset, int)
+        or offset < 0
+        or offset > 1_000_000
+    ):
+        raise ValueError("list offset must be an integer between 0 and 1000000")
+    result = memory.get_all(
+        filters={"user_id": user_id}, top_k=limit + offset
+    )
+    results = result.get("results") if isinstance(result, dict) else result
+    page = list(results or [])[offset : offset + limit]
+    page, _ = redact_json_strings(page)
+    return page
+
+
 def main():
     initialized = False
     memory = None
@@ -501,6 +664,9 @@ def main():
                 results = result.get("results") if isinstance(result, dict) else result
                 results, _ = redact_json_strings(results)
                 print(json.dumps({"id": rid, "ok": True, "result": results}, default=str), flush=True)
+            elif op == "list":
+                result = list_memories(memory, user_id, args)
+                print(json.dumps({"id": rid, "ok": True, "result": result}, default=str), flush=True)
             elif op == "get":
                 result = memory.get(memory_id=args.get("memory_id"))
                 result, _ = redact_json_strings(result)

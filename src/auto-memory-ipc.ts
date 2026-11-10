@@ -76,18 +76,34 @@ export function autoMemoryDataPath(
   return path.join(DATA_DIR, 'extra', folder, 'auto-memory');
 }
 
+/**
+ * Shared sidecar config resolver — the single source of the per-workspace
+ * Qdrant path, collection, and mem0 namespace. The IPC dispatcher and the
+ * management routes (src/routes/auto-memory.ts, task W) both build configs
+ * here so the container/host data layouts can never drift apart
+ * (autoMemoryDataPath layouts are pinned by tests/auto-memory-ipc.test.ts).
+ */
+export function autoMemorySidecarConfig(
+  folder: string,
+  executionMode: string | null | undefined,
+  llm: AutoMemorySidecarConfig['llm'],
+  embedder: AutoMemorySidecarConfig['embedder'],
+): AutoMemorySidecarConfig {
+  return {
+    dataPath: autoMemoryDataPath(folder, executionMode),
+    collection: `ws-${folder}`,
+    userId: `workspace:${folder}`,
+    llm,
+    embedder,
+  };
+}
+
 function buildSidecarConfig(
   ctx: AutoMemoryIpcContext,
   llm: NonNullable<AutoMemoryHostConfig['llm']>,
   embedder: NonNullable<AutoMemoryHostConfig['embedder']>,
 ): AutoMemorySidecarConfig {
-  return {
-    dataPath: autoMemoryDataPath(ctx.folder, ctx.executionMode),
-    collection: `ws-${ctx.folder}`,
-    userId: `workspace:${ctx.folder}`,
-    llm,
-    embedder,
-  };
+  return autoMemorySidecarConfig(ctx.folder, ctx.executionMode, llm, embedder);
 }
 
 /** Validate and translate an IPC request into sidecar op args. */
@@ -106,9 +122,7 @@ function buildOpArgs(
       return { op: 'search', args: { query, limit } };
     }
     case 'add': {
-      const messages = Array.isArray(data.messages)
-        ? data.messages
-        : undefined;
+      const messages = Array.isArray(data.messages) ? data.messages : undefined;
       if (
         !messages ||
         messages.length === 0 ||
@@ -153,7 +167,11 @@ export async function handleAutoMemoryIpc(
   // request is dropped with a warning instead of acked.
   if (!data.requestId || !SAFE_REQUEST_ID_RE.test(data.requestId)) {
     logger.warn(
-      { folder: ctx.folder, operation: data.operation, requestId: data.requestId },
+      {
+        folder: ctx.folder,
+        operation: data.operation,
+        requestId: data.requestId,
+      },
       'Rejected auto-memory IPC request with invalid requestId',
     );
     return;

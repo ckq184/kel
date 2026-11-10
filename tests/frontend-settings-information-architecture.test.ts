@@ -22,6 +22,8 @@ describe('settings information architecture', () => {
     expect(nav).toContain("key: 'host-integration'");
     // v73（任务 V）：模型单价挂在系统配置分组，受 manage_system_config gating。
     expect(nav).toContain("key: 'pricing'");
+    // 任务 W：自动记忆挂在账户分组（登录可见），非系统配置 gating。
+    expect(nav).toContain("key: 'auto-memory'");
     expect(nav).toContain('min-h-0 flex-1 overflow-y-auto px-3 pb-28');
     expect(nav).toContain('SheetDescription');
     expect(nav).not.toMatch(

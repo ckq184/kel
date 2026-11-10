@@ -1,4 +1,5 @@
 import {
+  BrainCircuit,
   Coins,
   CreditCard,
   Gauge,
@@ -42,6 +43,11 @@ const accountItems: NavItem[] = [
     key: 'my-channels',
     label: '消息渠道',
     icon: <MessageSquare className="size-4" />,
+  },
+  {
+    key: 'auto-memory',
+    label: '自动记忆',
+    icon: <BrainCircuit className="size-4" />,
   },
   { key: 'security', label: '安全与设备', icon: <Shield className="size-4" /> },
 ];

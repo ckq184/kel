@@ -143,6 +143,7 @@ export type SettingsTab =
   | 'groups'
   | 'agent-profiles'
   | 'memory'
+  | 'auto-memory'
   | 'skills'
   | 'mcp-servers'
   | 'plugins'

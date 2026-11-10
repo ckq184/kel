@@ -47,6 +47,7 @@ export type AutoMemorySidecarOp =
   | 'add'
   | 'search'
   | 'get'
+  | 'list'
   | 'delete'
   | 'delete_all';
 
@@ -86,6 +87,7 @@ const KNOWN_OPS: ReadonlySet<string> = new Set([
   'add',
   'search',
   'get',
+  'list',
   'delete',
   'delete_all',
 ]);

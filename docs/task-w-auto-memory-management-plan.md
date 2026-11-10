@@ -1,9 +1,9 @@
 # 任务 W 立项：自动记忆管理（侧车 list + 管理 API + 设置页 UI）——交接文档
 
-> **状态**：2026-11-10 用户批准立项方向**路线 A**（保留本地自托管 mem0 侧车 + Qdrant，移植 OpenDot 管理层设计；对比与决策记录见 §1）。实现未开始，新窗口按 §4 顺序 TDD 执行。
+> **状态**：2026-11-10 用户批准立项方向**路线 A**（保留本地自托管 mem0 侧车 + Qdrant，移植 OpenDot 管理层设计；对比与决策记录见 §1）。同日实现会话开工前两项待确认项已由用户拍板：**① authMiddleware**（登录即可 + v2 同款 workspace 资源级 ACL；tab 进 VALID*TABS 账户分组，非 SYSTEM_TABS）；**② 仅核心批次 1-3 + 收尾**（批次 4/5 不纳入，范围不扩宽）。§6.1 的 mem0 get_all 取证已完成（见该节结论）。
 > **用途**：新窗口开发 Agent 通读本文档 + AGENTS.md 后按 §4 顺序 TDD 执行，无需重新排查。所有事实均带文件行号（2026-11-10 本机 macOS arm64 双仓取证；行号若漂移以符号名为准）。
 > **回滚点**：立项提交本身（`.gatescope.json` 的 base=立项提交的父 HEAD `7249b6b`——即任务外品牌文案单独提交；实现 diff 基线=立项提交）。
-> **参考仓**：`/Users/xy/Desktop/workspace/OpenDot_副本`（同源姊妹项目，**只读参考，任何文件不入本任务 diff**）。
+> **参考仓**：`/Users/xy/Desktop/workspace/OpenDot*副本`（同源姊妹项目，**只读参考，任何文件不入本任务 diff**）。
 
 ---
 
@@ -23,44 +23,44 @@
 
 ### 2.1 CKQClaw 自动记忆层现状（全部实测核对）
 
-| #   | 事实                                                                                                                                                   | 证据                                                                                              |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
-| 1   | 侧车 op 分发链只有 `add/search/get/delete/delete_all`（无 `list`/`get_all`）；search/get **出站有 secret redact**（`redact_json_strings`）             | `container/agent-runner/python/auto_memory_sidecar.py:465-517`                                    |
+| #   | 事实                                                                                                                                                    | 证据                                                                                               |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| 1   | 侧车 op 分发链只有 `add/search/get/delete/delete_all`（无 `list`/`get_all`）；search/get **出站有 secret redact**（`redact_json_strings`）              | `container/agent-runner/python/auto_memory_sidecar.py:465-517`                                     |
 | 2   | 宿主侧车管理器 `KNOWN_OPS={add,search,get,delete,delete_all}`；每 workspace 懒 spawn、串行队列、60s 超时杀子进程、10min 空闲停、崩溃预算 3 次带冷却自愈 | `src/auto-memory-sidecar-manager.ts:80-91`（常量与白名单）、`:233-248`（call）、`:510-538`（超时） |
-| 3   | **runner IPC 白名单只有 `{search, add, get}`**——delete/delete_all 从任何运行路径不可达（管理缺口的根源）                                                | `src/auto-memory-ipc.ts:33`                                                                       |
-| 4   | 数据目录按执行模式二分：container → `data/extra/{folder}/auto-memory`；host → `data/groups/{folder}/extra/auto-memory`（两者绝不混淆，已有表测试钉死）   | `src/auto-memory-ipc.ts:69-77`（autoMemoryDataPath）、`tests/auto-memory-ipc.test.ts`             |
-| 5   | 侧车命名空间：collection=`ws-{folder}`、user_id=`workspace:{folder}`（init 握手时绑定，op 调用不再传 user_id——search 用 `filters={"user_id":…}`）        | `src/auto-memory-ipc.ts:79-91`（buildSidecarConfig）、`auto_memory_sidecar.py:490-496`            |
-| 6   | IPC 派发：`case 'auto_memory'` 从 IPC 目录命名空间推导 folder+executionMode（不信模型声明）；结果文件前缀 `auto_memory_result_`                          | `src/index.ts:12231-12245`、`:11308`                                                              |
-| 7   | 配置：env `CKQCLAW_AUTO_MEMORY` → `data/config/auto-memory.json` → 默认禁用；llm+embedder 必须成对合法；30s 缓存。**本机该文件不存在 → 功能当前未启用**   | `src/auto-memory-config.ts:15-17,59-78,80`                                                         |
-| 8   | agent 工具 `auto_memory_add/search`（模型主动调用）、`memory_promote`（自动层→v2）；写工具受 `memoryWriteEnabled` 门控且子代理只读                      | `container/agent-runner/src/mcp-tools.ts:2987-3139`、`workspace-memory-runtime.ts:6-12`           |
-| 9   | v2 精选层与自动层是**两套独立系统**：v2 走 `src/routes/memory.ts` + SQLite；本任务只动自动层，不碰 v2                                                    | `docs/workspace-memory-v2.md`、`src/routes/memory.ts:75-204`                                      |
-| 10  | mem0ai 版本钉死 2.2.1（wheel SHA256 治理）；Python 侧车同时预装进容器镜像                                                                                 | `scripts/builtin-mcp-catalog.mjs`、`container/Dockerfile:171-187`                                 |
+| 3   | **runner IPC 白名单只有 `{search, add, get}`**——delete/delete_all 从任何运行路径不可达（管理缺口的根源）                                                | `src/auto-memory-ipc.ts:33`                                                                        |
+| 4   | 数据目录按执行模式二分：container → `data/extra/{folder}/auto-memory`；host → `data/groups/{folder}/extra/auto-memory`（两者绝不混淆，已有表测试钉死）  | `src/auto-memory-ipc.ts:69-77`（autoMemoryDataPath）、`tests/auto-memory-ipc.test.ts`              |
+| 5   | 侧车命名空间：collection=`ws-{folder}`、user_id=`workspace:{folder}`（init 握手时绑定，op 调用不再传 user_id——search 用 `filters={"user_id":…}`）       | `src/auto-memory-ipc.ts:79-91`（buildSidecarConfig）、`auto_memory_sidecar.py:490-496`             |
+| 6   | IPC 派发：`case 'auto_memory'` 从 IPC 目录命名空间推导 folder+executionMode（不信模型声明）；结果文件前缀 `auto_memory_result_`                         | `src/index.ts:12231-12245`、`:11308`                                                               |
+| 7   | 配置：env `CKQCLAW_AUTO_MEMORY` → `data/config/auto-memory.json` → 默认禁用；llm+embedder 必须成对合法；30s 缓存。**本机该文件不存在 → 功能当前未启用** | `src/auto-memory-config.ts:15-17,59-78,80`                                                         |
+| 8   | agent 工具 `auto_memory_add/search`（模型主动调用）、`memory_promote`（自动层→v2）；写工具受 `memoryWriteEnabled` 门控且子代理只读                      | `container/agent-runner/src/mcp-tools.ts:2987-3139`、`workspace-memory-runtime.ts:6-12`            |
+| 9   | v2 精选层与自动层是**两套独立系统**：v2 走 `src/routes/memory.ts` + SQLite；本任务只动自动层，不碰 v2                                                   | `docs/workspace-memory-v2.md`、`src/routes/memory.ts:75-204`                                       |
+| 10  | mem0ai 版本钉死 2.2.1（wheel SHA256 治理）；Python 侧车同时预装进容器镜像                                                                               | `scripts/builtin-mcp-catalog.mjs`、`container/Dockerfile:171-187`                                  |
 
 ### 2.2 OpenDot 可移植模式（参考仓路径，只读借鉴不搬代码）
 
-| 模式                             | OpenDot 证据                                                                                              | 移植方式                                                                     |
-| -------------------------------- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| 设置页记忆管理区（开关+凭据+列表） | `web/src/components/settings/Mem0PrivateSection.tsx`（247 行，tab `mem0-private`）                         | 结构照搬：状态卡 + 管理操作区；凭据部分换成本机配置文件引导                  |
-| 记忆管理 API（key 不回显）        | `src/routes/mem0-private.ts`：GET 状态 / PUT\|DELETE 凭据 / PUT dots 策略                                  | 本任务五端点见 §3.2；status 只报 enabled/available，端点信息永不回传         |
-| 每日预算 + 熔断                   | `src/mem0-resource-controls.ts`（`MINICLAW_MEM0_DAILY_BUDGET` 默认 100）                                   | 批次 4 采集预算沿用同值 100                                                  |
-| 召回超时降级                      | `src/mem0-private-recall.ts`（超时 100–10000ms 默认 1500）                                                  | 批次 5 轮首注入超时预算同值 1500ms，超时静默降级                             |
-| 采集状态机（≤3 重试/24h 过期）    | `src/mem0-private-capture.ts`（914 行）                                                                     | 批次 4 只取语义骨架，不搬其 Product 会话绑定                                 |
-| 不可信上下文注入框架              | `product-runtime.ts:1620-1658`（召回以用户轮上下文注入，绝不进 system 通道）                                | 批次 5 注入框架同原则（防提示词注入）                                         |
+| 模式                               | OpenDot 证据                                                                       | 移植方式                                                             |
+| ---------------------------------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| 设置页记忆管理区（开关+凭据+列表） | `web/src/components/settings/Mem0PrivateSection.tsx`（247 行，tab `mem0-private`） | 结构照搬：状态卡 + 管理操作区；凭据部分换成本机配置文件引导          |
+| 记忆管理 API（key 不回显）         | `src/routes/mem0-private.ts`：GET 状态 / PUT\|DELETE 凭据 / PUT dots 策略          | 本任务五端点见 §3.2；status 只报 enabled/available，端点信息永不回传 |
+| 每日预算 + 熔断                    | `src/mem0-resource-controls.ts`（`MINICLAW_MEM0_DAILY_BUDGET` 默认 100）           | 批次 4 采集预算沿用同值 100                                          |
+| 召回超时降级                       | `src/mem0-private-recall.ts`（超时 100–10000ms 默认 1500）                         | 批次 5 轮首注入超时预算同值 1500ms，超时静默降级                     |
+| 采集状态机（≤3 重试/24h 过期）     | `src/mem0-private-capture.ts`（914 行）                                            | 批次 4 只取语义骨架，不搬其 Product 会话绑定                         |
+| 不可信上下文注入框架               | `product-runtime.ts:1620-1658`（召回以用户轮上下文注入，绝不进 system 通道）       | 批次 5 注入框架同原则（防提示词注入）                                |
 
 **明确不移植**（深绑定 OpenDot 专有概念）：Mem0 云 API 传输层、per-owner AES-GCM 凭据加密（本地不出网无此需求）、admission 谓词（JOIN 其专有会话表）、Personal Memory（绑定 Goal/Durable 运行时）、Owner Profile（绑定 Home/内置 Dot）。
 
 ### 2.3 本仓可复用模式（照抄即可）
 
-| 模式                     | 位置                                                                                                                                                     |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 路由挂载 + docs 机审联动 | `src/web.ts:49-67`（import）、`:268-284`（app.route）；**新路由文件必须同时进 `docs/API.md:19-38` 模块索引与 `docs/ACL-MATRIX.md` §6，否则 verify 的 docs:check 直接红**（任务 V 已验证） |
-| v2 路由鉴权先例          | `src/routes/memory.ts:62-75`：`authMiddleware` + `bodyLimit 64KB`；`:219-222` 旧端点 410 退役写法                                                           |
-| admin 权限中间件         | `src/middleware/auth.ts:176`：`systemConfigMiddleware = requirePermission('manage_system_config')`（待确认项①的二选一）                                     |
+| 模式                      | 位置                                                                                                                                                                                                                                  |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 路由挂载 + docs 机审联动  | `src/web.ts:49-67`（import）、`:268-284`（app.route）；**新路由文件必须同时进 `docs/API.md:19-38` 模块索引与 `docs/ACL-MATRIX.md` §6，否则 verify 的 docs:check 直接红**（任务 V 已验证）                                             |
+| v2 路由鉴权先例           | `src/routes/memory.ts:62-75`：`authMiddleware` + `bodyLimit 64KB`；`:219-222` 旧端点 410 退役写法                                                                                                                                     |
+| admin 权限中间件          | `src/middleware/auth.ts:176`：`systemConfigMiddleware = requirePermission('manage_system_config')`（待确认项①的二选一）                                                                                                               |
 | 设置页 tab 注册 5 处      | `web/src/components/settings/types.ts:130-152`（SettingsTab 联合）、`web/src/pages/SettingsPage.tsx:28-59`（VALID_TABS/**SYSTEM_TABS 受 canManageSystemConfig gating**）、`:106-116`、`:138-161`、`:252-274`、`SettingsNav.tsx:33-89` |
-| 前端列表卡片 / 删除确认  | `web/src/components/settings/ProviderList.tsx:158-357`；`web/src/components/common/ConfirmDialog.tsx`（`confirmVariant="danger"`）                          |
-| 前端小 store / API 客户端 | `web/src/stores/model-pricing.ts`（任务 V 新范本）；`web/src/api/client.ts:84-103`                                                                          |
-| 协议 fake 与管理器测试   | `tests/fixtures/fake-auto-memory-sidecar.mjs`（camelCase 漂移即拒）、`tests/auto-memory-sidecar-manager.test.ts`（657 行范本）                              |
-| python 自测              | `auto_memory_sidecar.py --self-test`（188-312 行，20+ 红绿用例，新 op 必须加用例）                                                                          |
+| 前端列表卡片 / 删除确认   | `web/src/components/settings/ProviderList.tsx:158-357`；`web/src/components/common/ConfirmDialog.tsx`（`confirmVariant="danger"`）                                                                                                    |
+| 前端小 store / API 客户端 | `web/src/stores/model-pricing.ts`（任务 V 新范本）；`web/src/api/client.ts:84-103`                                                                                                                                                    |
+| 协议 fake 与管理器测试    | `tests/fixtures/fake-auto-memory-sidecar.mjs`（camelCase 漂移即拒）、`tests/auto-memory-sidecar-manager.test.ts`（657 行范本）                                                                                                        |
+| python 自测               | `auto_memory_sidecar.py --self-test`（188-312 行，20+ 红绿用例，新 op 必须加用例）                                                                                                                                                    |
 
 ## 3. 方案设计
 
@@ -72,13 +72,13 @@
 
 ### 3.2 批次 2：宿主管理 HTTP API（新文件 `src/routes/auto-memory.ts`，挂 `/api/auto-memory`）
 
-| 方法/路径                                                      | 行为                                                                                                        |
-| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `GET /api/auto-memory/status`                                    | `{enabled, available, reason?}`——enabled 来自 config；available 用一次轻量 `list` 探测（复用侧车降级返回）   |
-| `GET /api/auto-memory/workspaces/:workspaceJid/memories`         | `?limit=&offset=` 分页列表 → 侧车 `list`（limit 默认 20、上限 100，防大集合全量拉取）                        |
-| `GET /api/auto-memory/workspaces/:workspaceJid/memories/search`  | `?q=&limit=` → 侧车 `search`（q 1-500 字符，limit 1-50，复用 `buildOpArgs` 既有校验语义）                    |
-| `DELETE /api/auto-memory/workspaces/:workspaceJid/memories/:memoryId` | → 侧车 `delete`（404 语义由 mem0 结果判定；幂等直通）                                                  |
-| `DELETE /api/auto-memory/workspaces/:workspaceJid/memories`      | → 侧车 `delete_all`（**破坏性操作：API 直通幂等、UI 层二次确认**，无软删除——不动 DB schema 是本任务边界）    |
+| 方法/路径                                                             | 行为                                                                                                       |
+| --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `GET /api/auto-memory/status`                                         | `{enabled, available, reason?}`——enabled 来自 config；available 用一次轻量 `list` 探测（复用侧车降级返回） |
+| `GET /api/auto-memory/workspaces/:workspaceJid/memories`              | `?limit=&offset=` 分页列表 → 侧车 `list`（limit 默认 20、上限 100，防大集合全量拉取）                      |
+| `GET /api/auto-memory/workspaces/:workspaceJid/memories/search`       | `?q=&limit=` → 侧车 `search`（q 1-500 字符，limit 1-50，复用 `buildOpArgs` 既有校验语义）                  |
+| `DELETE /api/auto-memory/workspaces/:workspaceJid/memories/:memoryId` | → 侧车 `delete`（404 语义由 mem0 结果判定；幂等直通）                                                      |
+| `DELETE /api/auto-memory/workspaces/:workspaceJid/memories`           | → 侧车 `delete_all`（**破坏性操作：API 直通幂等、UI 层二次确认**，无软删除——不动 DB schema 是本任务边界）  |
 
 - **workspaceJid → folder+executionMode 解析必须与 IPC 派发同源**：从 `src/auto-memory-ipc.ts` 导出共享 resolver（`autoMemoryDataPath`/`buildSidecarConfig` 已在此文件），路由侧优先复用 db.ts 既有 group 查询函数（只读 import，不改 db.ts；确无现成函数才把 `src/db.ts` 加入清单并在提交说明）。两模式数据目录错位是最高危缺陷，`tests/auto-memory-ipc.test.ts` 的 `autoMemoryDataPath` 表已钉死。
 - 失败 receipts 沿用 coded 风格：`not_configured`/`unavailable`/`invalid_args`/`not_found`（对齐 `src/auto-memory-ipc.ts` 既有码）。
@@ -128,7 +128,7 @@
 
 ## 6. 风险与边界
 
-1. **mem0 2.2.1 `get_all` 形态未实测**（分页参数、results 包装）——实现第一步取证，不确定标 TODO 问用户（宪法第 6 条）。
+1. **mem0 2.2.1 `get_all` 形态未实测**（分页参数、results 包装）——实现第一步取证，不确定标 TODO 问用户（宪法第 6 条）。**已结案（2026-11-10，双源取证）**：官方 2.2.1 wheel 源码 + 离线真实调用（预建 qdrant local 集群 + 合成 payload，绕开 embedder 探测）确认——`get_all(*, filters, top_k=20, show_expired=False)` keyword-only，实体必须走 `filters={"user_id":…}`（顶层 user_id 抛 ValueError；**`limit` kwarg 落入 `**kwargs` 被静默忽略，不可用**）；`top_k`即 limit（恰返回 ≤N 条）；返回`{"results":[{id,memory,hash,metadata,created_at,updated_at,user_id}]}`；**无原生 offset**（qdrant wrapper 只传 limit）→ 侧车 `list`以`top_k=limit+offset` 取回后切片模拟分页。
 2. **两执行模式数据目录错位**=最高危缺陷——路由解析必须与 IPC 派发同源（§3.2），`autoMemoryDataPath` 表测试钉死。
 3. **delete_all 破坏性**——UI danger 二次确认；API 幂等直通；无软删除（不动 DB schema 是任务边界，宪法第 2 条）。
 4. **导航契约锁**——`frontend-settings-information-architecture.test.ts` 加 tab 不同步声明则 verify 红。
@@ -136,7 +136,7 @@
 6. **权限联动**——待确认项①决定 tab 归组与路由中间件，开工先问。
 7. **侧车时延**——list 必带分页；管理操作走既有串行队列（60s 超时）；status 探测失败要有短超时预算，不能拖死设置页。
 8. **出站 secret redact 覆盖 list**——与 search/get 同款（旧存量明文防泄露，任务 F 语义延续）。
-9. **敏感区纪律**——不触碰 `data/` 实数据与任何密钥值；密钥/端点不落日志、不进 API 响应；零新增运行时依赖（宪法第 4 条）；参考仓 OpenDot_副本 任何文件不入 diff。
+9. **敏感区纪律**——不触碰 `data/` 实数据与任何密钥值；密钥/端点不落日志、不进 API 响应；零新增运行时依赖（宪法第 4 条）；参考仓 OpenDot\_副本 任何文件不入 diff。
 
 ## 7. 门禁与验收
 

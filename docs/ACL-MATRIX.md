@@ -153,7 +153,21 @@ Agent Runtime 的 Workspace Memory MCP 还叠加执行上下文策略：
 定时任务和 Sub-Agent 即使继承 Workspace owner 身份，也不能写入 Workspace Memory；
 只读限制由 MCP 暴露面与主进程 IPC broker 共同执行，不能由模型参数扩大权限。
 
-### 4.6 CKQClaw Owner Profile
+### 4.6 自动记忆（mem0）管理
+
+`/api/auto-memory/*`（status、列表、搜索、单条删除、清空）先要求 Login，再按
+URL 中的 Workspace JID 执行与 v2 相同的资源级授权：
+
+| 操作                     | 权限                                               |
+| ------------------------ | -------------------------------------------------- |
+| GET status、列表、搜索   | `canAccessGroup()`，当前用户必须是 Workspace owner |
+| DELETE 单条、DELETE 清空 | `canModifyGroup()`，当前用户必须是 Workspace owner |
+
+不带 `workspaceJid` 的 `GET /api/auto-memory/status` 只暴露全局启用开关，任何
+登录用户可读。admin 没有跨 owner bypass；目标 Workspace 不存在或授权失败均返回
+404。清空为破坏性操作：API 幂等直通，UI 层强制危险色二次确认。
+
+### 4.7 CKQClaw Owner Profile
 
 `GET|PATCH /api/workspaces/:jid/owner-profile` 只接受当前登录用户自己的 Home
 Workspace，且目标必须绑定内置默认 CKQClaw。admin 不具有跨 owner bypass。

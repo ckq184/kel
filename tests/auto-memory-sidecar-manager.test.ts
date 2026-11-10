@@ -176,6 +176,42 @@ describe('AutoMemorySidecarManager against the fake sidecar', () => {
     }
   }, 15_000);
 
+  test('list op paginates through the same handshake (task W)', async () => {
+    const manager = makeManager();
+    try {
+      const firstPage = await manager.call('wsL', makeConfig(), 'list', {
+        limit: 2,
+      });
+      expect(firstPage.available).toBe(true);
+      if (firstPage.available) {
+        const items = firstPage.value as Array<{ id: string }>;
+        expect(items.map((item) => item.id)).toEqual([
+          'fake-mem-1',
+          'fake-mem-2',
+        ]);
+      }
+
+      // Args ride the same serial queue verbatim: offset skips the first
+      // item, mirroring the python sidecar's fetch-limit+offset-then-slice
+      // pagination emulation.
+      const secondPage = await manager.call('wsL', makeConfig(), 'list', {
+        limit: 2,
+        offset: 1,
+      });
+      expect(secondPage.available).toBe(true);
+      if (secondPage.available) {
+        const items = secondPage.value as Array<{ id: string }>;
+        expect(items.map((item) => item.id)).toEqual([
+          'fake-mem-2',
+          'fake-mem-3',
+        ]);
+      }
+      expect(manager.spawnCountForTest('wsL')).toBe(1);
+    } finally {
+      await manager.stopAll();
+    }
+  }, 15_000);
+
   test('folders hold independent sidecar processes', async () => {
     const manager = makeManager();
     try {
