@@ -550,6 +550,28 @@ workspace 端点先要求 Login，再按 `:workspaceJid` 执行与 v2 相同的�
 `not_configured`；侧车不可用返回 503 `unavailable`（带 reason）；参数非法返回
 400 `invalid_args`。
 
+### 会话提炼采集（任务 Y）
+
+手动把会话全文提炼入自动记忆的两端点（聊天窗口「提炼记忆」按钮）：
+preview 为读权限（`canAccessGroup()`），capture 为写权限（`canModifyGroup()`），
+无权与不存在统一 404。采集范围 = 该会话（含跨会话历史）**最新 400 条文本
+消息 / 60k 字符**——服务端固定上限，不接受客户端传入，超出保留最新部分；
+`context_reset` 会话分隔行与配额通知行剔除，仅文本 content（附件不参与），
+角色按 `is_from_me` 映射 user/assistant。
+
+- `GET /api/auto-memory/workspaces/:workspaceJid/capture/preview`
+  - 可选 Query：`agentId`（指定 agent 子会话，缺省 = 主会话）。只读 DB
+    组装、不触发侧车（未配置时也可预览），返回 `{ messages, chars }`
+    （将提炼的条数与总字符数，供确认框显示成本）。
+- `POST /api/auto-memory/workspaces/:workspaceJid/capture`
+  - Body `{ agentId? }`。组装后经侧车 `add` 送 mem0 提炼（一次 LLM 提炼 +
+    embedding，入侧车前先机械 redact）；metadata 携带
+    `{ source: 'chat_capture', agentId?, capturedAt }`。返回
+    `{ ok: true, captured, added, intercepted }`（added = mem0 ADD 事件数，
+    intercepted = 脱敏命中数）。空会话 400 `invalid_args`；未配置 503
+    `not_configured`；提炼一次可能 10-60s（manager 每请求 60s 超时杀侧车为
+    既有语义，下次调用自动 respawn）。
+
 ## 用量与计费
 
 用量：

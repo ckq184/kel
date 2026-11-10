@@ -155,14 +155,16 @@ Agent Runtime 的 Workspace Memory MCP 还叠加执行上下文策略：
 
 ### 4.6 自动记忆（mem0）管理
 
-`/api/auto-memory/*`（status、列表、搜索、单条删除、清空）先要求 Login，再按
-URL 中的 Workspace JID 执行与 v2 相同的资源级授权：
+`/api/auto-memory/*`（status、列表、搜索、单条删除、清空、会话提炼采集）先要求
+Login，再按 URL 中的 Workspace JID 执行与 v2 相同的资源级授权：
 
-| 操作                     | 权限                                               |
-| ------------------------ | -------------------------------------------------- |
-| GET status、列表、搜索   | `canAccessGroup()`，当前用户必须是 Workspace owner |
-| DELETE 单条、DELETE 清空 | `canModifyGroup()`，当前用户必须是 Workspace owner |
-| GET/PUT/DELETE config    | `manage_system_config`（任务 X，凭据端点族）       |
+| 操作                       | 权限                                               |
+| -------------------------- | -------------------------------------------------- |
+| GET status、列表、搜索     | `canAccessGroup()`，当前用户必须是 Workspace owner |
+| DELETE 单条、DELETE 清空   | `canModifyGroup()`，当前用户必须是 Workspace owner |
+| GET capture/preview        | `canAccessGroup()`，当前用户必须是 Workspace owner |
+| POST capture（提炼入记忆） | `canModifyGroup()`，当前用户必须是 Workspace owner |
+| GET/PUT/DELETE config      | `manage_system_config`（任务 X，凭据端点族）       |
 
 不带 `workspaceJid` 的 `GET /api/auto-memory/status` 只暴露全局启用开关，任何
 登录用户可读。admin 没有跨 owner bypass；目标 Workspace 不存在或授权失败均返回

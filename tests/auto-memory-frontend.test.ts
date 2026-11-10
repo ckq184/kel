@@ -361,3 +361,116 @@ describe('auto-memory config store actions (task X)', () => {
     expect(useAutoMemoryStore.getState().actionError).toBeNull();
   });
 });
+
+describe('chat capture store actions (task Y)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useAutoMemoryStore.setState({ actionError: null });
+  });
+
+  test('previewCapture GETs the preview endpoint with an encoded JID', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({ messages: 12, chars: 3400 });
+
+    const preview = await useAutoMemoryStore
+      .getState()
+      .previewCapture('web:ws1', 'agent-7');
+
+    expect(api.get).toHaveBeenCalledWith(
+      '/api/auto-memory/workspaces/web%3Aws1/capture/preview?agentId=agent-7',
+    );
+    expect(preview).toEqual({ messages: 12, chars: 3400 });
+  });
+
+  test('previewCapture without an agent tab targets the main conversation', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({ messages: 3, chars: 90 });
+
+    await useAutoMemoryStore.getState().previewCapture('web:ws1');
+
+    expect(api.get).toHaveBeenCalledWith(
+      '/api/auto-memory/workspaces/web%3Aws1/capture/preview',
+    );
+  });
+
+  test('previewCapture failures set actionError and rethrow', async () => {
+    vi.mocked(api.get).mockRejectedValueOnce(new Error('not_configured'));
+
+    await expect(
+      useAutoMemoryStore.getState().previewCapture('web:ws1'),
+    ).rejects.toThrow('not_configured');
+    expect(useAutoMemoryStore.getState().actionError).toContain(
+      'not_configured',
+    );
+  });
+
+  test('captureConversation POSTs with the 90s extraction timeout', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({
+      ok: true,
+      captured: 12,
+      added: 5,
+      intercepted: 1,
+    });
+
+    const receipt = await useAutoMemoryStore
+      .getState()
+      .captureConversation('web:ws1', 'agent-7');
+
+    // 60k 字一次 LLM 提炼可能 10-60s——默认 8s 会误杀，钉住 90s。
+    expect(api.post).toHaveBeenCalledWith(
+      '/api/auto-memory/workspaces/web%3Aws1/capture',
+      { agentId: 'agent-7' },
+      90_000,
+    );
+    expect(receipt).toMatchObject({ ok: true, captured: 12, added: 5 });
+  });
+
+  test('captureConversation without agentId posts an empty body', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({
+      ok: true,
+      captured: 1,
+      added: 1,
+      intercepted: 0,
+    });
+
+    await useAutoMemoryStore.getState().captureConversation('web:ws1');
+
+    expect(api.post).toHaveBeenCalledWith(
+      '/api/auto-memory/workspaces/web%3Aws1/capture',
+      {},
+      90_000,
+    );
+  });
+
+  test('captureConversation failures set actionError and rethrow', async () => {
+    vi.mocked(api.post).mockRejectedValueOnce(new Error('Request timeout'));
+
+    await expect(
+      useAutoMemoryStore.getState().captureConversation('web:ws1'),
+    ).rejects.toThrow('Request timeout');
+    expect(useAutoMemoryStore.getState().actionError).toContain(
+      'Request timeout',
+    );
+  });
+});
+
+describe('chat capture button (task Y)', () => {
+  test('ChatView gates the button, confirms, and reports via toast', () => {
+    const view = read('web/src/components/chat/ChatView.tsx');
+
+    // Header button on the workspace-config template: icon + label + gate.
+    expect(view).toContain('BrainCircuit');
+    expect(view).toContain('提炼记忆');
+    expect(view).toMatch(/canModifyWorkspaceConfig && \(/);
+    // Click → preview → confirm dialog showing counts and the cost hint.
+    expect(view).toContain('capturePreview');
+    expect(view).toMatch(/含跨会话历史/);
+    expect(view).toMatch(/一次模型调用/);
+    expect(view).toMatch(/超时/);
+    // Receipt toast: captured/added counts + redaction note.
+    expect(view).toMatch(/提炼完成/);
+    expect(view).toMatch(/已脱敏/);
+    // In-flight re-entry guard (busy state disables both button and dialog).
+    expect(view).toMatch(/captureBusy/);
+    // All /api/auto-memory calls go through the store, never direct.
+    expect(view).not.toContain('/api/auto-memory');
+  });
+});

@@ -44,6 +44,20 @@ export interface AutoMemoryConfig {
   embedder?: AutoMemoryEndpointView;
 }
 
+/** Chat-capture cost preview (task Y) — counts/chars of what would be sent. */
+export interface AutoMemoryCapturePreview {
+  messages: number;
+  chars: number;
+}
+
+/** Chat-capture receipt (task Y) — counts summarized from the mem0 add. */
+export interface AutoMemoryCaptureReceipt {
+  ok: boolean;
+  captured: number;
+  added: number;
+  intercepted: number;
+}
+
 /**
  * PUT payload — apiKey 空串或掩码原样回传都表示保留旧值；只有非掩码新值
  * 才会覆盖（服务端解析，前端只透传输入框内容）。
@@ -55,6 +69,9 @@ export interface AutoMemoryConfigInput {
 
 /** UI page size; the API caps list limit at 100. */
 export const AUTO_MEMORY_PAGE_SIZE = 20;
+
+/** 提炼一次 60k 字全文可能需 10-60s，默认 8s 请求超时会误杀（任务 Y）。 */
+export const AUTO_MEMORY_CAPTURE_TIMEOUT_MS = 90_000;
 
 const encodedJid = (workspaceJid: string) => encodeURIComponent(workspaceJid);
 
@@ -87,6 +104,14 @@ interface AutoMemoryState {
   loadConfig: () => Promise<AutoMemoryConfig | null>;
   saveConfig: (input: AutoMemoryConfigInput) => Promise<void>;
   clearConfig: () => Promise<void>;
+  previewCapture: (
+    workspaceJid: string,
+    agentId?: string,
+  ) => Promise<AutoMemoryCapturePreview>;
+  captureConversation: (
+    workspaceJid: string,
+    agentId?: string,
+  ) => Promise<AutoMemoryCaptureReceipt>;
 }
 
 const errorMessage = (err: unknown, fallback: string) =>
@@ -236,6 +261,34 @@ export const useAutoMemoryStore = create<AutoMemoryState>((set, get) => ({
       await get().loadConfig();
     } catch (err) {
       set({ actionError: errorMessage(err, '清除自动记忆端点配置失败') });
+      throw err;
+    }
+  },
+
+  // ── Chat capture channel (task Y) ─────────────────────────────────────
+  previewCapture: async (workspaceJid, agentId) => {
+    set({ actionError: null });
+    try {
+      const query = agentId ? `?agentId=${encodeURIComponent(agentId)}` : '';
+      return await api.get<AutoMemoryCapturePreview>(
+        `/api/auto-memory/workspaces/${encodedJid(workspaceJid)}/capture/preview${query}`,
+      );
+    } catch (err) {
+      set({ actionError: errorMessage(err, '获取提炼预览失败') });
+      throw err;
+    }
+  },
+
+  captureConversation: async (workspaceJid, agentId) => {
+    set({ actionError: null });
+    try {
+      return await api.post<AutoMemoryCaptureReceipt>(
+        `/api/auto-memory/workspaces/${encodedJid(workspaceJid)}/capture`,
+        agentId ? { agentId } : {},
+        AUTO_MEMORY_CAPTURE_TIMEOUT_MS,
+      );
+    } catch (err) {
+      set({ actionError: errorMessage(err, '提炼记忆失败') });
       throw err;
     }
   },

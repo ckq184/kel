@@ -90,6 +90,21 @@ vi.mock('../src/auto-memory-ipc.js', async (importOriginal) => ({
           value: [{ id: 'm1', memory: 'search hit', score: 0.9 }],
         };
       }
+      if (op === 'add') {
+        // Task Y: mem0 add receipt shape — results list + optional
+        // intercepted findings attached by the sidecar redaction pass.
+        return {
+          available: true,
+          value: {
+            results: [
+              { event: 'ADD', memory: '新增记忆一' },
+              { event: 'ADD', memory: '新增记忆二' },
+              { event: 'NONE', memory: '已存在条目' },
+            ],
+            intercepted: ['keyword_value'],
+          },
+        };
+      }
       return { available: true, value: 'ok' };
     },
     // Task X config writes stop live sidecars so the next call respawns
@@ -661,5 +676,321 @@ describe('auto-memory config endpoints (task X)', () => {
       reason: 'not_configured',
       source: 'none',
     });
+  });
+});
+
+describe('chat capture endpoints (task Y)', () => {
+  // Each test seeds its own workspace so message counts stay isolated —
+  // initDatabase is idempotent and rows persist across tests in this file.
+  let seq = 0;
+  const seedWorkspace = (): string => {
+    seq += 1;
+    const jid = `web:ws-cap-${seq}`;
+    db.setRegisteredGroup(jid, {
+      name: `Capture ${seq}`,
+      folder: `ws-cap-${seq}`,
+      added_at: new Date().toISOString(),
+      created_by: 'user-1',
+    });
+    return jid;
+  };
+  const ts = (second: number) =>
+    new Date(Date.UTC(2026, 10, 10, 10, 0, second)).toISOString();
+  const seedMessage = (
+    chatJid: string,
+    id: string,
+    content: string,
+    opts?: { fromMe?: boolean; sender?: string; timestamp?: string },
+  ) => {
+    // messages.chat_jid has an FK into chats — ensure the row first.
+    db.ensureChatExists(chatJid);
+    db.storeMessageDirect(
+      id,
+      chatJid,
+      opts?.sender ?? 'web-user',
+      'tester',
+      content,
+      opts?.timestamp ?? ts(0),
+      !!opts?.fromMe,
+    );
+  };
+
+  test('capture endpoints require login', async () => {
+    const preview = await autoMemoryRoutes.request(
+      '/workspaces/web:ws-container/capture/preview',
+    );
+    expect(preview.status).toBe(401);
+
+    const capture = await autoMemoryRoutes.request(
+      '/workspaces/web:ws-container/capture',
+      { method: 'POST', body: JSON.stringify({}) },
+    );
+    expect(capture.status).toBe(401);
+  });
+
+  test('both ACL faces hide the workspace behind 404 for non-owners', async () => {
+    const jid = seedWorkspace();
+    seedMessage(jid, 'cap-1', '可提炼内容', { timestamp: ts(1) });
+
+    const preview = await autoMemoryRoutes.request(
+      `/workspaces/${jid}/capture/preview`,
+      { headers: STRANGER },
+    );
+    expect(preview.status).toBe(404);
+
+    const capture = await autoMemoryRoutes.request(
+      `/workspaces/${jid}/capture`,
+      { method: 'POST', headers: STRANGER, body: JSON.stringify({}) },
+    );
+    expect(capture.status).toBe(404);
+    expect(sidecarCalls).toHaveLength(0);
+  });
+
+  test('preview counts only conversation rows and never spawns the sidecar', async () => {
+    const jid = seedWorkspace();
+    seedMessage(jid, 'cap-1', '第一条用户消息', { timestamp: ts(0) });
+    seedMessage(jid, 'cap-2', '助手回复', {
+      fromMe: true,
+      timestamp: ts(1),
+    });
+    seedMessage(jid, 'cap-3', 'context_reset', {
+      sender: '__system__',
+      timestamp: ts(2),
+    });
+    seedMessage(jid, 'cap-4', '本月配额已用尽', {
+      sender: '__billing__',
+      timestamp: ts(3),
+    });
+    seedMessage(jid, 'cap-5', '   ', { timestamp: ts(4) });
+    seedMessage(jid, 'cap-6', '最后一条用户消息', { timestamp: ts(5) });
+
+    const res = await autoMemoryRoutes.request(
+      `/workspaces/${jid}/capture/preview`,
+      { headers: OWNER },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      messages: 3,
+      chars:
+        '第一条用户消息'.length + '助手回复'.length + '最后一条用户消息'.length,
+    });
+    expect(sidecarCalls).toHaveLength(0);
+  });
+
+  test('capture maps roles chronologically and drops system/billing rows', async () => {
+    const jid = seedWorkspace();
+    seedMessage(jid, 'cap-1', '第一条用户消息', { timestamp: ts(0) });
+    seedMessage(jid, 'cap-2', '助手回复', {
+      fromMe: true,
+      timestamp: ts(1),
+    });
+    seedMessage(jid, 'cap-3', 'context_reset', {
+      sender: '__system__',
+      timestamp: ts(2),
+    });
+    seedMessage(jid, 'cap-4', '本月配额已用尽', {
+      sender: '__billing__',
+      timestamp: ts(3),
+    });
+    seedMessage(jid, 'cap-5', '最后一条用户消息', { timestamp: ts(4) });
+
+    const res = await autoMemoryRoutes.request(`/workspaces/${jid}/capture`, {
+      method: 'POST',
+      headers: OWNER,
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      ok: true,
+      captured: 3,
+      added: 2,
+      intercepted: 1,
+    });
+
+    expect(sidecarCalls).toHaveLength(1);
+    const call = sidecarCalls[0];
+    expect(call.folder).toBe(`ws-cap-${seq}`);
+    expect(call.op).toBe('add');
+    expect(call.args.messages).toEqual([
+      { role: 'user', content: '第一条用户消息' },
+      { role: 'assistant', content: '助手回复' },
+      { role: 'user', content: '最后一条用户消息' },
+    ]);
+    expect(call.args.metadata).toMatchObject({
+      source: 'chat_capture',
+      capturedAt: expect.any(String),
+    });
+    expect(call.args.metadata).not.toHaveProperty('agentId');
+  });
+
+  test('capture keeps the newest 400 messages (server-fixed limit)', async () => {
+    const jid = seedWorkspace();
+    for (let i = 0; i < 405; i++) {
+      seedMessage(jid, `cap-${i}`, `消息${i}`, { timestamp: ts(i) });
+    }
+
+    const preview = await autoMemoryRoutes.request(
+      `/workspaces/${jid}/capture/preview`,
+      { headers: OWNER },
+    );
+    expect(await preview.json()).toMatchObject({ messages: 400 });
+
+    const res = await autoMemoryRoutes.request(`/workspaces/${jid}/capture`, {
+      method: 'POST',
+      headers: OWNER,
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(200);
+    const messages = sidecarCalls[0].args.messages as Array<{
+      content: string;
+    }>;
+    expect(messages).toHaveLength(400);
+    // Newest tail kept: the five oldest rows fell out of the 400 window.
+    expect(messages[0].content).toBe('消息5');
+    expect(messages[399].content).toBe('消息404');
+  });
+
+  test('char budget keeps the newest tail within 60k chars', async () => {
+    const jid = seedWorkspace();
+    const oldest = '早'.repeat(30_000);
+    const middle = '中'.repeat(30_000);
+    const newest = '新'.repeat(100);
+    seedMessage(jid, 'cap-1', oldest, { timestamp: ts(0) });
+    seedMessage(jid, 'cap-2', middle, { timestamp: ts(1) });
+    seedMessage(jid, 'cap-3', newest, { timestamp: ts(2) });
+
+    const preview = await autoMemoryRoutes.request(
+      `/workspaces/${jid}/capture/preview`,
+      { headers: OWNER },
+    );
+    expect(await preview.json()).toEqual({ messages: 2, chars: 30_100 });
+
+    const res = await autoMemoryRoutes.request(`/workspaces/${jid}/capture`, {
+      method: 'POST',
+      headers: OWNER,
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(200);
+    const messages = sidecarCalls[0].args.messages as Array<{
+      content: string;
+    }>;
+    expect(messages.map((m) => m.content)).toEqual([middle, newest]);
+  });
+
+  test('a single message larger than the budget keeps its newest 60k chars', async () => {
+    const jid = seedWorkspace();
+    const huge = '巨'.repeat(70_000);
+    seedMessage(jid, 'cap-1', huge, { timestamp: ts(0) });
+
+    const preview = await autoMemoryRoutes.request(
+      `/workspaces/${jid}/capture/preview`,
+      { headers: OWNER },
+    );
+    expect(await preview.json()).toEqual({ messages: 1, chars: 60_000 });
+
+    const res = await autoMemoryRoutes.request(`/workspaces/${jid}/capture`, {
+      method: 'POST',
+      headers: OWNER,
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(200);
+    const messages = sidecarCalls[0].args.messages as Array<{
+      content: string;
+    }>;
+    expect(messages).toHaveLength(1);
+    expect(messages[0].content).toBe(huge.slice(huge.length - 60_000));
+  });
+
+  test('agentId scopes capture to the agent sub-conversation jid', async () => {
+    const jid = seedWorkspace();
+    seedMessage(jid, 'main-1', '主会话消息', { timestamp: ts(0) });
+    seedMessage(jid, 'main-2', '另一条主会话消息', { timestamp: ts(1) });
+    const virtualJid = `${jid}#agent:agent-1`;
+    seedMessage(virtualJid, 'sub-1', '子会话消息一', { timestamp: ts(0) });
+    seedMessage(virtualJid, 'sub-2', '子会话消息二', {
+      fromMe: true,
+      timestamp: ts(1),
+    });
+
+    const preview = await autoMemoryRoutes.request(
+      `/workspaces/${jid}/capture/preview?agentId=agent-1`,
+      { headers: OWNER },
+    );
+    expect(await preview.json()).toEqual({
+      messages: 2,
+      chars: '子会话消息一'.length + '子会话消息二'.length,
+    });
+
+    const res = await autoMemoryRoutes.request(`/workspaces/${jid}/capture`, {
+      method: 'POST',
+      headers: OWNER,
+      body: JSON.stringify({ agentId: 'agent-1' }),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ ok: true, captured: 2 });
+    expect(sidecarCalls[0].args.messages).toEqual([
+      { role: 'user', content: '子会话消息一' },
+      { role: 'assistant', content: '子会话消息二' },
+    ]);
+    expect(sidecarCalls[0].args.metadata).toMatchObject({
+      source: 'chat_capture',
+      agentId: 'agent-1',
+    });
+  });
+
+  test('capture rejects malformed bodies and oversized agentId', async () => {
+    const jid = seedWorkspace();
+    seedMessage(jid, 'cap-1', '可提炼内容', { timestamp: ts(0) });
+
+    for (const bad of [
+      JSON.stringify('not-an-object'),
+      JSON.stringify([1, 2]),
+      JSON.stringify({ agentId: 123 }),
+      JSON.stringify({ agentId: 'x'.repeat(129) }),
+    ]) {
+      const res = await autoMemoryRoutes.request(`/workspaces/${jid}/capture`, {
+        method: 'POST',
+        headers: OWNER,
+        body: bad,
+      });
+      expect(res.status, bad).toBe(400);
+      expect(await res.json()).toMatchObject({ error: 'invalid_args' });
+    }
+    expect(sidecarCalls).toHaveLength(0);
+  });
+
+  test('empty conversation: preview reports zero, capture rejects 400', async () => {
+    const jid = seedWorkspace();
+
+    const preview = await autoMemoryRoutes.request(
+      `/workspaces/${jid}/capture/preview`,
+      { headers: OWNER },
+    );
+    expect(preview.status).toBe(200);
+    expect(await preview.json()).toEqual({ messages: 0, chars: 0 });
+
+    const res = await autoMemoryRoutes.request(`/workspaces/${jid}/capture`, {
+      method: 'POST',
+      headers: OWNER,
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: 'invalid_args' });
+    expect(sidecarCalls).toHaveLength(0);
+  });
+
+  test('capture without endpoint config returns 503 not_configured', async () => {
+    enableAutoMemory(false);
+    const jid = seedWorkspace();
+    seedMessage(jid, 'cap-1', '可提炼内容', { timestamp: ts(0) });
+
+    const res = await autoMemoryRoutes.request(`/workspaces/${jid}/capture`, {
+      method: 'POST',
+      headers: OWNER,
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(503);
+    expect(await res.json()).toMatchObject({ error: 'not_configured' });
+    expect(sidecarCalls).toHaveLength(0);
   });
 });

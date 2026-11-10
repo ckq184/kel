@@ -4,7 +4,7 @@ import { bodyLimit } from 'hono/body-limit';
 import type { Variables } from '../web-context.js';
 import { authMiddleware, systemConfigMiddleware } from '../middleware/auth.js';
 import { canAccessGroup, canModifyGroup } from '../web-context.js';
-import { getRegisteredGroup } from '../db.js';
+import { getMessagesPage, getRegisteredGroup } from '../db.js';
 import {
   clearAutoMemoryHostConfig,
   getAutoMemoryConfigSource,
@@ -60,6 +60,11 @@ const SEARCH_LIMIT_DEFAULT = 10;
 const SEARCH_LIMIT_MAX = 50;
 const SEARCH_QUERY_MAX = 500;
 const MEMORY_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
+// Task Y chat-capture budget — server-fixed on purpose (cost cap), never
+// accepted from the client (user decision 2026-11-10).
+const CAPTURE_MESSAGE_LIMIT = 400;
+const CAPTURE_CHAR_BUDGET = 60_000;
+const CAPTURE_AGENT_ID_MAX = 128;
 
 autoMemoryRoutes.use('/*', authMiddleware);
 autoMemoryRoutes.use(
@@ -511,6 +516,150 @@ autoMemoryRoutes.delete('/workspaces/:workspaceJid/memories', async (c) => {
   const outcome = await callSidecar(resolved.group, 'delete_all', {});
   if (!outcome.available) return unavailableReceipt(c, outcome.reason);
   return c.json({ deletedAll: true });
+});
+
+// ── Chat capture endpoints (task Y) ──────────────────────────────────────────
+
+/**
+ * Assemble the text-message payload for a chat capture: the newest
+ * CAPTURE_MESSAGE_LIMIT rows in chronological order, non-conversation rows
+ * (session separators, billing notices, empty bodies) dropped, roles mapped
+ * from is_from_me, then the char budget filled from the newest message
+ * backwards so overflow trims the oldest content (user decision 2026-11-10:
+ * capture everything, keep the newest part). Never logs message content.
+ */
+function assembleCaptureMessages(chatJid: string): {
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>;
+  chars: number;
+} {
+  const rows = getMessagesPage(chatJid, undefined, CAPTURE_MESSAGE_LIMIT)
+    .slice()
+    .reverse()
+    .filter(
+      (row) =>
+        row.sender !== '__system__' &&
+        row.sender !== '__billing__' &&
+        row.content.trim().length > 0,
+    )
+    .map((row) => ({
+      role: (row.is_from_me ? 'assistant' : 'user') as 'user' | 'assistant',
+      content: row.content,
+    }));
+
+  const kept: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+  let chars = 0;
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const row = rows[i];
+    if (chars + row.content.length > CAPTURE_CHAR_BUDGET) {
+      if (kept.length === 0) {
+        // The newest message alone busts the budget — keep its tail so a
+        // single huge turn never yields an empty capture.
+        kept.push({
+          role: row.role,
+          content: row.content.slice(row.content.length - CAPTURE_CHAR_BUDGET),
+        });
+        chars = CAPTURE_CHAR_BUDGET;
+      }
+      break;
+    }
+    kept.push(row);
+    chars += row.content.length;
+  }
+  kept.reverse();
+  return { messages: kept, chars };
+}
+
+/** agentId is optional; blank-after-trim means the main conversation. */
+function parseCaptureAgentId(
+  raw: string | undefined,
+): { agentId?: string } | { error: string } {
+  const agentId = raw?.trim();
+  if (!agentId) return {};
+  if (agentId.length > CAPTURE_AGENT_ID_MAX) {
+    return {
+      error: `agentId must be at most ${CAPTURE_AGENT_ID_MAX} characters`,
+    };
+  }
+  return { agentId };
+}
+
+autoMemoryRoutes.get('/workspaces/:workspaceJid/capture/preview', (c) => {
+  const resolved = resolveWorkspace(c, c.req.param('workspaceJid'), 'read');
+  if ('error' in resolved) return resolved.error;
+
+  const agent = parseCaptureAgentId(c.req.query('agentId'));
+  if ('error' in agent) return invalidArgs(c, agent.error);
+
+  // Cost preview only — assembles from the DB, never spawns the sidecar
+  // (works even when auto memory is not configured yet).
+  const chatJid = agent.agentId
+    ? `${resolved.group.jid}#agent:${agent.agentId}`
+    : resolved.group.jid;
+  const { messages, chars } = assembleCaptureMessages(chatJid);
+  return c.json({ messages: messages.length, chars });
+});
+
+autoMemoryRoutes.post('/workspaces/:workspaceJid/capture', async (c) => {
+  const resolved = resolveWorkspace(c, c.req.param('workspaceJid'), 'write');
+  if ('error' in resolved) return resolved.error;
+
+  // Absent body = {}; present body must be a JSON object (agentId optional).
+  const body = await c.req.json().catch(() => null);
+  if (body !== null && (typeof body !== 'object' || Array.isArray(body))) {
+    return invalidArgs(c, 'body must be a JSON object');
+  }
+  if (body?.agentId !== undefined && typeof body.agentId !== 'string') {
+    return invalidArgs(c, 'agentId must be a string');
+  }
+  const agent = parseCaptureAgentId(body?.agentId);
+  if ('error' in agent) return invalidArgs(c, agent.error);
+
+  const chatJid = agent.agentId
+    ? `${resolved.group.jid}#agent:${agent.agentId}`
+    : resolved.group.jid;
+  const { messages } = assembleCaptureMessages(chatJid);
+  if (messages.length === 0) {
+    return invalidArgs(c, 'no capturable text messages in this conversation');
+  }
+
+  const metadata: Record<string, unknown> = {
+    source: 'chat_capture',
+    capturedAt: new Date().toISOString(),
+  };
+  if (agent.agentId) metadata.agentId = agent.agentId;
+
+  const outcome = await callSidecar(resolved.group, 'add', {
+    messages,
+    metadata,
+  });
+  if (!outcome.available) return unavailableReceipt(c, outcome.reason);
+
+  // mem0 add receipt: a bare results list, or {results, intercepted?} once
+  // the sidecar attached its redaction findings (attach_intercepted).
+  const value = outcome.value;
+  const dict =
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+  const results = Array.isArray(value)
+    ? value
+    : dict && Array.isArray(dict.results)
+      ? dict.results
+      : [];
+  const intercepted =
+    dict && Array.isArray(dict.intercepted) ? dict.intercepted : [];
+  const added = results.filter(
+    (item) =>
+      item &&
+      typeof item === 'object' &&
+      (item as { event?: unknown }).event === 'ADD',
+  ).length;
+  return c.json({
+    ok: true,
+    captured: messages.length,
+    added,
+    intercepted: intercepted.length,
+  });
 });
 
 export default autoMemoryRoutes;

@@ -15,6 +15,10 @@ import {
   type QueuedFollowUp,
 } from '../../stores/chat';
 import { useAuthStore } from '../../stores/auth';
+import {
+  useAutoMemoryStore,
+  type AutoMemoryCapturePreview,
+} from '../../stores/auto-memory';
 import { MessageList } from './MessageList';
 import { MessageInput } from './MessageInput';
 import { FilePanel } from './FilePanel';
@@ -30,6 +34,7 @@ import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { PromptDialog } from '@/components/common/PromptDialog';
 import {
   ArrowLeft,
+  BrainCircuit,
   ChevronDown,
   ChevronRight,
   Folder,
@@ -133,6 +138,12 @@ export function ChatView({ groupJid, onBack, headerLeft }: ChatViewProps) {
   const [resetLoading, setResetLoading] = useState(false);
   const [creatingSession, setCreatingSession] = useState(false);
   const [resetAgentId, setResetAgentId] = useState<string | null>(null);
+  // 任务 Y「提炼记忆」：null = 确认框关闭；busy 覆盖 preview 与 capture 两段
+  // in-flight（提炼一次可能 10-60s，防重入由按钮禁用 + 确认框 loading 共同保证）。
+  const [capturePreview, setCapturePreview] =
+    useState<AutoMemoryCapturePreview | null>(null);
+  const [captureLoading, setCaptureLoading] = useState(false);
+  const [captureBusy, setCaptureBusy] = useState(false);
   // Desktop: visible controls panel height, mounted controls terminal lifecycle.
   const [terminalVisible, setTerminalVisible] = useState(false);
   const [terminalMounted, setTerminalMounted] = useState(false);
@@ -616,6 +627,63 @@ export function ChatView({ groupJid, onBack, headerLeft }: ChatViewProps) {
     }
   };
 
+  // api client 抛的 ApiError 不是 Error 实例但带 message；把常见编码回执
+  // 映射成可行动的中文提示（验收：未配置 503 / 提炼超时均有明确文案）。
+  const captureErrorText = (err: unknown, fallback: string): string => {
+    const message =
+      err &&
+      typeof err === 'object' &&
+      typeof (err as { message?: unknown }).message === 'string'
+        ? (err as { message: string }).message
+        : '';
+    if (message === 'not_configured')
+      return '自动记忆未配置，请先在设置中完成端点配置';
+    if (message === 'Request timeout' || message === 'unavailable')
+      return '提炼超时或侧车不可用，可稍后重试';
+    return message || fallback;
+  };
+
+  const handleCaptureMemory = async () => {
+    if (captureLoading || captureBusy) return;
+    setCaptureLoading(true);
+    try {
+      const preview = await useAutoMemoryStore
+        .getState()
+        .previewCapture(groupJid, activeAgentTab ?? undefined);
+      if (preview.messages === 0) {
+        toast.info('该会话暂无可提炼的文本消息');
+        return;
+      }
+      setCapturePreview(preview);
+    } catch (err) {
+      toast.error(captureErrorText(err, '获取提炼预览失败，请稍后重试'));
+    } finally {
+      setCaptureLoading(false);
+    }
+  };
+
+  const handleCaptureConfirm = async () => {
+    if (captureBusy) return;
+    setCaptureBusy(true);
+    try {
+      const receipt = await useAutoMemoryStore
+        .getState()
+        .captureConversation(groupJid, activeAgentTab ?? undefined);
+      const redacted =
+        receipt.intercepted > 0
+          ? `（${receipt.intercepted} 处疑似凭据已脱敏）`
+          : '';
+      toast.success(
+        `提炼完成：捕获 ${receipt.captured} 条，新增 ${receipt.added} 条记忆${redacted}`,
+      );
+    } catch (err) {
+      toast.error(captureErrorText(err, '提炼记忆失败，请稍后重试'));
+    } finally {
+      setCaptureBusy(false);
+      setCapturePreview(null);
+    }
+  };
+
   const handleCreateSession = useCallback(async () => {
     if (creatingSession) return;
     setCreatingSession(true);
@@ -1070,6 +1138,19 @@ export function ChatView({ groupJid, onBack, headerLeft }: ChatViewProps) {
               <span className="hidden sm:inline">渠道绑定</span>
             </button>
           )}
+          {canModifyWorkspaceConfig && (
+            <button
+              type="button"
+              onClick={handleCaptureMemory}
+              disabled={captureLoading || captureBusy}
+              className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+              title="提炼记忆"
+              aria-label="提炼记忆"
+            >
+              <BrainCircuit className="h-4 w-4" />
+              <span className="hidden sm:inline">提炼记忆</span>
+            </button>
+          )}
           <button
             onClick={toggleTheme}
             className="hidden min-h-9 min-w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex cursor-pointer"
@@ -1378,6 +1459,24 @@ export function ChatView({ groupJid, onBack, headerLeft }: ChatViewProps) {
         confirmText="清除"
         confirmVariant="danger"
         loading={resetLoading}
+      />
+
+      {/* Capture memory confirm dialog (task Y): counts/cost shown before
+          the one LLM call is spent; busy state locks the dialog shut. */}
+      <ConfirmDialog
+        open={!!capturePreview}
+        onClose={() => {
+          if (!captureBusy) setCapturePreview(null);
+        }}
+        onConfirm={handleCaptureConfirm}
+        title="提炼记忆"
+        message={
+          capturePreview
+            ? `将把该会话 ${capturePreview.messages} 条文本消息（约 ${capturePreview.chars} 字，含跨会话历史）送入自动记忆提炼，产生一次模型调用。对话过长可能超时，可稍后重试。`
+            : ''
+        }
+        confirmText="提炼"
+        loading={captureBusy}
       />
 
       {/* IM binding dialog */}
