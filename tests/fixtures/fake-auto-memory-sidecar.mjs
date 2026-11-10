@@ -44,8 +44,17 @@ for await (const line of createInterface({ input: process.stdin })) {
     continue;
   }
   if (op === 'ping') {
+    // mem0Telemetry echoes the spawn env so manager tests can pin
+    // MEM0_TELEMETRY=false (fixed-path qdrant store collision fix).
     process.stdout.write(
-      `${JSON.stringify({ id, ok: true, result: { ready } })}\n`,
+      `${JSON.stringify({
+        id,
+        ok: true,
+        result: {
+          ready,
+          mem0Telemetry: process.env.MEM0_TELEMETRY ?? null,
+        },
+      })}\n`,
     );
     continue;
   }

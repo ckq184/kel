@@ -49,7 +49,8 @@ export type AutoMemorySidecarOp =
   | 'get'
   | 'list'
   | 'delete'
-  | 'delete_all';
+  | 'delete_all'
+  | 'ping';
 
 export type AutoMemorySidecarResult<T> =
   | { available: true; value: T }
@@ -90,6 +91,7 @@ const KNOWN_OPS: ReadonlySet<string> = new Set([
   'list',
   'delete',
   'delete_all',
+  'ping',
 ]);
 
 /**
@@ -399,7 +401,19 @@ export class AutoMemorySidecarManager {
       child = spawn(
         interpreter.command,
         [...interpreter.args, this.scriptPath],
-        { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true },
+        {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          windowsHide: true,
+          // mem0ai 2.2.1's telemetry branch (default on) opens a second
+          // qdrant-local store at a FIXED shared path (~/.mem0/
+          // migrations_qdrant) for every Memory instance — created but
+          // never consumed. With one sidecar per workspace, the second
+          // concurrent sidecar init dies on "already accessed by another
+          // instance of Qdrant client". Force the env off: the store is
+          // dead weight, and posthog beacons from a self-hosted host are
+          // unwanted telemetry anyway (task X live finding, 2026-11-10).
+          env: { ...process.env, MEM0_TELEMETRY: 'false' },
+        },
       ) as ChildProcessWithoutNullStreams;
     } catch (error) {
       return {

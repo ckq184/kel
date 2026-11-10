@@ -1,5 +1,9 @@
 {
-  "task": "修复 - 侧车 delete_all 回复崩溃：auto_memory_sidecar.py:679 的 flush=True 误入 json.dumps()，删除已执行但回复必报错（任务X真机测试发现 2026-11-10；一行修复 + self-test 协议级回归用例）",
-  "base": "148719e",
-  "allow": ["container/agent-runner/python/auto_memory_sidecar.py"]
+  "task": "修复 - 多侧车并存互斥：mem0ai 2.2.1 遥测分支给每个 Memory 实例开启固定共享路径 ~/.mem0/migrations_qdrant 的 qdrant local 存储（只创建零消费），qdrant local 单写者导致第二个工作区侧车 init 必报 already accessed by another instance（任务X真机测试发现 2026-11-10；manager spawn 注入 MEM0_TELEMETRY=false 跳过该分支）",
+  "base": "a34b76e",
+  "allow": [
+    "src/auto-memory-sidecar-manager.ts",
+    "tests/auto-memory-sidecar-manager.test.ts",
+    "tests/fixtures/fake-auto-memory-sidecar.mjs"
+  ]
 }

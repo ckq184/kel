@@ -670,6 +670,32 @@ describe('findHostSidecarScript', () => {
   });
 });
 
+describe('spawn environment (multi-sidecar collision, task X live finding)', () => {
+  test('children spawn with MEM0_TELEMETRY=false — mem0 must never open its fixed-path qdrant store', async () => {
+    // mem0ai 2.2.1's telemetry branch (MEM0_TELEMETRY, default on) opens a
+    // second qdrant-local store at a FIXED shared path (~/.mem0/
+    // migrations_qdrant) for every Memory instance — created but never
+    // consumed. With one sidecar per workspace, the second concurrent
+    // sidecar init dies on "already accessed by another instance". The
+    // manager must force the env off at spawn; ping echoes it back.
+    const manager = makeManager();
+    try {
+      const result = await manager.call('ws-env', makeConfig(), 'ping', {});
+      expect(result.available).toBe(true);
+      if (result.available) {
+        const value = result.value as {
+          ready: boolean;
+          mem0Telemetry?: string;
+        };
+        expect(value.ready).toBe(true);
+        expect(value.mem0Telemetry).toBe('false');
+      }
+    } finally {
+      await manager.stopAll();
+    }
+  }, 15_000);
+});
+
 describe('spawn smoke (real python sidecar, protocol only)', () => {
   test('manager either serves or degrades explicitly against the shipped script', async () => {
     // The real sidecar needs python + mem0ai; without them init fails and
