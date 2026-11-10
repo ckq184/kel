@@ -1,24 +1,19 @@
 {
-  "task": "任务W - 自动记忆管理：侧车 list 操作 + 宿主管理 API + 设置页管理 UI，路线A保留本地侧车（用户 2026-11-10 批准立项方向，可选批次4/5待批准后另行扩宽；计划/交接见 docs/task-w-auto-memory-management-plan.md）",
-  "base": "7249b6b",
+  "task": "任务X - 自动记忆端点配置UI化：模型配置 tab 加卡 + 凭据 PUT/DELETE 端点（manage_system_config，key 掩码不回显）+ 配置写文件促生效（用户 2026-11-10 批准立项，两项设计已拍板：写文件不迁 DB / 表单落模型配置 tab；计划/交接见 docs/task-x-auto-memory-endpoint-config-plan.md）",
+  "base": "3502cbf",
   "allow": [
+    "web/src/components/settings/AutoMemoryEndpointCard.tsx",
+    "docs/task-x-auto-memory-endpoint-config-plan.md",
+    "src/auto-memory-config.ts",
     "src/routes/auto-memory.ts",
+    "tests/auto-memory-config.test.ts",
+    "tests/auto-memory-routes.test.ts",
+    "web/src/pages/SettingsPage.tsx",
     "web/src/components/settings/AutoMemorySection.tsx",
     "web/src/stores/auto-memory.ts",
-    "tests/auto-memory-routes.test.ts",
     "tests/auto-memory-frontend.test.ts",
-    "container/agent-runner/python/auto_memory_sidecar.py",
-    "src/auto-memory-sidecar-manager.ts",
-    "src/auto-memory-ipc.ts",
-    "src/web.ts",
-    "tests/fixtures/fake-auto-memory-sidecar.mjs",
-    "tests/auto-memory-sidecar-manager.test.ts",
-    "web/src/components/settings/types.ts",
-    "web/src/components/settings/SettingsNav.tsx",
-    "web/src/pages/SettingsPage.tsx",
     "tests/frontend-settings-information-architecture.test.ts",
     "docs/API.md",
-    "docs/ACL-MATRIX.md",
-    "docs/task-w-auto-memory-management-plan.md"
+    "docs/ACL-MATRIX.md"
   ]
 }
