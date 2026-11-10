@@ -1,16 +1,21 @@
 {
-  "task": "任务Y3 - 会话内按消息选择提炼：capture 增加 messageIds 精确模式（用户 2026-11-10 确认三项裁决：对话框内按消息模式 / 宁拒勿截 400 / 按 id 直查不限 400 条窗口并动 db.ts 只读函数；计划见 docs/task-y3-message-pick-capture-plan.md）",
-  "base": "47b895f",
+  "task": "任务Z - 自动召回注入（批次5）：runner 每轮 turn 自动检索自动记忆注入上下文（用户 2026-11-10 确认三项裁决：架构 B runner 拉取注入对齐 workspace memory 先例 / 默认关工作区设置显式开启 / top-k=5 注入块 ≤2000 字符 query 截 500 字；计划见 docs/task-z-auto-recall-plan.md）",
+  "base": "d1993db",
   "allow": [
-    "docs/task-y3-message-pick-capture-plan.md",
+    "docs/task-z-auto-recall-plan.md",
+    "container/agent-runner/src/auto-memory-context.ts",
+    "container/agent-runner/src/index.ts",
+    "container/agent-runner/src/pi-index.ts",
+    "container/agent-runner/src/types.ts",
+    "container/agent-runner/src/mcp-tools.ts",
+    "container/agent-runner/prompts/memory-system.workspace.md",
+    "src/container-runner.ts",
+    "src/routes/groups.ts",
     "src/db.ts",
-    "src/routes/auto-memory.ts",
-    "web/src/stores/auto-memory.ts",
-    "web/src/components/chat/CaptureMemoryDialog.tsx",
-    "web/src/components/chat/CaptureMessagePicker.tsx",
-    "web/src/components/chat/ChatView.tsx",
+    "web/src/components/chat/WorkspaceInteractionModeDialog.tsx",
+    "web/src/stores/chat.ts",
+    "tests/auto-recall-context.test.ts",
     "tests/auto-memory-routes.test.ts",
-    "tests/auto-memory-frontend.test.ts",
     "docs/API.md"
   ]
 }
