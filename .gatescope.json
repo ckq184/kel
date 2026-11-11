@@ -1,13 +1,28 @@
 {
-  "task": "任务Z后续4 - 召回率评测 v2（langfuse 集成，用户 2026-11-11 拍板「集成 langfuse 按需起」并对齐其评测体系）：scripts/eval-auto-recall.ts 复活为外部执行器（纯函数/fixture/真实侧车检索同 v1），新增零依赖 langfuse REST 客户端（Basic auth；dataset-items 稳定 id upsert / ingestion trace-create / dataset-run-items / scores 批量写回，score=recall/hit/mrr/precision 挂 traceId+datasetRunId），配置走 env CKQCLAW_EVAL_LANGFUSE_* 或 data/config/eval-langfuse.json，--no-langfuse 本地模式；scripts/eval-langfuse.mjs up/down/status 管理 langfuse compose 栈（.env 缺失时生成随机密钥）；运行时依赖零新增。",
-  "base": "9cfce2b",
+  "task": "任务AA - agent 内评测集成（LLM 可观测性 + judge）：宿主侧零依赖 trace 导出器（src/langfuse-trace-exporter.ts，有界队列/批量 ingestion+scores/redact 全文或 metadata-only/默认关/栈不在零影响）把每轮真实对话写入本机 langfuse；client 从 scripts/eval-auto-recall.ts 提升为 src/langfuse-client.ts 共用；runner 仅新增无内容 auto_recall 流事件（shared/stream-event.ts + 三调用点）使召回注入可见；v1 含 LLM-as-judge recall_utilized（glm-flash，异步批，默认关）。用户 2026-11-11 拍板：宿主侧导出器/脱敏后全文/含 judge/全局开关；计划见 docs/task-aa-agent-observability-plan.md",
+  "base": "79cbc4a",
   "allow": [
+    "docs/task-aa-agent-observability-plan.md",
+    "src/langfuse-client.ts",
+    "src/langfuse-observability-config.ts",
+    "src/langfuse-trace-exporter.ts",
+    "src/langfuse-recall-judge.ts",
+    "tests/langfuse-trace-exporter.test.ts",
+    "tests/langfuse-recall-judge.test.ts",
     "scripts/eval-auto-recall.ts",
-    "scripts/eval/auto-recall-golden.json",
-    "scripts/eval-langfuse.mjs",
-    "package.json",
+    "src/container-runner.ts",
+    "src/turn-output-coordinator.ts",
+    "src/host-ipc-output-router.ts",
+    "src/index.ts",
+    "shared/stream-event.ts",
+    "container/agent-runner/src/auto-memory-context.ts",
+    "container/agent-runner/src/index.ts",
+    "container/agent-runner/src/pi-index.ts",
+    "tests/auto-recall-context.test.ts",
+    "tests/eval-auto-recall-metrics.test.ts",
+    "web/src/stream-event.types.ts",
+    "web/src/stores/chat.ts",
     "AGENTS.md",
-    "CLAUDE.md",
-    "tests/eval-auto-recall-metrics.test.ts"
+    "CLAUDE.md"
   ]
 }
