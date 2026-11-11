@@ -19,6 +19,7 @@ import {
   boundedQuery,
   createLangfuseClient,
   datasetItemPayload,
+  evalStoreRunPayload,
   hitRateAtK,
   mapTextToMarkers,
   precisionAtK,
@@ -447,5 +448,66 @@ describe('langfuse integration (zero-dep REST client)', () => {
         },
       ]),
     ).rejects.toThrow(/HTTP 401/);
+  });
+});
+
+describe('native eval.db payload (task AB default landing zone)', () => {
+  const rows: QueryResultRow[] = [
+    {
+      id: 'q1',
+      category: 'verbatim',
+      expected: ['m1'],
+      retrieved: ['m1', 'm2'],
+      recall: 1,
+      hit: 1,
+      rr: 1,
+      precision: 0.5,
+      latencyMs: 120,
+      boundedQueryChars: 40,
+      note: 'first',
+    },
+    {
+      id: 'q2',
+      category: 'paraphrase',
+      expected: ['m2'],
+      retrieved: [],
+      recall: 0,
+      hit: 0,
+      rr: 0,
+      precision: 0,
+      latencyMs: 240,
+      boundedQueryChars: 33,
+    },
+  ];
+
+  test('maps replay rows into the EvalStore upsert shape', () => {
+    const aggregate = aggregateRows(rows);
+    const payload = evalStoreRunPayload('run-x', 5, rows, aggregate, {
+      source: 'env',
+    });
+    expect(payload.run).toEqual({
+      id: 'run-x',
+      name: 'run-x',
+      kind: 'recall',
+      k: 5,
+      configJson: { source: 'env' },
+      summary: aggregate,
+    });
+    expect(payload.items).toHaveLength(2);
+    // rr column lands as mrr; note only present when set.
+    expect(payload.items[0]).toEqual({
+      queryId: 'q1',
+      category: 'verbatim',
+      expected: ['m1'],
+      retrieved: ['m1', 'm2'],
+      recall: 1,
+      hit: 1,
+      mrr: 1,
+      precision: 0.5,
+      latencyMs: 120,
+      note: 'first',
+    });
+    expect(payload.items[1].note).toBeUndefined();
+    expect(payload.items[1].mrr).toBe(0);
   });
 });

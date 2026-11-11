@@ -28,6 +28,17 @@ export const AUTO_MEMORY_RECALL_BUDGET_MS = 3_000;
 
 export interface AutoMemoryRecallContext {
   block: string;
+  /**
+   * Task AB turn-observation facts. Counts only — never recall or user
+   * content; the runner emits them as a content-free `auto_recall` stream
+   * event and the host decides (observability config) whether to persist.
+   * Undefined when recall never ran for this turn (feature off / blank query).
+   */
+  observation?: {
+    injected: boolean;
+    hitCount: number;
+    latencyMs: number;
+  };
 }
 
 export type AutoMemoryRecallSearch = (
@@ -101,14 +112,32 @@ export async function loadAutoMemoryRecallContext(
   const budget = new Promise<null>((resolve) => {
     timer = setTimeout(() => resolve(null), budgetMs);
   });
+  const startedAt = Date.now();
   try {
     const outcome = await Promise.race([
       search(bounded).catch(() => null),
       budget,
     ]);
-    if (!outcome || !outcome.available) return { block: '' };
+    if (!outcome || !outcome.available) {
+      return {
+        block: '',
+        observation: {
+          injected: false,
+          hitCount: 0,
+          latencyMs: Date.now() - startedAt,
+        },
+      };
+    }
     const records = Array.isArray(outcome.value) ? outcome.value : [];
-    return { block: renderAutoMemoryRecallBlock(records) };
+    const block = renderAutoMemoryRecallBlock(records);
+    return {
+      block,
+      observation: {
+        injected: block !== '',
+        hitCount: records.length,
+        latencyMs: Date.now() - startedAt,
+      },
+    };
   } finally {
     if (timer) clearTimeout(timer);
   }

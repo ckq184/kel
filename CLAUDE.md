@@ -230,6 +230,7 @@ playwright-mcp / mcp-searxng / mcp-server-fetch 三件套，已随任务 U（202
 ```text
 data/
 ├── db/messages.db
+├── db/eval.db
 ├── config/
 ├── groups/{folder}/
 ├── sessions/{folder}/.claude/
@@ -248,6 +249,12 @@ data/
 
 主要数据库当前 Schema 版本以 `src/db.ts` 的 `CURRENT_SCHEMA_VERSION` 为准。
 不要在文档中复制版本号；迁移必须同时具备备份、前向升级和拒绝降级保护。
+
+`data/db/eval.db` 是独立的原生评测库（任务 AB，`src/eval-store.ts` 自版本化
+`PRAGMA user_version`，WAL 双进程安全）：`eval_runs`/`eval_run_items` 存离线
+召回评测（`scripts/eval-auto-recall.ts` 默认落库），`obs_turns` 存真实对话
+turn 观测（`src/turn-observer.ts`，默认关）。不碰 messages.db、不升主库
+schema。
 
 核心表族：
 
@@ -303,6 +310,29 @@ Web 持久设置 > 环境变量 > 代码默认值
 
 Provider 和渠道账号应优先通过 Web 配置。Legacy `/api/config/user-im/*` 只用于兼容，
 新功能统一使用 `/api/channel-accounts`。
+
+### 观测与评测（任务 AB）
+
+`data/config/observability.json` 控制真实对话观测链路（**缺文件即整链路
+no-op、零写库**）；env `CKQCLAW_OBSERVABILITY_ENABLED` /
+`_CONTENT_MODE` / `_JUDGE_ENABLED` 按字段覆盖：
+
+```json
+{
+  "enabled": true,
+  "contentMode": "full",
+  "judge": { "enabled": true }
+}
+```
+
+- `contentMode: full` 落库**脱敏后**对话全文（复用 `redactLogMessage`）；
+  `metadata` 零对话文本、仅指标列。
+- `judge.enabled` 开启 recall_utilized 判分（glm-flash 直调端点、prompt
+  hash+model 版本化落库、连续失败 5 次熔断 warn-once；复位靠重启或改本
+  配置）。judge 只评「注入过召回且已完结且存有文本」的 turn。
+- 离线评测 `npm run eval:auto-recall` 默认写入 eval.db（`--langfuse` 可选
+  导出保留）；看板为 Web 管理台「评测」页（`/eval`，真实对话 tab 仅
+  `manage_system_config`）。
 
 ## 10. 开发与验证
 

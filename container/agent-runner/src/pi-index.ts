@@ -328,6 +328,34 @@ async function runTurn(
     .filter(Boolean)
     .join('\n\n');
   const tracker = new IpcTurnDeliveryTracker(initialMessages);
+  // Task AB: content-free recall observation (counts only, never text). The
+  // inline emit mirrors index.ts but stays local because pi-index owns its
+  // own writeOutput; the host decides whether to persist it into eval.db.
+  if (autoMemoryRecall.observation) {
+    const observation = autoMemoryRecall.observation;
+    writeOutput({
+      status: 'stream',
+      result: null,
+      inputTurnId:
+        latestIpcDeliveryId(initialMessages) ||
+        input.turnId ||
+        generateTurnId(),
+      streamEvent: {
+        eventType: 'auto_recall',
+        agentScope: 'system',
+        isSynthetic: true,
+        displayLevel: 'detail',
+        title: 'Auto memory recall',
+        summary: `${observation.hitCount} hit(s) in ${observation.latencyMs}ms`,
+        autoRecall: {
+          injected: observation.injected,
+          hitCount: observation.hitCount,
+          latencyMs: observation.latencyMs,
+        },
+        turnId: input.turnId,
+      },
+    });
+  }
   const customTools = adaptClaudeMcpToolsToPi(createMcpTools(ctx), {
     namespace: 'mcp__ckqclaw',
   });

@@ -483,6 +483,8 @@ import {
   reconcileMonthlyUsage,
 } from './billing.js';
 import { recordUsageEvent } from './usage-service.js';
+import { turnObserver } from './turn-observer.js';
+import { startRecallJudgeScheduler } from './recall-judge.js';
 import {
   AgentStatus,
   AgentProfile,
@@ -7158,6 +7160,23 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       lastProcessed.id,
       async (result) => {
         try {
+          // Task AB observation tap: synchronous, never throws, and a strict
+          // no-op while observability is off (no data/config/observability.json
+          // → zero eval.db writes). Falls back to lastProcessed.id when the
+          // runner result carries no durable inputTurnId.
+          turnObserver.onResult(
+            {
+              workspaceJid: chatJid,
+              folder: effectiveGroup.folder,
+              channel: chatJid.split(':', 1)[0] || 'unknown',
+              interactionMode,
+              autoRecallEnabled: effectiveGroup.autoMemoryRecall === true,
+              inputText: prompt,
+              defaultTurnId: lastProcessed.id,
+              sessionId: activeSessionId,
+            },
+            result,
+          );
           const isInterruptStatus =
             result.status === 'stream' &&
             result.streamEvent?.eventType === 'status' &&
@@ -21185,6 +21204,10 @@ async function main(): Promise<void> {
     assistantName: ASSISTANT_NAME,
   };
   startSchedulerLoop(schedulerDeps);
+
+  // Task AB: periodic recall-judge loop. Each tick re-reads the observability
+  // config, so judge.enabled never needs a restart; disabled by default.
+  startRecallJudgeScheduler();
 
   // Inject triggerTaskRun into WebDeps (schedulerDeps must exist first)
   const webDeps = getWebDeps();

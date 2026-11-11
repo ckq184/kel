@@ -25,6 +25,7 @@ export type StreamEventType =
   | 'task_notification'
   | 'permission_denied'
   | 'memory_recall'
+  | 'auto_recall'
   | 'compact_boundary'
   | 'notification'
   | 'prompt_suggestion'
@@ -355,6 +356,13 @@ export interface StreamEvent {
     reasonType?: string;
     reason?: string;
     message: string;
+  };
+  /** Task AB turn observation: whether the auto-memory recall block was
+   *  injected this turn, with counts only — never recall or user content. */
+  autoRecall?: {
+    injected: boolean;
+    hitCount: number;
+    latencyMs: number;
   };
   isBackground?: boolean;
   isTeammate?: boolean;

@@ -23,20 +23,20 @@
 
 ## 2. 已取证事实（新会话无需重做）
 
-| #   | 事实                                                                                                                                            | 证据                                                                                              |
-| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| #   | 事实                                                                                                                                                            | 证据                                                                                                |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | 1   | 评测 v2 组件可直接复用：指标纯函数/golden set/零依赖 langfuse 客户端/19 用例，真机验收（datasets 幂等、scores 裸数组、ingestion trace-create 等 v4 契约已踩平） | `scripts/eval-auto-recall.ts`、`tests/eval-auto-recall-metrics.test.ts`、验收记录（提交 `79cbc4a`） |
-| 2   | 路由挂载先例：`app.route('/api/<前缀>', xxxRoutes)`，集中注册于 web.ts                                                                               | `src/web.ts:269-276`（auth/groups/memory/auto-memory/config/tasks/skills…）                        |
-| 3   | admin 页权限先例：`<AuthGuard requiredPermission="manage_system_config">` 包路由元素；lazy import 页面                                                 | `web/src/App.tsx:172-177`（/monitor）、`:68-69`                                                   |
-| 4   | 侧边栏导航先例：nav-items.ts + UnifiedSidebar.tsx                                                                                                                  | `web/src/components/layout/nav-items.ts`、`UnifiedSidebar.tsx`                                    |
-| 5   | turn 生命周期宿主汇聚点：TurnOutputCoordinator / ActiveTurnOutputRegistry；runner stdout 路由 host-ipc-output-router。**挂点行号批次 4 开工二次取证** | `src/turn-output-coordinator.ts:67,410`、`src/host-ipc-output-router.ts`                         |
-| 6   | usage 数据源：`insertUsageRecord`（model/tokens/cost/duration）；调用方在流处理/输出落库路径，批次 4 定位                                                        | `src/db.ts:3576`                                                                                  |
-| 7   | 流事件类型真相源：eventType 联合含 `'memory_recall'`（displayLevel detail + isSynthetic 的每轮快照事件先例）；改动后必须 `make sync-types`                     | `shared/stream-event.ts:27,290`、AGENTS.md §2                                                     |
-| 8   | 前端事件容忍性：chat store 有前缀路由与 default 分支——新 eventType 预计被忽略，**批次 4 验证** `web/src/stream-event.types.ts` 与 switch default              | `web/src/stores/chat.ts:1077-1124`                                                               |
-| 9   | 宿主脱敏真相源（full 模式复用）：`redactLogMessage`                                                                                                                | `src/logger.ts:54`                                                                                |
-| 10  | judge LLM 端点：`getAutoMemoryHostConfig().llm`（glm-flash，OpenAI 兼容）已配置可用；host 配置文件先例（env 优先+文件+缺省关+0o600）                           | `src/auto-memory-config.ts`                                                                       |
-| 11  | SQLite 已在依赖内（better-sqlite3 ^12.10）；WAL 多进程写为既有能力，主库已用 WAL。**运行时依赖零新增成立**                                                       | `package.json`、`src/db.ts`                                                                       |
-| 12  | 表格/页面先例：MonitorPage、MemoryPage（Radix 表格 + 筛选，前端文件断言+DOM 测试先例）                                                                          | `web/src/pages/`、`tests/agent-governance-section-dom.test.tsx` 等                                |
+| 2   | 路由挂载先例：`app.route('/api/<前缀>', xxxRoutes)`，集中注册于 web.ts                                                                                          | `src/web.ts:269-276`（auth/groups/memory/auto-memory/config/tasks/skills…）                         |
+| 3   | admin 页权限先例：`<AuthGuard requiredPermission="manage_system_config">` 包路由元素；lazy import 页面                                                          | `web/src/App.tsx:172-177`（/monitor）、`:68-69`                                                     |
+| 4   | 侧边栏导航先例：nav-items.ts + UnifiedSidebar.tsx                                                                                                               | `web/src/components/layout/nav-items.ts`、`UnifiedSidebar.tsx`                                      |
+| 5   | turn 生命周期宿主汇聚点：TurnOutputCoordinator / ActiveTurnOutputRegistry；runner stdout 路由 host-ipc-output-router。**挂点行号批次 4 开工二次取证**           | `src/turn-output-coordinator.ts:67,410`、`src/host-ipc-output-router.ts`                            |
+| 6   | usage 数据源：`insertUsageRecord`（model/tokens/cost/duration）；调用方在流处理/输出落库路径，批次 4 定位                                                       | `src/db.ts:3576`                                                                                    |
+| 7   | 流事件类型真相源：eventType 联合含 `'memory_recall'`（displayLevel detail + isSynthetic 的每轮快照事件先例）；改动后必须 `make sync-types`                      | `shared/stream-event.ts:27,290`、AGENTS.md §2                                                       |
+| 8   | 前端事件容忍性：chat store 有前缀路由与 default 分支——新 eventType 预计被忽略，**批次 4 验证** `web/src/stream-event.types.ts` 与 switch default                | `web/src/stores/chat.ts:1077-1124`                                                                  |
+| 9   | 宿主脱敏真相源（full 模式复用）：`redactLogMessage`                                                                                                             | `src/logger.ts:54`                                                                                  |
+| 10  | judge LLM 端点：`getAutoMemoryHostConfig().llm`（glm-flash，OpenAI 兼容）已配置可用；host 配置文件先例（env 优先+文件+缺省关+0o600）                            | `src/auto-memory-config.ts`                                                                         |
+| 11  | SQLite 已在依赖内（better-sqlite3 ^12.10）；WAL 多进程写为既有能力，主库已用 WAL。**运行时依赖零新增成立**                                                      | `package.json`、`src/db.ts`                                                                         |
+| 12  | 表格/页面先例：MonitorPage、MemoryPage（Radix 表格 + 筛选，前端文件断言+DOM 测试先例）                                                                          | `web/src/pages/`、`tests/agent-governance-section-dom.test.tsx` 等                                  |
 
 ## 3. 方案设计
 
@@ -110,14 +110,14 @@ agent 运行时（每轮 turn 元数据/usage/脱敏内容，异步有界队列�
 
 ## 8. 与 langfuse 架构对照（防未来窗口重复纠结；2026-11-11 源码分析结论）
 
-| langfuse 组件 | 本方案等价物 | 取舍理由 |
-| --- | --- | --- |
-| Evaluator/Version 版本化 | judge_prompt_hash+judge_model 落库 | 拿版本化收益，不付配置系统成本 |
-| EvaluationRule 规则引擎（filter/sampling/delay） | 一条硬编码规则：judge 只评 recall_injected=1 的 turn | 单一场景无需可配置引擎 |
-| 确定性采样 | sampleByTurnId(turnId, rate) hash 钩子（v1 全量） | 个人体量全量；钩子保证将来抽样可复现 |
-| S3 快照隔离 + 独立 eval 队列 | obs_turns 行即快照；同进程异步批 | 单机无需跨进程快照与队列 |
-| CODE 沙箱执行器 / DecisionModel | 无（唯一执行器=judge） | 「用户上传评测代码」是平台场景，CKQClaw 不需要 |
-| EvaluatorBlockReason 熔断 | 连续失败 5 次 warn-once 熔断 | fail-closed 思想的最小实现 |
-| ScoreConfig 注册表 | SCORE_DEFINITIONS 常量 | 防命名漂移的最小形态 |
-| ClickHouse+分析面板 | SQLite+EvalPage | 量级匹配（个人部署每天几百 turn） |
-| 防自指循环（environment 标记） | 天然免疫（judge 直调端点不走对话通道） | 架构差异的免费收益 |
+| langfuse 组件                                    | 本方案等价物                                         | 取舍理由                                       |
+| ------------------------------------------------ | ---------------------------------------------------- | ---------------------------------------------- |
+| Evaluator/Version 版本化                         | judge_prompt_hash+judge_model 落库                   | 拿版本化收益，不付配置系统成本                 |
+| EvaluationRule 规则引擎（filter/sampling/delay） | 一条硬编码规则：judge 只评 recall_injected=1 的 turn | 单一场景无需可配置引擎                         |
+| 确定性采样                                       | sampleByTurnId(turnId, rate) hash 钩子（v1 全量）    | 个人体量全量；钩子保证将来抽样可复现           |
+| S3 快照隔离 + 独立 eval 队列                     | obs_turns 行即快照；同进程异步批                     | 单机无需跨进程快照与队列                       |
+| CODE 沙箱执行器 / DecisionModel                  | 无（唯一执行器=judge）                               | 「用户上传评测代码」是平台场景，CKQClaw 不需要 |
+| EvaluatorBlockReason 熔断                        | 连续失败 5 次 warn-once 熔断                         | fail-closed 思想的最小实现                     |
+| ScoreConfig 注册表                               | SCORE_DEFINITIONS 常量                               | 防命名漂移的最小形态                           |
+| ClickHouse+分析面板                              | SQLite+EvalPage                                      | 量级匹配（个人部署每天几百 turn）              |
+| 防自指循环（environment 标记）                   | 天然免疫（judge 直调端点不走对话通道）               | 架构差异的免费收益                             |

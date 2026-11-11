@@ -68,6 +68,9 @@ const UsersPage = lazy(() =>
 const MonitorPage = lazy(() =>
   import('./pages/MonitorPage').then((m) => ({ default: m.MonitorPage })),
 );
+const EvalPage = lazy(() =>
+  import('./pages/EvalPage').then((m) => ({ default: m.EvalPage })),
+);
 const CapabilitiesPage = lazy(() =>
   import('./pages/CapabilitiesPage').then((m) => ({
     default: m.CapabilitiesPage,
@@ -176,6 +179,17 @@ const appRoutes = createRoutesFromElements(
               <MonitorPage />
             </Suspense>
           </AuthGuard>
+        }
+      />
+      {/* Task AB evaluation center: offline runs are visible to every logged-in
+          user; the observed-turns tab gates itself on manage_system_config
+          (mirroring the /api/eval/turns 403). */}
+      <Route
+        path="/eval"
+        element={
+          <Suspense fallback={null}>
+            <EvalPage />
+          </Suspense>
         }
       />
       <Route

@@ -212,6 +212,114 @@ describe('loadAutoMemoryRecallTurnContext', () => {
   });
 });
 
+// ── Task AB: auto_recall observation facts (counts only, zero content) ──────
+
+describe('auto_recall observation facts (task AB)', () => {
+  beforeEach(() => {
+    callAutoMemoryMock.mockReset();
+  });
+
+  test('successful search reports injected/hitCount/latency without content', async () => {
+    callAutoMemoryMock.mockResolvedValue(searchOutcome(RECORDS));
+    const ctx = await loadAutoMemoryRecallTurnContext(
+      { autoMemory: { enabled: true, recall: { enabled: true } } },
+      'what do I develop in',
+      {} as never,
+    );
+    expect(ctx.observation).toEqual({
+      injected: true,
+      hitCount: 2,
+      latencyMs: expect.any(Number),
+    });
+    expect(
+      (ctx.observation as { latencyMs: number }).latencyMs,
+    ).toBeGreaterThanOrEqual(0);
+    // Observation carries counts only — never recall text.
+    expect(JSON.stringify(ctx.observation)).not.toContain('Java');
+  });
+
+  test('failed or unavailable search reports injected=false', async () => {
+    callAutoMemoryMock.mockResolvedValue({
+      available: false,
+      reason: 'not_configured',
+    });
+    const ctx = await loadAutoMemoryRecallTurnContext(
+      { autoMemory: { enabled: true, recall: { enabled: true } } },
+      'query',
+      {} as never,
+    );
+    expect(ctx.observation).toMatchObject({ injected: false, hitCount: 0 });
+  });
+
+  test('budget timeout reports injected=false with no block', async () => {
+    callAutoMemoryMock.mockImplementation(
+      () =>
+        new Promise((resolve) =>
+          setTimeout(resolve, 200, searchOutcome(RECORDS)),
+        ),
+    );
+    const ctx = await loadAutoMemoryRecallTurnContext(
+      { autoMemory: { enabled: true, recall: { enabled: true } } },
+      'query',
+      {} as never,
+      10,
+    );
+    expect(ctx.block).toBe('');
+    expect(ctx.observation).toMatchObject({ injected: false });
+  });
+
+  test('recall disabled yields no observation (and no event at call sites)', async () => {
+    const ctx = await loadAutoMemoryRecallTurnContext(
+      { autoMemory: { enabled: true } },
+      'query',
+      {} as never,
+    );
+    expect(ctx.observation).toBeUndefined();
+  });
+});
+
+describe('auto_recall stream event emission (task AB)', () => {
+  const runnerIndex = fs.readFileSync(
+    path.resolve('container/agent-runner/src/index.ts'),
+    'utf8',
+  );
+  const piIndex = fs.readFileSync(
+    path.resolve('container/agent-runner/src/pi-index.ts'),
+    'utf8',
+  );
+  const streamEvent = fs.readFileSync(
+    path.resolve('shared/stream-event.ts'),
+    'utf8',
+  );
+
+  test("shared StreamEventType registers 'auto_recall' with a facts payload", () => {
+    expect(streamEvent).toMatch(/'auto_recall'/);
+    expect(streamEvent).toMatch(/autoRecall\?:/);
+    expect(streamEvent).toMatch(/injected:\s*boolean/);
+    expect(streamEvent).toMatch(/hitCount:\s*number/);
+    expect(streamEvent).toMatch(/latencyMs:\s*number/);
+  });
+
+  test('all three turn call sites emit the observation event', () => {
+    // index.ts declares one shared emitter invoked from both the cold and
+    // warm assembly points; pi-index.ts emits inline.
+    expect(runnerIndex.match(/emitAutoRecallObservation/g) ?? []).toHaveLength(
+      3,
+    );
+    expect(piIndex).toMatch(/eventType:\s*'auto_recall'/);
+  });
+
+  test('the event stays content-free: summary is a hit count, never text', () => {
+    const emitMatch = runnerIndex.match(
+      /const emitAutoRecallObservation = \([\s\S]*?\n  };/,
+    );
+    expect(emitMatch).toBeTruthy();
+    expect(emitMatch![0]).not.toMatch(/observation\.(text|query|block)/);
+    expect(emitMatch![0]).toMatch(/eventType:\s*'auto_recall'/);
+    expect(emitMatch![0]).toMatch(/autoRecall:\s*\{/);
+  });
+});
+
 describe('turn assembly call sites', () => {
   const runnerIndex = fs.readFileSync(
     path.resolve('container/agent-runner/src/index.ts'),

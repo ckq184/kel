@@ -1815,12 +1815,49 @@ async function runQueryAttempt(
       `Workspace memory snapshot revision=${workspaceMemorySnapshot.storeRevision} items=${trace.itemRevisions.length} generatedAt=${trace.generatedAt}`,
     );
   };
+  // Task AB: content-free recall observation. The event carries counts only
+  // (injected / hitCount / latencyMs) — never recall text or the user query —
+  // so the host can persist it into eval.db even in metadata mode.
+  const emitAutoRecallObservation = (
+    observation:
+      | { injected: boolean; hitCount: number; latencyMs: number }
+      | undefined,
+    inputTurnId: string,
+    queryRunId: string | undefined = containerInput.queryRunId,
+  ): void => {
+    if (!observation || !emitOutput) return;
+    writeOutput({
+      status: 'stream',
+      result: null,
+      inputTurnId,
+      streamEvent: {
+        eventType: 'auto_recall',
+        agentScope: 'system',
+        isSynthetic: true,
+        displayLevel: 'detail',
+        title: 'Auto memory recall',
+        summary: `${observation.hitCount} hit(s) in ${observation.latencyMs}ms`,
+        autoRecall: {
+          injected: observation.injected,
+          hitCount: observation.hitCount,
+          latencyMs: observation.latencyMs,
+        },
+        queryRunId,
+        turnId: containerInput.turnId,
+        sessionId,
+      },
+    });
+  };
   if (workspaceMemoryTurn.snapshot) {
     emitWorkspaceMemoryRecall(
       workspaceMemoryTurn.snapshot,
       activeOutputInputTurnId || coldInputTurnId,
     );
   }
+  emitAutoRecallObservation(
+    autoMemoryRecallTurn.observation,
+    activeOutputInputTurnId || coldInputTurnId,
+  );
   const pipedMessagesDuringQuery = ipcDeliveryTracker.unacknowledgedMessages;
   const providerFallbackTurns = new ProviderFallbackTurnLedger({
     prompt,
@@ -2255,6 +2292,14 @@ async function runQueryAttempt(
           msg.queryRunId || containerInput.queryRunId,
         );
       }
+      emitAutoRecallObservation(
+        autoMemoryRecallTurn.observation,
+        msg.receipt?.deliveryId ||
+          outputCorrelation.currentInputTurnId ||
+          containerInput.turnId ||
+          generateTurnId(),
+        msg.queryRunId || containerInput.queryRunId,
+      );
       const rejected = stream.push(msg.text, msg.images, (message) => {
         const withChannelContext = decorateChannelUserTurn(
           message,

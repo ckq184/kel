@@ -1,5 +1,7 @@
 # 任务 AA 立项：agent 内评测集成（LLM 可观测性 + judge）——交接文档
 
+> **⚠️ 已被任务 AB 取代（2026-11-11）**：本任务的 langfuse 外部栈路线已被 `docs/task-ab-native-eval-plan.md`（原生评测中心：eval.db + 内嵌看板）取代——立项后未实现即转向，本文档仅存档设计裁决与取证结论。AA 中的可复用结论（脱敏/默认关/judge 版本化）已被 AB §1 吸收；langfuse 评测 v2 组件（`scripts/eval-auto-recall.ts` 的 `--langfuse` 可选导出与 `scripts/eval-langfuse.mjs`）保留为可选路径。后续开发一律以 AB 文档为准。
+
 > **状态**：2026-11-11 用户批准立项（三项设计裁决已拍板，见 §1）。实现未开始，新窗口开发 Agent 通读本文档 + AGENTS.md 后按 §4 顺序 TDD 执行。事实均带文件行号（2026-11-11 取证，基线 `79cbc4a`；行号漂移以符号名为准）。
 > **回滚点**：立项提交的父 HEAD `79cbc4a`（`.gatescope.json` 的 base；实现 diff 基线=立项提交）。
 > **前置条件**：评测 v2 已就绪（`scripts/eval-auto-recall.ts` 零依赖 langfuse 客户端 + 本机 langfuse compose 栈 `npm run eval:langfuse -- up`，栈已验收：dataset/run/scores 全链路通，提交 `fde3968`/`79cbc4a`）。
@@ -19,18 +21,18 @@
 
 ## 2. 已取证事实（新会话无需重做）
 
-| #   | 事实                                                                                                                                                                                          | 证据                                                                                                          |
-| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| 1   | 零依赖 langfuse REST 客户端已存在并在评测 v2 真机验收（ingestion trace-create / dataset-run-items / scores 裸数组 / datasets 按名幂等；Basic auth；207 部分成功容忍）                          | `scripts/eval-auto-recall.ts`（createLangfuseClient 及 payload 构造器，含 19 用例锁定）                       |
-| 2   | stream 事件类型真相源：`shared/stream-event.ts` eventType 联合含 `'memory_recall'`（runner 每轮快照事件先例：displayLevel detail + isSynthetic）                                               | `shared/stream-event.ts:27,290`；runner 侧 `container/agent-runner/src/index.ts` emitWorkspaceMemoryRecall    |
-| 3   | turn 生命周期宿主侧汇聚点：TurnOutputCoordinator / ActiveTurnOutputRegistry（turn 输出编排）；runner stdout 事件路由 host-ipc-output-router。**精确挂点行号新窗口开工前二次取证**              | `src/turn-output-coordinator.ts:67,410`、`src/host-ipc-output-router.ts`                                     |
-| 4   | token usage 落库：`insertUsageRecord`（含 model/tokens/cost/duration）；调用方在流处理/输出落库路径（新窗口定位）                                                                              | `src/db.ts:3576`                                                                                              |
-| 5   | 宿主脱敏真相源：`redactLogMessage`（日志同源）；runner 另有 redactSensitive（runner 侧不需要）                                                                                                  | `src/logger.ts:54`、`container/agent-runner/src/utils.ts:19`                                                  |
-| 6   | host 配置文件先例（env 优先+文件兜底+缺省关+0o600 写入）：auto-memory-config                                                                                                                    | `src/auto-memory-config.ts`（任务 X 写通道）                                                                   |
-| 7   | 前端事件容忍性：chat store 事件分流有前缀路由与 default 分支——新 eventType 预计被忽略不渲染，**需新窗口确认** `web/src/stream-event.types.ts` 与 switch default 行为                                                          | `web/src/stores/chat.ts:1077-1124`、`web/src/stream-event.types.ts`                                           |
-| 8   | shared/stream-event 改动必须 `make sync-types` 三侧同步                                                                                                                                       | AGENTS.md §2 目录结构说明                                                                                      |
-| 9   | langfuse 栈生命周期命令已就绪（up 自动 .env+INIT_* 预置+写 eval 配置；down 保留卷）；观测用的配置文件与评测配置分离（`langfuse.json` vs `eval-langfuse.json`），同一实例同一项目可共用 key | `scripts/eval-langfuse.mjs`、验收记录（acceptance-2：17 items/17 traces/68 scores）                          |
-| 10  | judge 可用的 LLM 端点配置：`getAutoMemoryHostConfig().llm`（glm-flash，OpenAI 兼容）已就绪                                                                                                     | `src/auto-memory-config.ts`、验收环境 glm-5.3-flash                                                            |
+| #   | 事实                                                                                                                                                                                         | 证据                                                                                                       |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| 1   | 零依赖 langfuse REST 客户端已存在并在评测 v2 真机验收（ingestion trace-create / dataset-run-items / scores 裸数组 / datasets 按名幂等；Basic auth；207 部分成功容忍）                        | `scripts/eval-auto-recall.ts`（createLangfuseClient 及 payload 构造器，含 19 用例锁定）                    |
+| 2   | stream 事件类型真相源：`shared/stream-event.ts` eventType 联合含 `'memory_recall'`（runner 每轮快照事件先例：displayLevel detail + isSynthetic）                                             | `shared/stream-event.ts:27,290`；runner 侧 `container/agent-runner/src/index.ts` emitWorkspaceMemoryRecall |
+| 3   | turn 生命周期宿主侧汇聚点：TurnOutputCoordinator / ActiveTurnOutputRegistry（turn 输出编排）；runner stdout 事件路由 host-ipc-output-router。**精确挂点行号新窗口开工前二次取证**            | `src/turn-output-coordinator.ts:67,410`、`src/host-ipc-output-router.ts`                                   |
+| 4   | token usage 落库：`insertUsageRecord`（含 model/tokens/cost/duration）；调用方在流处理/输出落库路径（新窗口定位）                                                                            | `src/db.ts:3576`                                                                                           |
+| 5   | 宿主脱敏真相源：`redactLogMessage`（日志同源）；runner 另有 redactSensitive（runner 侧不需要）                                                                                               | `src/logger.ts:54`、`container/agent-runner/src/utils.ts:19`                                               |
+| 6   | host 配置文件先例（env 优先+文件兜底+缺省关+0o600 写入）：auto-memory-config                                                                                                                 | `src/auto-memory-config.ts`（任务 X 写通道）                                                               |
+| 7   | 前端事件容忍性：chat store 事件分流有前缀路由与 default 分支——新 eventType 预计被忽略不渲染，**需新窗口确认** `web/src/stream-event.types.ts` 与 switch default 行为                         | `web/src/stores/chat.ts:1077-1124`、`web/src/stream-event.types.ts`                                        |
+| 8   | shared/stream-event 改动必须 `make sync-types` 三侧同步                                                                                                                                      | AGENTS.md §2 目录结构说明                                                                                  |
+| 9   | langfuse 栈生命周期命令已就绪（up 自动 .env+INIT\_\* 预置+写 eval 配置；down 保留卷）；观测用的配置文件与评测配置分离（`langfuse.json` vs `eval-langfuse.json`），同一实例同一项目可共用 key | `scripts/eval-langfuse.mjs`、验收记录（acceptance-2：17 items/17 traces/68 scores）                        |
+| 10  | judge 可用的 LLM 端点配置：`getAutoMemoryHostConfig().llm`（glm-flash，OpenAI 兼容）已就绪                                                                                                   | `src/auto-memory-config.ts`、验收环境 glm-5.3-flash                                                        |
 
 ## 3. 方案设计
 

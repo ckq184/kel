@@ -21,13 +21,17 @@
  * `npm run test:real-model`):
  *
  *   npm run eval:auto-recall [-- --reset] [-- --dry-run] [-- --k 5]
- *                           [-- --no-langfuse] [-- --run-name <name>]
+ *                           [-- --langfuse] [-- --run-name <name>]
  *
  *   --reset       wipe the eval sidecar store first (forces re-seeding)
  *   --dry-run     offline validation: fixture + env/config status only
  *   --k N         retrieval depth (default 5 — the production contract)
- *   --no-langfuse local report only, skip Langfuse writing
- *   --run-name    Langfuse dataset run name (default run-<timestamp>)
+ *   --langfuse    also write back to a Langfuse instance (task AB made the
+ *                 native eval.db the default landing zone; export is opt-in)
+ *   --no-langfuse accepted no-op kept for compatibility (export already off
+ *                 by default)
+ *   --run-name    run name (default run-<timestamp>); ids both eval.db and
+ *                 a Langfuse dataset run — same name re-runs overwrite
  *
  * Langfuse connection (env wins over file, incomplete channels are ignored):
  *   CKQCLAW_EVAL_LANGFUSE_URL / _PUBLIC_KEY / _SECRET_KEY
@@ -288,6 +292,64 @@ export function aggregateRows(
   return { overall: stat(rows), perCategory };
 }
 
+// ── Native eval.db payload (task AB default landing zone) ───────────────────
+
+/** Shape accepted by EvalStore.upsertRun — structural, no store import. */
+export interface EvalStoreRunPayload {
+  run: {
+    id: string;
+    name: string;
+    kind: 'recall';
+    k: number;
+    configJson: Record<string, unknown>;
+    summary: AggregateReport;
+  };
+  items: Array<{
+    queryId: string;
+    category: string;
+    expected: string[];
+    retrieved: string[];
+    recall: number;
+    hit: number;
+    mrr: number;
+    precision: number;
+    latencyMs: number;
+    note?: string;
+  }>;
+}
+
+/** Map replay rows + aggregate into the native eval-store upsert payload. */
+export function evalStoreRunPayload(
+  runName: string,
+  k: number,
+  rows: readonly QueryResultRow[],
+  aggregate: AggregateReport,
+  config: Record<string, unknown>,
+): EvalStoreRunPayload {
+  return {
+    run: {
+      id: runName,
+      name: runName,
+      kind: 'recall',
+      k,
+      configJson: config,
+      summary: aggregate,
+    },
+    items: rows.map((row) => ({
+      queryId: row.id,
+      category: row.category,
+      expected: row.expected,
+      retrieved: row.retrieved,
+      recall: row.recall,
+      hit: row.hit,
+      mrr: row.rr,
+      precision: row.precision,
+      latencyMs: row.latencyMs,
+      ...(row.note ? { note: row.note } : {}),
+    })),
+  };
+}
+
 // ── Langfuse integration (zero-dependency REST client) ──────────────────────
 
 export const LANGFUSE_DATASET_NAME = 'ckqclaw-auto-recall';
@@ -514,7 +576,8 @@ interface CliOptions {
   reset: boolean;
   dryRun: boolean;
   k: number;
-  noLangfuse: boolean;
+  /** Task AB: the Langfuse export is opt-in; eval.db is the default store. */
+  langfuse: boolean;
   runName: string;
 }
 
@@ -523,14 +586,16 @@ function parseArgs(argv: readonly string[]): CliOptions {
     reset: false,
     dryRun: false,
     k: 5,
-    noLangfuse: false,
+    langfuse: false,
     runName: `run-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '')}`,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--reset') options.reset = true;
     else if (arg === '--dry-run') options.dryRun = true;
-    else if (arg === '--no-langfuse') options.noLangfuse = true;
+    // Compatibility no-op: export has been off by default since task AB.
+    else if (arg === '--no-langfuse') continue;
+    else if (arg === '--langfuse') options.langfuse = true;
     else if (arg === '--run-name') {
       const value = argv[index + 1];
       if (!value || value.startsWith('--')) {
@@ -607,9 +672,8 @@ async function main(): Promise<void> {
   const { AutoMemorySidecarManager, pythonInterpreterCandidates } =
     await import('../src/auto-memory-sidecar-manager.js');
 
-  const langfuseConfig = options.noLangfuse
-    ? null
-    : resolveLangfuseConfig(
+  const langfuseConfig = options.langfuse
+    ? resolveLangfuseConfig(
         process.env,
         (file) => {
           try {
@@ -619,18 +683,19 @@ async function main(): Promise<void> {
           }
         },
         path.join(DATA_DIR, 'config', 'eval-langfuse.json'),
-      );
+      )
+    : null;
   const hostConfig = getAutoMemoryHostConfig();
   const configSource = getAutoMemoryConfigSource();
   const pythonCandidates = pythonInterpreterCandidates();
   const evalRoot = path.join(DATA_DIR, 'eval', 'auto-recall');
   const storePath = path.join(evalRoot, 'store');
 
-  const langfuseStatusLine = options.noLangfuse
-    ? 'langfuse: disabled (--no-langfuse)'
-    : langfuseConfig
+  const langfuseStatusLine = options.langfuse
+    ? langfuseConfig
       ? `langfuse: ${langfuseConfig.url} (via ${langfuseConfig.source}); run: ${options.runName}`
-      : 'langfuse: not configured — set CKQCLAW_EVAL_LANGFUSE_URL/_PUBLIC_KEY/_SECRET_KEY or data/config/eval-langfuse.json; local report only';
+      : 'langfuse: --langfuse given but not configured — set CKQCLAW_EVAL_LANGFUSE_URL/_PUBLIC_KEY/_SECRET_KEY or data/config/eval-langfuse.json'
+    : 'langfuse: export off (default; pass --langfuse to also write a Langfuse instance)';
   process.stdout.write(
     `golden set: ${fixture.seed.length} memories / ${fixture.queries.length} queries (k=${options.k})\n` +
       `config source: ${configSource}; ` +
@@ -838,7 +903,35 @@ async function main(): Promise<void> {
     );
     say(`report written: ${reportPath}`);
 
-    // 6. Langfuse write-back (external-executor pattern: dataset items are
+    // 6. Native eval.db write-back (task AB default landing zone). The web
+    // eval page reads these rows; same run name re-runs overwrite in place.
+    try {
+      const { getDefaultEvalStore } = await import('../src/eval-store.js');
+      const payload = evalStoreRunPayload(
+        options.runName,
+        options.k,
+        rows,
+        aggregate,
+        {
+          source: configSource,
+          llmModel: hostConfig.llm.model,
+          embedderModel: hostConfig.embedder.model,
+        },
+      );
+      getDefaultEvalStore().upsertRun(payload.run, payload.items);
+      say(
+        `eval.db run written: ${options.runName} (${rows.length} items, k=${options.k})`,
+      );
+    } catch (error) {
+      process.stderr.write(
+        `eval.db write failed (local report intact): ${
+          error instanceof Error ? error.message : String(error)
+        }\n`,
+      );
+      process.exitCode = 1;
+    }
+
+    // 7. Langfuse write-back (external-executor pattern: dataset items are
     // the golden queries, each run row becomes trace + run-item + scores).
     if (langfuseConfig) {
       say(`\n── langfuse write-back (${options.runName}) ──`);

@@ -14,7 +14,7 @@
     "tests/eval-routes.test.ts",
     "tests/turn-observer.test.ts",
     "tests/recall-judge.test.ts",
-    "tests/eval-frontend.test.ts",
+    "tests/eval-frontend.test.tsx",
     "scripts/eval-auto-recall.ts",
     "src/web.ts",
     "src/turn-output-coordinator.ts",
@@ -32,6 +32,7 @@
     "web/src/stream-event.types.ts",
     "web/src/stores/chat.ts",
     "AGENTS.md",
-    "CLAUDE.md"
+    "CLAUDE.md",
+    "docs/API.md"
   ]
 }

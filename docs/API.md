@@ -36,6 +36,7 @@
 | `/api/pricing`                     | `src/routes/pricing.ts`          | 自定义模型单价规则            |
 | `/api/admin`                       | `src/routes/admin.ts`            | 用户、邀请和审计              |
 | `/api/bug-report`                  | `src/routes/bug-report.ts`       | 脱敏问题报告                  |
+| `/api/eval`                        | `src/routes/eval.ts`             | 原生评测中心（任务 AB）       |
 | `/api/browse`                      | `src/routes/browse.ts`           | Host 目录选择                 |
 | `/api`                             | `src/routes/monitor.ts`          | 健康、状态和 Docker 构建      |
 | `/api/messages`、`/api/follow-ups` | `src/web.ts`                     | 消息发送和 Follow-up          |
@@ -655,6 +656,23 @@ capturedAt }`（不存 messageIds 全量）。preview 无对应端点——前�
 新事件的计价解析优先级：自定义模式串（tier 内最长匹配）→ 内置 Kaboo 表 →
 自定义兜底 → 内置 Sonnet 兜底。规则变更即时生效（缓存显式失效），只影响新事件，
 历史用量行金额不回算。
+
+## 原生评测中心（任务 AB）
+
+数据落独立 `data/db/eval.db`（不动 messages.db）。离线评测由
+`npm run eval:auto-recall` 写入；真实对话 turn 观测由
+`data/config/observability.json` 控制（缺文件即整链路 no-op）。
+
+所有登录用户可读：
+
+- `GET /api/eval/runs`——离线评测 run 列表（最新在前）
+- `GET /api/eval/runs/:id`——单个 run 含逐条查询结果
+- `GET /api/eval/comparison?ids=a,b`——多 run 指标并排（未知 id 返回 null 行）
+
+仅 `manage_system_config`（行内可含脱敏对话文本）：
+
+- `GET /api/eval/turns`——真实对话 turn 观测，支持 `workspace`/`channel`/
+  `recallInjected`/`judge`（`judged`|`pending`）筛选与 `limit`/`offset` 分页
 
 ## 管理、监控与问题报告
 

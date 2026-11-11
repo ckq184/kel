@@ -67,6 +67,7 @@ import { usage as usageRoutes } from './routes/usage.js';
 import billingRoutes from './routes/billing.js';
 import pricingRoutes from './routes/pricing.js';
 import bugReportRoutes from './routes/bug-report.js';
+import evalRoutes from './routes/eval.js';
 import channelAccountRoutes, {
   injectChannelAccountDeps,
 } from './routes/channel-accounts.js';
@@ -287,6 +288,7 @@ app.route('/api/usage', usageRoutes);
 app.route('/api/billing', billingRoutes);
 app.route('/api/pricing', pricingRoutes);
 app.route('/api/bug-report', bugReportRoutes);
+app.route('/api/eval', evalRoutes);
 app.route('/api/channel-accounts', channelAccountRoutes);
 
 // --- POST /api/messages ---

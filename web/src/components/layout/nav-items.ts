@@ -6,6 +6,7 @@ import {
   BarChart3,
   Wallet,
   Settings,
+  FlaskConical,
 } from 'lucide-react';
 
 interface NavItem {
@@ -22,6 +23,7 @@ export const baseNavItems: NavItem[] = [
   { path: '/capabilities', icon: Puzzle, label: '能力库' },
   { path: '/tasks', icon: Clock4, label: '任务' },
   { path: '/usage', icon: BarChart3, label: '用量', hideOnMobile: true },
+  { path: '/eval', icon: FlaskConical, label: '评测', hideOnMobile: true },
   { path: '/billing', icon: Wallet, label: '账单', requiresBilling: true },
   { path: '/settings', icon: Settings, label: '设置' },
 ];
