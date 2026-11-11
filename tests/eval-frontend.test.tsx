@@ -78,7 +78,13 @@ const runFixture = {
   name: 'run-20261111',
   kind: 'recall',
   k: 5,
-  configJson: null,
+  configJson: {
+    dataset: 'auto-recall',
+    datasetOrigin: 'db',
+    llmModel: 'glm-4-flash',
+    embedderModel: 'Embedding-3',
+    source: 'file',
+  },
   summary: {
     overall: { n: 17, recall: 0.82, hitRate: 0.94, mrr: 0.71, precision: 0.55 },
     perCategory: {},
@@ -399,5 +405,49 @@ describe('metric labels are localized (task AD follow-up)', () => {
     expect(source).toContain('排序 MRR');
     expect(source).toContain('精确率');
     expect(source).not.toMatch(/<th className="py-2 pr-4">recall</);
+  });
+});
+
+describe('run detail shows dataset provenance (task AD follow-up)', () => {
+  test('clicking a run surfaces the dataset name and origin', async () => {
+    state.isAdmin = false;
+    apiGet.mockImplementation(async (url: string) => {
+      if (url.includes('trigger/status')) return IDLE_TRIGGER;
+      if (url.startsWith('/api/eval/datasets')) return { datasets: [] };
+      if (url.startsWith('/api/eval/runs/')) {
+        return {
+          run: runFixture,
+          items: [
+            {
+              id: 1,
+              queryId: 'q1',
+              category: 'verbatim',
+              expected: ['M1'],
+              retrieved: ['M1'],
+              recall: 1,
+              hit: 1,
+              mrr: 1,
+              precision: 1,
+              latencyMs: 90,
+              note: null,
+            },
+          ],
+        };
+      }
+      return { runs: [runFixture] };
+    });
+    await renderPage();
+
+    const row = [...container!.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('run-20261111'),
+    );
+    await act(async () => {
+      row?.click();
+    });
+    await act(async () => {});
+
+    expect(container?.textContent).toContain('Run 详情 · run-20261111');
+    expect(container?.textContent).toContain('评测集 auto-recall');
+    expect(container?.textContent).toContain('eval.db');
   });
 });

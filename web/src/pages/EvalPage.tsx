@@ -31,6 +31,13 @@ interface EvalRun {
   name: string;
   kind: string;
   k: number;
+  configJson: {
+    dataset?: string;
+    datasetOrigin?: string;
+    llmModel?: string;
+    embedderModel?: string;
+    source?: string;
+  } | null;
   summary: {
     overall: EvalRunSummaryStat;
     perCategory: Record<string, EvalRunSummaryStat>;
@@ -521,9 +528,20 @@ function EvalRunsPanel({
       {detail && (
         <Card>
           <CardContent className="p-4">
-            <h3 className="mb-3 text-sm font-semibold">
+            <h3 className="mb-1 text-sm font-semibold">
               Run 详情 · {detail.run.name}
             </h3>
+            {detail.run.configJson?.dataset && (
+              <p className="mb-3 text-xs text-muted-foreground">
+                评测集 {detail.run.configJson.dataset}
+                {detail.run.configJson.datasetOrigin
+                  ? `（${detail.run.configJson.datasetOrigin === 'db' ? 'eval.db' : '内置文件'}）`
+                  : ''}
+                {detail.run.configJson.llmModel
+                  ? ` · ${detail.run.configJson.llmModel}`
+                  : ''}
+              </p>
+            )}
             <div className="space-y-2">
               {detail.items.map((item) => (
                 <div
