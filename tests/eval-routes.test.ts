@@ -44,6 +44,34 @@ vi.mock('../src/eval-trigger.js', () => ({
   }),
 }));
 
+// Task AE follow-up: control the lesson-distillation LLM path so adoption can
+// be proven non-blocking. Default = observability-side config disabled (the
+// distiller returns immediately), matching the pre-mock behavior.
+const reflectState = vi.hoisted(() => ({
+  enabled: false,
+  completeImpl: null as null | (() => Promise<string>),
+}));
+vi.mock('../src/auto-memory-config.js', async (importOriginal) => ({
+  ...((await importOriginal()) as Record<string, unknown>),
+  getAutoMemoryHostConfig: () =>
+    reflectState.enabled
+      ? {
+          enabled: true,
+          llm: { baseUrl: 'http://llm.test', apiKey: 'k', model: 'test-model' },
+        }
+      : { enabled: false, llm: undefined },
+}));
+vi.mock('../src/recall-judge.js', async (importOriginal) => ({
+  ...((await importOriginal()) as Record<string, unknown>),
+  createJudgeLlmClient: () => ({
+    model: 'test-model',
+    complete: () =>
+      reflectState.completeImpl
+        ? reflectState.completeImpl()
+        : Promise.resolve('{"no_entry": true}'),
+  }),
+}));
+
 // Same split as auto-memory-routes.test.ts: swap session auth for a header so
 // 401 and permission paths exercise the genuine middleware gates. The real
 // systemConfigMiddleware runs on the injected user (member lacks
@@ -673,5 +701,55 @@ describe('harness adapter routes', () => {
         )
       ).status,
     ).toBe(404);
+  });
+});
+
+// ── Task AE follow-up: adoption must not block on lesson distillation ──────
+
+describe('harness adopt is non-blocking (task AE follow-up)', () => {
+  test('responds 200 while the reflect LLM is still in flight; lesson lands later', async () => {
+    const WS_ASYNC = 'feishu:ws-ae-async@g.us';
+    reflectState.enabled = true;
+    let resolveLlm!: (value: string) => void;
+    reflectState.completeImpl = () =>
+      new Promise<string>((resolve) => {
+        resolveLlm = resolve;
+      });
+    try {
+      getDefaultEvalStore().insertHarnessProposal({
+        id: 'hp_async1',
+        workspaceJid: WS_ASYNC,
+        adapterMd: '# Adapter\n\n非阻塞采纳测试。',
+        keepBase: false,
+        diff: null,
+        rationale: 'r',
+        evidence: [],
+        baselineVersion: 0,
+        model: 'test-model',
+        promptHash: 'hash',
+      });
+      const res = await evalRoutes.request(
+        '/harness/proposals/hp_async1/adopt',
+        {
+          method: 'POST',
+          headers: ADMIN,
+        },
+      );
+      // The HTTP round-trip completes before the LLM call resolves.
+      expect(res.status).toBe(200);
+      expect(await res.json()).toMatchObject({ ok: true, version: 1 });
+      expect(getDefaultEvalStore().listHarnessLessons(WS_ASYNC)).toHaveLength(
+        0,
+      );
+
+      resolveLlm(JSON.stringify({ cue: 'c', lesson: 'l', evidence: 'e' }));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(getDefaultEvalStore().listHarnessLessons(WS_ASYNC)).toHaveLength(
+        1,
+      );
+    } finally {
+      reflectState.enabled = false;
+      reflectState.completeImpl = null;
+    }
   });
 });

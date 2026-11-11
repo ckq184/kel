@@ -1,5 +1,5 @@
 {
-  "task": "任务AE后续 - agent 会话观测缺口修复：processAgentConversation（#agent: 会话处理链）补 turnObserver.onResult tap（与 processGroupMessages 主链路 7167 同构）——任务 AB 的观测 tap 只覆盖主 workspace 路径，用户与 agent profile 的对话 turn 从未落入 obs_turns，harness-evolve proposer 对此类 workspace 永远证据不足。范围扩宽仅 src/index.ts 一处（已提交任务AE范围外新发现）；由立项批准者复核。原任务AE声明见 git 历史。",
+  "task": "任务AE后续 - ① agent 会话观测缺口修复：processAgentConversation（#agent: 会话处理链）补 turnObserver.onResult tap（与 processGroupMessages 主链路 7167 同构）——任务 AB 的观测 tap 只覆盖主 workspace 路径，用户与 agent profile 的对话 turn 从未落入 obs_turns，harness-evolve proposer 对此类 workspace 永远证据不足。范围扩宽仅 src/index.ts 一处；由立项批准者复核。② 采纳路由非阻塞修复：adopt 不再 await distilLesson（lesson 蒸馏 LLM 调用拖慢响应导致用户重复点击撞状态机 409），改 fire-and-forget（distilLesson 内部全捕获）；回归测试锁定「响应先回、lesson 后落」。原任务AE声明见 git 历史。",
   "base": "44670f9",
   "allow": [
     "src/index.ts",

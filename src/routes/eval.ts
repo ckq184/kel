@@ -388,7 +388,11 @@ evalRoutes.post(
       proposal.adapterMd,
       version.version,
     );
-    await distilLesson(proposal);
+    // Fire-and-forget: the LLM distillation round-trip must not hold the
+    // adoption response open (a slow endpoint made the first click look
+    // failed and the retry hit the state machine's 409). distilLesson
+    // catches everything internally; the lesson lands when it lands.
+    void distilLesson(proposal);
     return c.json({ ok: true, version: version.version });
   },
 );
