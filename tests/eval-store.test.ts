@@ -84,7 +84,7 @@ describe('EvalStore schema', () => {
         const version = raw.prepare('PRAGMA user_version').get() as {
           user_version: number;
         };
-        expect(version.user_version).toBe(1);
+        expect(version.user_version).toBe(2);
         const tables = (
           raw
             .prepare(
@@ -93,7 +93,12 @@ describe('EvalStore schema', () => {
             .all() as Array<{ name: string }>
         ).map((row) => row.name);
         expect(tables).toEqual(
-          expect.arrayContaining(['eval_runs', 'eval_run_items', 'obs_turns']),
+          expect.arrayContaining([
+            'eval_runs',
+            'eval_run_items',
+            'obs_turns',
+            'eval_datasets',
+          ]),
         );
       } finally {
         raw.close();
@@ -133,7 +138,7 @@ describe('EvalStore schema', () => {
   test('refuses to open a database stamped with a newer user_version', () => {
     const dbPath = freshStorePath('newer');
     const raw = new Database(dbPath);
-    raw.exec('PRAGMA user_version = 2');
+    raw.exec('PRAGMA user_version = 3');
     raw.close();
     expect(() => EvalStore.open(dbPath)).toThrow(/newer than supported/i);
   });
@@ -577,5 +582,140 @@ describe('observability config', () => {
     expect(config.enabled).toBe(true);
     expect(config.contentMode).toBe('full');
     expect(config.judge.enabled).toBe(true);
+  });
+});
+
+// ── eval_datasets (task AD: managed golden sets, v2) ────────────────────────
+
+describe('EvalStore datasets', () => {
+  test('migration seeds the builtin auto-recall set from the shipped JSON', () => {
+    const store = EvalStore.open(freshStorePath('ds-seed'));
+    try {
+      const list = store.listDatasets();
+      const builtin = list.find((item) => item.name === 'auto-recall');
+      expect(builtin).toMatchObject({ source: 'builtin' });
+      expect(builtin!.seedCount).toBeGreaterThan(0);
+      expect(builtin!.queryCount).toBeGreaterThan(0);
+      // List projection never carries the data payload.
+      expect(
+        (builtin as unknown as Record<string, unknown>).data,
+      ).toBeUndefined();
+    } finally {
+      store.close();
+    }
+  });
+
+  test('re-seeding on reopen is idempotent (one builtin row)', () => {
+    const dbPath = freshStorePath('ds-idempotent');
+    const first = EvalStore.open(dbPath);
+    first.close();
+    const second = EvalStore.open(dbPath);
+    try {
+      expect(
+        second.listDatasets().filter((item) => item.name === 'auto-recall'),
+      ).toHaveLength(1);
+    } finally {
+      second.close();
+    }
+  });
+
+  test('upsert + get round-trip a manual set', () => {
+    const store = EvalStore.open(freshStorePath('ds-crud'));
+    try {
+      const data = {
+        seed: [
+          {
+            marker: 'M1',
+            content: '记忆一，含独特关键词 alpha。',
+            keys: ['alpha'],
+          },
+        ],
+        queries: [
+          {
+            id: 'q1',
+            category: 'verbatim' as const,
+            text: 'alpha 是什么',
+            expected: ['M1'],
+          },
+          {
+            id: 'q2',
+            category: 'paraphrase' as const,
+            text: '换个说法问 alpha',
+            expected: ['M1'],
+          },
+          {
+            id: 'q3',
+            category: 'multi' as const,
+            text: 'multi query',
+            expected: ['M1'],
+          },
+          {
+            id: 'q4',
+            category: 'truncation' as const,
+            text: `${'长'.repeat(600)}alpha`,
+            expected: ['M1'],
+          },
+        ],
+      };
+      store.upsertDataset({
+        name: 'my-set',
+        description: '手写集',
+        data,
+        source: 'manual',
+      });
+      const loaded = store.getDataset('my-set');
+      expect(loaded).toMatchObject({
+        name: 'my-set',
+        description: '手写集',
+        source: 'manual',
+      });
+      expect(loaded!.data).toEqual(data);
+      expect(loaded!.data.queries).toHaveLength(4);
+      // Upsert with same name replaces the payload and bumps updated_at.
+      const revised = {
+        ...data,
+        description: undefined,
+        queries: data.queries.slice(0, 1),
+      };
+      store.upsertDataset({
+        name: 'my-set',
+        data: { seed: data.seed, queries: revised.queries },
+        source: 'manual',
+      });
+      expect(store.getDataset('my-set')!.data.queries).toHaveLength(1);
+      expect(store.getDataset('missing')).toBeNull();
+    } finally {
+      store.close();
+    }
+  });
+
+  test('deleteDataset distinguishes builtin / not_found / deleted', () => {
+    const store = EvalStore.open(freshStorePath('ds-del'));
+    try {
+      expect(store.deleteDataset('auto-recall')).toBe('builtin');
+      expect(store.deleteDataset('missing')).toBe('not_found');
+      store.upsertDataset({
+        name: 'temp',
+        data: {
+          seed: [{ marker: 'M1', content: 'c alpha', keys: ['alpha'] }],
+          queries: [
+            { id: 'q1', category: 'verbatim', text: 'q', expected: ['M1'] },
+            { id: 'q2', category: 'paraphrase', text: 'q', expected: ['M1'] },
+            { id: 'q3', category: 'multi', text: 'q', expected: ['M1'] },
+            {
+              id: 'q4',
+              category: 'truncation',
+              text: 'x'.repeat(501),
+              expected: ['M1'],
+            },
+          ],
+        },
+        source: 'manual',
+      });
+      expect(store.deleteDataset('temp')).toBe('deleted');
+      expect(store.getDataset('temp')).toBeNull();
+    } finally {
+      store.close();
+    }
   });
 });

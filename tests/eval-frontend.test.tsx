@@ -59,11 +59,11 @@ const IDLE_TRIGGER = {
 beforeEach(() => {
   apiGet.mockReset();
   apiPost.mockReset();
-  apiGet.mockImplementation(async (url: string) =>
-    url.includes('trigger/status')
-      ? IDLE_TRIGGER
-      : { runs: [], total: 0, items: [] },
-  );
+  apiGet.mockImplementation(async (url: string) => {
+    if (url.includes('trigger/status')) return IDLE_TRIGGER;
+    if (url.startsWith('/api/eval/datasets')) return { datasets: [] };
+    return { runs: [], total: 0, items: [] };
+  });
 });
 
 afterEach(() => {
@@ -175,6 +175,7 @@ describe('EvalPage tabs (DOM)', () => {
         return { items: [turnFixture], total: 1 };
       }
       if (url.includes('trigger/status')) return IDLE_TRIGGER;
+      if (url.startsWith('/api/eval/datasets')) return { datasets: [] };
       return { runs: [] };
     });
     await renderPage();
@@ -247,5 +248,135 @@ describe('EvalPage web trigger (task AC)', () => {
     expect(trigger).toBeTruthy();
     expect((trigger as HTMLButtonElement).disabled).toBe(true);
     expect(container?.textContent).toContain('golden set: 20 memories');
+  });
+});
+
+const datasetFixture = {
+  name: 'auto-recall',
+  description: '内置召回评测集',
+  data: {
+    seed: [
+      { marker: 'M01', content: '用户是 Java 后端开发者。', keys: ['Java'] },
+    ],
+    queries: [
+      { id: 'q1', category: 'verbatim', text: 'Java?', expected: ['M01'] },
+    ],
+  },
+  source: 'builtin',
+  createdAt: '2026-11-11T08:00:00.000Z',
+  updatedAt: '2026-11-11T08:00:00.000Z',
+};
+
+function stubDatasets(apiGetMock: ReturnType<typeof vi.fn>, withDetail = true) {
+  apiGetMock.mockImplementation(async (url: string) => {
+    if (url.includes('trigger/status')) return IDLE_TRIGGER;
+    if (url.startsWith('/api/eval/datasets/')) {
+      return withDetail ? datasetFixture : null;
+    }
+    if (url.startsWith('/api/eval/datasets')) {
+      return {
+        datasets: [
+          {
+            name: 'auto-recall',
+            description: '内置召回评测集',
+            source: 'builtin',
+            seedCount: 20,
+            queryCount: 17,
+            createdAt: datasetFixture.createdAt,
+            updatedAt: datasetFixture.updatedAt,
+          },
+        ],
+      };
+    }
+    return { runs: [], total: 0, items: [] };
+  });
+}
+
+describe('EvalPage datasets tab (task AD)', () => {
+  test('admins see the datasets tab; members do not', async () => {
+    state.isAdmin = true;
+    stubDatasets(apiGet);
+    await renderPage();
+    const tabButtons = [
+      ...container!.querySelectorAll('button[role="tab"]'),
+    ].map((button) => button.textContent);
+    expect(tabButtons).toEqual(['离线评测', '真实对话', '评测集']);
+
+    state.isAdmin = false;
+    await renderPage();
+    const memberTabs = [
+      ...container!.querySelectorAll('button[role="tab"]'),
+    ].map((button) => button.textContent);
+    expect(memberTabs).toEqual(['离线评测']);
+  });
+
+  test('dataset list renders builtin set; editor opens with visual rows', async () => {
+    state.isAdmin = true;
+    stubDatasets(apiGet);
+    await renderPage();
+    const tab = [...container!.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('评测集'),
+    );
+    await act(async () => {
+      tab?.click();
+    });
+    await act(async () => {});
+
+    expect(container?.textContent).toContain('auto-recall');
+    expect(container?.textContent).toContain('20');
+
+    // Open the editor on the first dataset.
+    const open = [...container!.querySelectorAll('button')].find((button) =>
+      button.getAttribute('aria-label')?.includes('auto-recall'),
+    );
+    await act(async () => {
+      open?.click();
+    });
+    await act(async () => {});
+
+    // Visual editor: seed row fields + query row fields both rendered.
+    expect(container?.querySelector('[data-ds-seed-marker]')).toBeTruthy();
+    expect(container?.querySelector('[data-ds-seed-content]')).toBeTruthy();
+    expect(container?.querySelector('[data-ds-seed-keys]')).toBeTruthy();
+    expect(container?.querySelector('[data-ds-query-id]')).toBeTruthy();
+    expect(container?.querySelector('[data-ds-query-category]')).toBeTruthy();
+    expect(container?.querySelector('[data-ds-query-text]')).toBeTruthy();
+    expect(container?.querySelector('[data-ds-query-expected]')).toBeTruthy();
+  });
+
+  test('import entry (JSON paste + file) and new-set button exist', async () => {
+    state.isAdmin = true;
+    stubDatasets(apiGet, false);
+    await renderPage();
+    const tab = [...container!.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('评测集'),
+    );
+    await act(async () => {
+      tab?.click();
+    });
+    await act(async () => {});
+
+    expect(container?.querySelector('[data-ds-import-text]')).toBeTruthy();
+    expect(container?.querySelector('[data-ds-import-file]')).toBeTruthy();
+    const newButton = [...container!.querySelectorAll('button')].find(
+      (button) => button.textContent?.includes('新建评测集'),
+    );
+    expect(newButton).toBeTruthy();
+  });
+
+  test('trigger dialog offers a dataset selector', async () => {
+    state.isAdmin = true;
+    stubDatasets(apiGet);
+    await renderPage();
+    const trigger = [...container!.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('运行评测'),
+    );
+    await act(async () => {
+      trigger?.click();
+    });
+    await act(async () => {});
+    const select = container?.querySelector('[data-eval-run-dataset]');
+    expect(select).toBeTruthy();
+    expect(select?.textContent).toContain('auto-recall');
   });
 });

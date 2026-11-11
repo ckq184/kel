@@ -675,9 +675,16 @@ capturedAt }`（不存 messageIds 全量）。preview 无对应端点——前�
   `recallInjected`/`judge`（`judged`|`pending`）筛选与 `limit`/`offset` 分页
 - `POST /api/eval/runs/trigger`——（任务 AC）以宿主子进程 spawn 命令行执行器
   发起一次离线评测（费用敏感；参数白名单：`k` 1–10、`runName`
-  `[\w-]{1,64}`、`reset`；运行中重复触发 409；15 分钟超时）
+  `[\w-]{1,64}`、`reset`、`dataset`（缺省 `auto-recall`）；运行中重复触发
+  409；15 分钟超时）
 - `GET /api/eval/runs/trigger/status`——触发器快照与日志 tail（WS 事件
   `eval_run_log`/`eval_run_complete` 同步推送，均 admin-only）
+- 评测集管理（任务 AD，`eval.db` v2 `eval_datasets` 表；保存/导入均过
+  `validateGoldenSet` 校验，`issues` 逐条返回）：`GET /api/eval/datasets`
+  （列表不含数据正文）、`GET /api/eval/datasets/:name`、`POST
+/api/eval/datasets`（创建，201）、`PUT /api/eval/datasets/:name`（更新，
+  保留 source）、`DELETE /api/eval/datasets/:name`（builtin 409）。内置集
+  `auto-recall` 由 `scripts/eval/auto-recall-golden.json` 迁移播种
 
 ## 管理、监控与问题报告
 

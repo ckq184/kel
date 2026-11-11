@@ -21,6 +21,7 @@ import {
   datasetItemPayload,
   evalStoreRunPayload,
   hitRateAtK,
+  resolveGoldenSet,
   mapTextToMarkers,
   precisionAtK,
   recallAtK,
@@ -509,5 +510,70 @@ describe('native eval.db payload (task AB default landing zone)', () => {
     });
     expect(payload.items[1].note).toBeUndefined();
     expect(payload.items[1].mrr).toBe(0);
+  });
+});
+
+describe('dataset resolution (task AD: DB first, builtin file fallback)', () => {
+  const fileData: GoldenSet = {
+    seed: [
+      { marker: 'F1', content: 'file content key-file', keys: ['key-file'] },
+    ],
+    queries: [
+      { id: 'q1', category: 'verbatim', text: 'a key-file', expected: ['F1'] },
+      {
+        id: 'q2',
+        category: 'paraphrase',
+        text: 'b key-file',
+        expected: ['F1'],
+      },
+      { id: 'q3', category: 'multi', text: 'c key-file', expected: ['F1'] },
+      {
+        id: 'q4',
+        category: 'truncation',
+        text: `${'x'.repeat(501)} key-file`,
+        expected: ['F1'],
+      },
+    ],
+  };
+  const dbData: GoldenSet = {
+    seed: [{ marker: 'D1', content: 'db content key-db', keys: ['key-db'] }],
+    queries: fileData.queries.map((query) => ({
+      ...query,
+      expected: ['D1'],
+    })),
+  };
+
+  test('prefers the eval.db copy when present', () => {
+    const resolved = resolveGoldenSet({
+      dataset: 'auto-recall',
+      readFile: () => JSON.stringify(fileData),
+      loadFromDb: (name) => (name === 'auto-recall' ? dbData : null),
+    });
+    expect(resolved).toEqual({ data: dbData, source: 'db' });
+  });
+
+  test("falls back to the builtin file only for 'auto-recall'", () => {
+    const resolved = resolveGoldenSet({
+      dataset: 'auto-recall',
+      readFile: () => JSON.stringify(fileData),
+      loadFromDb: () => null,
+    });
+    expect(resolved).toEqual({ data: fileData, source: 'builtin-file' });
+    const missing = resolveGoldenSet({
+      dataset: 'other-set',
+      readFile: () => JSON.stringify(fileData),
+      loadFromDb: () => null,
+    });
+    expect('error' in missing && missing.error).toMatch(/not found/i);
+  });
+
+  test('invalid data from either channel is rejected with issues', () => {
+    const broken = resolveGoldenSet({
+      dataset: 'auto-recall',
+      readFile: () => JSON.stringify({ seed: [], queries: [] }),
+      loadFromDb: () => null,
+    });
+    expect('error' in broken).toBe(true);
+    expect('issues' in broken && Array.isArray(broken.issues)).toBe(true);
   });
 });

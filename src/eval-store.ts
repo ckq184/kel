@@ -1,10 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import Database from 'better-sqlite3';
 
 import { STORE_DIR } from './config.js';
 import { logger } from './logger.js';
+import { validateGoldenSet, type GoldenSet } from './eval-dataset.js';
 
 /**
  * Native evaluation store (task AB) — `data/db/eval.db`.
@@ -17,10 +19,19 @@ import { logger } from './logger.js';
  * (messages.db's CURRENT_SCHEMA_VERSION is untouched by design).
  *
  * Versioning contract mirrors db.ts: forward-only migrations, refuse
- * downgrades, no backup gate needed at v1 (fresh file, no legacy installs).
+ * downgrades, no backup gate needed (fresh file, additive migrations only).
+ *
+ * History: v1 (task AB) eval_runs / eval_run_items / obs_turns;
+ * v2 (task AD) eval_datasets + builtin auto-recall seeding.
  */
 
-const EVAL_SCHEMA_VERSION = 1;
+const EVAL_SCHEMA_VERSION = 2;
+
+/** Builtin seed source (repo file; content pinned by the golden-set tests). */
+const BUILTIN_GOLDEN_SET_PATH = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '../scripts/eval/auto-recall-golden.json',
+);
 
 /**
  * Score-name registry shared by backend, runner emissions, and the eval page
@@ -164,6 +175,46 @@ export type ObsTurnUpdate = Partial<
 
 export type ObsTurnRecord = Required<ObsTurnInsert>;
 
+// ── Managed golden sets (task AD, eval.db v2) ────────────────────────────────
+
+export type EvalDatasetSource = 'builtin' | 'manual' | 'import';
+
+export interface EvalDatasetUpsertInput {
+  name: string;
+  description?: string | null;
+  data: GoldenSet;
+  source: EvalDatasetSource;
+}
+
+export interface EvalDatasetRecord {
+  name: string;
+  description: string | null;
+  data: GoldenSet;
+  source: EvalDatasetSource;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** List projection — counts only, never the data payload. */
+export interface EvalDatasetListItem {
+  name: string;
+  description: string | null;
+  source: EvalDatasetSource;
+  seedCount: number;
+  queryCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EvalDatasetRow {
+  name: string;
+  description: string | null;
+  data_json: string;
+  source: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ObsTurnListFilter {
   workspaceJid?: string;
   channel?: string;
@@ -235,6 +286,40 @@ function parseJsonColumn<T>(raw: string | null, fallback: T): T {
     return JSON.parse(raw) as T;
   } catch {
     return fallback;
+  }
+}
+
+/**
+ * v2 migration seed: the shipped golden JSON becomes the builtin dataset
+ * (`auto-recall`). Missing file or invalid content skips seeding (never
+ * blocks migration — the file stays the fallback source for the harness).
+ */
+function seedBuiltinDataset(db: Database.Database): void {
+  try {
+    const raw = fs.readFileSync(BUILTIN_GOLDEN_SET_PATH, 'utf8');
+    const data = JSON.parse(raw) as GoldenSet;
+    if (validateGoldenSet(data).length > 0) {
+      logger.warn(
+        'builtin golden set failed validation — skipping dataset seed',
+      );
+      return;
+    }
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO eval_datasets (name, description, data_json, source, created_at, updated_at)
+       VALUES ('auto-recall', ?, ?, 'builtin', ?, ?)
+       ON CONFLICT(name) DO NOTHING`,
+    ).run(
+      '内置召回评测集（来源：scripts/eval/auto-recall-golden.json）',
+      JSON.stringify(data),
+      now,
+      now,
+    );
+  } catch (error) {
+    logger.warn(
+      { err: error },
+      'builtin golden set file unavailable — dataset seed skipped',
+    );
   }
 }
 
@@ -373,6 +458,14 @@ export class EvalStore {
           judge_model TEXT,
           created_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS eval_datasets (
+          name TEXT PRIMARY KEY,
+          description TEXT,
+          data_json TEXT NOT NULL,
+          source TEXT NOT NULL DEFAULT 'manual',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
         CREATE INDEX IF NOT EXISTS idx_eval_run_items_run
           ON eval_run_items(run_id);
         CREATE INDEX IF NOT EXISTS idx_obs_turns_created
@@ -381,9 +474,12 @@ export class EvalStore {
           ON obs_turns(workspace_jid);
         PRAGMA user_version = ${EVAL_SCHEMA_VERSION};
       `);
+      if (version < 2) {
+        seedBuiltinDataset(db);
+      }
       logger.info(
-        { path: resolved, version: EVAL_SCHEMA_VERSION },
-        'eval.db initialized',
+        { path: resolved, version: EVAL_SCHEMA_VERSION, from: version },
+        'eval.db initialized/migrated',
       );
     }
     return new EvalStore(db);
@@ -656,6 +752,80 @@ export class EvalStore {
       )
       .all(Math.min(Math.max(limit, 1), 100)) as ObsTurnRow[];
     return rows.map(mapTurnRow);
+  }
+
+  // ── eval_datasets (task AD) ───────────────────────────────────────────────
+
+  /** Callers validate `data` (validateGoldenSet) before upserting. */
+  upsertDataset(input: EvalDatasetUpsertInput): void {
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO eval_datasets (name, description, data_json, source, created_at, updated_at)
+         VALUES (@name, @description, @dataJson, @source, @now, @now)
+         ON CONFLICT(name) DO UPDATE SET
+           description = excluded.description,
+           data_json = excluded.data_json,
+           source = excluded.source,
+           updated_at = excluded.updated_at`,
+      )
+      .run({
+        name: input.name,
+        description: input.description ?? null,
+        dataJson: JSON.stringify(input.data),
+        source: input.source,
+        now,
+      });
+  }
+
+  getDataset(name: string): EvalDatasetRecord | null {
+    const row = this.db
+      .prepare('SELECT * FROM eval_datasets WHERE name = ?')
+      .get(name) as EvalDatasetRow | undefined;
+    if (!row) return null;
+    return {
+      name: row.name,
+      description: row.description,
+      data: parseJsonColumn<GoldenSet>(row.data_json, {
+        seed: [],
+        queries: [],
+      }),
+      source: row.source as EvalDatasetSource,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  listDatasets(): EvalDatasetListItem[] {
+    const rows = this.db
+      .prepare('SELECT * FROM eval_datasets ORDER BY name')
+      .all() as EvalDatasetRow[];
+    return rows.map((row) => {
+      const data = parseJsonColumn<GoldenSet>(row.data_json, {
+        seed: [],
+        queries: [],
+      });
+      return {
+        name: row.name,
+        description: row.description,
+        source: row.source as EvalDatasetSource,
+        seedCount: Array.isArray(data.seed) ? data.seed.length : 0,
+        queryCount: Array.isArray(data.queries) ? data.queries.length : 0,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      };
+    });
+  }
+
+  /** Builtin sets are permanent (plan §1-4); the repo file is the fallback. */
+  deleteDataset(name: string): 'deleted' | 'not_found' | 'builtin' {
+    const row = this.db
+      .prepare('SELECT source FROM eval_datasets WHERE name = ?')
+      .get(name) as { source: string } | undefined;
+    if (!row) return 'not_found';
+    if (row.source === 'builtin') return 'builtin';
+    this.db.prepare('DELETE FROM eval_datasets WHERE name = ?').run(name);
+    return 'deleted';
   }
 }
 

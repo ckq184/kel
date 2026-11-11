@@ -28,6 +28,10 @@ export interface EvalTriggerInput {
   k: number;
   runName: string;
   reset: boolean;
+  /** Golden set name (task AD); omit to let the harness default to
+   * `auto-recall`. Route-level whitelist `[\\w-]{1,64}` closes the argv
+   * injection surface. */
+  dataset?: string;
   startedBy: string;
 }
 
@@ -73,6 +77,7 @@ export function buildEvalRunArgs(input: {
   k: number;
   runName: string;
   reset: boolean;
+  dataset?: string;
 }): string[] {
   const args = [
     'scripts/eval-auto-recall.ts',
@@ -82,6 +87,7 @@ export function buildEvalRunArgs(input: {
     input.runName,
   ];
   if (input.reset) args.push('--reset');
+  if (input.dataset) args.push('--dataset', input.dataset);
   return args;
 }
 

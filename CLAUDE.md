@@ -335,6 +335,10 @@ no-op、零写库**）；env `CKQCLAW_OBSERVABILITY_ENABLED` /
   `manage_system_config`）。评测页另有 admin-only「运行评测」按钮（任务 AC，
   `POST /api/eval/runs/trigger` 以子进程 spawn 同一脚本，WS 进度
   `eval_run_log`/`eval_run_complete`，互斥 + 15 分钟超时）。
+- 评测集管理（任务 AD）：eval.db v2 `eval_datasets` 表存多套 golden set
+  （内置 `auto-recall` 由仓库 JSON 播种），「评测集」tab（admin）可视化
+  编辑/导入/导出，保存过 `validateGoldenSet`；评测按 `--dataset`/触发弹窗
+  选集（eval.db 优先，`auto-recall` 回退仓库文件），run 的 config 记集名。
 
 ## 10. 开发与验证
 

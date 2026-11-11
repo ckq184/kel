@@ -197,3 +197,29 @@ describe('startEvalRun', () => {
     expect(state.result).toBeNull();
   });
 });
+
+describe('buildEvalRunArgs dataset flag (task AD)', () => {
+  test('omits --dataset when unset (default auto-recall in the harness)', () => {
+    expect(buildEvalRunArgs({ k: 5, runName: 'r', reset: false })).toEqual([
+      'scripts/eval-auto-recall.ts',
+      '--k',
+      '5',
+      '--run-name',
+      'r',
+    ]);
+  });
+
+  test('appends the whitelist-checked dataset name', () => {
+    expect(
+      buildEvalRunArgs({ k: 5, runName: 'r', reset: false, dataset: 'my-set' }),
+    ).toEqual([
+      'scripts/eval-auto-recall.ts',
+      '--k',
+      '5',
+      '--run-name',
+      'r',
+      '--dataset',
+      'my-set',
+    ]);
+  });
+});

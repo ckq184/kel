@@ -331,3 +331,157 @@ describe('POST /runs/trigger + GET /runs/trigger/status (task AC)', () => {
     });
   });
 });
+
+// ── Managed datasets (task AD) ──────────────────────────────────────────────
+
+const VALID_DATA = {
+  seed: [
+    {
+      marker: 'M1',
+      content: '记忆内容，含独特关键词 alpha。',
+      keys: ['alpha'],
+    },
+  ],
+  queries: [
+    { id: 'q1', category: 'verbatim', text: 'alpha 是什么', expected: ['M1'] },
+    {
+      id: 'q2',
+      category: 'paraphrase',
+      text: '换个说法问 alpha',
+      expected: ['M1'],
+    },
+    { id: 'q3', category: 'multi', text: '综合问题 alpha', expected: ['M1'] },
+    {
+      id: 'q4',
+      category: 'truncation',
+      text: `${'长'.repeat(600)}alpha`,
+      expected: ['M1'],
+    },
+  ],
+};
+
+describe('dataset endpoints (task AD)', () => {
+  test('unauthenticated callers get 401; members get 403', async () => {
+    const list = await evalRoutes.request('/datasets');
+    expect(list.status).toBe(401);
+    const memberList = await evalRoutes.request('/datasets', {
+      headers: MEMBER,
+    });
+    expect(memberList.status).toBe(403);
+    const memberCreate = await evalRoutes.request('/datasets', {
+      method: 'POST',
+      headers: MEMBER,
+      body: JSON.stringify({ name: 'x', data: VALID_DATA }),
+    });
+    expect(memberCreate.status).toBe(403);
+  });
+
+  test('admin sees the seeded builtin dataset in the list (no data payload)', async () => {
+    const res = await evalRoutes.request('/datasets', { headers: ADMIN });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    const builtin = body.datasets.find(
+      (item: { name: string }) => item.name === 'auto-recall',
+    );
+    expect(builtin).toMatchObject({ source: 'builtin' });
+    expect(builtin.seedCount).toBeGreaterThan(0);
+    expect(builtin.queryCount).toBeGreaterThan(0);
+    expect(builtin.data).toBeUndefined();
+  });
+
+  test('create validates through validateGoldenSet and rejects bad data with issues', async () => {
+    const bad = await evalRoutes.request('/datasets', {
+      method: 'POST',
+      headers: ADMIN,
+      body: JSON.stringify({
+        name: 'bad-set',
+        data: { seed: [], queries: [] },
+      }),
+    });
+    expect(bad.status).toBe(400);
+    const body = await bad.json();
+    expect(Array.isArray(body.issues)).toBe(true);
+    expect(body.issues.length).toBeGreaterThan(0);
+  });
+
+  test('create + get + update round-trip; name pattern enforced', async () => {
+    const badName = await evalRoutes.request('/datasets', {
+      method: 'POST',
+      headers: ADMIN,
+      body: JSON.stringify({ name: 'bad name!', data: VALID_DATA }),
+    });
+    expect(badName.status).toBe(400);
+
+    const create = await evalRoutes.request('/datasets', {
+      method: 'POST',
+      headers: ADMIN,
+      body: JSON.stringify({
+        name: 'my-set',
+        description: '手写',
+        data: VALID_DATA,
+      }),
+    });
+    expect(create.status).toBe(201);
+
+    const get = await evalRoutes.request('/datasets/my-set', {
+      headers: ADMIN,
+    });
+    expect(get.status).toBe(200);
+    const loaded = await get.json();
+    expect(loaded).toMatchObject({ name: 'my-set', source: 'manual' });
+    expect(loaded.data.queries).toHaveLength(4);
+
+    const update = await evalRoutes.request('/datasets/my-set', {
+      method: 'PUT',
+      headers: ADMIN,
+      body: JSON.stringify({ description: '改', data: VALID_DATA }),
+    });
+    expect(update.status).toBe(200);
+    expect(
+      (await evalRoutes.request('/datasets/missing', { headers: ADMIN }))
+        .status,
+    ).toBe(404);
+  });
+
+  test('builtin dataset cannot be deleted; manual sets can', async () => {
+    const builtin = await evalRoutes.request('/datasets/auto-recall', {
+      method: 'DELETE',
+      headers: ADMIN,
+    });
+    expect(builtin.status).toBe(409);
+
+    await evalRoutes.request('/datasets', {
+      method: 'POST',
+      headers: ADMIN,
+      body: JSON.stringify({ name: 'temp-set', data: VALID_DATA }),
+    });
+    const del = await evalRoutes.request('/datasets/temp-set', {
+      method: 'DELETE',
+      headers: ADMIN,
+    });
+    expect(del.status).toBe(200);
+    expect(
+      (await evalRoutes.request('/datasets/temp-set', { headers: ADMIN }))
+        .status,
+    ).toBe(404);
+  });
+
+  test('trigger accepts an optional dataset param (validated, forwarded)', async () => {
+    const bad = await evalRoutes.request('/runs/trigger', {
+      method: 'POST',
+      headers: ADMIN,
+      body: JSON.stringify({ k: 5, runName: 'r', dataset: 'bad name' }),
+    });
+    expect(bad.status).toBe(400);
+
+    const ok = await evalRoutes.request('/runs/trigger', {
+      method: 'POST',
+      headers: ADMIN,
+      body: JSON.stringify({ k: 5, runName: 'r', dataset: 'auto-recall' }),
+    });
+    expect(ok.status).toBe(202);
+    expect(triggerState.startCalls[0]).toMatchObject({
+      dataset: 'auto-recall',
+    });
+  });
+});

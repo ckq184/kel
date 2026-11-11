@@ -101,6 +101,50 @@ function formatTime(iso: string): string {
   }
 }
 
+interface DatasetListItem {
+  name: string;
+  description: string | null;
+  source: 'builtin' | 'manual' | 'import';
+  seedCount: number;
+  queryCount: number;
+  updatedAt: string;
+}
+
+interface DatasetDetail {
+  name: string;
+  description: string | null;
+  source: 'builtin' | 'manual' | 'import';
+  data: {
+    seed: Array<{ marker: string; content: string; keys: string[] }>;
+    queries: Array<{
+      id: string;
+      category: 'verbatim' | 'paraphrase' | 'multi' | 'truncation';
+      text: string;
+      expected: string[];
+      note?: string;
+    }>;
+  };
+}
+
+interface ApiErrorShape {
+  status: number;
+  message: string;
+  body?: { issues?: string[] };
+}
+
+function extractIssues(err: unknown): string[] | null {
+  const shaped = err as ApiErrorShape | null;
+  const issues = shaped?.body?.issues;
+  return Array.isArray(issues) && issues.length > 0 ? issues : null;
+}
+
+const GOLDEN_CATEGORIES = [
+  'verbatim',
+  'paraphrase',
+  'multi',
+  'truncation',
+] as const;
+
 function MetricChip({ label, value }: { label: string; value: string }) {
   return (
     <span className="inline-flex items-baseline gap-1 text-xs text-muted-foreground">
@@ -120,7 +164,13 @@ interface TriggerState {
   result: { success: boolean; error?: string } | null;
 }
 
-function EvalRunsPanel({ canTrigger }: { canTrigger: boolean }) {
+function EvalRunsPanel({
+  canTrigger,
+  datasets,
+}: {
+  canTrigger: boolean;
+  datasets: DatasetListItem[];
+}) {
   const [runs, setRuns] = useState<EvalRun[]>([]);
   const [detail, setDetail] = useState<{
     run: EvalRun;
@@ -136,6 +186,7 @@ function EvalRunsPanel({ canTrigger }: { canTrigger: boolean }) {
   const [triggerK, setTriggerK] = useState(5);
   const [triggerRunName, setTriggerRunName] = useState('');
   const [triggerReset, setTriggerReset] = useState(false);
+  const [triggerDataset, setTriggerDataset] = useState('auto-recall');
   const [triggerSubmitting, setTriggerSubmitting] = useState(false);
   const [triggerError, setTriggerError] = useState<string | null>(null);
 
@@ -197,6 +248,7 @@ function EvalRunsPanel({ canTrigger }: { canTrigger: boolean }) {
         k: triggerK,
         runName,
         reset: triggerReset,
+        dataset: triggerDataset,
       });
       setDialogOpen(false);
       setTrigger({
@@ -211,7 +263,7 @@ function EvalRunsPanel({ canTrigger }: { canTrigger: boolean }) {
     } finally {
       setTriggerSubmitting(false);
     }
-  }, [triggerK, triggerRunName, triggerReset]);
+  }, [triggerK, triggerRunName, triggerReset, triggerDataset]);
 
   const openDetail = useCallback(async (id: string) => {
     setComparison(null);
@@ -314,6 +366,27 @@ function EvalRunsPanel({ canTrigger }: { canTrigger: boolean }) {
                   请求并产生费用；评测在宿主以后台子进程执行， 完成后自动写入
                   eval.db 并刷新列表。
                 </p>
+                <label className="mb-2 block text-sm">
+                  <span className="mb-1 block text-xs text-muted-foreground">
+                    评测集
+                  </span>
+                  <select
+                    data-eval-run-dataset
+                    className="w-full rounded-md border border-border bg-background px-2 py-1.5"
+                    value={triggerDataset}
+                    onChange={(event) => setTriggerDataset(event.target.value)}
+                  >
+                    {datasets.length === 0 && (
+                      <option value="auto-recall">auto-recall</option>
+                    )}
+                    {datasets.map((dataset) => (
+                      <option key={dataset.name} value={dataset.name}>
+                        {dataset.name}（{dataset.seedCount} 记忆 /{' '}
+                        {dataset.queryCount} 查询）
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 <label className="mb-2 block text-sm">
                   <span className="mb-1 block text-xs text-muted-foreground">
                     检索深度 k（1–10）
@@ -744,13 +817,592 @@ function ObservedTurnsPanel() {
   );
 }
 
+// ── Tab 3: managed golden sets (task AD, admin only) ────────────────────────
+
+interface SeedDraft {
+  marker: string;
+  content: string;
+  keysStr: string;
+}
+
+interface QueryDraft {
+  id: string;
+  category: (typeof GOLDEN_CATEGORIES)[number];
+  text: string;
+  expectedStr: string;
+  note: string;
+}
+
+function toDrafts(data: DatasetDetail['data']): {
+  seed: SeedDraft[];
+  queries: QueryDraft[];
+} {
+  return {
+    seed: data.seed.map((item) => ({
+      marker: item.marker,
+      content: item.content,
+      keysStr: item.keys.join(', '),
+    })),
+    queries: data.queries.map((item) => ({
+      id: item.id,
+      category: item.category,
+      text: item.text,
+      expectedStr: item.expected.join(', '),
+      note: item.note ?? '',
+    })),
+  };
+}
+
+function DatasetsPanel({
+  datasets,
+  reload,
+}: {
+  datasets: DatasetListItem[];
+  reload: () => void;
+}) {
+  const [editing, setEditing] = useState<{
+    name: string;
+    isNew: boolean;
+    source: string;
+    description: string;
+    seed: SeedDraft[];
+    queries: QueryDraft[];
+  } | null>(null);
+  const [issues, setIssues] = useState<string[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [importText, setImportText] = useState('');
+  const [importName, setImportName] = useState('');
+
+  const openDataset = useCallback(async (name: string) => {
+    setIssues(null);
+    setError(null);
+    try {
+      const detail = await api.get<DatasetDetail>(
+        `/api/eval/datasets/${encodeURIComponent(name)}`,
+      );
+      setEditing({
+        name: detail.name,
+        isNew: false,
+        source: detail.source,
+        description: detail.description ?? '',
+        ...toDrafts(detail.data),
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, []);
+
+  const startNew = useCallback(() => {
+    setIssues(null);
+    setError(null);
+    setEditing({
+      name: '',
+      isNew: true,
+      source: 'manual',
+      description: '',
+      seed: [{ marker: 'M1', content: '', keysStr: '' }],
+      queries: [
+        {
+          id: 'q1',
+          category: 'verbatim',
+          text: '',
+          expectedStr: '',
+          note: '',
+        },
+      ],
+    });
+  }, []);
+
+  const buildPayload = (
+    draft: NonNullable<typeof editing>,
+  ):
+    | { name: string; description: string; data: unknown }
+    | { invalid: string } => {
+    const seed = draft.seed.map((item) => ({
+      marker: item.marker.trim(),
+      content: item.content,
+      keys: item.keysStr
+        .split(/[,，]/)
+        .map((key) => key.trim())
+        .filter(Boolean),
+    }));
+    const queries = draft.queries.map((item) => ({
+      id: item.id.trim(),
+      category: item.category,
+      text: item.text,
+      expected: item.expectedStr
+        .split(/[,，]/)
+        .map((marker) => marker.trim())
+        .filter(Boolean),
+      ...(item.note.trim() ? { note: item.note.trim() } : {}),
+    }));
+    if (!/^[\w-]{1,64}$/.test(draft.name.trim())) {
+      return { invalid: '评测集名称需匹配 [\w-] 且不超过 64 字符' };
+    }
+    return {
+      name: draft.name.trim(),
+      description: draft.description.trim(),
+      data: { seed, queries },
+    };
+  };
+
+  const save = useCallback(async () => {
+    if (!editing) return;
+    const payload = buildPayload(editing);
+    if ('invalid' in payload) {
+      setError(payload.invalid);
+      return;
+    }
+    setSaving(true);
+    setIssues(null);
+    setError(null);
+    try {
+      if (editing.isNew) {
+        await api.post('/api/eval/datasets', payload);
+      } else {
+        await api.put(
+          `/api/eval/datasets/${encodeURIComponent(editing.name)}`,
+          {
+            description: payload.description,
+            data: payload.data,
+          },
+        );
+      }
+      setEditing(null);
+      reload();
+    } catch (err) {
+      setIssues(extractIssues(err));
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  }, [editing, reload]);
+
+  const remove = useCallback(
+    async (name: string) => {
+      setError(null);
+      try {
+        await api.delete(`/api/eval/datasets/${encodeURIComponent(name)}`);
+        setEditing(null);
+        reload();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [reload],
+  );
+
+  const exportDataset = useCallback(async (name: string) => {
+    try {
+      const detail = await api.get<DatasetDetail>(
+        `/api/eval/datasets/${encodeURIComponent(name)}`,
+      );
+      const blob = new Blob([JSON.stringify(detail.data, null, 2)], {
+        type: 'application/json',
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${detail.name}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, []);
+
+  const importDataset = useCallback(async () => {
+    setError(null);
+    setIssues(null);
+    try {
+      const data = JSON.parse(importText);
+      const name =
+        importName.trim() ||
+        `imported-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`;
+      await api.post('/api/eval/datasets', {
+        name,
+        data,
+        description: '导入的评测集',
+      });
+      setImportText('');
+      setImportName('');
+      reload();
+    } catch (err) {
+      setIssues(extractIssues(err));
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [importText, importName, reload]);
+
+  const patchEditing = (patch: Partial<NonNullable<typeof editing>>): void =>
+    setEditing((current) => (current ? { ...current, ...patch } : current));
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardContent className="p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-sm font-semibold">评测集</h3>
+            <Button size="sm" onClick={startNew}>
+              新建评测集
+            </Button>
+          </div>
+          {error && (
+            <p className="mb-2 text-sm text-destructive" role="alert">
+              {error}
+            </p>
+          )}
+          {issues && (
+            <ul
+              className="mb-2 list-disc pl-5 text-xs text-destructive"
+              role="alert"
+            >
+              {issues.map((issue) => (
+                <li key={issue}>{issue}</li>
+              ))}
+            </ul>
+          )}
+          <div className="space-y-2">
+            {datasets.map((dataset) => (
+              <div
+                key={dataset.name}
+                className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-border p-3"
+              >
+                <button
+                  type="button"
+                  className="min-w-0 flex-1 text-left"
+                  aria-label={`编辑 ${dataset.name}`}
+                  onClick={() => void openDataset(dataset.name)}
+                >
+                  <span className="block text-sm font-medium">
+                    {dataset.name}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {dataset.description ?? '—'} · {dataset.seedCount} 记忆 /{' '}
+                    {dataset.queryCount} 查询 · {dataset.source}
+                  </span>
+                </button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void exportDataset(dataset.name)}
+                >
+                  导出
+                </Button>
+                {dataset.source !== 'builtin' && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void remove(dataset.name)}
+                  >
+                    删除
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="p-4">
+          <h3 className="mb-2 text-sm font-semibold">导入评测集（JSON）</h3>
+          <p className="mb-2 text-xs text-muted-foreground">
+            格式与导出文件一致：{'{ seed: [...], queries: [...] }'}
+            ；保存前会跑完整性校验。
+          </p>
+          <input
+            className="mb-2 w-56 rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+            placeholder="新评测集名称（留空自动生成）"
+            value={importName}
+            onChange={(event) => setImportName(event.target.value)}
+          />
+          <input
+            data-ds-import-file
+            type="file"
+            accept="application/json,.json"
+            className="mb-2 block text-xs"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (!file) return;
+              const reader = new FileReader();
+              reader.onload = () => setImportText(String(reader.result ?? ''));
+              reader.readAsText(file);
+            }}
+          />
+          <textarea
+            data-ds-import-text
+            className="mb-2 h-32 w-full rounded-md border border-border bg-background p-2 font-mono text-xs"
+            placeholder='粘贴 JSON：{"seed": [...], "queries": [...]}'
+            value={importText}
+            onChange={(event) => setImportText(event.target.value)}
+          />
+          <Button
+            size="sm"
+            disabled={!importText.trim()}
+            onClick={() => void importDataset()}
+          >
+            解析并保存为新集
+          </Button>
+        </CardContent>
+      </Card>
+
+      {editing && (
+        <Card>
+          <CardContent className="p-4">
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <h3 className="text-sm font-semibold">
+                {editing.isNew ? '新建评测集' : `编辑 · ${editing.name}`}
+                {!editing.isNew && (
+                  <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-xs">
+                    {editing.source}
+                  </span>
+                )}
+              </h3>
+              <div className="ml-auto flex gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setEditing(null)}
+                >
+                  取消
+                </Button>
+                <Button size="sm" disabled={saving} onClick={() => void save()}>
+                  {saving ? '保存中…' : '保存（校验）'}
+                </Button>
+              </div>
+            </div>
+            <label className="mb-2 block text-sm">
+              <span className="mb-1 block text-xs text-muted-foreground">
+                评测集名称（创建后不可改）
+              </span>
+              <input
+                className="w-56 rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+                value={editing.name}
+                disabled={!editing.isNew}
+                onChange={(event) => patchEditing({ name: event.target.value })}
+              />
+            </label>
+            <label className="mb-3 block text-sm">
+              <span className="mb-1 block text-xs text-muted-foreground">
+                描述
+              </span>
+              <input
+                className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+                value={editing.description}
+                onChange={(event) =>
+                  patchEditing({ description: event.target.value })
+                }
+              />
+            </label>
+
+            <h4 className="mb-2 text-xs font-semibold">记忆条目（seed）</h4>
+            <div className="mb-3 space-y-2">
+              {editing.seed.map((item, index) => (
+                <div
+                  key={index}
+                  className="grid grid-cols-1 gap-2 rounded-lg border border-border p-2 md:grid-cols-[8rem_1fr_14rem_auto]"
+                >
+                  <input
+                    data-ds-seed-marker
+                    className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+                    placeholder="marker（如 M01）"
+                    value={item.marker}
+                    onChange={(event) => {
+                      const seed = [...editing.seed];
+                      seed[index] = { ...item, marker: event.target.value };
+                      patchEditing({ seed });
+                    }}
+                  />
+                  <textarea
+                    data-ds-seed-content
+                    className="h-16 rounded-md border border-border bg-background px-2 py-1 text-xs"
+                    placeholder="记忆内容（会被播种进侧车）"
+                    value={item.content}
+                    onChange={(event) => {
+                      const seed = [...editing.seed];
+                      seed[index] = { ...item, content: event.target.value };
+                      patchEditing({ seed });
+                    }}
+                  />
+                  <input
+                    data-ds-seed-keys
+                    className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+                    placeholder="关键词，逗号分隔（全局唯一）"
+                    value={item.keysStr}
+                    onChange={(event) => {
+                      const seed = [...editing.seed];
+                      seed[index] = { ...item, keysStr: event.target.value };
+                      patchEditing({ seed });
+                    }}
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    aria-label={`删除记忆 ${index + 1}`}
+                    onClick={() =>
+                      patchEditing({
+                        seed: editing.seed.filter((_, i) => i !== index),
+                      })
+                    }
+                  >
+                    删
+                  </Button>
+                </div>
+              ))}
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="mb-4"
+              onClick={() =>
+                patchEditing({
+                  seed: [
+                    ...editing.seed,
+                    { marker: '', content: '', keysStr: '' },
+                  ],
+                })
+              }
+            >
+              + 添加记忆
+            </Button>
+
+            <h4 className="mb-2 text-xs font-semibold">
+              查询（queries，四类需齐全）
+            </h4>
+            <div className="mb-3 space-y-2">
+              {editing.queries.map((item, index) => (
+                <div
+                  key={index}
+                  className="grid grid-cols-1 gap-2 rounded-lg border border-border p-2 md:grid-cols-[10rem_9rem_1fr_12rem_10rem_auto]"
+                >
+                  <input
+                    data-ds-query-id
+                    className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+                    placeholder="id（如 q1）"
+                    value={item.id}
+                    onChange={(event) => {
+                      const queries = [...editing.queries];
+                      queries[index] = { ...item, id: event.target.value };
+                      patchEditing({ queries });
+                    }}
+                  />
+                  <select
+                    data-ds-query-category
+                    className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+                    value={item.category}
+                    onChange={(event) => {
+                      const queries = [...editing.queries];
+                      queries[index] = {
+                        ...item,
+                        category: event.target.value as QueryDraft['category'],
+                      };
+                      patchEditing({ queries });
+                    }}
+                  >
+                    {GOLDEN_CATEGORIES.map((category) => (
+                      <option key={category} value={category}>
+                        {category}
+                      </option>
+                    ))}
+                  </select>
+                  <textarea
+                    data-ds-query-text
+                    className="h-16 rounded-md border border-border bg-background px-2 py-1 text-xs"
+                    placeholder="查询文本（truncation 类需超过 500 字符）"
+                    value={item.text}
+                    onChange={(event) => {
+                      const queries = [...editing.queries];
+                      queries[index] = { ...item, text: event.target.value };
+                      patchEditing({ queries });
+                    }}
+                  />
+                  <input
+                    data-ds-query-expected
+                    className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+                    placeholder="期望 marker，逗号分隔"
+                    value={item.expectedStr}
+                    onChange={(event) => {
+                      const queries = [...editing.queries];
+                      queries[index] = {
+                        ...item,
+                        expectedStr: event.target.value,
+                      };
+                      patchEditing({ queries });
+                    }}
+                  />
+                  <input
+                    className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+                    placeholder="备注（可选）"
+                    value={item.note}
+                    onChange={(event) => {
+                      const queries = [...editing.queries];
+                      queries[index] = { ...item, note: event.target.value };
+                      patchEditing({ queries });
+                    }}
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    aria-label={`删除查询 ${index + 1}`}
+                    onClick={() =>
+                      patchEditing({
+                        queries: editing.queries.filter((_, i) => i !== index),
+                      })
+                    }
+                  >
+                    删
+                  </Button>
+                </div>
+              ))}
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                patchEditing({
+                  queries: [
+                    ...editing.queries,
+                    {
+                      id: '',
+                      category: 'verbatim',
+                      text: '',
+                      expectedStr: '',
+                      note: '',
+                    },
+                  ],
+                })
+              }
+            >
+              + 添加查询
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
 // ── Page ────────────────────────────────────────────────────────────────────
 
 export function EvalPage() {
   const canManageSystem = useAuthStore((s) =>
     s.hasPermission('manage_system_config'),
   );
-  const [tab, setTab] = useState<'runs' | 'turns'>('runs');
+  const [tab, setTab] = useState<'runs' | 'turns' | 'datasets'>('runs');
+  const [datasets, setDatasets] = useState<DatasetListItem[]>([]);
+
+  const reloadDatasets = useCallback(() => {
+    if (!canManageSystem) return;
+    api
+      .get<{ datasets: DatasetListItem[] }>('/api/eval/datasets')
+      .then((data) => setDatasets(data.datasets))
+      .catch(() => {});
+  }, [canManageSystem]);
+
+  useEffect(() => {
+    reloadDatasets();
+  }, [reloadDatasets]);
 
   const tabs = useMemo(
     () =>
@@ -758,6 +1410,7 @@ export function EvalPage() {
         ? [
             { key: 'runs' as const, label: '离线评测' },
             { key: 'turns' as const, label: '真实对话' },
+            { key: 'datasets' as const, label: '评测集' },
           ]
         : [{ key: 'runs' as const, label: '离线评测' }],
     [canManageSystem],
@@ -786,10 +1439,12 @@ export function EvalPage() {
             </Button>
           ))}
         </div>
-        {tab === 'runs' ? (
-          <EvalRunsPanel canTrigger={canManageSystem} />
-        ) : (
-          <ObservedTurnsPanel />
+        {tab === 'runs' && (
+          <EvalRunsPanel canTrigger={canManageSystem} datasets={datasets} />
+        )}
+        {tab === 'turns' && <ObservedTurnsPanel />}
+        {tab === 'datasets' && (
+          <DatasetsPanel datasets={datasets} reload={reloadDatasets} />
         )}
       </div>
     </div>

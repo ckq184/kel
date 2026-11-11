@@ -46,35 +46,75 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-// ── Golden-set types ────────────────────────────────────────────────────────
+// ── Golden-set types + validation (moved to src/eval-dataset.ts, task AD) ───
+// Re-exported so the historical import surface (pure-logic unit tests) stays
+// intact; the host build compiles src/ only.
 
-export interface GoldenSeedItem {
-  marker: string;
-  content: string;
-  /** Distinctive substrings that survive mem0's LLM extraction; used to map
-   * stored/retrieved entries back to this item. Globally unique by rule. */
-  keys: string[];
-}
+import {
+  GOLDEN_CATEGORIES,
+  QUERY_MAX_CHARS,
+  validateGoldenSet,
+  type GoldenCategory,
+  type GoldenQuery,
+  type GoldenSeedItem,
+  type GoldenSet,
+} from '../src/eval-dataset.js';
 
-export type GoldenCategory = 'verbatim' | 'paraphrase' | 'multi' | 'truncation';
+export {
+  QUERY_MAX_CHARS,
+  validateGoldenSet,
+  type GoldenCategory,
+  type GoldenQuery,
+  type GoldenSeedItem,
+  type GoldenSet,
+};
 
-export interface GoldenQuery {
-  id: string;
-  category: GoldenCategory;
-  text: string;
-  expected: string[];
-  note?: string;
-}
+// ── Dataset resolution (task AD: eval.db first, builtin file fallback) ──────
 
-export interface GoldenSet {
-  seed: GoldenSeedItem[];
-  queries: GoldenQuery[];
+export type GoldenSetResolution =
+  | { data: GoldenSet; source: 'db' | 'builtin-file' }
+  | { error: string; issues?: string[] };
+
+/**
+ * Resolve the golden set for a run: the managed copy in eval.db wins (web
+ * editor writes land there); only `auto-recall` may fall back to the shipped
+ * repo file — unknown names are hard errors. Both channels run the same
+ * validateGoldenSet gate.
+ */
+export function resolveGoldenSet(input: {
+  dataset: string;
+  readFile: () => string | null;
+  loadFromDb: (name: string) => GoldenSet | null;
+}): GoldenSetResolution {
+  const fromDb = input.loadFromDb(input.dataset);
+  if (fromDb) {
+    const issues = validateGoldenSet(fromDb);
+    if (issues.length > 0)
+      return { error: 'invalid dataset (eval.db)', issues };
+    return { data: fromDb, source: 'db' };
+  }
+  if (input.dataset === 'auto-recall') {
+    const raw = input.readFile();
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw) as GoldenSet;
+        const issues = validateGoldenSet(parsed);
+        if (issues.length > 0) {
+          return { error: 'invalid dataset (builtin file)', issues };
+        }
+        return { data: parsed, source: 'builtin-file' };
+      } catch {
+        return { error: 'builtin golden set file is not valid JSON' };
+      }
+    }
+    return { error: 'builtin golden set file not found' };
+  }
+  return {
+    error: `dataset "${input.dataset}" not found (create it in the web eval page first)`,
+  };
 }
 
 // ── Pure logic (unit-tested in tests/eval-auto-recall-metrics.test.ts) ──────
-
-/** Mirrors the runner contract: trim first, then slice to the IPC limit. */
-export const QUERY_MAX_CHARS = 500;
 
 export function boundedQuery(
   query: string,
@@ -139,111 +179,6 @@ export function mapTextToMarkers(
     }
   }
   return [...matched];
-}
-
-const GOLDEN_CATEGORIES: ReadonlySet<string> = new Set([
-  'verbatim',
-  'paraphrase',
-  'multi',
-  'truncation',
-]);
-
-/** Integrity rules that keep the golden set measurable. Empty = valid. */
-export function validateGoldenSet(fixture: GoldenSet): string[] {
-  const issues: string[] = [];
-  const markers = new Set<string>();
-  const keyOwner = new Map<string, string>();
-
-  if (!Array.isArray(fixture.seed) || fixture.seed.length === 0) {
-    issues.push('seed must be a non-empty array');
-    return issues;
-  }
-  if (!Array.isArray(fixture.queries) || fixture.queries.length === 0) {
-    issues.push('queries must be a non-empty array');
-    return issues;
-  }
-
-  for (const item of fixture.seed) {
-    if (!item.marker) {
-      issues.push('seed marker must be non-empty');
-      continue;
-    }
-    if (markers.has(item.marker)) {
-      issues.push(`duplicate marker: ${item.marker}`);
-      continue;
-    }
-    markers.add(item.marker);
-    if (!item.content || !item.content.trim()) {
-      issues.push(`seed[${item.marker}] content must be non-empty`);
-    }
-    if (!Array.isArray(item.keys) || item.keys.length === 0) {
-      issues.push(`seed[${item.marker}] keys must be a non-empty array`);
-      continue;
-    }
-    for (const key of item.keys) {
-      if (!key || !key.trim()) {
-        issues.push(`seed[${item.marker}] has an empty key`);
-        continue;
-      }
-      const owner = keyOwner.get(key);
-      if (owner) {
-        issues.push(
-          `duplicate key "${key}" shared by ${owner} and ${item.marker}`,
-        );
-      } else {
-        keyOwner.set(key, item.marker);
-      }
-    }
-  }
-
-  // A key leaking into another item's content makes text→marker mapping
-  // ambiguous: that content would match the other item's marker too.
-  for (const item of fixture.seed) {
-    for (const [key, owner] of keyOwner) {
-      if (owner !== item.marker && item.content.includes(key)) {
-        issues.push(
-          `seed[${item.marker}] content contains key "${key}" owned by ${owner}`,
-        );
-      }
-    }
-  }
-
-  const seenCategories = new Set<string>();
-  for (const query of fixture.queries) {
-    if (!query.id) issues.push('query with empty id');
-    if (!GOLDEN_CATEGORIES.has(query.category)) {
-      issues.push(`query[${query.id}] unknown category: ${query.category}`);
-    } else {
-      seenCategories.add(query.category);
-    }
-    if (!query.text || !query.text.trim()) {
-      issues.push(`query[${query.id}] text must be non-empty`);
-    }
-    if (!Array.isArray(query.expected) || query.expected.length === 0) {
-      issues.push(`query[${query.id}] expected must be a non-empty array`);
-    } else {
-      for (const marker of query.expected) {
-        if (!markers.has(marker)) {
-          issues.push(`query[${query.id}] expected unknown marker ${marker}`);
-        }
-      }
-    }
-    if (
-      query.category === 'truncation' &&
-      query.text &&
-      query.text.trim().length <= QUERY_MAX_CHARS
-    ) {
-      issues.push(
-        `query[${query.id}] (truncation) text must exceed ${QUERY_MAX_CHARS} chars (got ${query.text.trim().length})`,
-      );
-    }
-  }
-  for (const category of GOLDEN_CATEGORIES) {
-    if (!seenCategories.has(category)) {
-      issues.push(`golden set missing category: ${category}`);
-    }
-  }
-  return issues;
 }
 
 export interface QueryResultRow {
@@ -579,6 +514,8 @@ interface CliOptions {
   /** Task AB: the Langfuse export is opt-in; eval.db is the default store. */
   langfuse: boolean;
   runName: string;
+  /** Task AD: managed golden set name (eval.db first, builtin file fallback). */
+  dataset: string;
 }
 
 function parseArgs(argv: readonly string[]): CliOptions {
@@ -588,6 +525,7 @@ function parseArgs(argv: readonly string[]): CliOptions {
     k: 5,
     langfuse: false,
     runName: `run-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '')}`,
+    dataset: 'auto-recall',
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -647,21 +585,35 @@ async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   const repoRoot = findRepoRoot();
 
-  // 1. Fixture validation (fully offline).
-  const fixture = JSON.parse(
-    fs.readFileSync(
-      path.join(repoRoot, 'scripts', 'eval', 'auto-recall-golden.json'),
-      'utf8',
-    ),
-  ) as GoldenSet;
-  const issues = validateGoldenSet(fixture);
-  if (issues.length > 0) {
+  // 1. Dataset resolution + validation (task AD: eval.db first, builtin file
+  // fallback). The store import is lazy so pure-logic unit tests never touch
+  // the module graph.
+  const { getDefaultEvalStore } = await import('../src/eval-store.js');
+  const resolution = resolveGoldenSet({
+    dataset: options.dataset,
+    readFile: () => {
+      try {
+        return fs.readFileSync(
+          path.join(repoRoot, 'scripts', 'eval', 'auto-recall-golden.json'),
+          'utf8',
+        );
+      } catch {
+        return null;
+      }
+    },
+    loadFromDb: (name) => getDefaultEvalStore().getDataset(name)?.data ?? null,
+  });
+  if ('error' in resolution) {
     process.stderr.write(
-      `golden set invalid:\n${issues.map((i) => `  - ${i}`).join('\n')}\n`,
+      `dataset "${options.dataset}" unusable: ${resolution.error}\n` +
+        (resolution.issues
+          ? `${resolution.issues.map((i) => `  - ${i}`).join('\n')}\n`
+          : ''),
     );
     process.exitCode = 1;
     return;
   }
+  const fixture = resolution.data;
 
   // Load host env + config lazily so unit tests can import the pure logic
   // above without pulling the server module graph.
@@ -697,7 +649,8 @@ async function main(): Promise<void> {
       : 'langfuse: --langfuse given but not configured — set CKQCLAW_EVAL_LANGFUSE_URL/_PUBLIC_KEY/_SECRET_KEY or data/config/eval-langfuse.json'
     : 'langfuse: export off (default; pass --langfuse to also write a Langfuse instance)';
   process.stdout.write(
-    `golden set: ${fixture.seed.length} memories / ${fixture.queries.length} queries (k=${options.k})\n` +
+    `dataset: ${options.dataset} (${resolution.source}); ` +
+      `golden set: ${fixture.seed.length} memories / ${fixture.queries.length} queries (k=${options.k})\n` +
       `config source: ${configSource}; ` +
       `llm model: ${hostConfig.llm?.model ?? '—'}; ` +
       `embedder model: ${hostConfig.embedder?.model ?? '—'}\n` +
@@ -914,6 +867,8 @@ async function main(): Promise<void> {
         aggregate,
         {
           source: configSource,
+          dataset: options.dataset,
+          datasetOrigin: resolution.source,
           llmModel: hostConfig.llm.model,
           embedderModel: hostConfig.embedder.model,
         },
