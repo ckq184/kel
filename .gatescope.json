@@ -7,6 +7,7 @@
     "tests/eval-trigger.test.ts",
     "src/routes/eval.ts",
     "src/web.ts",
+    "src/types.ts",
     "web/src/pages/EvalPage.tsx",
     "tests/eval-routes.test.ts",
     "tests/eval-frontend.test.tsx",

@@ -68,6 +68,7 @@ import billingRoutes from './routes/billing.js';
 import pricingRoutes from './routes/pricing.js';
 import bugReportRoutes from './routes/bug-report.js';
 import evalRoutes from './routes/eval.js';
+import { injectEvalTriggerDeps } from './eval-trigger.js';
 import channelAccountRoutes, {
   injectChannelAccountDeps,
 } from './routes/channel-accounts.js';
@@ -3225,6 +3226,19 @@ export function broadcastDockerPullComplete(
   safeBroadcast({ type: 'docker_pull_complete', success, error }, true);
 }
 
+// Task AC: eval-run progress goes to admins only — harness output can echo
+// golden-query text fragments (docker-pull broadcast precedent).
+export function broadcastEvalRunLog(line: string): void {
+  safeBroadcast({ type: 'eval_run_log', line }, true);
+}
+
+export function broadcastEvalRunComplete(
+  success: boolean,
+  error?: string,
+): void {
+  safeBroadcast({ type: 'eval_run_complete', success, error }, true);
+}
+
 function broadcastStatus(): void {
   if (!deps) return;
 
@@ -3275,6 +3289,10 @@ export function createAppForTest(webDeps: WebDeps): typeof app {
     broadcastDockerPullLog,
     broadcastDockerPullComplete,
   });
+  injectEvalTriggerDeps({
+    broadcastLog: broadcastEvalRunLog,
+    broadcastComplete: broadcastEvalRunComplete,
+  });
   return app;
 }
 
@@ -3286,6 +3304,10 @@ export function startWebServer(webDeps: WebDeps): void {
   injectMonitorDeps({
     broadcastDockerPullLog,
     broadcastDockerPullComplete,
+  });
+  injectEvalTriggerDeps({
+    broadcastLog: broadcastEvalRunLog,
+    broadcastComplete: broadcastEvalRunComplete,
   });
 
   httpServer = serve(

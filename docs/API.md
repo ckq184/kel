@@ -669,10 +669,15 @@ capturedAt }`（不存 messageIds 全量）。preview 无对应端点——前�
 - `GET /api/eval/runs/:id`——单个 run 含逐条查询结果
 - `GET /api/eval/comparison?ids=a,b`——多 run 指标并排（未知 id 返回 null 行）
 
-仅 `manage_system_config`（行内可含脱敏对话文本）：
+仅 `manage_system_config`：
 
 - `GET /api/eval/turns`——真实对话 turn 观测，支持 `workspace`/`channel`/
   `recallInjected`/`judge`（`judged`|`pending`）筛选与 `limit`/`offset` 分页
+- `POST /api/eval/runs/trigger`——（任务 AC）以宿主子进程 spawn 命令行执行器
+  发起一次离线评测（费用敏感；参数白名单：`k` 1–10、`runName`
+  `[\w-]{1,64}`、`reset`；运行中重复触发 409；15 分钟超时）
+- `GET /api/eval/runs/trigger/status`——触发器快照与日志 tail（WS 事件
+  `eval_run_log`/`eval_run_complete` 同步推送，均 admin-only）
 
 ## 管理、监控与问题报告
 

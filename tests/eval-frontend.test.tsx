@@ -10,9 +10,14 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 // Admin flag toggled per test group; the mocked auth store resolves it.
 const state = vi.hoisted(() => ({ isAdmin: false }));
 const apiGet = vi.hoisted(() => vi.fn());
+const apiPost = vi.hoisted(() => vi.fn());
 
 vi.mock('../web/src/api/client', () => ({
-  api: { get: apiGet },
+  api: { get: apiGet, post: apiPost },
+}));
+
+vi.mock('../web/src/api/ws', () => ({
+  wsManager: { on: vi.fn(() => () => {}) },
 }));
 
 vi.mock('../web/src/stores/auth', () => ({
@@ -43,9 +48,22 @@ async function renderPage(): Promise<void> {
   await act(async () => {});
 }
 
+const IDLE_TRIGGER = {
+  running: false,
+  startedAt: null,
+  startedBy: null,
+  lines: [] as string[],
+  result: null,
+};
+
 beforeEach(() => {
   apiGet.mockReset();
-  apiGet.mockResolvedValue({ runs: [], total: 0, items: [] });
+  apiPost.mockReset();
+  apiGet.mockImplementation(async (url: string) =>
+    url.includes('trigger/status')
+      ? IDLE_TRIGGER
+      : { runs: [], total: 0, items: [] },
+  );
 });
 
 afterEach(() => {
@@ -156,7 +174,7 @@ describe('EvalPage tabs (DOM)', () => {
       if (url.startsWith('/api/eval/turns')) {
         return { items: [turnFixture], total: 1 };
       }
-      if (url.startsWith('/api/eval/runs')) return { runs: [] };
+      if (url.includes('trigger/status')) return IDLE_TRIGGER;
       return { runs: [] };
     });
     await renderPage();
@@ -174,5 +192,60 @@ describe('EvalPage tabs (DOM)', () => {
     expect(container?.textContent).toContain('turn-1');
     expect(container?.textContent).toContain('web:ws-a');
     expect(container?.textContent).toContain('真实对话');
+  });
+});
+
+describe('EvalPage web trigger (task AC)', () => {
+  test('members never see the run-trigger button', async () => {
+    state.isAdmin = false;
+    await renderPage();
+    expect(container?.textContent).not.toContain('运行评测');
+  });
+
+  test('admins see the trigger button and a cost-warning dialog with fields', async () => {
+    state.isAdmin = true;
+    await renderPage();
+
+    const trigger = [...container!.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('运行评测'),
+    );
+    expect(trigger).toBeTruthy();
+    await act(async () => {
+      trigger?.click();
+    });
+    await act(async () => {});
+
+    const dialog = container?.querySelector(
+      '[role="dialog"], [data-eval-run-dialog]',
+    );
+    expect(dialog).toBeTruthy();
+    expect(dialog?.textContent).toContain('费用');
+    expect(dialog?.querySelector('[data-eval-run-k]')).toBeTruthy();
+    expect(dialog?.querySelector('[data-eval-run-name]')).toBeTruthy();
+    expect(dialog?.querySelector('[data-eval-run-reset]')).toBeTruthy();
+  });
+
+  test('while a run is active the trigger button is disabled and progress shows', async () => {
+    state.isAdmin = true;
+    apiGet.mockImplementation(async (url: string) => {
+      if (url.includes('/runs/trigger/status')) {
+        return {
+          running: true,
+          startedAt: 1,
+          startedBy: 'user-admin',
+          lines: ['golden set: 20 memories / 17 queries (k=5)'],
+          result: null,
+        };
+      }
+      return { runs: [] };
+    });
+    await renderPage();
+
+    const trigger = [...container!.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('运行评测'),
+    );
+    expect(trigger).toBeTruthy();
+    expect((trigger as HTMLButtonElement).disabled).toBe(true);
+    expect(container?.textContent).toContain('golden set: 20 memories');
   });
 });

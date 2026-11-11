@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FlaskConical, RefreshCw } from 'lucide-react';
+import { FlaskConical, PlayCircle, RefreshCw } from 'lucide-react';
 
 import { api } from '@/api/client';
+import { wsManager } from '@/api/ws';
 import { useAuthStore } from '@/stores/auth';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -111,7 +112,15 @@ function MetricChip({ label, value }: { label: string; value: string }) {
 
 // ── Tab 1: offline runs ─────────────────────────────────────────────────────
 
-function EvalRunsPanel() {
+interface TriggerState {
+  running: boolean;
+  startedAt: number | null;
+  startedBy: string | null;
+  lines: string[];
+  result: { success: boolean; error?: string } | null;
+}
+
+function EvalRunsPanel({ canTrigger }: { canTrigger: boolean }) {
   const [runs, setRuns] = useState<EvalRun[]>([]);
   const [detail, setDetail] = useState<{
     run: EvalRun;
@@ -121,6 +130,14 @@ function EvalRunsPanel() {
   const [comparison, setComparison] = useState<ComparisonRow[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Task AC web trigger (admin only): spawn the CLI harness from the page.
+  const [trigger, setTrigger] = useState<TriggerState | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [triggerK, setTriggerK] = useState(5);
+  const [triggerRunName, setTriggerRunName] = useState('');
+  const [triggerReset, setTriggerReset] = useState(false);
+  const [triggerSubmitting, setTriggerSubmitting] = useState(false);
+  const [triggerError, setTriggerError] = useState<string | null>(null);
 
   const loadRuns = useCallback(async () => {
     setLoading(true);
@@ -138,6 +155,63 @@ function EvalRunsPanel() {
   useEffect(() => {
     void loadRuns();
   }, [loadRuns]);
+
+  // Trigger state: initial snapshot + live WS log lines (admin-only events,
+  // docker-pull precedent). Completion refreshes the run list.
+  useEffect(() => {
+    if (!canTrigger) return;
+    api
+      .get<TriggerState>('/api/eval/runs/trigger/status')
+      .then((data) => setTrigger(data))
+      .catch(() => {});
+    const unsubLog = wsManager.on('eval_run_log', (data: { line: string }) => {
+      setTrigger((current) =>
+        current
+          ? { ...current, lines: [...current.lines.slice(-199), data.line] }
+          : current,
+      );
+    });
+    const unsubComplete = wsManager.on(
+      'eval_run_complete',
+      (data: { success: boolean; error?: string }) => {
+        setTrigger((current) =>
+          current ? { ...current, running: false, result: data } : current,
+        );
+        void loadRuns();
+      },
+    );
+    return () => {
+      unsubLog();
+      unsubComplete();
+    };
+  }, [canTrigger, loadRuns]);
+
+  const submitTrigger = useCallback(async () => {
+    setTriggerSubmitting(true);
+    setTriggerError(null);
+    try {
+      const runName =
+        triggerRunName.trim() ||
+        `web-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '')}`;
+      await api.post('/api/eval/runs/trigger', {
+        k: triggerK,
+        runName,
+        reset: triggerReset,
+      });
+      setDialogOpen(false);
+      setTrigger({
+        running: true,
+        startedAt: Date.now(),
+        startedBy: null,
+        lines: [],
+        result: null,
+      });
+    } catch (err) {
+      setTriggerError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setTriggerSubmitting(false);
+    }
+  }, [triggerK, triggerRunName, triggerReset]);
 
   const openDetail = useCallback(async (id: string) => {
     setComparison(null);
@@ -178,6 +252,19 @@ function EvalRunsPanel() {
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-sm font-semibold">评测 Runs</h3>
             <div className="flex items-center gap-2">
+              {canTrigger && (
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setTriggerError(null);
+                    setDialogOpen(true);
+                  }}
+                  disabled={trigger?.running === true}
+                >
+                  <PlayCircle className="w-4 h-4" />
+                  运行评测
+                </Button>
+              )}
               {compareIds.length > 0 && (
                 <Button
                   size="sm"
@@ -200,6 +287,98 @@ function EvalRunsPanel() {
               </Button>
             </div>
           </div>
+          {canTrigger &&
+            trigger &&
+            (trigger.running || trigger.lines.length > 0) && (
+              <div className="mb-3 rounded-lg border border-border p-3">
+                <p className="mb-1 text-xs font-medium">
+                  {trigger.running ? '评测运行中…' : '上次评测输出'}
+                  {trigger.startedBy ? `（由 ${trigger.startedBy} 触发）` : ''}
+                </p>
+                <pre className="max-h-40 overflow-y-auto whitespace-pre-wrap break-words rounded bg-muted/50 p-2 text-xs">
+                  {trigger.lines.slice(-12).join('\n')}
+                </pre>
+              </div>
+            )}
+          {dialogOpen && (
+            <div
+              role="dialog"
+              data-eval-run-dialog
+              aria-label="运行评测"
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+            >
+              <div className="w-full max-w-md rounded-xl border border-border bg-card p-4 shadow-lg">
+                <h4 className="mb-2 text-sm font-semibold">运行离线评测</h4>
+                <p className="mb-3 rounded bg-amber-500/10 p-2 text-xs text-amber-600 dark:text-amber-400">
+                  将发起真实 embedder/LLM
+                  请求并产生费用；评测在宿主以后台子进程执行， 完成后自动写入
+                  eval.db 并刷新列表。
+                </p>
+                <label className="mb-2 block text-sm">
+                  <span className="mb-1 block text-xs text-muted-foreground">
+                    检索深度 k（1–10）
+                  </span>
+                  <select
+                    data-eval-run-k
+                    className="w-full rounded-md border border-border bg-background px-2 py-1.5"
+                    value={triggerK}
+                    onChange={(event) =>
+                      setTriggerK(Number(event.target.value))
+                    }
+                  >
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((value) => (
+                      <option key={value} value={value}>
+                        k={value}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="mb-2 block text-sm">
+                  <span className="mb-1 block text-xs text-muted-foreground">
+                    Run 名称（字母/数字/连字符，留空自动生成）
+                  </span>
+                  <input
+                    data-eval-run-name
+                    className="w-full rounded-md border border-border bg-background px-2 py-1.5"
+                    value={triggerRunName}
+                    placeholder="如 k5-baseline"
+                    onChange={(event) => setTriggerRunName(event.target.value)}
+                  />
+                </label>
+                <label className="mb-3 flex items-center gap-2 text-sm">
+                  <input
+                    data-eval-run-reset
+                    type="checkbox"
+                    checked={triggerReset}
+                    onChange={(event) => setTriggerReset(event.target.checked)}
+                  />
+                  重置评测侧车存储（--reset，强制重新播种）
+                </label>
+                {triggerError && (
+                  <p className="mb-2 text-sm text-destructive" role="alert">
+                    {triggerError}
+                  </p>
+                )}
+                <div className="flex justify-end gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setDialogOpen(false)}
+                    disabled={triggerSubmitting}
+                  >
+                    取消
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={triggerSubmitting}
+                    onClick={() => void submitTrigger()}
+                  >
+                    {triggerSubmitting ? '启动中…' : '确认运行'}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
           {error && (
             <p className="mb-2 text-sm text-destructive" role="alert">
               {error}
@@ -607,7 +786,11 @@ export function EvalPage() {
             </Button>
           ))}
         </div>
-        {tab === 'runs' ? <EvalRunsPanel /> : <ObservedTurnsPanel />}
+        {tab === 'runs' ? (
+          <EvalRunsPanel canTrigger={canManageSystem} />
+        ) : (
+          <ObservedTurnsPanel />
+        )}
       </div>
     </div>
   );

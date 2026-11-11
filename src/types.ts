@@ -972,6 +972,8 @@ export type WsMessageOut =
   | { type: 'group_created'; jid: string; folder: string; name: string }
   | { type: 'docker_pull_log'; line: string }
   | { type: 'docker_pull_complete'; success: boolean; error?: string }
+  | { type: 'eval_run_log'; line: string }
+  | { type: 'eval_run_complete'; success: boolean; error?: string }
   | {
       type: 'whatsapp_status';
       userId: string;
