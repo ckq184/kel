@@ -84,7 +84,7 @@ describe('EvalStore schema', () => {
         const version = raw.prepare('PRAGMA user_version').get() as {
           user_version: number;
         };
-        expect(version.user_version).toBe(3);
+        expect(version.user_version).toBe(4);
         const tables = (
           raw
             .prepare(
@@ -141,7 +141,7 @@ describe('EvalStore schema', () => {
   test('refuses to open a database stamped with a newer user_version', () => {
     const dbPath = freshStorePath('newer');
     const raw = new Database(dbPath);
-    raw.exec('PRAGMA user_version = 4');
+    raw.exec('PRAGMA user_version = 5');
     raw.close();
     expect(() => EvalStore.open(dbPath)).toThrow(/newer than supported/i);
   });
@@ -764,7 +764,7 @@ describe('EvalStore harness (v3)', () => {
           .prepare('PRAGMA user_version')
           .get() as { user_version: number }
       ).user_version;
-      expect(version).toBe(3);
+      expect(version).toBe(4);
       const tables = (
         (store as unknown as { db: Database.Database }).db
           .prepare(
@@ -785,7 +785,7 @@ describe('EvalStore harness (v3)', () => {
   test('refuses a future v4 database (forward-only contract)', () => {
     const dbPath = freshStorePath('hv-v4');
     const raw = new Database(dbPath);
-    raw.exec('PRAGMA user_version = 4');
+    raw.exec('PRAGMA user_version = 5');
     raw.close();
     expect(() => EvalStore.open(dbPath)).toThrow(/refusing downgrade/i);
   });
@@ -958,5 +958,124 @@ describe('EvalStore harness (v3)', () => {
     } finally {
       store.close();
     }
+  });
+});
+
+// ── obs_turns adapter attribution (v4, task AF) ─────────────────────────────
+
+describe('EvalStore adapter attribution (v4)', () => {
+  test('fresh open stamps user_version 4 with the adapter_version column', () => {
+    const store = EvalStore.open(freshStorePath('af-fresh'));
+    try {
+      const raw = (store as unknown as { db: Database.Database }).db;
+      const version = (
+        raw.prepare('PRAGMA user_version').get() as { user_version: number }
+      ).user_version;
+      expect(version).toBe(4);
+      const cols = (
+        raw.prepare('PRAGMA table_info(obs_turns)').all() as { name: string }[]
+      ).map((col) => col.name);
+      expect(cols).toContain('adapter_version');
+    } finally {
+      store.close();
+    }
+  });
+
+  test('an existing v3 database migrates in place and backfills baseline 0', () => {
+    const dbPath = freshStorePath('af-v3');
+    // Forge a v3-era database: open (creates v4), then drop the column by
+    // recreating the table without it and stamping user_version = 3.
+    const store = EvalStore.open(dbPath);
+    store.close();
+    const raw = new Database(dbPath);
+    raw.exec('PRAGMA foreign_keys=off');
+    raw.exec('BEGIN');
+    raw.exec('CREATE TABLE obs_turns_v3 AS SELECT * FROM obs_turns');
+    raw.exec('DROP TABLE obs_turns');
+    raw.exec('ALTER TABLE obs_turns_v3 RENAME TO obs_turns');
+    raw.exec('COMMIT');
+    raw.exec('PRAGMA user_version = 3');
+    raw.close();
+    // Reopen: v3 → v4 adds the column, idempotent on reopen.
+    const migrated = EvalStore.open(dbPath);
+    try {
+      const db = (migrated as unknown as { db: Database.Database }).db;
+      const cols = (
+        db.prepare('PRAGMA table_info(obs_turns)').all() as { name: string }[]
+      ).map((col) => col.name);
+      expect(cols).toContain('adapter_version');
+      const again = EvalStore.open(dbPath);
+      again.close();
+    } finally {
+      migrated.close();
+    }
+  });
+
+  test('insertTurn round-trips adapterVersion; default is baseline 0', () => {
+    const store = EvalStore.open(freshStorePath('af-insert'));
+    try {
+      store.insertTurn({
+        turnId: 'af-t1',
+        workspaceJid: 'ws-af@g.us',
+        adapterVersion: 1,
+      });
+      store.insertTurn({ turnId: 'af-t2', workspaceJid: 'ws-af@g.us' });
+      const items = store.listTurns({ workspaceJid: 'ws-af@g.us' }).items;
+      const t1 = items.find((item) => item.turnId === 'af-t1');
+      const t2 = items.find((item) => item.turnId === 'af-t2');
+      expect(t1?.adapterVersion).toBe(1);
+      expect(t2?.adapterVersion).toBe(0);
+    } finally {
+      store.close();
+    }
+  });
+
+  test('listHarnessWorkspaces unions turns and proposals, newest first', () => {
+    const store = EvalStore.open(freshStorePath('af-ws'));
+    try {
+      store.insertTurn({
+        turnId: 'af-w1',
+        workspaceJid: 'ws-turns@g.us',
+        createdAt: '2026-11-11T01:00:00Z',
+      });
+      store.insertTurn({
+        turnId: 'af-w2',
+        workspaceJid: 'ws-turns@g.us',
+        createdAt: '2026-11-11T02:00:00Z',
+      });
+      store.insertHarnessProposal({
+        id: 'af-hp1',
+        workspaceJid: 'ws-only-proposal@g.us',
+        adapterMd: 'x',
+        keepBase: false,
+        diff: null,
+        rationale: 'r',
+        evidence: [],
+        baselineVersion: 0,
+        model: 'm',
+        promptHash: 'h',
+      });
+      const list = store.listHarnessWorkspaces();
+      const turns = list.find((w) => w.workspaceJid === 'ws-turns@g.us');
+      expect(turns).toMatchObject({ turnCount: 2, proposalCount: 0 });
+      expect(turns?.lastTurnAt).toBe('2026-11-11T02:00:00Z');
+      const onlyProposals = list.find(
+        (w) => w.workspaceJid === 'ws-only-proposal@g.us',
+      );
+      expect(onlyProposals).toMatchObject({ turnCount: 0, proposalCount: 1 });
+      expect(list[0].workspaceJid).toBe(
+        list.find((w) => w.lastTurnAt)?.workspaceJid ?? list[0].workspaceJid,
+      );
+    } finally {
+      store.close();
+    }
+  });
+
+  test('refuses a future v5 database', () => {
+    const dbPath = freshStorePath('af-v5');
+    const raw = new Database(dbPath);
+    raw.exec('PRAGMA user_version = 5');
+    raw.close();
+    expect(() => EvalStore.open(dbPath)).toThrow(/refusing downgrade/i);
   });
 });

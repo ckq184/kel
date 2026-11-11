@@ -87,6 +87,8 @@ interface ObservedTurn {
   judgeUsed: number | null;
   judgeReasoning: string | null;
   judgeModel: string | null;
+  /** Adapter version active when the turn ran; 0/undefined = baseline (task AF). */
+  adapterVersion?: number | null;
   createdAt: string;
 }
 
@@ -803,6 +805,11 @@ function ObservedTurnsPanel() {
                   <span className="text-xs text-muted-foreground">
                     judge:{judgeLabel(turn)}
                   </span>
+                  <span className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                    {turn.adapterVersion && turn.adapterVersion > 0
+                      ? `adapter v${turn.adapterVersion}`
+                      : '基线'}
+                  </span>
                   <span className="text-xs text-muted-foreground">
                     {num(turn.durationMs)}ms
                   </span>
@@ -1495,9 +1502,17 @@ interface HarnessLessonItem {
 const HARNESS_STATUS_LABEL: Record<HarnessProposalListItem['status'], string> =
   { pending: '待审', adopted: '已采纳', rejected: '已拒绝', invalid: '无效' };
 
+interface HarnessWorkspaceItem {
+  workspaceJid: string;
+  turnCount: number;
+  lastTurnAt: string | null;
+  proposalCount: number;
+}
+
 function HarnessEvolvePanel() {
   const [workspace, setWorkspace] = useState('');
   const [loadedWorkspace, setLoadedWorkspace] = useState('');
+  const [workspaces, setWorkspaces] = useState<HarnessWorkspaceItem[]>([]);
   const [proposals, setProposals] = useState<HarnessProposalListItem[]>([]);
   const [versions, setVersions] = useState<HarnessVersionItem[]>([]);
   const [lessons, setLessons] = useState<HarnessLessonItem[]>([]);
@@ -1532,6 +1547,16 @@ function HarnessEvolvePanel() {
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  useEffect(() => {
+    // Workspace selector source (task AF); silent failure keeps manual entry.
+    api
+      .get<{ workspaces: HarnessWorkspaceItem[] }>(
+        '/api/eval/harness/workspaces',
+      )
+      .then((data) => setWorkspaces(data.workspaces ?? []))
+      .catch(() => {});
   }, []);
 
   const openDetail = useCallback(async (id: string) => {
@@ -1590,6 +1615,25 @@ function HarnessEvolvePanel() {
       <Card>
         <CardContent className="p-4">
           <div className="flex flex-wrap items-center gap-2">
+            <select
+              data-harness-workspace-select
+              className="max-w-72 rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+              value=""
+              onChange={(event) => {
+                if (event.target.value) setWorkspace(event.target.value);
+              }}
+            >
+              <option value="">选择工作区…</option>
+              {workspaces.map((item) => (
+                <option key={item.workspaceJid} value={item.workspaceJid}>
+                  {item.workspaceJid}（{item.turnCount} turns
+                  {item.proposalCount > 0
+                    ? ` / ${item.proposalCount} 提案`
+                    : ''}
+                  ）
+                </option>
+              ))}
+            </select>
             <input
               data-harness-workspace
               className="w-72 rounded-md border border-border bg-background px-2 py-1.5 text-sm"

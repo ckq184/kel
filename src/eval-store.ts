@@ -26,7 +26,7 @@ import { validateGoldenSet, type GoldenSet } from './eval-dataset.js';
  * v2 (task AD) eval_datasets + builtin auto-recall seeding.
  */
 
-const EVAL_SCHEMA_VERSION = 3;
+const EVAL_SCHEMA_VERSION = 4;
 
 /** Builtin seed source (repo file; content pinned by the golden-set tests). */
 const BUILTIN_GOLDEN_SET_PATH = path.resolve(
@@ -167,6 +167,8 @@ export interface ObsTurnInsert {
   judgeError?: string | null;
   judgePromptHash?: string | null;
   judgeModel?: string | null;
+  /** Adapter version active when the turn ran; 0 = baseline (task AF). */
+  adapterVersion?: number | null;
   createdAt?: string;
 }
 
@@ -401,6 +403,7 @@ interface ObsTurnRow {
   judge_error: string | null;
   judge_prompt_hash: string | null;
   judge_model: string | null;
+  adapter_version: number;
   created_at: string;
 }
 
@@ -516,6 +519,7 @@ function mapTurnRow(row: ObsTurnRow): ObsTurnRecord {
     judgeError: row.judge_error,
     judgePromptHash: row.judge_prompt_hash,
     judgeModel: row.judge_model,
+    adapterVersion: row.adapter_version,
     createdAt: row.created_at,
   };
 }
@@ -592,6 +596,7 @@ export class EvalStore {
           judge_error TEXT,
           judge_prompt_hash TEXT,
           judge_model TEXT,
+          adapter_version INTEGER NOT NULL DEFAULT 0,
           created_at TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS eval_datasets (
@@ -654,6 +659,20 @@ export class EvalStore {
       `);
       if (version < 2) {
         seedBuiltinDataset(db);
+      }
+      if (version < 4) {
+        // v4 attribution column (task AF): pre-v4 databases miss it; existing
+        // rows backfill to 0 = baseline (no adapter was active).
+        const hasColumn = (
+          db.prepare('PRAGMA table_info(obs_turns)').all() as {
+            name: string;
+          }[]
+        ).some((col) => col.name === 'adapter_version');
+        if (!hasColumn) {
+          db.exec(
+            'ALTER TABLE obs_turns ADD COLUMN adapter_version INTEGER NOT NULL DEFAULT 0',
+          );
+        }
       }
       logger.info(
         { path: resolved, version: EVAL_SCHEMA_VERSION, from: version },
@@ -799,12 +818,14 @@ export class EvalStore {
           (turn_id, session_id, workspace_jid, folder, channel, interaction_mode,
            auto_recall_enabled, recall_injected, recall_hit_count, recall_latency_ms,
            input_text, output_text, input_tokens, output_tokens, cost_usd, duration_ms,
-           judge_used, judge_reasoning, judge_error, judge_prompt_hash, judge_model, created_at)
+           judge_used, judge_reasoning, judge_error, judge_prompt_hash, judge_model,
+           adapter_version, created_at)
         VALUES
           (@turnId, @sessionId, @workspaceJid, @folder, @channel, @interactionMode,
            @autoRecallEnabled, @recallInjected, @recallHitCount, @recallLatencyMs,
            @inputText, @outputText, @inputTokens, @outputTokens, @costUsd, @durationMs,
-           @judgeUsed, @judgeReasoning, @judgeError, @judgePromptHash, @judgeModel, @createdAt)
+           @judgeUsed, @judgeReasoning, @judgeError, @judgePromptHash, @judgeModel,
+           @adapterVersion, @createdAt)
         ON CONFLICT(turn_id) DO NOTHING
       `,
       )
@@ -829,6 +850,7 @@ export class EvalStore {
         judgeError: null,
         judgePromptHash: null,
         judgeModel: null,
+        adapterVersion: 0,
         ...turn,
         createdAt: turn.createdAt ?? new Date().toISOString(),
       });
@@ -1215,6 +1237,47 @@ export class EvalStore {
       confidence: row.confidence,
       proposalId: row.proposal_id,
       createdAt: row.created_at,
+    }));
+  }
+
+  /**
+   * Workspaces with harness activity (observed turns ∪ proposals), newest
+   * turn first; feeds the Web tab's workspace selector (task AF).
+   */
+  listHarnessWorkspaces(): Array<{
+    workspaceJid: string;
+    turnCount: number;
+    lastTurnAt: string | null;
+    proposalCount: number;
+  }> {
+    interface Row {
+      workspace_jid: string;
+      turn_count: number;
+      last_turn_at: string | null;
+      proposal_count: number;
+    }
+    const rows = this.db
+      .prepare(
+        `SELECT jid.workspace_jid AS workspace_jid,
+                COALESCE(t.turn_count, 0) AS turn_count,
+                t.last_turn_at AS last_turn_at,
+                COALESCE(p.proposal_count, 0) AS proposal_count
+         FROM (SELECT workspace_jid FROM obs_turns WHERE workspace_jid IS NOT NULL
+               UNION SELECT workspace_jid FROM harness_proposals) AS jid
+         LEFT JOIN (SELECT workspace_jid, COUNT(*) AS turn_count, MAX(created_at) AS last_turn_at
+                    FROM obs_turns GROUP BY workspace_jid) AS t
+           ON t.workspace_jid = jid.workspace_jid
+         LEFT JOIN (SELECT workspace_jid, COUNT(*) AS proposal_count
+                    FROM harness_proposals GROUP BY workspace_jid) AS p
+           ON p.workspace_jid = jid.workspace_jid
+         ORDER BY t.last_turn_at DESC, jid.workspace_jid`,
+      )
+      .all() as Row[];
+    return rows.map((row) => ({
+      workspaceJid: row.workspace_jid,
+      turnCount: row.turn_count,
+      lastTurnAt: row.last_turn_at,
+      proposalCount: row.proposal_count,
     }));
   }
 }

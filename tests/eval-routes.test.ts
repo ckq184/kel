@@ -753,3 +753,28 @@ describe('harness adopt is non-blocking (task AE follow-up)', () => {
     }
   });
 });
+
+// ── GET /harness/workspaces (task AF) ───────────────────────────────────────
+
+describe('GET /harness/workspaces', () => {
+  test('admin only; returns the union with counts', async () => {
+    getDefaultEvalStore().insertTurn({
+      turnId: 'af-route-t1',
+      workspaceJid: 'ws-af-route@g.us',
+      adapterVersion: 1,
+    });
+    const denied = await evalRoutes.request('/harness/workspaces', {
+      headers: MEMBER,
+    });
+    expect(denied.status).toBe(403);
+    const res = await evalRoutes.request('/harness/workspaces', {
+      headers: ADMIN,
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    const row = body.workspaces.find(
+      (w: { workspaceJid: string }) => w.workspaceJid === 'ws-af-route@g.us',
+    );
+    expect(row).toMatchObject({ turnCount: 1, proposalCount: 0 });
+  });
+});

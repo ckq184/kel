@@ -484,6 +484,7 @@ import {
 } from './billing.js';
 import { recordUsageEvent } from './usage-service.js';
 import { turnObserver } from './turn-observer.js';
+import { buildHarnessAdapterInput } from './harness-adapter-store.js';
 import { startRecallJudgeScheduler } from './recall-judge.js';
 import {
   AgentStatus,
@@ -7174,6 +7175,10 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
               inputText: prompt,
               defaultTurnId: lastProcessed.id,
               sessionId: activeSessionId,
+              // Task AF: attribute the turn to the adapter version it ran
+              // under (ACTIVE at observation time; readAdapterFile is
+              // total — read failures report the 0 baseline).
+              adapterVersion: buildHarnessAdapterInput(chatJid)?.version ?? 0,
             },
             result,
           );
@@ -15399,6 +15404,8 @@ async function processAgentConversation(
         inputText: prompt,
         defaultTurnId: lastProcessed.id,
         sessionId,
+        // Task AF attribution: adapter version active for this turn.
+        adapterVersion: buildHarnessAdapterInput(chatJid)?.version ?? 0,
       },
       output,
     );

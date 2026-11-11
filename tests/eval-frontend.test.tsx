@@ -620,3 +620,73 @@ describe('EvalPage harness tab (task AE)', () => {
     expect(rollback).toBeTruthy();
   });
 });
+
+// ── adapter attribution UI (task AF) ────────────────────────────────────────
+
+describe('adapter attribution UI (task AF)', () => {
+  test('observed turn rows carry an adapter version badge', async () => {
+    state.isAdmin = true;
+    apiGet.mockImplementation(async (url: string) => {
+      if (url.includes('trigger/status')) return IDLE_TRIGGER;
+      if (url.startsWith('/api/eval/datasets')) return { datasets: [] };
+      if (url.includes('/api/eval/harness/workspaces'))
+        return { workspaces: [] };
+      if (url.includes('/api/eval/harness/proposals')) return { proposals: [] };
+      if (url.includes('/api/eval/harness/versions')) return { versions: [] };
+      if (url.includes('/api/eval/harness/lessons')) return { lessons: [] };
+      if (url.includes('/api/eval/turns'))
+        return {
+          items: [
+            { ...turnFixture, turnId: 'af-v1', adapterVersion: 1 },
+            { ...turnFixture, turnId: 'af-v0', adapterVersion: 0 },
+          ],
+          total: 2,
+        };
+      return { runs: [], total: 0, items: [] };
+    });
+    await renderPage();
+    const tab = [...container!.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('真实对话'),
+    );
+    await act(async () => {
+      tab?.click();
+    });
+    await act(async () => {});
+    expect(container?.textContent).toContain('adapter v1');
+    expect(container?.textContent).toContain('基线');
+  });
+
+  test('harness tab offers a workspace selector backed by the endpoint', async () => {
+    state.isAdmin = true;
+    apiGet.mockImplementation(async (url: string) => {
+      if (url.includes('trigger/status')) return IDLE_TRIGGER;
+      if (url.startsWith('/api/eval/datasets')) return { datasets: [] };
+      if (url.includes('/api/eval/harness/workspaces'))
+        return {
+          workspaces: [
+            {
+              workspaceJid: 'feishu:ws-af@g.us',
+              turnCount: 7,
+              lastTurnAt: '2026-11-11T02:00:00Z',
+              proposalCount: 1,
+            },
+          ],
+        };
+      if (url.includes('/api/eval/harness/proposals')) return { proposals: [] };
+      if (url.includes('/api/eval/harness/versions')) return { versions: [] };
+      if (url.includes('/api/eval/harness/lessons')) return { lessons: [] };
+      return { runs: [], total: 0, items: [] };
+    });
+    await renderPage();
+    const tab = [...container!.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Harness 演化'),
+    );
+    await act(async () => {
+      tab?.click();
+    });
+    await act(async () => {});
+    const select = container?.querySelector('[data-harness-workspace-select]');
+    expect(select).toBeTruthy();
+    expect(select?.textContent).toContain('feishu:ws-af@g.us');
+  });
+});

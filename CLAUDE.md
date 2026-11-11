@@ -256,7 +256,10 @@ data/
 召回评测（`scripts/eval-auto-recall.ts` 默认落库），`obs_turns` 存真实对话
 turn 观测（`src/turn-observer.ts`，默认关），`harness_proposals`/
 `harness_versions`/`harness_lessons` 存 RSI harness adapter 演化记录（任务
-AE，提案由 `scripts/eval-harness-evolve.ts` 写入、采纳仅经 admin Web 动作）。
+AE，提案由 `scripts/eval-harness-evolve.ts` 写入、采纳仅经 admin Web 动作），
+`obs_turns.adapter_version` 记录每个 turn 执行时的 adapter 版本（任务 AF
+归因列，0=基线；观测 tap 在主链路与 `#agent:` 会话链路两处读取当前
+ACTIVE 版本写入）。
 不碰 messages.db、不升主库 schema。
 
 `data/harness-adapters/<sanitized-jid>/` 是 workspace 外挂 harness adapter 的

@@ -35,6 +35,8 @@ export interface TurnObserverResultContext {
   /** Used only when the result carries no inputTurnId of its own. */
   defaultTurnId: string;
   sessionId?: string | null;
+  /** Harness adapter version active for this turn; 0/omitted = baseline (task AF). */
+  adapterVersion?: number;
 }
 
 /** Structural subset of ContainerOutput — no container-runner import. */
@@ -124,6 +126,7 @@ export class TurnObserver {
               config.contentMode === 'full' && context.inputText
                 ? redactLogMessage(context.inputText)
                 : null,
+            adapterVersion: context.adapterVersion ?? 0,
           },
         });
       }

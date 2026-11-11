@@ -353,3 +353,32 @@ describe('robustness contract', () => {
     expect(mod.turnObserver).toBeInstanceOf(TurnObserver);
   });
 });
+
+// ── adapter attribution (task AF) ────────────────────────────────────────────
+
+describe('adapter attribution (task AF)', () => {
+  test('context adapterVersion lands on the inserted turn row', () => {
+    const { observer, spy } = makeObserver({
+      enabled: true,
+      contentMode: 'full',
+      judge: { enabled: false },
+    });
+    observer.onResult(
+      { ...BASE_CTX, adapterVersion: 3 },
+      streamResult('text_delta'),
+    );
+    observer.flush();
+    expect(spy.inserts[0]).toMatchObject({ adapterVersion: 3 });
+  });
+
+  test('missing adapterVersion defaults to baseline 0', () => {
+    const { observer, spy } = makeObserver({
+      enabled: true,
+      contentMode: 'metadata',
+      judge: { enabled: false },
+    });
+    observer.onResult(BASE_CTX, streamResult('text_delta'));
+    observer.flush();
+    expect(spy.inserts[0]).toMatchObject({ adapterVersion: 0 });
+  });
+});

@@ -473,4 +473,13 @@ evalRoutes.get(
   },
 );
 
+// GET /harness/workspaces — workspaces with turns or proposals (task AF;
+// feeds the Web tab's selector so JIDs never need to be typed by hand).
+evalRoutes.get(
+  '/harness/workspaces',
+  authMiddleware,
+  systemConfigMiddleware,
+  (c) => c.json({ workspaces: getDefaultEvalStore().listHarnessWorkspaces() }),
+);
+
 export default evalRoutes;
