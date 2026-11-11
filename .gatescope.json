@@ -1,7 +1,8 @@
 {
-  "task": "任务AE - RSI Phase 1：workspace 外挂 harness adapter（prompt-only ADAPTER.md）提案与人审采纳。eval.db 升 v3 加 harness_proposals/harness_versions/harness_lessons 三表；src/harness-proposer.ts 直连 LLM（recall-judge 先例：OpenAI-compatible 端点+熔断+prompt hash）读 obs_turns 证据（剥离 judge 字段泄漏防线）产出结构化提案（必须引用 turn 时刻、KEEP_BASE 合法）；src/harness-adapter-store.ts 校验+block 构建+文件读写（data/harness-adapters/<jid>/）；宿主 container-runner 经 ContainerInput.harnessAdapter 注入、runner decorateInitialUserTurn 拼块（与 workspace memory 同链）；CLI scripts/eval-harness-evolve.ts 手动触发不进门禁；Web 评测页 admin-only「Harness 演化」tab（提案 diff/evidence/采纳/拒绝/版本回滚/lesson）。方案源自 harness²×hermit 架构调研（用户 2026-11-11 提出）；计划 docs/task-ae-rsi-phase1-plan.md",
+  "task": "任务AE后续 - agent 会话观测缺口修复：processAgentConversation（#agent: 会话处理链）补 turnObserver.onResult tap（与 processGroupMessages 主链路 7167 同构）——任务 AB 的观测 tap 只覆盖主 workspace 路径，用户与 agent profile 的对话 turn 从未落入 obs_turns，harness-evolve proposer 对此类 workspace 永远证据不足。范围扩宽仅 src/index.ts 一处（已提交任务AE范围外新发现）；由立项批准者复核。原任务AE声明见 git 历史。",
   "base": "44670f9",
   "allow": [
+    "src/index.ts",
     "docs/task-ae-rsi-phase1-plan.md",
     "src/eval-store.ts",
     "src/harness-adapter-store.ts",

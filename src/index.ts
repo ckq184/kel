@@ -15385,6 +15385,23 @@ async function processAgentConversation(
       return;
     }
     await activateAgentProjectionForInput(output.inputTurnId);
+    // Task AE follow-up: the task AB observation tap only covered the main
+    // workspace path (processGroupMessages), so #agent: conversation turns
+    // never reached obs_turns. Same tap here — the harness-evolve proposer
+    // needs agent-session evidence too. No-op while observability is off.
+    turnObserver.onResult(
+      {
+        workspaceJid: chatJid,
+        folder: effectiveGroup.folder,
+        channel: chatJid.split(':', 1)[0] || 'unknown',
+        interactionMode,
+        autoRecallEnabled: effectiveGroup.autoMemoryRecall === true,
+        inputText: prompt,
+        defaultTurnId: lastProcessed.id,
+        sessionId,
+      },
+      output,
+    );
     if (
       output.ipcReceipts?.length &&
       (!output.providerFailure || output.providerFailureTerminal === true)
