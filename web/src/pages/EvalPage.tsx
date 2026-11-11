@@ -145,6 +145,18 @@ function extractIssues(err: unknown): string[] | null {
   return Array.isArray(issues) && issues.length > 0 ? issues : null;
 }
 
+/**
+ * apiFetch throws plain `{ status, message, body }` objects (not Error), so
+ * String(err) renders "[object Object]" — surface the message field instead.
+ */
+function formatApiError(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (err && typeof err === 'object' && 'message' in err) {
+    return String((err as { message: unknown }).message);
+  }
+  return String(err);
+}
+
 const GOLDEN_CATEGORIES = [
   'verbatim',
   'paraphrase',
@@ -204,7 +216,7 @@ function EvalRunsPanel({
       const data = await api.get<{ runs: EvalRun[] }>('/api/eval/runs');
       setRuns(data.runs);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(formatApiError(err));
     } finally {
       setLoading(false);
     }
@@ -266,7 +278,7 @@ function EvalRunsPanel({
         result: null,
       });
     } catch (err) {
-      setTriggerError(err instanceof Error ? err.message : String(err));
+      setTriggerError(formatApiError(err));
     } finally {
       setTriggerSubmitting(false);
     }
@@ -280,7 +292,7 @@ function EvalRunsPanel({
       );
       setDetail(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(formatApiError(err));
       setDetail(null);
     }
   }, []);
@@ -300,7 +312,7 @@ function EvalRunsPanel({
       setComparison(data.comparison);
       setDetail(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(formatApiError(err));
     }
   }, [compareIds]);
 
@@ -682,7 +694,7 @@ function ObservedTurnsPanel() {
       setTurns(data.items);
       setTotal(data.total);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(formatApiError(err));
     } finally {
       setLoading(false);
     }
@@ -936,7 +948,7 @@ function DatasetsPanel({
         ...toDrafts(detail.data),
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(formatApiError(err));
     }
   }, []);
 
@@ -1020,7 +1032,7 @@ function DatasetsPanel({
       reload();
     } catch (err) {
       setIssues(extractIssues(err));
-      setError(err instanceof Error ? err.message : String(err));
+      setError(formatApiError(err));
     } finally {
       setSaving(false);
     }
@@ -1034,7 +1046,7 @@ function DatasetsPanel({
         setEditing(null);
         reload();
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+        setError(formatApiError(err));
       }
     },
     [reload],
@@ -1055,7 +1067,7 @@ function DatasetsPanel({
       link.click();
       URL.revokeObjectURL(url);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(formatApiError(err));
     }
   }, []);
 
@@ -1077,7 +1089,7 @@ function DatasetsPanel({
       reload();
     } catch (err) {
       setIssues(extractIssues(err));
-      setError(err instanceof Error ? err.message : String(err));
+      setError(formatApiError(err));
     }
   }, [importText, importName, reload]);
 
