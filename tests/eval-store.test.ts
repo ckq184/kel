@@ -84,7 +84,7 @@ describe('EvalStore schema', () => {
         const version = raw.prepare('PRAGMA user_version').get() as {
           user_version: number;
         };
-        expect(version.user_version).toBe(4);
+        expect(version.user_version).toBe(5);
         const tables = (
           raw
             .prepare(
@@ -101,6 +101,8 @@ describe('EvalStore schema', () => {
             'harness_proposals',
             'harness_versions',
             'harness_lessons',
+            'harness_acceptance_sets',
+            'harness_probes',
           ]),
         );
       } finally {
@@ -141,7 +143,7 @@ describe('EvalStore schema', () => {
   test('refuses to open a database stamped with a newer user_version', () => {
     const dbPath = freshStorePath('newer');
     const raw = new Database(dbPath);
-    raw.exec('PRAGMA user_version = 5');
+    raw.exec('PRAGMA user_version = 6');
     raw.close();
     expect(() => EvalStore.open(dbPath)).toThrow(/newer than supported/i);
   });
@@ -764,7 +766,7 @@ describe('EvalStore harness (v3)', () => {
           .prepare('PRAGMA user_version')
           .get() as { user_version: number }
       ).user_version;
-      expect(version).toBe(4);
+      expect(version).toBe(5);
       const tables = (
         (store as unknown as { db: Database.Database }).db
           .prepare(
@@ -773,7 +775,9 @@ describe('EvalStore harness (v3)', () => {
           .all() as { name: string }[]
       ).map((row) => row.name);
       expect(tables.sort()).toEqual([
+        'harness_acceptance_sets',
         'harness_lessons',
+        'harness_probes',
         'harness_proposals',
         'harness_versions',
       ]);
@@ -782,10 +786,10 @@ describe('EvalStore harness (v3)', () => {
     }
   });
 
-  test('refuses a future v4 database (forward-only contract)', () => {
+  test('refuses a future v6 database (forward-only contract)', () => {
     const dbPath = freshStorePath('hv-v4');
     const raw = new Database(dbPath);
-    raw.exec('PRAGMA user_version = 5');
+    raw.exec('PRAGMA user_version = 6');
     raw.close();
     expect(() => EvalStore.open(dbPath)).toThrow(/refusing downgrade/i);
   });
@@ -964,14 +968,14 @@ describe('EvalStore harness (v3)', () => {
 // ── obs_turns adapter attribution (v4, task AF) ─────────────────────────────
 
 describe('EvalStore adapter attribution (v4)', () => {
-  test('fresh open stamps user_version 4 with the adapter_version column', () => {
+  test('fresh open stamps user_version 5 with the adapter_version column', () => {
     const store = EvalStore.open(freshStorePath('af-fresh'));
     try {
       const raw = (store as unknown as { db: Database.Database }).db;
       const version = (
         raw.prepare('PRAGMA user_version').get() as { user_version: number }
       ).user_version;
-      expect(version).toBe(4);
+      expect(version).toBe(5);
       const cols = (
         raw.prepare('PRAGMA table_info(obs_turns)').all() as { name: string }[]
       ).map((col) => col.name);
@@ -1071,11 +1075,173 @@ describe('EvalStore adapter attribution (v4)', () => {
     }
   });
 
-  test('refuses a future v5 database', () => {
+  test('refuses a future v6 database', () => {
     const dbPath = freshStorePath('af-v5');
     const raw = new Database(dbPath);
-    raw.exec('PRAGMA user_version = 5');
+    raw.exec('PRAGMA user_version = 6');
     raw.close();
     expect(() => EvalStore.open(dbPath)).toThrow(/refusing downgrade/i);
+  });
+});
+
+// ── Harness probe tables (v5, task AG) ──────────────────────────────────────
+
+describe('EvalStore probe tables (v5)', () => {
+  test('fresh open stamps user_version 5 with both v5 tables', () => {
+    const store = EvalStore.open(freshStorePath('ag-fresh'));
+    try {
+      const raw = (store as unknown as { db: Database.Database }).db;
+      const version = (
+        raw.prepare('PRAGMA user_version').get() as { user_version: number }
+      ).user_version;
+      expect(version).toBe(5);
+      const tables = (
+        raw
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('harness_acceptance_sets', 'harness_probes')",
+          )
+          .all() as { name: string }[]
+      ).map((row) => row.name);
+      expect(tables.sort()).toEqual([
+        'harness_acceptance_sets',
+        'harness_probes',
+      ]);
+    } finally {
+      store.close();
+    }
+  });
+
+  test('an existing v4 database migrates in place, idempotent on reopen', () => {
+    const dbPath = freshStorePath('ag-v4');
+    // Forge a v4-era database: open (creates v5), then drop the two v5 tables
+    // and stamp user_version = 4.
+    const store = EvalStore.open(dbPath);
+    store.close();
+    const raw = new Database(dbPath);
+    raw.exec('DROP TABLE harness_probes');
+    raw.exec('DROP TABLE harness_acceptance_sets');
+    raw.exec('PRAGMA user_version = 4');
+    raw.close();
+    const migrated = EvalStore.open(dbPath);
+    try {
+      const db = (migrated as unknown as { db: Database.Database }).db;
+      const tables = (
+        db
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('harness_acceptance_sets', 'harness_probes')",
+          )
+          .all() as { name: string }[]
+      ).map((row) => row.name);
+      expect(tables).toHaveLength(2);
+      const again = EvalStore.open(dbPath);
+      again.close();
+    } finally {
+      migrated.close();
+    }
+  });
+
+  test('acceptance set upsert/get round-trip; re-upsert replaces, unknown null', () => {
+    const store = EvalStore.open(freshStorePath('ag-set'));
+    try {
+      const queries = [
+        {
+          id: 'q1',
+          text: '把今天的接龙报名整理成表格',
+          expectNotes: ['开头声明文件名与记录数', '联系方式脱敏'],
+        },
+        { id: 'q2', text: '总结本周接龙', expectNotes: ['输出条目数'] },
+      ];
+      store.upsertAcceptanceSet({ workspaceJid: 'ws-ag@g.us', queries });
+      const loaded = store.getAcceptanceSet('ws-ag@g.us');
+      expect(loaded).toMatchObject({ workspaceJid: 'ws-ag@g.us' });
+      expect(loaded!.queries).toEqual(queries);
+      expect(loaded!.updatedAt).toBeTruthy();
+      // Same workspace re-upsert replaces the payload.
+      store.upsertAcceptanceSet({
+        workspaceJid: 'ws-ag@g.us',
+        queries: queries.slice(0, 1),
+      });
+      expect(store.getAcceptanceSet('ws-ag@g.us')!.queries).toHaveLength(1);
+      expect(store.getAcceptanceSet('ws-none@g.us')).toBeNull();
+    } finally {
+      store.close();
+    }
+  });
+
+  test('probe insert/list round-trips rounds; filters by proposal, newest first, nullable cost', () => {
+    const store = EvalStore.open(freshStorePath('ag-probe'));
+    try {
+      const round = {
+        queryId: 'q1',
+        baselineText: '基线回答',
+        proposedText: '提案回答',
+        judgeDirect: {
+          prefer: 'B' as const,
+          perNote: [{ note: '开头声明文件名与记录数', pick: 'B' as const }],
+          reasoning: '提案先声明了文件名',
+        },
+        judgeSwapped: {
+          prefer: 'A' as const,
+          perNote: [{ note: '开头声明文件名与记录数', pick: 'A' as const }],
+          reasoning: 'swap 后仍选同一份',
+        },
+        noteHits: [
+          { note: '开头声明文件名与记录数', arm: 'proposed' as const },
+        ],
+      };
+      store.insertHarnessProbe({
+        id: 'hpr_1',
+        proposalId: 'hp_a',
+        workspaceJid: 'ws-ag@g.us',
+        baselineVersion: 1,
+        verdict: 'adopt',
+        roundsWon: 1,
+        roundsLost: 0,
+        roundsTied: 0,
+        notesBaselineHit: 0,
+        notesProposedHit: 1,
+        rounds: [round],
+        costUsd: 0.0312,
+        model: 'glm-flash',
+        createdAt: '2026-11-11T01:00:00Z',
+      });
+      store.insertHarnessProbe({
+        id: 'hpr_2',
+        proposalId: 'hp_b',
+        workspaceJid: 'ws-ag@g.us',
+        baselineVersion: 1,
+        verdict: 'keep_base',
+        roundsWon: 0,
+        roundsLost: 1,
+        roundsTied: 0,
+        notesBaselineHit: 1,
+        notesProposedHit: 0,
+        rounds: [],
+        costUsd: null,
+        model: 'glm-flash',
+        createdAt: '2026-11-11T02:00:00Z',
+      });
+      const forA = store.listHarnessProbes('hp_a');
+      expect(forA).toHaveLength(1);
+      expect(forA[0]).toMatchObject({
+        id: 'hpr_1',
+        proposalId: 'hp_a',
+        verdict: 'adopt',
+        roundsWon: 1,
+        notesProposedHit: 1,
+        costUsd: 0.0312,
+      });
+      expect(forA[0].rounds[0].judgeSwapped?.prefer).toBe('A');
+      expect(forA[0].rounds[0].noteHits[0]).toMatchObject({
+        arm: 'proposed',
+      });
+      // Filter isolates the other proposal; cost null survives round-trip.
+      const forB = store.listHarnessProbes('hp_b');
+      expect(forB).toHaveLength(1);
+      expect(forB[0].costUsd).toBeNull();
+      expect(store.listHarnessProbes('hp_missing')).toHaveLength(0);
+    } finally {
+      store.close();
+    }
   });
 });

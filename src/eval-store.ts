@@ -23,10 +23,11 @@ import { validateGoldenSet, type GoldenSet } from './eval-dataset.js';
  * downgrades, no backup gate needed (fresh file, additive migrations only).
  *
  * History: v1 (task AB) eval_runs / eval_run_items / obs_turns;
- * v2 (task AD) eval_datasets + builtin auto-recall seeding.
+ * v2 (task AD) eval_datasets + builtin auto-recall seeding;
+ * v5 (task AG) harness_acceptance_sets / harness_probes.
  */
 
-const EVAL_SCHEMA_VERSION = 4;
+const EVAL_SCHEMA_VERSION = 5;
 
 /** Builtin seed source (repo file; content pinned by the golden-set tests). */
 const BUILTIN_GOLDEN_SET_PATH = path.resolve(
@@ -352,6 +353,102 @@ interface HarnessLessonRow {
   created_at: string;
 }
 
+// ── Harness probe (task AG, v5) ─────────────────────────────────────────────
+
+/** One acceptance-set question (validated upstream by src/harness-probe.ts). */
+export interface HarnessAcceptanceQuery {
+  id: string;
+  text: string;
+  expectNotes: string[];
+}
+
+export interface HarnessAcceptanceSetInput {
+  workspaceJid: string;
+  queries: HarnessAcceptanceQuery[];
+}
+
+export interface HarnessAcceptanceSetRecord extends HarnessAcceptanceSetInput {
+  updatedAt: string;
+}
+
+/** One blind-judge verdict as presented (A/B are presentation-side labels). */
+export interface HarnessBlindJudge {
+  prefer: 'A' | 'B' | 'tie';
+  perNote: Array<{ note: string; pick: 'A' | 'B' | 'tie' }>;
+  reasoning: string;
+}
+
+/** Per-question probe material (the rounds_json payload). */
+export interface HarnessProbeRound {
+  queryId: string;
+  baselineText: string;
+  proposedText: string;
+  /** Reply order (baseline=A, proposed=B); null when the judge call failed. */
+  judgeDirect: HarnessBlindJudge | null;
+  /** Swapped presentation (proposed=A, baseline=B); null on failure. */
+  judgeSwapped: HarnessBlindJudge | null;
+  /** Note → winning arm after both judges agree (tie otherwise). */
+  noteHits: Array<{ note: string; arm: 'baseline' | 'proposed' | 'tie' }>;
+}
+
+export type HarnessProbeVerdict = 'adopt' | 'keep_base' | 'inconclusive';
+
+export interface HarnessProbeInput {
+  id: string;
+  proposalId: string;
+  workspaceJid: string;
+  /** Active adapter version when the probe ran; 0 = baseline platform prompt. */
+  baselineVersion: number;
+  verdict: HarnessProbeVerdict;
+  roundsWon: number;
+  roundsLost: number;
+  roundsTied: number;
+  notesBaselineHit: number;
+  notesProposedHit: number;
+  rounds: HarnessProbeRound[];
+  costUsd?: number | null;
+  model: string;
+  createdAt?: string;
+}
+
+export type HarnessProbeRecord = Required<HarnessProbeInput>;
+
+interface HarnessProbeRow {
+  id: string;
+  proposal_id: string;
+  workspace_jid: string;
+  baseline_version: number;
+  verdict: string;
+  rounds_won: number;
+  rounds_lost: number;
+  rounds_tied: number;
+  notes_baseline_hit: number;
+  notes_proposed_hit: number;
+  rounds_json: string;
+  cost_usd: number | null;
+  model: string;
+  created_at: string;
+}
+
+function mapProbeRow(row: HarnessProbeRow): HarnessProbeRecord {
+  return {
+    id: row.id,
+    proposalId: row.proposal_id,
+    workspaceJid: row.workspace_jid,
+    baselineVersion: row.baseline_version,
+    verdict: row.verdict as HarnessProbeVerdict,
+    roundsWon: row.rounds_won,
+    roundsLost: row.rounds_lost,
+    roundsTied: row.rounds_tied,
+    notesBaselineHit: row.notes_baseline_hit,
+    notesProposedHit: row.notes_proposed_hit,
+    rounds: parseJsonColumn<HarnessProbeRound[]>(row.rounds_json, []),
+    costUsd: row.cost_usd,
+    model: row.model,
+    createdAt: row.created_at,
+  };
+}
+
 // ── Store ───────────────────────────────────────────────────────────────────
 
 interface EvalRunRow {
@@ -643,6 +740,27 @@ export class EvalStore {
           proposal_id TEXT,
           created_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS harness_acceptance_sets (
+          workspace_jid TEXT PRIMARY KEY,
+          queries_json TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS harness_probes (
+          id TEXT PRIMARY KEY,
+          proposal_id TEXT NOT NULL,
+          workspace_jid TEXT NOT NULL,
+          baseline_version INTEGER NOT NULL,
+          verdict TEXT NOT NULL,
+          rounds_won INTEGER NOT NULL,
+          rounds_lost INTEGER NOT NULL,
+          rounds_tied INTEGER NOT NULL,
+          notes_baseline_hit INTEGER NOT NULL,
+          notes_proposed_hit INTEGER NOT NULL,
+          rounds_json TEXT NOT NULL,
+          cost_usd REAL,
+          model TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        );
         CREATE INDEX IF NOT EXISTS idx_eval_run_items_run
           ON eval_run_items(run_id);
         CREATE INDEX IF NOT EXISTS idx_obs_turns_created
@@ -655,6 +773,8 @@ export class EvalStore {
           ON harness_versions(workspace_jid, version);
         CREATE INDEX IF NOT EXISTS idx_harness_lessons_workspace
           ON harness_lessons(workspace_jid, created_at);
+        CREATE INDEX IF NOT EXISTS idx_harness_probes_proposal
+          ON harness_probes(proposal_id, created_at);
         PRAGMA user_version = ${EVAL_SCHEMA_VERSION};
       `);
       if (version < 2) {
@@ -1279,6 +1399,81 @@ export class EvalStore {
       lastTurnAt: row.last_turn_at,
       proposalCount: row.proposal_count,
     }));
+  }
+
+  // ── harness_acceptance_sets / harness_probes (task AG, v5) ───────────────
+
+  /** Callers validate `queries` (validateAcceptanceSet) before upserting. */
+  upsertAcceptanceSet(input: HarnessAcceptanceSetInput): void {
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO harness_acceptance_sets (workspace_jid, queries_json, updated_at)
+         VALUES (@workspaceJid, @queriesJson, @now)
+         ON CONFLICT(workspace_jid) DO UPDATE SET
+           queries_json = excluded.queries_json,
+           updated_at = excluded.updated_at`,
+      )
+      .run({
+        workspaceJid: input.workspaceJid,
+        queriesJson: JSON.stringify(input.queries),
+        now,
+      });
+  }
+
+  getAcceptanceSet(workspaceJid: string): HarnessAcceptanceSetRecord | null {
+    const row = this.db
+      .prepare('SELECT * FROM harness_acceptance_sets WHERE workspace_jid = ?')
+      .get(workspaceJid) as
+      | { workspace_jid: string; queries_json: string; updated_at: string }
+      | undefined;
+    if (!row) return null;
+    return {
+      workspaceJid: row.workspace_jid,
+      queries: parseJsonColumn<HarnessAcceptanceQuery[]>(row.queries_json, []),
+      updatedAt: row.updated_at,
+    };
+  }
+
+  insertHarnessProbe(input: HarnessProbeInput): void {
+    this.db
+      .prepare(
+        `INSERT INTO harness_probes
+         (id, proposal_id, workspace_jid, baseline_version, verdict,
+          rounds_won, rounds_lost, rounds_tied, notes_baseline_hit,
+          notes_proposed_hit, rounds_json, cost_usd, model, created_at)
+         VALUES
+         (@id, @proposalId, @workspaceJid, @baselineVersion, @verdict,
+          @roundsWon, @roundsLost, @roundsTied, @notesBaselineHit,
+          @notesProposedHit, @roundsJson, @costUsd, @model, @createdAt)`,
+      )
+      .run({
+        id: input.id,
+        proposalId: input.proposalId,
+        workspaceJid: input.workspaceJid,
+        baselineVersion: input.baselineVersion,
+        verdict: input.verdict,
+        roundsWon: input.roundsWon,
+        roundsLost: input.roundsLost,
+        roundsTied: input.roundsTied,
+        notesBaselineHit: input.notesBaselineHit,
+        notesProposedHit: input.notesProposedHit,
+        roundsJson: JSON.stringify(input.rounds),
+        costUsd: input.costUsd ?? null,
+        model: input.model,
+        createdAt: input.createdAt ?? new Date().toISOString(),
+      });
+  }
+
+  /** Probe reports for one proposal, newest first (history, not just latest). */
+  listHarnessProbes(proposalId: string, limit = 20): HarnessProbeRecord[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM harness_probes WHERE proposal_id = ?
+         ORDER BY created_at DESC, id DESC LIMIT ?`,
+      )
+      .all(proposalId, limit) as HarnessProbeRow[];
+    return rows.map(mapProbeRow);
   }
 }
 

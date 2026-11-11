@@ -778,3 +778,201 @@ describe('GET /harness/workspaces', () => {
     expect(row).toMatchObject({ turnCount: 1, proposalCount: 0 });
   });
 });
+
+// ── Harness acceptance set + probe reports (task AG, RSI Phase 2) ───────────
+
+describe('harness acceptance + probe endpoints (task AG)', () => {
+  const WS = 'feishu:ws-ag-route@g.us';
+
+  const QUERIES = [
+    {
+      id: 'q1',
+      text: '把今天的接龙报名整理成表格',
+      expectNotes: ['开头声明文件名与记录数', '联系方式脱敏'],
+    },
+    { id: 'q2', text: '总结本周接龙', expectNotes: ['输出条目数'] },
+  ];
+
+  function seedPendingProposal(id = 'hp_ag1'): void {
+    getDefaultEvalStore().insertHarnessProposal({
+      id,
+      workspaceJid: WS,
+      adapterMd: '# Adapter\n\n整理表格前先声明文件名与记录数。',
+      keepBase: false,
+      diff: null,
+      rationale: 'r',
+      evidence: [],
+      baselineVersion: 1,
+      model: 'glm-flash',
+      promptHash: 'hash',
+    });
+  }
+
+  test('acceptance set is admin only; PUT validates and GET round-trips', async () => {
+    const deniedGet = await evalRoutes.request(
+      `/harness/acceptance/${encodeURIComponent(WS)}`,
+      { headers: MEMBER },
+    );
+    expect(deniedGet.status).toBe(403);
+    const deniedPut = await evalRoutes.request(
+      `/harness/acceptance/${encodeURIComponent(WS)}`,
+      {
+        method: 'PUT',
+        headers: MEMBER,
+        body: JSON.stringify({ queries: QUERIES }),
+      },
+    );
+    expect(deniedPut.status).toBe(403);
+
+    // Unconfigured workspace reads 404 (datasets precedent).
+    const missing = await evalRoutes.request(
+      `/harness/acceptance/${encodeURIComponent(WS)}`,
+      { headers: ADMIN },
+    );
+    expect(missing.status).toBe(404);
+
+    // Invalid bodies get 400 with the validator's issues verbatim.
+    const invalid = await evalRoutes.request(
+      `/harness/acceptance/${encodeURIComponent(WS)}`,
+      {
+        method: 'PUT',
+        headers: ADMIN,
+        body: JSON.stringify({
+          queries: [{ id: 'q1', text: '', expectNotes: [] }],
+        }),
+      },
+    );
+    expect(invalid.status).toBe(400);
+    const invalidBody = await invalid.json();
+    expect(Array.isArray(invalidBody.issues)).toBe(true);
+    expect(invalidBody.issues.join('\n')).toMatch(/text/);
+    expect(invalidBody.issues.join('\n')).toMatch(/expectNotes/);
+
+    // Valid PUT then GET round-trips the payload.
+    const saved = await evalRoutes.request(
+      `/harness/acceptance/${encodeURIComponent(WS)}`,
+      {
+        method: 'PUT',
+        headers: ADMIN,
+        body: JSON.stringify({ queries: QUERIES }),
+      },
+    );
+    expect(saved.status).toBe(200);
+    expect(await saved.json()).toEqual({ ok: true });
+    const loaded = await evalRoutes.request(
+      `/harness/acceptance/${encodeURIComponent(WS)}`,
+      { headers: ADMIN },
+    );
+    expect(loaded.status).toBe(200);
+    const body = await loaded.json();
+    expect(body.workspaceJid).toBe(WS);
+    expect(body.queries).toEqual(QUERIES);
+    expect(body.updatedAt).toBeTruthy();
+  });
+
+  test('probe list is admin only, requires the proposal param, returns reports', async () => {
+    seedPendingProposal('hp_ag2');
+    const denied = await evalRoutes.request('/harness/probes?proposal=hp_ag2', {
+      headers: MEMBER,
+    });
+    expect(denied.status).toBe(403);
+    const noParam = await evalRoutes.request('/harness/probes', {
+      headers: ADMIN,
+    });
+    expect(noParam.status).toBe(400);
+
+    const empty = await evalRoutes.request('/harness/probes?proposal=hp_ag2', {
+      headers: ADMIN,
+    });
+    expect(empty.status).toBe(200);
+    expect(await empty.json()).toEqual({ probes: [] });
+
+    getDefaultEvalStore().insertHarnessProbe({
+      id: 'hpr_ag1',
+      proposalId: 'hp_ag2',
+      workspaceJid: WS,
+      baselineVersion: 1,
+      verdict: 'adopt',
+      roundsWon: 1,
+      roundsLost: 0,
+      roundsTied: 1,
+      notesBaselineHit: 0,
+      notesProposedHit: 2,
+      rounds: [
+        {
+          queryId: 'q1',
+          baselineText: '基线回答',
+          proposedText: '提案回答',
+          judgeDirect: {
+            prefer: 'B',
+            perNote: [{ note: '开头声明文件名与记录数', pick: 'B' }],
+            reasoning: '提案先声明了文件名',
+          },
+          judgeSwapped: {
+            prefer: 'A',
+            perNote: [{ note: '开头声明文件名与记录数', pick: 'A' }],
+            reasoning: 'swap 后仍选同一份',
+          },
+          noteHits: [{ note: '开头声明文件名与记录数', arm: 'proposed' }],
+        },
+      ],
+      costUsd: null,
+      model: 'glm-flash',
+      createdAt: '2026-11-11T03:00:00Z',
+    });
+    const res = await evalRoutes.request('/harness/probes?proposal=hp_ag2', {
+      headers: ADMIN,
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.probes).toHaveLength(1);
+    expect(body.probes[0]).toMatchObject({
+      id: 'hpr_ag1',
+      verdict: 'adopt',
+      roundsWon: 1,
+      notesProposedHit: 2,
+    });
+    expect(body.probes[0].rounds[0].judgeSwapped.prefer).toBe('A');
+  });
+
+  test('proposal detail carries the latest probe summary (verdict + votes)', async () => {
+    seedPendingProposal('hp_ag3');
+    // Without a probe: explicit null, key always present.
+    const bare = await evalRoutes.request('/harness/proposals/hp_ag3', {
+      headers: ADMIN,
+    });
+    expect(bare.status).toBe(200);
+    expect((await bare.json()).latestProbe).toBeNull();
+
+    getDefaultEvalStore().insertHarnessProbe({
+      id: 'hpr_ag2',
+      proposalId: 'hp_ag3',
+      workspaceJid: WS,
+      baselineVersion: 1,
+      verdict: 'keep_base',
+      roundsWon: 0,
+      roundsLost: 2,
+      roundsTied: 0,
+      notesBaselineHit: 3,
+      notesProposedHit: 1,
+      rounds: [],
+      costUsd: null,
+      model: 'glm-flash',
+      createdAt: '2026-11-11T04:00:00Z',
+    });
+    const res = await evalRoutes.request('/harness/proposals/hp_ag3', {
+      headers: ADMIN,
+    });
+    const body = await res.json();
+    expect(body.latestProbe).toMatchObject({
+      id: 'hpr_ag2',
+      verdict: 'keep_base',
+      roundsWon: 0,
+      roundsLost: 2,
+      notesBaselineHit: 3,
+      notesProposedHit: 1,
+    });
+    // Summary stays a summary: no per-round payload on the detail view.
+    expect(body.latestProbe.rounds).toBeUndefined();
+  });
+});

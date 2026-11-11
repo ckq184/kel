@@ -21,6 +21,7 @@
     "test:real-model": "tsx scripts/test-real-model-smoke.ts",
     "eval:auto-recall": "tsx scripts/eval-auto-recall.ts",
     "eval:harness-evolve": "tsx scripts/eval-harness-evolve.ts",
+    "eval:harness-probe": "tsx scripts/eval-harness-probe.ts",
     "eval:langfuse": "node scripts/eval-langfuse.mjs",
     "dev:all": "npx concurrently --timestamp-format \"yyyy-MM-dd HH:mm:ss.SSS\" -n backend,frontend -c blue,green \"npm run dev\" \"npm run dev:web\"",
     "dev:web": "cd web && npm run dev",

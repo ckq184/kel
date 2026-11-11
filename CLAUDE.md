@@ -259,7 +259,12 @@ turn 观测（`src/turn-observer.ts`，默认关），`harness_proposals`/
 AE，提案由 `scripts/eval-harness-evolve.ts` 写入、采纳仅经 admin Web 动作），
 `obs_turns.adapter_version` 记录每个 turn 执行时的 adapter 版本（任务 AF
 归因列，0=基线；观测 tap 在主链路与 `#agent:` 会话链路两处读取当前
-ACTIVE 版本写入）。
+ACTIVE 版本写入）；v5 起加 `harness_acceptance_sets`（按 workspace 的探针
+验收集，1–10 题）与 `harness_probes`（A/B 探针报告）两表（任务 AG，RSI
+Phase 2：`scripts/eval-harness-probe.ts` 对 pending 提案做「当前 ACTIVE vs
+提案」双臂单轮直调 + glm-flash 双向匿名盲选 + 门槛聚合，产 adopt/keep_base/
+inconclusive **建议**辅助人审；单轮直调无工具/无召回属已知覆盖面 gap；
+验收集与报告属 admin 面，proposer 无读取路径——泄漏纪律）。
 不碰 messages.db、不升主库 schema。
 
 `data/harness-adapters/<sanitized-jid>/` 是 workspace 外挂 harness adapter 的

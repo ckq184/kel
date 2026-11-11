@@ -702,6 +702,18 @@ capturedAt }`（不存 messageIds 全量）。preview 无对应端点——前�
   带 turn/proposal 计数与最近 turn 时间，供 Web 下拉）；另 `obs_turns`
   自 v4 起带 `adapter_version` 归因列（0=基线，turn 执行时的 adapter 版本，
   `/api/eval/turns` 返回带出）
+- Harness 探针（任务 AG，RSI Phase 2，`eval.db` v5 起两表
+  `harness_acceptance_sets`/`harness_probes`；探针由 CLI
+  `npm run eval:harness-probe -- --workspace <jid> --proposal <id>
+  [--dry-run]` 手动触发——对 pending 提案做「当前 ACTIVE vs 提案」双臂
+  单轮直调 + glm-flash 双向匿名盲选，报告只是**人审建议**；验收集与
+  报告属 admin 面，proposer 无读取路径）：`GET|PUT
+/api/eval/harness/acceptance/:workspace`（验收集读写；PUT 过
+  `validateAcceptanceSet`——1–10 题、text 非空、expectNotes ≥1、id 唯一，
+  失败 400 带 issues；未配置 GET 404）、`GET
+/api/eval/harness/probes?proposal=<id>`（该提案的探针报告列表，含逐题
+  双臂文本与两向 judge 判定）；`GET /api/eval/harness/proposals/:id` 详情
+  附带 `latestProbe` 摘要（verdict/票数/要点命中，无报告为 null）
 
 ## 管理、监控与问题报告
 

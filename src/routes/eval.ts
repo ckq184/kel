@@ -6,6 +6,10 @@ import { authMiddleware, systemConfigMiddleware } from '../middleware/auth.js';
 import { getDefaultEvalStore } from '../eval-store.js';
 import { startEvalRun, getEvalTriggerState } from '../eval-trigger.js';
 import { validateGoldenSet, type GoldenSet } from '../eval-dataset.js';
+import {
+  validateAcceptanceSet,
+  type AcceptanceQuery,
+} from '../harness-probe.js';
 
 /**
  * Native evaluation center API (task AB; web trigger added by task AC).
@@ -343,11 +347,29 @@ evalRoutes.get(
   authMiddleware,
   systemConfigMiddleware,
   (c) => {
-    const proposal = getDefaultEvalStore().getHarnessProposal(
-      c.req.param('id'),
-    );
+    const store = getDefaultEvalStore();
+    const proposal = store.getHarnessProposal(c.req.param('id'));
     if (!proposal) return c.json({ error: 'proposal not found' }, 404);
-    return c.json(proposal);
+    // Task AG: attach the latest probe summary so the detail view can badge
+    // the verdict without pulling full rounds (those live on /harness/probes).
+    const latest = store.listHarnessProbes(proposal.id, 1)[0] ?? null;
+    return c.json({
+      ...proposal,
+      latestProbe: latest
+        ? {
+            id: latest.id,
+            verdict: latest.verdict,
+            roundsWon: latest.roundsWon,
+            roundsLost: latest.roundsLost,
+            roundsTied: latest.roundsTied,
+            notesBaselineHit: latest.notesBaselineHit,
+            notesProposedHit: latest.notesProposedHit,
+            costUsd: latest.costUsd,
+            model: latest.model,
+            createdAt: latest.createdAt,
+          }
+        : null,
+    });
   },
 );
 
@@ -480,6 +502,67 @@ evalRoutes.get(
   authMiddleware,
   systemConfigMiddleware,
   (c) => c.json({ workspaces: getDefaultEvalStore().listHarnessWorkspaces() }),
+);
+
+// ── Harness probe (task AG, RSI Phase 2; admin only). Acceptance sets and
+// probe reports are grader material — the proposer CLI has no read path to
+// them (leak discipline, plan §1-5): only the admin surface and the manual
+// probe CLI reach these tables.
+
+evalRoutes.get(
+  '/harness/acceptance/:workspace',
+  authMiddleware,
+  systemConfigMiddleware,
+  (c) => {
+    const record = getDefaultEvalStore().getAcceptanceSet(
+      c.req.param('workspace'),
+    );
+    if (!record) return c.json({ error: 'acceptance set not found' }, 404);
+    return c.json(record);
+  },
+);
+
+evalRoutes.put(
+  '/harness/acceptance/:workspace',
+  authMiddleware,
+  systemConfigMiddleware,
+  async (c) => {
+    let body: { queries?: unknown };
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: 'Invalid JSON body' }, 400);
+    }
+    const validation = validateAcceptanceSet(body.queries);
+    if (!validation.ok) {
+      return c.json(
+        { error: 'invalid acceptance set', issues: validation.issues },
+        400,
+      );
+    }
+    getDefaultEvalStore().upsertAcceptanceSet({
+      workspaceJid: c.req.param('workspace'),
+      queries: body.queries as AcceptanceQuery[],
+    });
+    return c.json({ ok: true });
+  },
+);
+
+// GET /harness/probes?proposal=<id> — probe reports for one proposal (the
+// detail view's latestProbe summary is the pointer; full rounds live here).
+evalRoutes.get(
+  '/harness/probes',
+  authMiddleware,
+  systemConfigMiddleware,
+  (c) => {
+    const proposal = c.req.query('proposal');
+    if (!proposal || !proposal.trim()) {
+      return c.json({ error: 'proposal query parameter is required' }, 400);
+    }
+    return c.json({
+      probes: getDefaultEvalStore().listHarnessProbes(proposal),
+    });
+  },
 );
 
 export default evalRoutes;

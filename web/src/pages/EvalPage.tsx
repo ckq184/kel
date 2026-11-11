@@ -1469,6 +1469,17 @@ interface HarnessProposalListItem {
   decidedBy: string | null;
 }
 
+interface HarnessLatestProbeSummary {
+  id: string;
+  verdict: 'adopt' | 'keep_base' | 'inconclusive';
+  roundsWon: number;
+  roundsLost: number;
+  roundsTied: number;
+  notesBaselineHit: number;
+  notesProposedHit: number;
+  createdAt: string;
+}
+
 interface HarnessProposalDetail extends HarnessProposalListItem {
   adapterMd: string;
   diff: string | null;
@@ -1478,6 +1489,7 @@ interface HarnessProposalDetail extends HarnessProposalListItem {
     outputExcerpt: string;
     why: string;
   }>;
+  latestProbe: HarnessLatestProbeSummary | null;
 }
 
 interface HarnessVersionItem {
@@ -1509,6 +1521,60 @@ interface HarnessWorkspaceItem {
   proposalCount: number;
 }
 
+// ── Probe report (task AG, RSI Phase 2): read-only evidence under the
+// proposal detail. The probe runs in the CLI (eval:harness-probe); the panel
+// only renders what landed in eval.db.
+
+interface HarnessBlindJudgeView {
+  prefer: 'A' | 'B' | 'tie';
+  perNote: Array<{ note: string; pick: 'A' | 'B' | 'tie' }>;
+  reasoning: string;
+}
+
+interface HarnessProbeRoundView {
+  queryId: string;
+  baselineText: string;
+  proposedText: string;
+  judgeDirect: HarnessBlindJudgeView | null;
+  judgeSwapped: HarnessBlindJudgeView | null;
+  noteHits: Array<{ note: string; arm: 'baseline' | 'proposed' | 'tie' }>;
+}
+
+interface HarnessProbeReport {
+  id: string;
+  proposalId: string;
+  workspaceJid: string;
+  baselineVersion: number;
+  verdict: 'adopt' | 'keep_base' | 'inconclusive';
+  roundsWon: number;
+  roundsLost: number;
+  roundsTied: number;
+  notesBaselineHit: number;
+  notesProposedHit: number;
+  rounds: HarnessProbeRoundView[];
+  costUsd: number | null;
+  model: string;
+  createdAt: string;
+}
+
+interface HarnessAcceptanceSetView {
+  workspaceJid: string;
+  queries: Array<{ id: string; text: string; expectNotes: string[] }>;
+  updatedAt: string;
+}
+
+const PROBE_VERDICT_LABEL: Record<HarnessProbeReport['verdict'], string> = {
+  adopt: '建议采纳',
+  keep_base: '建议保持基线',
+  inconclusive: '无差异',
+};
+
+const PROBE_ARM_LABEL: Record<'baseline' | 'proposed' | 'tie', string> = {
+  baseline: '基线',
+  proposed: '提案',
+  tie: '平',
+};
+
 function HarnessEvolvePanel() {
   const [workspace, setWorkspace] = useState('');
   const [loadedWorkspace, setLoadedWorkspace] = useState('');
@@ -1517,6 +1583,12 @@ function HarnessEvolvePanel() {
   const [versions, setVersions] = useState<HarnessVersionItem[]>([]);
   const [lessons, setLessons] = useState<HarnessLessonItem[]>([]);
   const [detail, setDetail] = useState<HarnessProposalDetail | null>(null);
+  const [probeReport, setProbeReport] = useState<HarnessProbeReport | null>(
+    null,
+  );
+  const [acceptanceText, setAcceptanceText] = useState('');
+  const [acceptanceError, setAcceptanceError] = useState<string | null>(null);
+  const [acceptanceNotice, setAcceptanceNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -1527,7 +1599,7 @@ function HarnessEvolvePanel() {
     setError(null);
     try {
       const query = `workspace=${encodeURIComponent(jid.trim())}`;
-      const [p, v, l] = await Promise.all([
+      const [p, v, l, a] = await Promise.all([
         api.get<{ proposals: HarnessProposalListItem[] }>(
           `/api/eval/harness/proposals?${query}`,
         ),
@@ -1537,10 +1609,19 @@ function HarnessEvolvePanel() {
         api.get<{ lessons: HarnessLessonItem[] }>(
           `/api/eval/harness/lessons?${query}`,
         ),
+        // 404 = not configured yet: the editor starts from an empty draft.
+        api
+          .get<HarnessAcceptanceSetView>(
+            `/api/eval/harness/acceptance/${encodeURIComponent(jid.trim())}`,
+          )
+          .catch(() => null),
       ]);
       setProposals(p.proposals);
       setVersions(v.versions);
       setLessons(l.lessons);
+      setAcceptanceText(a ? JSON.stringify(a.queries, null, 2) : '');
+      setAcceptanceError(null);
+      setAcceptanceNotice(null);
       setLoadedWorkspace(jid.trim());
     } catch (err) {
       setError(formatApiError(err));
@@ -1561,16 +1642,49 @@ function HarnessEvolvePanel() {
 
   const openDetail = useCallback(async (id: string) => {
     setDetail(null);
+    setProbeReport(null);
     try {
-      setDetail(
-        await api.get<HarnessProposalDetail>(
-          `/api/eval/harness/proposals/${id}`,
-        ),
-      );
+      const [d, p] = await Promise.all([
+        api.get<HarnessProposalDetail>(`/api/eval/harness/proposals/${id}`),
+        api
+          .get<{
+            probes: HarnessProbeReport[];
+          }>(`/api/eval/harness/probes?proposal=${encodeURIComponent(id)}`)
+          .catch(() => ({ probes: [] as HarnessProbeReport[] })),
+      ]);
+      setDetail(d);
+      setProbeReport(p.probes[0] ?? null);
     } catch (err) {
       setError(formatApiError(err));
     }
   }, []);
+
+  const saveAcceptance = useCallback(async () => {
+    setAcceptanceError(null);
+    setAcceptanceNotice(null);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(acceptanceText);
+    } catch (err) {
+      setAcceptanceError(`JSON 解析失败：${(err as Error).message}`);
+      return;
+    }
+    try {
+      await api.put(
+        `/api/eval/harness/acceptance/${encodeURIComponent(loadedWorkspace)}`,
+        { queries: parsed },
+      );
+      setAcceptanceNotice('验收集已保存。');
+    } catch (err) {
+      // Surface the server's per-line issues when validation rejects (the
+      // body carries them; message alone would hide the real cause).
+      const body = (err as { body?: { issues?: string[] } }).body;
+      const issues = body?.issues?.length
+        ? `\n${body.issues.map((issue) => `- ${issue}`).join('\n')}`
+        : '';
+      setAcceptanceError(`${formatApiError(err)}${issues}`);
+    }
+  }, [acceptanceText, loadedWorkspace]);
 
   const decide = useCallback(
     async (id: string, action: 'adopt' | 'reject') => {
@@ -1657,6 +1771,45 @@ function HarnessEvolvePanel() {
           {notice && <p className="mt-2 text-sm text-primary">{notice}</p>}
         </CardContent>
       </Card>
+
+      {loadedWorkspace && (
+        <Card>
+          <CardContent className="p-4 space-y-3">
+            <h3 className="text-sm font-semibold">
+              验收集（探针 A/B 验收问题）
+            </h3>
+            <p className="text-xs text-muted-foreground">
+              1–10 题，每题 {`{ "id", "text", "expectNotes": string[] }`}
+              ；要点是行为检查（如「开头声明文件名与记录数」），建议从真实对话手抄。探针由
+              CLI 跑：npm run eval:harness-probe -- --workspace &lt;jid&gt;
+              --proposal &lt;id&gt; [--dry-run]
+            </p>
+            <textarea
+              data-harness-acceptance
+              rows={10}
+              className="w-full rounded-md border border-border bg-background p-2 font-mono text-xs"
+              placeholder='[{"id": "q1", "text": "……", "expectNotes": ["……"]}]'
+              value={acceptanceText}
+              onChange={(event) => setAcceptanceText(event.target.value)}
+            />
+            {acceptanceError && (
+              <pre className="whitespace-pre-wrap text-sm text-destructive">
+                {acceptanceError}
+              </pre>
+            )}
+            {acceptanceNotice && (
+              <p className="text-sm text-primary">{acceptanceNotice}</p>
+            )}
+            <Button
+              size="sm"
+              onClick={() => void saveAcceptance()}
+              disabled={!loadedWorkspace}
+            >
+              保存验收集
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {loadedWorkspace && (
         <Card>
@@ -1750,6 +1903,75 @@ function HarnessEvolvePanel() {
                         </div>
                       ))}
                     </div>
+                    {probeReport && (
+                      <div
+                        data-harness-probe-report
+                        className="space-y-2 rounded-md border border-border p-3"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-semibold">探针报告</span>
+                          <span className="rounded bg-primary/10 px-1.5 py-0.5 text-xs text-primary">
+                            {PROBE_VERDICT_LABEL[probeReport.verdict]}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            胜/负/平 {probeReport.roundsWon}/
+                            {probeReport.roundsLost}/{probeReport.roundsTied} ·
+                            要点命中 基线 {probeReport.notesBaselineHit} vs 提案{' '}
+                            {probeReport.notesProposedHit} · {probeReport.model}{' '}
+                            · {new Date(probeReport.createdAt).toLocaleString()}
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          探针 = 单轮直调双臂（基线 v
+                          {probeReport.baselineVersion} vs 提案）+
+                          双向匿名盲选。覆盖面有限：无工具、无记忆召回——报告是建议，采纳/拒绝仍由你决定。
+                        </p>
+                        {probeReport.rounds.map((round) => (
+                          <div
+                            key={round.queryId}
+                            className="space-y-1 rounded border border-border p-2"
+                          >
+                            <div className="font-mono text-xs">
+                              {round.queryId}
+                            </div>
+                            <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                              <div>
+                                <div className="text-xs font-semibold">
+                                  基线臂
+                                </div>
+                                <pre className="whitespace-pre-wrap break-words font-mono text-xs">
+                                  {round.baselineText}
+                                </pre>
+                              </div>
+                              <div>
+                                <div className="text-xs font-semibold">
+                                  提案臂
+                                </div>
+                                <pre className="whitespace-pre-wrap break-words font-mono text-xs">
+                                  {round.proposedText}
+                                </pre>
+                              </div>
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              判定（正向）：
+                              {round.judgeDirect?.reasoning ?? '（失败）'}
+                              {'；'}
+                              判定（swap）：
+                              {round.judgeSwapped?.reasoning ?? '（失败）'}
+                            </div>
+                            <div className="text-xs">
+                              要点：
+                              {round.noteHits
+                                .map(
+                                  (hit) =>
+                                    `${hit.note}→${PROBE_ARM_LABEL[hit.arm]}`,
+                                )
+                                .join('；') || '（无）'}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

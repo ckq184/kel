@@ -11,9 +11,10 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 const state = vi.hoisted(() => ({ isAdmin: false }));
 const apiGet = vi.hoisted(() => vi.fn());
 const apiPost = vi.hoisted(() => vi.fn());
+const apiPut = vi.hoisted(() => vi.fn());
 
 vi.mock('../web/src/api/client', () => ({
-  api: { get: apiGet, post: apiPost },
+  api: { get: apiGet, post: apiPost, put: apiPut },
 }));
 
 vi.mock('../web/src/api/ws', () => ({
@@ -59,6 +60,8 @@ const IDLE_TRIGGER = {
 beforeEach(() => {
   apiGet.mockReset();
   apiPost.mockReset();
+  apiPut.mockReset();
+  apiPut.mockResolvedValue({ ok: true });
   apiGet.mockImplementation(async (url: string) => {
     if (url.includes('trigger/status')) return IDLE_TRIGGER;
     if (url.startsWith('/api/eval/datasets')) return { datasets: [] };
@@ -688,5 +691,236 @@ describe('adapter attribution UI (task AF)', () => {
     const select = container?.querySelector('[data-harness-workspace-select]');
     expect(select).toBeTruthy();
     expect(select?.textContent).toContain('feishu:ws-af@g.us');
+  });
+});
+
+// ── Harness probe UI (task AG, RSI Phase 2) ─────────────────────────────────
+
+const ACCEPTANCE_FIXTURE = {
+  workspaceJid: 'feishu:ws-ae@g.us',
+  queries: [
+    {
+      id: 'q1',
+      text: '把今天的接龙报名整理成表格',
+      expectNotes: ['开头声明文件名与记录数'],
+    },
+  ],
+  updatedAt: '2026-11-11T00:00:00Z',
+};
+
+const PROBE_REPORT_FIXTURE = {
+  id: 'hpr_web1',
+  proposalId: 'hp_web1',
+  workspaceJid: 'feishu:ws-ae@g.us',
+  baselineVersion: 1,
+  verdict: 'adopt',
+  roundsWon: 1,
+  roundsLost: 0,
+  roundsTied: 0,
+  notesBaselineHit: 0,
+  notesProposedHit: 1,
+  rounds: [
+    {
+      queryId: 'q1',
+      baselineText: '基线臂回答',
+      proposedText: '提案臂回答',
+      judgeDirect: {
+        prefer: 'B',
+        perNote: [{ note: '开头声明文件名与记录数', pick: 'B' }],
+        reasoning: '提案先声明了文件名',
+      },
+      judgeSwapped: {
+        prefer: 'A',
+        perNote: [{ note: '开头声明文件名与记录数', pick: 'A' }],
+        reasoning: 'swap 后仍选同一份',
+      },
+      noteHits: [{ note: '开头声明文件名与记录数', arm: 'proposed' }],
+    },
+  ],
+  costUsd: null,
+  model: 'glm-flash',
+  createdAt: '2026-11-11T02:00:00Z',
+};
+
+describe('harness probe UI (task AG)', () => {
+  beforeEach(() => {
+    apiGet.mockImplementation(async (url: string) => {
+      if (url.includes('trigger/status')) return IDLE_TRIGGER;
+      if (url.startsWith('/api/eval/datasets')) return { datasets: [] };
+      if (url.includes('/api/eval/harness/acceptance/'))
+        return ACCEPTANCE_FIXTURE;
+      if (url.includes('/api/eval/harness/probes'))
+        return { probes: [PROBE_REPORT_FIXTURE] };
+      if (url.includes('/api/eval/harness/proposals/'))
+        return {
+          ...PROPOSAL_DETAIL_FIXTURE,
+          latestProbe: {
+            id: 'hpr_web1',
+            verdict: 'adopt',
+            roundsWon: 1,
+            roundsLost: 0,
+            roundsTied: 0,
+            notesBaselineHit: 0,
+            notesProposedHit: 1,
+            createdAt: '2026-11-11T02:00:00Z',
+          },
+        };
+      if (url.includes('/api/eval/harness/proposals'))
+        return { proposals: [PROPOSAL_FIXTURE] };
+      if (url.includes('/api/eval/harness/versions')) return VERSIONS_FIXTURE;
+      if (url.includes('/api/eval/harness/lessons')) return { lessons: [] };
+      if (url.includes('/api/eval/harness/workspaces'))
+        return { workspaces: [] };
+      return { runs: [], total: 0, items: [] };
+    });
+  });
+
+  async function openHarnessTab(): Promise<void> {
+    state.isAdmin = true;
+    await renderPage();
+    const tab = [...container!.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Harness 演化'),
+    );
+    await act(async () => {
+      tab?.click();
+    });
+    await act(async () => {});
+  }
+
+  async function loadWorkspaceData(): Promise<void> {
+    const input = container?.querySelector('[data-harness-workspace]');
+    const nativeSetter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      'value',
+    )?.set;
+    await act(async () => {
+      nativeSetter?.call(input, 'feishu:ws-ae@g.us');
+      (input as HTMLInputElement).dispatchEvent(
+        new Event('input', { bubbles: true }),
+      );
+    });
+    const load = [...container!.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('加载'),
+    );
+    await act(async () => {
+      load?.click();
+    });
+    await act(async () => {});
+  }
+
+  test('acceptance editor loads the stored set and saves via PUT', async () => {
+    await openHarnessTab();
+    await loadWorkspaceData();
+    const textarea = container?.querySelector(
+      '[data-harness-acceptance]',
+    ) as HTMLTextAreaElement | null;
+    expect(textarea).toBeTruthy();
+    expect(textarea?.value).toContain('把今天的接龙报名整理成表格');
+
+    // Edit (React-controlled textarea: native setter + input event), save.
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLTextAreaElement.prototype,
+      'value',
+    )?.set;
+    const revised = JSON.stringify([
+      {
+        id: 'q1',
+        text: '把今天的接龙报名整理成表格',
+        expectNotes: ['开头声明文件名与记录数', '联系方式脱敏'],
+      },
+    ]);
+    await act(async () => {
+      setter?.call(textarea, revised);
+      textarea?.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    const save = [...container!.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('保存验收集'),
+    );
+    expect(save).toBeTruthy();
+    await act(async () => {
+      save?.click();
+    });
+    await act(async () => {});
+    expect(apiPut).toHaveBeenCalledWith(
+      '/api/eval/harness/acceptance/feishu%3Aws-ae%40g.us',
+      { queries: JSON.parse(revised) },
+    );
+    expect(container?.textContent).toContain('验收集已保存');
+  });
+
+  test('acceptance editor rejects invalid JSON locally before any request', async () => {
+    await openHarnessTab();
+    await loadWorkspaceData();
+    const textarea = container?.querySelector(
+      '[data-harness-acceptance]',
+    ) as HTMLTextAreaElement | null;
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLTextAreaElement.prototype,
+      'value',
+    )?.set;
+    await act(async () => {
+      setter?.call(textarea, '{not json');
+      textarea?.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    const save = [...container!.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('保存验收集'),
+    );
+    await act(async () => {
+      save?.click();
+    });
+    await act(async () => {});
+    expect(apiPut).not.toHaveBeenCalled();
+    expect(container?.textContent).toMatch(/JSON/);
+  });
+
+  test('proposal detail shows the probe report: verdict, votes, arms, judge reasoning', async () => {
+    await openHarnessTab();
+    await loadWorkspaceData();
+    const row = [...container!.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('hp_web1'),
+    );
+    await act(async () => {
+      row?.click();
+    });
+    await act(async () => {});
+    const report = container?.querySelector('[data-harness-probe-report]');
+    expect(report).toBeTruthy();
+    expect(report?.textContent).toContain('建议采纳');
+    expect(report?.textContent).toContain('基线臂回答');
+    expect(report?.textContent).toContain('提案臂回答');
+    expect(report?.textContent).toContain('提案先声明了文件名');
+    expect(report?.textContent).toContain('swap 后仍选同一份');
+    expect(report?.textContent).toContain('开头声明文件名与记录数');
+    // The gap disclaimer keeps the admin from over-trusting the probe.
+    expect(report?.textContent).toMatch(/无工具|无召回/);
+  });
+
+  test('no probe report area when the proposal has no probe yet', async () => {
+    apiGet.mockImplementation(async (url: string) => {
+      if (url.includes('trigger/status')) return IDLE_TRIGGER;
+      if (url.startsWith('/api/eval/datasets')) return { datasets: [] };
+      if (url.includes('/api/eval/harness/acceptance/'))
+        return ACCEPTANCE_FIXTURE;
+      if (url.includes('/api/eval/harness/probes')) return { probes: [] };
+      if (url.includes('/api/eval/harness/proposals/'))
+        return { ...PROPOSAL_DETAIL_FIXTURE, latestProbe: null };
+      if (url.includes('/api/eval/harness/proposals'))
+        return { proposals: [PROPOSAL_FIXTURE] };
+      if (url.includes('/api/eval/harness/versions')) return VERSIONS_FIXTURE;
+      if (url.includes('/api/eval/harness/lessons')) return { lessons: [] };
+      if (url.includes('/api/eval/harness/workspaces'))
+        return { workspaces: [] };
+      return { runs: [], total: 0, items: [] };
+    });
+    await openHarnessTab();
+    await loadWorkspaceData();
+    const row = [...container!.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('hp_web1'),
+    );
+    await act(async () => {
+      row?.click();
+    });
+    await act(async () => {});
+    expect(container?.querySelector('[data-harness-probe-report]')).toBeFalsy();
   });
 });
