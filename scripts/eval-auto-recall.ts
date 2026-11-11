@@ -518,7 +518,7 @@ interface CliOptions {
   dataset: string;
 }
 
-function parseArgs(argv: readonly string[]): CliOptions {
+export function parseArgs(argv: readonly string[]): CliOptions {
   const options: CliOptions = {
     reset: false,
     dryRun: false,
@@ -540,6 +540,13 @@ function parseArgs(argv: readonly string[]): CliOptions {
         throw new Error('--run-name expects a value');
       }
       options.runName = value;
+      index += 1;
+    } else if (arg === '--dataset') {
+      const value = argv[index + 1];
+      if (!value || value.startsWith('--') || !/^[\w-]{1,64}$/.test(value)) {
+        throw new Error('--dataset expects a name matching [\\w-]{1,64}');
+      }
+      options.dataset = value;
       index += 1;
     } else if (arg === '--k') {
       const value = Number.parseInt(argv[index + 1] ?? '', 10);

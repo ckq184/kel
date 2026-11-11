@@ -21,6 +21,7 @@ import {
   datasetItemPayload,
   evalStoreRunPayload,
   hitRateAtK,
+  parseArgs,
   resolveGoldenSet,
   mapTextToMarkers,
   precisionAtK,
@@ -575,5 +576,29 @@ describe('dataset resolution (task AD: DB first, builtin file fallback)', () => 
     });
     expect('error' in broken).toBe(true);
     expect('issues' in broken && Array.isArray(broken.issues)).toBe(true);
+  });
+});
+
+describe('parseArgs --dataset (task AD regression guard)', () => {
+  test('accepts --dataset with a whitelist-shaped name', () => {
+    const options = parseArgs([
+      '--k',
+      '5',
+      '--dataset',
+      'my-set',
+      '--run-name',
+      'r',
+    ]);
+    expect(options.dataset).toBe('my-set');
+  });
+
+  test('defaults to auto-recall when omitted', () => {
+    expect(parseArgs([]).dataset).toBe('auto-recall');
+  });
+
+  test('rejects malformed dataset names and trailing flags', () => {
+    expect(() => parseArgs(['--dataset'])).toThrow(/--dataset/);
+    expect(() => parseArgs(['--dataset', '--k'])).toThrow(/--dataset/);
+    expect(() => parseArgs(['--dataset', 'bad name!'])).toThrow(/--dataset/);
   });
 });
