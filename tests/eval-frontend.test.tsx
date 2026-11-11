@@ -380,3 +380,24 @@ describe('EvalPage datasets tab (task AD)', () => {
     expect(select?.textContent).toContain('auto-recall');
   });
 });
+
+describe('metric labels are localized (task AD follow-up)', () => {
+  test('run list chips and comparison headers use Chinese labels', async () => {
+    state.isAdmin = false;
+    apiGet.mockImplementation(async (url: string) => {
+      if (url.includes('trigger/status')) return IDLE_TRIGGER;
+      if (url.startsWith('/api/eval/datasets')) return { datasets: [] };
+      return { runs: [runFixture] };
+    });
+    await renderPage();
+    expect(container?.textContent).toContain('召回率');
+    expect(container?.textContent).toContain('命中率');
+    const source = fs.readFileSync(
+      path.join(path.resolve(__dirname, '..'), 'web/src/pages/EvalPage.tsx'),
+      'utf8',
+    );
+    expect(source).toContain('排序 MRR');
+    expect(source).toContain('精确率');
+    expect(source).not.toMatch(/<th className="py-2 pr-4">recall</);
+  });
+});

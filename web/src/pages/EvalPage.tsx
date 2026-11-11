@@ -491,15 +491,15 @@ function EvalRunsPanel({
                 </button>
                 <div className="flex flex-wrap items-center gap-3">
                   <MetricChip
-                    label="recall"
+                    label="召回率"
                     value={pct(run.summary?.overall.recall)}
                   />
                   <MetricChip
-                    label="hit"
+                    label="命中率"
                     value={pct(run.summary?.overall.hitRate)}
                   />
                   <MetricChip
-                    label="mrr"
+                    label="排序 MRR"
                     value={
                       run.summary?.overall.mrr !== undefined &&
                       run.summary?.overall.mrr !== null
@@ -508,7 +508,7 @@ function EvalRunsPanel({
                     }
                   />
                   <MetricChip
-                    label="precision"
+                    label="精确率"
                     value={pct(run.summary?.overall.precision)}
                   />
                 </div>
@@ -535,10 +535,10 @@ function EvalRunsPanel({
                     <span className="rounded bg-muted px-1.5 py-0.5 text-xs">
                       {item.category}
                     </span>
-                    <MetricChip label="recall" value={pct(item.recall)} />
-                    <MetricChip label="mrr" value={item.mrr.toFixed(2)} />
-                    <MetricChip label="precision" value={pct(item.precision)} />
-                    <MetricChip label="latency" value={`${item.latencyMs}ms`} />
+                    <MetricChip label="召回率" value={pct(item.recall)} />
+                    <MetricChip label="排序 MRR" value={item.mrr.toFixed(2)} />
+                    <MetricChip label="精确率" value={pct(item.precision)} />
+                    <MetricChip label="耗时" value={`${item.latencyMs}ms`} />
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">
                     expected: {item.expected.join(', ') || '—'}
@@ -566,13 +566,42 @@ function EvalRunsPanel({
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                    <th className="py-2 pr-4">Run</th>
-                    <th className="py-2 pr-4">k</th>
-                    <th className="py-2 pr-4">n</th>
-                    <th className="py-2 pr-4">recall</th>
-                    <th className="py-2 pr-4">hit</th>
-                    <th className="py-2 pr-4">mrr</th>
-                    <th className="py-2 pr-4">precision</th>
+                    <th className="py-2 pr-4" title="评测运行名称">
+                      运行
+                    </th>
+                    <th
+                      className="py-2 pr-4"
+                      title="检索深度：每次查询召回几条记忆"
+                    >
+                      深度 k
+                    </th>
+                    <th className="py-2 pr-4" title="参与统计的查询条数">
+                      查询数
+                    </th>
+                    <th
+                      className="py-2 pr-4"
+                      title="期望记忆中被召回的比例（覆盖度）"
+                    >
+                      召回率
+                    </th>
+                    <th
+                      className="py-2 pr-4"
+                      title="至少命中一条期望记忆的查询占比（查全能力）"
+                    >
+                      命中率
+                    </th>
+                    <th
+                      className="py-2 pr-4"
+                      title="平均倒数排名：命中的记忆排得越靠前分越高（排序质量）"
+                    >
+                      排序 MRR
+                    </th>
+                    <th
+                      className="py-2 pr-4"
+                      title="召回结果中确实是期望记忆的比例（噪声大小）"
+                    >
+                      精确率
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
