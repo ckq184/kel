@@ -405,7 +405,9 @@ describe('langfuse integration (zero-dep REST client)', () => {
       traceId: 'tr1',
     });
     const scores = JSON.parse(String(calls[3].init.body));
-    expect(scores.scores).toHaveLength(1);
+    // v4 contract: a bare array of score bodies.
+    expect(Array.isArray(scores)).toBe(true);
+    expect(scores).toHaveLength(1);
   });
 
   test('207 partial success is accepted; errors never echo the secret key', async () => {

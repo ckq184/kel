@@ -461,6 +461,11 @@ export function createLangfuseClient(options: LangfuseClientOptions) {
   };
 
   return {
+    /** Datasets are upserted by name (200 for both create and re-create);
+     * item writes 404 on a missing dataset, so ensure it first. */
+    async ensureDataset(name: string, description: string) {
+      await post('/api/public/datasets', { name, description });
+    },
     upsertDatasetItem(payload: Record<string, unknown>) {
       return post('/api/public/dataset-items', payload);
     },
@@ -492,9 +497,9 @@ export function createLangfuseClient(options: LangfuseClientOptions) {
       return post('/api/public/dataset-run-items', link);
     },
     async postScores(scores: readonly LangfuseScorePayload[]) {
-      // 2xx and 207 (partial batch acceptance) are both success; errors
-      // throw with the status surfaced.
-      await post('/api/public/scores', { scores: [...scores] });
+      // v4 accepts a bare JSON array of score bodies (not a {scores} wrapper);
+      // 2xx and 207 (partial batch acceptance) are both success.
+      await post('/api/public/scores', [...scores]);
     },
   };
 }
@@ -839,6 +844,10 @@ async function main(): Promise<void> {
       say(`\n── langfuse write-back (${options.runName}) ──`);
       const client = createLangfuseClient({ config: langfuseConfig });
       try {
+        await client.ensureDataset(
+          LANGFUSE_DATASET_NAME,
+          'CKQClaw auto-recall golden set (query → expected markers)',
+        );
         for (const query of fixture.queries) {
           await client.upsertDatasetItem(datasetItemPayload(query));
         }
