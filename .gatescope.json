@@ -1,5 +1,13 @@
 {
-  "task": "任务Z后续修复2 - folder 重建迁移携带既有列值：重建 INSERT 对 init_source_path/init_git_url/created_by/owner_claim_source 写死 NULL、is_home 写死 0，中间版本 DB（已有这些列真实数据但仍带 folder UNIQUE 约束）首启会被清空；修复=按 PRAGMA table_info 列存在性动态携带，列缺失时维持 NULL/0 字面量。用户 2026-11-10 拍板执行。",
-  "base": "d959fbc",
-  "allow": ["src/db.ts", "tests/db-folder-unique-rebuild-order.test.ts"]
+  "task": "任务Z后续4 - 召回率评测 v2（langfuse 集成，用户 2026-11-11 拍板「集成 langfuse 按需起」并对齐其评测体系）：scripts/eval-auto-recall.ts 复活为外部执行器（纯函数/fixture/真实侧车检索同 v1），新增零依赖 langfuse REST 客户端（Basic auth；dataset-items 稳定 id upsert / ingestion trace-create / dataset-run-items / scores 批量写回，score=recall/hit/mrr/precision 挂 traceId+datasetRunId），配置走 env CKQCLAW_EVAL_LANGFUSE_* 或 data/config/eval-langfuse.json，--no-langfuse 本地模式；scripts/eval-langfuse.mjs up/down/status 管理 langfuse compose 栈（.env 缺失时生成随机密钥）；运行时依赖零新增。",
+  "base": "9cfce2b",
+  "allow": [
+    "scripts/eval-auto-recall.ts",
+    "scripts/eval/auto-recall-golden.json",
+    "scripts/eval-langfuse.mjs",
+    "package.json",
+    "AGENTS.md",
+    "CLAUDE.md",
+    "tests/eval-auto-recall-metrics.test.ts"
+  ]
 }

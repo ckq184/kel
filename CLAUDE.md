@@ -359,3 +359,17 @@ git diff --check
 
 真实 Provider 测试使用 `npm run test:real-model`，会产生真实请求和可能的费用，
 不要把凭据、Endpoint、模型名或未脱敏回复写入日志。
+
+自动召回（自动记忆）检索质量评测使用 `npm run eval:auto-recall`
+（`tsx scripts/eval-auto-recall.ts`，任务 Z 后续 4）：按生产契约（query 截
+500 字、top-k=5，可用 `--k` 覆盖）对 golden set（`scripts/eval/
+auto-recall-golden.json`，verbatim/paraphrase/multi/truncation 四类）经真实
+侧车播种与检索，输出 Recall@k / Hit-rate / MRR / Precision 本地报告到
+`data/eval/auto-recall/`；配置自托管 langfuse 后（env `CKQCLAW_EVAL_LANGFUSE_URL/_PUBLIC_KEY/_SECRET_KEY`
+或 `data/config/eval-langfuse.json`）按其「外部执行器」模式写回 dataset
+items / traces / dataset-run-items / scores（零依赖 REST，Basic auth），
+在 langfuse UI 看运行历史与跨 run 对比；栈生命周期 `npm run eval:langfuse
+-- up|down|status`（默认检出目录 `<repo>/../langfuse`）。同样产生真实
+embedder/LLM 请求与费用，不进门禁；隔离存储 `data/eval/auto-recall/store`；
+`--reset` 重播种、`--dry-run` 离线校验、`--no-langfuse` 纯本地。指标纯
+函数与 langfuse 客户端由 `tests/eval-auto-recall-metrics.test.ts` 锁定。
