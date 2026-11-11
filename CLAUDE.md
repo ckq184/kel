@@ -243,6 +243,7 @@ data/
 ├── mcp-servers/{userId}/
 ├── plugins/
 ├── agent-profile-runtime/
+├── harness-adapters/{sanitized-jid}/
 ├── env/
 └── extra/
 ```
@@ -253,8 +254,17 @@ data/
 `data/db/eval.db` 是独立的原生评测库（任务 AB，`src/eval-store.ts` 自版本化
 `PRAGMA user_version`，WAL 双进程安全）：`eval_runs`/`eval_run_items` 存离线
 召回评测（`scripts/eval-auto-recall.ts` 默认落库），`obs_turns` 存真实对话
-turn 观测（`src/turn-observer.ts`，默认关）。不碰 messages.db、不升主库
-schema。
+turn 观测（`src/turn-observer.ts`，默认关），`harness_proposals`/
+`harness_versions`/`harness_lessons` 存 RSI harness adapter 演化记录（任务
+AE，提案由 `scripts/eval-harness-evolve.ts` 写入、采纳仅经 admin Web 动作）。
+不碰 messages.db、不升主库 schema。
+
+`data/harness-adapters/<sanitized-jid>/` 是 workspace 外挂 harness adapter 的
+运行时数据（任务 AE，RSI Phase 1）：`ADAPTER.md` 为注入正文（16KB 上限、
+禁评分指向词），`ACTIVE` 为生效版本指针（回滚只改指针，版本历史纯追加）。
+宿主 `container-runner` 读取后经 `ContainerInput.harnessAdapter` 下发，runner
+在首轮 user turn 前拼接版本标记 block——无 adapter 时输出与无此功能时逐字节
+一致。该目录属敏感区，写入仅由 admin 采纳/回滚动作触发。
 
 核心表族：
 

@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import crypto from 'node:crypto';
 
 import Database from 'better-sqlite3';
 
@@ -25,7 +26,7 @@ import { validateGoldenSet, type GoldenSet } from './eval-dataset.js';
  * v2 (task AD) eval_datasets + builtin auto-recall seeding.
  */
 
-const EVAL_SCHEMA_VERSION = 2;
+const EVAL_SCHEMA_VERSION = 3;
 
 /** Builtin seed source (repo file; content pinned by the golden-set tests). */
 const BUILTIN_GOLDEN_SET_PATH = path.resolve(
@@ -226,6 +227,129 @@ export interface ObsTurnListFilter {
   offset?: number;
 }
 
+// ── Harness adapter (task AE, v3) ───────────────────────────────────────────
+
+/** One trajectory moment a proposal cites as evidence (leak-free by construction). */
+export interface HarnessProposalEvidence {
+  turnId: string;
+  inputExcerpt: string;
+  outputExcerpt: string;
+  why: string;
+}
+
+export interface HarnessProposalInput {
+  id: string;
+  workspaceJid: string;
+  /** Full proposed ADAPTER.md; empty string when keepBase. */
+  adapterMd: string;
+  keepBase: boolean;
+  /** Unified diff vs the baseline version (display only). */
+  diff: string | null;
+  rationale: string;
+  evidence: HarnessProposalEvidence[];
+  /** Active version at proposal time; 0 = no adapter yet. */
+  baselineVersion: number;
+  model: string;
+  promptHash: string;
+  createdAt?: string;
+}
+
+export type HarnessProposalStatus =
+  | 'pending'
+  | 'adopted'
+  | 'rejected'
+  | 'invalid';
+
+export interface HarnessProposalListItem {
+  id: string;
+  workspaceJid: string;
+  status: HarnessProposalStatus;
+  keepBase: boolean;
+  rationale: string;
+  evidenceCount: number;
+  baselineVersion: number;
+  model: string;
+  promptHash: string;
+  createdAt: string;
+  decidedAt: string | null;
+  decidedBy: string | null;
+}
+
+export interface HarnessProposalRecord extends HarnessProposalListItem {
+  adapterMd: string;
+  diff: string | null;
+  evidence: HarnessProposalEvidence[];
+}
+
+export interface HarnessVersionInput {
+  workspaceJid: string;
+  proposalId: string | null;
+  adapterMd: string;
+  adoptedBy: string;
+}
+
+export interface HarnessVersionRecord {
+  id: string;
+  workspaceJid: string;
+  version: number;
+  proposalId: string | null;
+  adapterMd: string;
+  adoptedBy: string;
+  createdAt: string;
+}
+
+export interface HarnessLessonInput {
+  id: string;
+  workspaceJid: string;
+  cue: string;
+  lesson: string;
+  evidence: string;
+  confidence: string | null;
+  proposalId: string | null;
+}
+
+export interface HarnessLessonRecord extends HarnessLessonInput {
+  createdAt: string;
+}
+
+interface HarnessProposalRow {
+  id: string;
+  workspace_jid: string;
+  status: string;
+  adapter_md: string;
+  keep_base: number;
+  diff_json: string | null;
+  rationale: string;
+  evidence_json: string;
+  baseline_version: number;
+  model: string;
+  prompt_hash: string;
+  created_at: string;
+  decided_at: string | null;
+  decided_by: string | null;
+}
+
+interface HarnessVersionRow {
+  id: string;
+  workspace_jid: string;
+  version: number;
+  proposal_id: string | null;
+  adapter_md: string;
+  adopted_by: string;
+  created_at: string;
+}
+
+interface HarnessLessonRow {
+  id: string;
+  workspace_jid: string;
+  cue: string;
+  lesson: string;
+  evidence: string;
+  confidence: string | null;
+  proposal_id: string | null;
+  created_at: string;
+}
+
 // ── Store ───────────────────────────────────────────────────────────────────
 
 interface EvalRunRow {
@@ -336,6 +460,18 @@ function mapRunRow(row: EvalRunRow): EvalRunRecord {
     summary: parseJsonColumn<EvalRunSummary | null>(row.summary_json, null),
     judgePromptHash: row.judge_prompt_hash,
     judgeModel: row.judge_model,
+    createdAt: row.created_at,
+  };
+}
+
+function mapHarnessVersionRow(row: HarnessVersionRow): HarnessVersionRecord {
+  return {
+    id: row.id,
+    workspaceJid: row.workspace_jid,
+    version: row.version,
+    proposalId: row.proposal_id,
+    adapterMd: row.adapter_md,
+    adoptedBy: row.adopted_by,
     createdAt: row.created_at,
   };
 }
@@ -466,12 +602,54 @@ export class EvalStore {
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS harness_proposals (
+          id TEXT PRIMARY KEY,
+          workspace_jid TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending',
+          adapter_md TEXT NOT NULL,
+          keep_base INTEGER NOT NULL DEFAULT 0,
+          diff_json TEXT,
+          rationale TEXT NOT NULL,
+          evidence_json TEXT NOT NULL,
+          baseline_version INTEGER NOT NULL DEFAULT 0,
+          model TEXT NOT NULL,
+          prompt_hash TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          decided_at TEXT,
+          decided_by TEXT
+        );
+        CREATE TABLE IF NOT EXISTS harness_versions (
+          id TEXT PRIMARY KEY,
+          workspace_jid TEXT NOT NULL,
+          version INTEGER NOT NULL,
+          proposal_id TEXT,
+          adapter_md TEXT NOT NULL,
+          adopted_by TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          UNIQUE(workspace_jid, version)
+        );
+        CREATE TABLE IF NOT EXISTS harness_lessons (
+          id TEXT PRIMARY KEY,
+          workspace_jid TEXT NOT NULL,
+          cue TEXT NOT NULL,
+          lesson TEXT NOT NULL,
+          evidence TEXT NOT NULL,
+          confidence TEXT,
+          proposal_id TEXT,
+          created_at TEXT NOT NULL
+        );
         CREATE INDEX IF NOT EXISTS idx_eval_run_items_run
           ON eval_run_items(run_id);
         CREATE INDEX IF NOT EXISTS idx_obs_turns_created
           ON obs_turns(created_at);
         CREATE INDEX IF NOT EXISTS idx_obs_turns_workspace
           ON obs_turns(workspace_jid);
+        CREATE INDEX IF NOT EXISTS idx_harness_proposals_workspace
+          ON harness_proposals(workspace_jid, created_at);
+        CREATE INDEX IF NOT EXISTS idx_harness_versions_workspace
+          ON harness_versions(workspace_jid, version);
+        CREATE INDEX IF NOT EXISTS idx_harness_lessons_workspace
+          ON harness_lessons(workspace_jid, created_at);
         PRAGMA user_version = ${EVAL_SCHEMA_VERSION};
       `);
       if (version < 2) {
@@ -826,6 +1004,218 @@ export class EvalStore {
     if (row.source === 'builtin') return 'builtin';
     this.db.prepare('DELETE FROM eval_datasets WHERE name = ?').run(name);
     return 'deleted';
+  }
+
+  // ── harness_proposals / harness_versions / harness_lessons (task AE) ─────
+
+  insertHarnessProposal(input: HarnessProposalInput): void {
+    this.db
+      .prepare(
+        `INSERT INTO harness_proposals
+         (id, workspace_jid, status, adapter_md, keep_base, diff_json, rationale,
+          evidence_json, baseline_version, model, prompt_hash, created_at)
+         VALUES
+         (@id, @workspaceJid, 'pending', @adapterMd, @keepBase, @diffJson,
+          @rationale, @evidenceJson, @baselineVersion, @model, @promptHash, @createdAt)`,
+      )
+      .run({
+        id: input.id,
+        workspaceJid: input.workspaceJid,
+        adapterMd: input.adapterMd,
+        keepBase: input.keepBase ? 1 : 0,
+        diffJson: input.diff,
+        rationale: input.rationale,
+        evidenceJson: JSON.stringify(input.evidence),
+        baselineVersion: input.baselineVersion,
+        model: input.model,
+        promptHash: input.promptHash,
+        createdAt: input.createdAt ?? new Date().toISOString(),
+      });
+  }
+
+  listHarnessProposals(
+    workspaceJid: string,
+    limit = 100,
+  ): HarnessProposalListItem[] {
+    const rows = this.db
+      .prepare(
+        `SELECT id, workspace_jid, status, keep_base, rationale, evidence_json,
+                baseline_version, model, prompt_hash, created_at, decided_at, decided_by
+         FROM harness_proposals WHERE workspace_jid = ?
+         ORDER BY created_at DESC, id DESC LIMIT ?`,
+      )
+      .all(workspaceJid, limit) as (Omit<
+      HarnessProposalRow,
+      'adapter_md' | 'diff_json'
+    > & { evidence_json: string })[];
+    return rows.map((row) => ({
+      id: row.id,
+      workspaceJid: row.workspace_jid,
+      status: row.status as HarnessProposalStatus,
+      keepBase: row.keep_base === 1,
+      rationale: row.rationale,
+      evidenceCount: parseJsonColumn<HarnessProposalEvidence[]>(
+        row.evidence_json,
+        [],
+      ).length,
+      baselineVersion: row.baseline_version,
+      model: row.model,
+      promptHash: row.prompt_hash,
+      createdAt: row.created_at,
+      decidedAt: row.decided_at,
+      decidedBy: row.decided_by,
+    }));
+  }
+
+  getHarnessProposal(id: string): HarnessProposalRecord | null {
+    const row = this.db
+      .prepare('SELECT * FROM harness_proposals WHERE id = ?')
+      .get(id) as HarnessProposalRow | undefined;
+    if (!row) return null;
+    const evidence = parseJsonColumn<HarnessProposalEvidence[]>(
+      row.evidence_json,
+      [],
+    );
+    return {
+      id: row.id,
+      workspaceJid: row.workspace_jid,
+      status: row.status as HarnessProposalStatus,
+      keepBase: row.keep_base === 1,
+      adapterMd: row.adapter_md,
+      diff: row.diff_json,
+      rationale: row.rationale,
+      evidence,
+      evidenceCount: evidence.length,
+      baselineVersion: row.baseline_version,
+      model: row.model,
+      promptHash: row.prompt_hash,
+      createdAt: row.created_at,
+      decidedAt: row.decided_at,
+      decidedBy: row.decided_by,
+    };
+  }
+
+  /** Only a pending proposal may be decided; each proposal decides once. */
+  decideHarnessProposal(
+    id: string,
+    decision: { status: 'adopted' | 'rejected'; decidedBy: string },
+  ): 'ok' | 'not_found' | 'invalid_transition' {
+    const result = this.db
+      .prepare(
+        `UPDATE harness_proposals
+         SET status = @status, decided_at = @decidedAt, decided_by = @decidedBy
+         WHERE id = @id AND status = 'pending'`,
+      )
+      .run({
+        id,
+        status: decision.status,
+        decidedAt: new Date().toISOString(),
+        decidedBy: decision.decidedBy,
+      });
+    if (result.changes === 1) return 'ok';
+    const row = this.db
+      .prepare('SELECT status FROM harness_proposals WHERE id = ?')
+      .get(id) as { status: string } | undefined;
+    return row ? 'invalid_transition' : 'not_found';
+  }
+
+  /** Appends the next version number for the workspace and returns the record. */
+  insertHarnessVersion(input: HarnessVersionInput): HarnessVersionRecord {
+    const id = `hv_${crypto.randomUUID()}`;
+    const createdAt = new Date().toISOString();
+    const insert = this.db.transaction(() => {
+      const next =
+        (
+          this.db
+            .prepare(
+              'SELECT MAX(version) AS maxVersion FROM harness_versions WHERE workspace_jid = ?',
+            )
+            .get(input.workspaceJid) as { maxVersion: number | null }
+        ).maxVersion ?? 0;
+      const version = next + 1;
+      this.db
+        .prepare(
+          `INSERT INTO harness_versions
+           (id, workspace_jid, version, proposal_id, adapter_md, adopted_by, created_at)
+           VALUES (@id, @workspaceJid, @version, @proposalId, @adapterMd, @adoptedBy, @createdAt)`,
+        )
+        .run({
+          id,
+          workspaceJid: input.workspaceJid,
+          version,
+          proposalId: input.proposalId,
+          adapterMd: input.adapterMd,
+          adoptedBy: input.adoptedBy,
+          createdAt,
+        });
+      return version;
+    });
+    const version = insert();
+    return {
+      id,
+      workspaceJid: input.workspaceJid,
+      version,
+      proposalId: input.proposalId,
+      adapterMd: input.adapterMd,
+      adoptedBy: input.adoptedBy,
+      createdAt,
+    };
+  }
+
+  listHarnessVersions(workspaceJid: string): HarnessVersionRecord[] {
+    const rows = this.db
+      .prepare(
+        'SELECT * FROM harness_versions WHERE workspace_jid = ? ORDER BY version DESC',
+      )
+      .all(workspaceJid) as HarnessVersionRow[];
+    return rows.map(mapHarnessVersionRow);
+  }
+
+  /** The active adapter is the highest adopted version (rollback rewrites the file, not history). */
+  getActiveHarnessVersion(workspaceJid: string): HarnessVersionRecord | null {
+    const row = this.db
+      .prepare(
+        'SELECT * FROM harness_versions WHERE workspace_jid = ? ORDER BY version DESC LIMIT 1',
+      )
+      .get(workspaceJid) as HarnessVersionRow | undefined;
+    return row ? mapHarnessVersionRow(row) : null;
+  }
+
+  insertHarnessLesson(input: HarnessLessonInput): void {
+    this.db
+      .prepare(
+        `INSERT INTO harness_lessons
+         (id, workspace_jid, cue, lesson, evidence, confidence, proposal_id, created_at)
+         VALUES (@id, @workspaceJid, @cue, @lesson, @evidence, @confidence, @proposalId, @createdAt)`,
+      )
+      .run({
+        id: input.id,
+        workspaceJid: input.workspaceJid,
+        cue: input.cue,
+        lesson: input.lesson,
+        evidence: input.evidence,
+        confidence: input.confidence,
+        proposalId: input.proposalId,
+        createdAt: new Date().toISOString(),
+      });
+  }
+
+  listHarnessLessons(workspaceJid: string, limit = 100): HarnessLessonRecord[] {
+    const rows = this.db
+      .prepare(
+        'SELECT * FROM harness_lessons WHERE workspace_jid = ? ORDER BY created_at DESC LIMIT ?',
+      )
+      .all(workspaceJid, limit) as HarnessLessonRow[];
+    return rows.map((row) => ({
+      id: row.id,
+      workspaceJid: row.workspace_jid,
+      cue: row.cue,
+      lesson: row.lesson,
+      evidence: row.evidence,
+      confidence: row.confidence,
+      proposalId: row.proposal_id,
+      createdAt: row.created_at,
+    }));
   }
 }
 

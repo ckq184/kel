@@ -49,7 +49,9 @@ import {
   normalizeChannelTurnContext,
 } from './types.js';
 import type { ClaudeContextAudit } from './stream-event.types.js';
+import { decorateHarnessAdapterTurn } from './harness-adapter-turn.js';
 export type { StreamEventType, StreamEvent } from './types.js';
+export { decorateHarnessAdapterTurn };
 
 import {
   sanitizeFilename,
@@ -1882,9 +1884,13 @@ async function runQueryAttempt(
       message,
       containerInput.channelContext,
     );
+    const withHarnessAdapter = decorateHarnessAdapterTurn(
+      withChannelContext,
+      containerInput.harnessAdapter,
+    );
     const withWorkspaceMemory = workspaceMemoryTurn.block
-      ? `${workspaceMemoryTurn.block}\n\n${withChannelContext}`
-      : withChannelContext;
+      ? `${workspaceMemoryTurn.block}\n\n${withHarnessAdapter}`
+      : withHarnessAdapter;
     const withAutoMemoryRecall = autoMemoryRecallTurn.block
       ? `${autoMemoryRecallTurn.block}\n\n${withWorkspaceMemory}`
       : withWorkspaceMemory;
@@ -2305,9 +2311,13 @@ async function runQueryAttempt(
           message,
           queuedChannelContext,
         );
+        const withHarnessAdapter = decorateHarnessAdapterTurn(
+          withChannelContext,
+          containerInput.harnessAdapter,
+        );
         const withWorkspaceMemory = workspaceMemoryTurn.block
-          ? `${workspaceMemoryTurn.block}\n\n${withChannelContext}`
-          : withChannelContext;
+          ? `${workspaceMemoryTurn.block}\n\n${withHarnessAdapter}`
+          : withHarnessAdapter;
         const withAutoMemoryRecall = autoMemoryRecallTurn.block
           ? `${autoMemoryRecallTurn.block}\n\n${withWorkspaceMemory}`
           : withWorkspaceMemory;

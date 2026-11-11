@@ -75,7 +75,7 @@ describe('SCORE_DEFINITIONS', () => {
 // ── eval.db schema + self-versioning ────────────────────────────────────────
 
 describe('EvalStore schema', () => {
-  test('creates the three tables and stamps user_version=1', () => {
+  test('creates the base tables and stamps the current user_version', () => {
     const dbPath = freshStorePath('schema');
     const store = EvalStore.open(dbPath);
     try {
@@ -84,7 +84,7 @@ describe('EvalStore schema', () => {
         const version = raw.prepare('PRAGMA user_version').get() as {
           user_version: number;
         };
-        expect(version.user_version).toBe(2);
+        expect(version.user_version).toBe(3);
         const tables = (
           raw
             .prepare(
@@ -98,6 +98,9 @@ describe('EvalStore schema', () => {
             'eval_run_items',
             'obs_turns',
             'eval_datasets',
+            'harness_proposals',
+            'harness_versions',
+            'harness_lessons',
           ]),
         );
       } finally {
@@ -138,7 +141,7 @@ describe('EvalStore schema', () => {
   test('refuses to open a database stamped with a newer user_version', () => {
     const dbPath = freshStorePath('newer');
     const raw = new Database(dbPath);
-    raw.exec('PRAGMA user_version = 3');
+    raw.exec('PRAGMA user_version = 4');
     raw.close();
     expect(() => EvalStore.open(dbPath)).toThrow(/newer than supported/i);
   });
@@ -714,6 +717,244 @@ describe('EvalStore datasets', () => {
       });
       expect(store.deleteDataset('temp')).toBe('deleted');
       expect(store.getDataset('temp')).toBeNull();
+    } finally {
+      store.close();
+    }
+  });
+});
+
+// ── Harness adapter tables (v3, task AE) ────────────────────────────────────
+
+describe('EvalStore harness (v3)', () => {
+  function sampleProposal(
+    overrides: Partial<{
+      id: string;
+      workspaceJid: string;
+      adapterMd: string;
+      keepBase: boolean;
+    }> = {},
+  ) {
+    return {
+      id: overrides.id ?? 'hp_test1',
+      workspaceJid: overrides.workspaceJid ?? 'ws-a@g.us',
+      adapterMd:
+        overrides.adapterMd ?? '# Adapter\n\n回答财务类问题前先确认币种。',
+      keepBase: overrides.keepBase ?? false,
+      diff: '@@ -1 +1 @@\n-base\n+new',
+      rationale: '三个财务 turn 都漏了币种确认，属于重复出现的一致失败。',
+      evidence: [
+        {
+          turnId: 't1',
+          inputExcerpt: '帮我算一下报销总额',
+          outputExcerpt: '总额 1200 元',
+          why: '未确认币种，两 turn 分歧',
+        },
+      ],
+      baselineVersion: 0,
+      model: 'glm-flash',
+      promptHash: 'abc123',
+    };
+  }
+
+  test('fresh open lands on user_version 3 with all three harness tables', () => {
+    const store = EvalStore.open(freshStorePath('hv-fresh'));
+    try {
+      const version = (
+        (store as unknown as { db: Database.Database }).db
+          .prepare('PRAGMA user_version')
+          .get() as { user_version: number }
+      ).user_version;
+      expect(version).toBe(3);
+      const tables = (
+        (store as unknown as { db: Database.Database }).db
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'harness_%'",
+          )
+          .all() as { name: string }[]
+      ).map((row) => row.name);
+      expect(tables.sort()).toEqual([
+        'harness_lessons',
+        'harness_proposals',
+        'harness_versions',
+      ]);
+    } finally {
+      store.close();
+    }
+  });
+
+  test('refuses a future v4 database (forward-only contract)', () => {
+    const dbPath = freshStorePath('hv-v4');
+    const raw = new Database(dbPath);
+    raw.exec('PRAGMA user_version = 4');
+    raw.close();
+    expect(() => EvalStore.open(dbPath)).toThrow(/refusing downgrade/i);
+  });
+
+  test('insert + list + get round-trips a proposal; list omits the body', () => {
+    const store = EvalStore.open(freshStorePath('hv-crud'));
+    try {
+      store.insertHarnessProposal(sampleProposal());
+      const list = store.listHarnessProposals('ws-a@g.us');
+      expect(list).toHaveLength(1);
+      expect(list[0]).toMatchObject({
+        id: 'hp_test1',
+        status: 'pending',
+        keepBase: false,
+        evidenceCount: 1,
+      });
+      expect(
+        (list[0] as unknown as Record<string, unknown>).adapterMd,
+      ).toBeUndefined();
+      const detail = store.getHarnessProposal('hp_test1');
+      expect(detail).toMatchObject({ id: 'hp_test1', status: 'pending' });
+      expect(detail!.adapterMd).toContain('币种');
+      expect(detail!.evidence[0].turnId).toBe('t1');
+    } finally {
+      store.close();
+    }
+  });
+
+  test('list filters by workspace and orders newest first', () => {
+    const store = EvalStore.open(freshStorePath('hv-list'));
+    try {
+      store.insertHarnessProposal(
+        sampleProposal({
+          id: 'hp_a1',
+          workspaceJid: 'ws-a@g.us',
+        }),
+      );
+      store.insertHarnessProposal(
+        sampleProposal({
+          id: 'hp_b1',
+          workspaceJid: 'ws-b@g.us',
+        }),
+      );
+      store.insertHarnessProposal(
+        sampleProposal({
+          id: 'hp_a2',
+          workspaceJid: 'ws-a@g.us',
+        }),
+      );
+      const listA = store.listHarnessProposals('ws-a@g.us');
+      expect(listA.map((item) => item.id)).toEqual(['hp_a2', 'hp_a1']);
+      expect(store.listHarnessProposals('ws-c@g.us')).toHaveLength(0);
+    } finally {
+      store.close();
+    }
+  });
+
+  test('proposal state machine: only pending can be decided, once', () => {
+    const store = EvalStore.open(freshStorePath('hv-state'));
+    try {
+      store.insertHarnessProposal(sampleProposal({ id: 'hp_s1' }));
+      store.insertHarnessProposal(sampleProposal({ id: 'hp_s2' }));
+      store.insertHarnessProposal(
+        sampleProposal({ id: 'hp_s3', keepBase: true, adapterMd: '' }),
+      );
+      expect(
+        store.decideHarnessProposal('hp_missing', {
+          status: 'adopted',
+          decidedBy: 'admin',
+        }),
+      ).toBe('not_found');
+      expect(
+        store.decideHarnessProposal('hp_s1', {
+          status: 'adopted',
+          decidedBy: 'admin',
+        }),
+      ).toBe('ok');
+      const adopted = store.getHarnessProposal('hp_s1');
+      expect(adopted).toMatchObject({
+        status: 'adopted',
+        decidedBy: 'admin',
+      });
+      expect(adopted!.decidedAt).toBeTruthy();
+      // Second decision on the same proposal is rejected.
+      expect(
+        store.decideHarnessProposal('hp_s1', {
+          status: 'rejected',
+          decidedBy: 'admin',
+        }),
+      ).toBe('invalid_transition');
+      // invalid proposals are terminal.
+      store.insertHarnessProposal(sampleProposal({ id: 'hp_s9' }));
+      (store as unknown as { db: Database.Database }).db
+        .prepare(
+          "UPDATE harness_proposals SET status='invalid' WHERE id='hp_s9'",
+        )
+        .run();
+      expect(
+        store.decideHarnessProposal('hp_s9', {
+          status: 'adopted',
+          decidedBy: 'admin',
+        }),
+      ).toBe('invalid_transition');
+    } finally {
+      store.close();
+    }
+  });
+
+  test('versions increment per workspace, unique, active = max', () => {
+    const store = EvalStore.open(freshStorePath('hv-versions'));
+    try {
+      const v1 = store.insertHarnessVersion({
+        workspaceJid: 'ws-a@g.us',
+        proposalId: 'hp_v1',
+        adapterMd: '# v1',
+        adoptedBy: 'admin',
+      });
+      expect(v1.version).toBe(1);
+      const v2Other = store.insertHarnessVersion({
+        workspaceJid: 'ws-b@g.us',
+        proposalId: null,
+        adapterMd: '# other ws',
+        adoptedBy: 'admin',
+      });
+      expect(v2Other.version).toBe(1);
+      const v2 = store.insertHarnessVersion({
+        workspaceJid: 'ws-a@g.us',
+        proposalId: 'hp_v2',
+        adapterMd: '# v2',
+        adoptedBy: 'admin',
+      });
+      expect(v2.version).toBe(2);
+      const active = store.getActiveHarnessVersion('ws-a@g.us');
+      expect(active).toMatchObject({ version: 2, adapterMd: '# v2' });
+      expect(store.getActiveHarnessVersion('ws-none@g.us')).toBeNull();
+      const list = store.listHarnessVersions('ws-a@g.us');
+      expect(list.map((item) => item.version)).toEqual([2, 1]);
+    } finally {
+      store.close();
+    }
+  });
+
+  test('lessons round-trip and filter by workspace', () => {
+    const store = EvalStore.open(freshStorePath('hv-lessons'));
+    try {
+      store.insertHarnessLesson({
+        id: 'hl_1',
+        workspaceJid: 'ws-a@g.us',
+        cue: '财务类问题且涉及金额',
+        lesson: '在 system 指令中要求先确认币种（ADAPTER.md）',
+        evidence: 'hp_x: 3 个 turn 漏币种确认',
+        confidence: 'medium',
+        proposalId: 'hp_x',
+      });
+      store.insertHarnessLesson({
+        id: 'hl_2',
+        workspaceJid: 'ws-b@g.us',
+        cue: 'cue b',
+        lesson: 'lesson b',
+        evidence: 'ev b',
+        confidence: null,
+        proposalId: null,
+      });
+      const list = store.listHarnessLessons('ws-a@g.us');
+      expect(list).toHaveLength(1);
+      expect(list[0]).toMatchObject({
+        id: 'hl_1',
+        cue: '财务类问题且涉及金额',
+      });
     } finally {
       store.close();
     }

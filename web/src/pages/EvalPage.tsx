@@ -1442,13 +1442,350 @@ function DatasetsPanel({
   );
 }
 
+// ── Tab 4: harness adapter evolution (task AE, RSI Phase 1; admin only).
+// Propose happens in the CLI (npm run eval:harness-evolve); this panel is the
+// human gate: review pending proposals (diff + cited turns), adopt or reject,
+// browse immutable versions, and roll the active pointer back.
+
+interface HarnessProposalListItem {
+  id: string;
+  workspaceJid: string;
+  status: 'pending' | 'adopted' | 'rejected' | 'invalid';
+  keepBase: boolean;
+  rationale: string;
+  evidenceCount: number;
+  baselineVersion: number;
+  model: string;
+  promptHash: string;
+  createdAt: string;
+  decidedAt: string | null;
+  decidedBy: string | null;
+}
+
+interface HarnessProposalDetail extends HarnessProposalListItem {
+  adapterMd: string;
+  diff: string | null;
+  evidence: Array<{
+    turnId: string;
+    inputExcerpt: string;
+    outputExcerpt: string;
+    why: string;
+  }>;
+}
+
+interface HarnessVersionItem {
+  id: string;
+  version: number;
+  active: boolean;
+  proposalId: string | null;
+  adapterMd: string;
+  adoptedBy: string;
+  createdAt: string;
+}
+
+interface HarnessLessonItem {
+  id: string;
+  cue: string;
+  lesson: string;
+  evidence: string;
+  confidence: string | null;
+  createdAt: string;
+}
+
+const HARNESS_STATUS_LABEL: Record<HarnessProposalListItem['status'], string> =
+  { pending: '待审', adopted: '已采纳', rejected: '已拒绝', invalid: '无效' };
+
+function HarnessEvolvePanel() {
+  const [workspace, setWorkspace] = useState('');
+  const [loadedWorkspace, setLoadedWorkspace] = useState('');
+  const [proposals, setProposals] = useState<HarnessProposalListItem[]>([]);
+  const [versions, setVersions] = useState<HarnessVersionItem[]>([]);
+  const [lessons, setLessons] = useState<HarnessLessonItem[]>([]);
+  const [detail, setDetail] = useState<HarnessProposalDetail | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const loadAll = useCallback(async (jid: string) => {
+    if (!jid.trim()) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const query = `workspace=${encodeURIComponent(jid.trim())}`;
+      const [p, v, l] = await Promise.all([
+        api.get<{ proposals: HarnessProposalListItem[] }>(
+          `/api/eval/harness/proposals?${query}`,
+        ),
+        api.get<{ versions: HarnessVersionItem[] }>(
+          `/api/eval/harness/versions?${query}`,
+        ),
+        api.get<{ lessons: HarnessLessonItem[] }>(
+          `/api/eval/harness/lessons?${query}`,
+        ),
+      ]);
+      setProposals(p.proposals);
+      setVersions(v.versions);
+      setLessons(l.lessons);
+      setLoadedWorkspace(jid.trim());
+    } catch (err) {
+      setError(formatApiError(err));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const openDetail = useCallback(async (id: string) => {
+    setDetail(null);
+    try {
+      setDetail(
+        await api.get<HarnessProposalDetail>(
+          `/api/eval/harness/proposals/${id}`,
+        ),
+      );
+    } catch (err) {
+      setError(formatApiError(err));
+    }
+  }, []);
+
+  const decide = useCallback(
+    async (id: string, action: 'adopt' | 'reject') => {
+      setNotice(null);
+      setError(null);
+      try {
+        await api.post(`/api/eval/harness/proposals/${id}/${action}`, {});
+        setNotice(
+          action === 'adopt'
+            ? `已采纳 ${id}（新版本已写入该 workspace 的 adapter）。`
+            : `已拒绝 ${id}。`,
+        );
+        setDetail(null);
+        await loadAll(workspace);
+      } catch (err) {
+        setError(formatApiError(err));
+      }
+    },
+    [loadAll, workspace],
+  );
+
+  const rollback = useCallback(
+    async (version: HarnessVersionItem) => {
+      setNotice(null);
+      setError(null);
+      try {
+        await api.post(
+          `/api/eval/harness/versions/${version.id}/rollback?workspace=${encodeURIComponent(loadedWorkspace)}`,
+          {},
+        );
+        setNotice(`已回滚到 v${version.version}。`);
+        await loadAll(workspace);
+      } catch (err) {
+        setError(formatApiError(err));
+      }
+    },
+    [loadAll, loadedWorkspace, workspace],
+  );
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              data-harness-workspace
+              className="w-72 rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+              placeholder="工作区 JID（obs_turns.workspace_jid）"
+              value={workspace}
+              onChange={(event) => setWorkspace(event.target.value)}
+            />
+            <Button
+              size="sm"
+              onClick={() => void loadAll(workspace)}
+              disabled={loading || !workspace.trim()}
+            >
+              加载
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              提案由 CLI 生成：npm run eval:harness-evolve -- --workspace
+              &lt;jid&gt;
+            </span>
+          </div>
+          {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
+          {notice && <p className="mt-2 text-sm text-primary">{notice}</p>}
+        </CardContent>
+      </Card>
+
+      {loadedWorkspace && (
+        <Card>
+          <CardContent className="p-4 space-y-3">
+            <h3 className="text-sm font-semibold">
+              提案（{proposals.length}）
+            </h3>
+            {proposals.length === 0 && (
+              <p className="text-sm text-muted-foreground">
+                暂无提案。先在 CLI 跑一次 eval:harness-evolve。
+              </p>
+            )}
+            {proposals.map((proposal) => (
+              <div
+                key={proposal.id}
+                className="rounded-md border border-border p-3 space-y-2"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-auto p-0 text-left font-mono"
+                    onClick={() => void openDetail(proposal.id)}
+                  >
+                    {proposal.id}
+                  </Button>
+                  <span className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                    {HARNESS_STATUS_LABEL[proposal.status]}
+                  </span>
+                  {proposal.keepBase && (
+                    <span className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                      KEEP_BASE
+                    </span>
+                  )}
+                  <span className="text-xs text-muted-foreground">
+                    {new Date(proposal.createdAt).toLocaleString()} ·{' '}
+                    {proposal.model} · 基线 v{proposal.baselineVersion} · 证据{' '}
+                    {proposal.evidenceCount} 条
+                  </span>
+                  {proposal.status === 'pending' && !proposal.keepBase && (
+                    <Button
+                      size="sm"
+                      className="ml-auto"
+                      onClick={() => void decide(proposal.id, 'adopt')}
+                    >
+                      采纳
+                    </Button>
+                  )}
+                  {proposal.status === 'pending' && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void decide(proposal.id, 'reject')}
+                    >
+                      拒绝
+                    </Button>
+                  )}
+                </div>
+                <p className="text-sm">{proposal.rationale}</p>
+                {detail?.id === proposal.id && (
+                  <div className="space-y-2 rounded-md bg-muted/40 p-3 text-sm">
+                    <div>
+                      <div className="mb-1 font-semibold">提案 adapter</div>
+                      <pre className="whitespace-pre-wrap break-words font-mono text-xs">
+                        {detail.adapterMd || '(KEEP_BASE — 无改动)'}
+                      </pre>
+                    </div>
+                    {detail.diff && (
+                      <div>
+                        <div className="mb-1 font-semibold">diff</div>
+                        <pre className="whitespace-pre-wrap break-words font-mono text-xs">
+                          {detail.diff}
+                        </pre>
+                      </div>
+                    )}
+                    <div>
+                      <div className="mb-1 font-semibold">
+                        证据（引用的 turn）
+                      </div>
+                      {detail.evidence.map((item) => (
+                        <div
+                          key={item.turnId}
+                          className="mb-1 rounded border border-border p-2"
+                        >
+                          <div className="font-mono text-xs">{item.turnId}</div>
+                          <div className="text-xs text-muted-foreground">
+                            输入：{item.inputExcerpt} → 输出：
+                            {item.outputExcerpt}
+                          </div>
+                          <div>{item.why}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {loadedWorkspace && versions.length > 0 && (
+        <Card>
+          <CardContent className="p-4 space-y-2">
+            <h3 className="text-sm font-semibold">
+              版本历史（{versions.length}）
+            </h3>
+            {versions.map((version) => (
+              <div
+                key={version.id}
+                className="flex items-center gap-2 rounded-md border border-border p-2 text-sm"
+              >
+                <span className="font-mono">v{version.version}</span>
+                {version.active && (
+                  <span className="rounded bg-primary/10 px-1.5 py-0.5 text-xs text-primary">
+                    生效中
+                  </span>
+                )}
+                <span className="text-xs text-muted-foreground">
+                  {new Date(version.createdAt).toLocaleString()} · 由{' '}
+                  {version.adoptedBy} 采纳
+                </span>
+                {!version.active && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="ml-auto"
+                    onClick={() => void rollback(version)}
+                  >
+                    回滚
+                  </Button>
+                )}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {loadedWorkspace && lessons.length > 0 && (
+        <Card>
+          <CardContent className="p-4 space-y-2">
+            <h3 className="text-sm font-semibold">
+              经验教训（{lessons.length}）
+            </h3>
+            {lessons.map((lesson) => (
+              <div
+                key={lesson.id}
+                className="rounded-md border border-border p-2 text-sm"
+              >
+                <div className="font-medium">{lesson.cue}</div>
+                <div>{lesson.lesson}</div>
+                <div className="text-xs text-muted-foreground">
+                  证据：{lesson.evidence}
+                  {lesson.confidence ? ` · 置信 ${lesson.confidence}` : ''}
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
 // ── Page ────────────────────────────────────────────────────────────────────
 
 export function EvalPage() {
   const canManageSystem = useAuthStore((s) =>
     s.hasPermission('manage_system_config'),
   );
-  const [tab, setTab] = useState<'runs' | 'turns' | 'datasets'>('runs');
+  const [tab, setTab] = useState<'runs' | 'turns' | 'datasets' | 'harness'>(
+    'runs',
+  );
   const [datasets, setDatasets] = useState<DatasetListItem[]>([]);
 
   const reloadDatasets = useCallback(() => {
@@ -1470,6 +1807,7 @@ export function EvalPage() {
             { key: 'runs' as const, label: '离线评测' },
             { key: 'turns' as const, label: '真实对话' },
             { key: 'datasets' as const, label: '评测集' },
+            { key: 'harness' as const, label: 'Harness 演化' },
           ]
         : [{ key: 'runs' as const, label: '离线评测' }],
     [canManageSystem],
@@ -1505,6 +1843,7 @@ export function EvalPage() {
         {tab === 'datasets' && (
           <DatasetsPanel datasets={datasets} reload={reloadDatasets} />
         )}
+        {tab === 'harness' && <HarnessEvolvePanel />}
       </div>
     </div>
   );

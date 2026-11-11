@@ -306,7 +306,12 @@ describe('EvalPage datasets tab (task AD)', () => {
     const tabButtons = [
       ...container!.querySelectorAll('button[role="tab"]'),
     ].map((button) => button.textContent);
-    expect(tabButtons).toEqual(['离线评测', '真实对话', '评测集']);
+    expect(tabButtons).toEqual([
+      '离线评测',
+      '真实对话',
+      '评测集',
+      'Harness 演化',
+    ]);
 
     state.isAdmin = false;
     await renderPage();
@@ -449,5 +454,169 @@ describe('run detail shows dataset provenance (task AD follow-up)', () => {
     expect(container?.textContent).toContain('Run 详情 · run-20261111');
     expect(container?.textContent).toContain('评测集 auto-recall');
     expect(container?.textContent).toContain('eval.db');
+  });
+});
+
+// ── Harness evolution tab (task AE, RSI Phase 1) ────────────────────────────
+
+const PROPOSAL_FIXTURE = {
+  id: 'hp_web1',
+  workspaceJid: 'feishu:ws-ae@g.us',
+  status: 'pending',
+  keepBase: false,
+  rationale: '三个财务 turn 一致漏币种确认。',
+  evidenceCount: 2,
+  baselineVersion: 0,
+  model: 'glm-flash',
+  promptHash: 'hash',
+  createdAt: '2026-11-11T00:00:00Z',
+  decidedAt: null,
+  decidedBy: null,
+};
+
+const PROPOSAL_DETAIL_FIXTURE = {
+  ...PROPOSAL_FIXTURE,
+  adapterMd: '# Adapter\n\n先确认币种再算金额。',
+  diff: '+ 先确认币种',
+  evidence: [
+    {
+      turnId: 't1',
+      inputExcerpt: '算报销',
+      outputExcerpt: '1200 元',
+      why: '未确认币种',
+    },
+  ],
+};
+
+const VERSIONS_FIXTURE = {
+  versions: [
+    {
+      id: 'hv_2',
+      version: 2,
+      active: true,
+      proposalId: 'hp_web1',
+      adapterMd: '# v2',
+      adoptedBy: 'user-admin',
+      createdAt: '2026-11-11T01:00:00Z',
+    },
+    {
+      id: 'hv_1',
+      version: 1,
+      active: false,
+      proposalId: null,
+      adapterMd: '# v1',
+      adoptedBy: 'user-admin',
+      createdAt: '2026-11-11T00:00:00Z',
+    },
+  ],
+};
+
+describe('EvalPage harness tab (task AE)', () => {
+  beforeEach(() => {
+    apiGet.mockImplementation(async (url: string) => {
+      if (url.includes('trigger/status')) return IDLE_TRIGGER;
+      if (url.startsWith('/api/eval/datasets')) return { datasets: [] };
+      if (url.includes('/api/eval/harness/proposals/'))
+        return PROPOSAL_DETAIL_FIXTURE;
+      if (url.includes('/api/eval/harness/proposals'))
+        return { proposals: [PROPOSAL_FIXTURE] };
+      if (url.includes('/api/eval/harness/versions')) return VERSIONS_FIXTURE;
+      if (url.includes('/api/eval/harness/lessons')) return { lessons: [] };
+      return { runs: [], total: 0, items: [] };
+    });
+  });
+
+  async function openHarnessTab(): Promise<void> {
+    state.isAdmin = true;
+    await renderPage();
+    const tab = [...container!.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Harness 演化'),
+    );
+    await act(async () => {
+      tab?.click();
+    });
+    await act(async () => {});
+  }
+
+  test('member never sees the harness tab', async () => {
+    state.isAdmin = false;
+    await renderPage();
+    const tabs = [...container!.querySelectorAll('button[role="tab"]')].map(
+      (button) => button.textContent,
+    );
+    expect(tabs).not.toContain('Harness 演化');
+  });
+
+  async function loadWorkspaceData(): Promise<void> {
+    const input = container?.querySelector('[data-harness-workspace]');
+    // React-controlled input: drive the native setter so the value tracker
+    // registers the change, then let the input event propagate.
+    const nativeSetter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      'value',
+    )?.set;
+    await act(async () => {
+      nativeSetter?.call(input, 'feishu:ws-ae@g.us');
+      (input as HTMLInputElement).dispatchEvent(
+        new Event('input', { bubbles: true }),
+      );
+    });
+    const load = [...container!.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('加载'),
+    );
+    await act(async () => {
+      load?.click();
+    });
+    await act(async () => {});
+  }
+
+  test('workspace input loads the pending proposal list', async () => {
+    await openHarnessTab();
+    const input = container?.querySelector('[data-harness-workspace]');
+    expect(input).toBeTruthy();
+    await loadWorkspaceData();
+    expect(container?.textContent).toContain('hp_web1');
+    expect(container?.textContent).toContain('待审');
+    expect(container?.textContent).toContain('漏币种');
+  });
+
+  test('proposal detail renders adapter body, diff, and evidence; adopt posts', async () => {
+    await openHarnessTab();
+    await loadWorkspaceData();
+    // Expand the first proposal.
+    const row = [...container!.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('hp_web1'),
+    );
+    await act(async () => {
+      row?.click();
+    });
+    await act(async () => {});
+    expect(container?.textContent).toContain('先确认币种再算金额');
+    expect(container?.textContent).toContain('未确认币种');
+
+    apiPost.mockResolvedValueOnce({ ok: true, version: 1 });
+    const adopt = [...container!.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('采纳'),
+    );
+    expect(adopt).toBeTruthy();
+    await act(async () => {
+      adopt?.click();
+    });
+    await act(async () => {});
+    expect(apiPost).toHaveBeenCalledWith(
+      '/api/eval/harness/proposals/hp_web1/adopt',
+      {},
+    );
+  });
+
+  test('version history marks active and offers rollback', async () => {
+    await openHarnessTab();
+    await loadWorkspaceData();
+    expect(container?.textContent).toContain('v2');
+    expect(container?.textContent).toContain('生效中');
+    const rollback = [...container!.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('回滚'),
+    );
+    expect(rollback).toBeTruthy();
   });
 });

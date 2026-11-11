@@ -685,6 +685,19 @@ capturedAt }`（不存 messageIds 全量）。preview 无对应端点——前�
 /api/eval/datasets`（创建，201）、`PUT /api/eval/datasets/:name`（更新，
   保留 source）、`DELETE /api/eval/datasets/:name`（builtin 409）。内置集
   `auto-recall` 由 `scripts/eval/auto-recall-golden.json` 迁移播种
+- Harness adapter 演化（任务 AE，RSI Phase 1，`eval.db` v3
+  `harness_proposals`/`harness_versions`/`harness_lessons` 三表；提案由
+  CLI `npm run eval:harness-evolve -- --workspace <jid>` 生成，采纳是写入
+  `data/harness-adapters/<jid>/ADAPTER.md` 的人审动作）：`GET
+/api/eval/harness/proposals?workspace=<jid>`（列表不含 adapter 正文）、
+  `GET /api/eval/harness/proposals/:id`（详情含 diff 与证据）、`POST
+/api/eval/harness/proposals/:id/adopt`（校验失败 400；非 pending 409；
+  keep_base 400——采纳即写文件+追加版本+best-effort 蒸馏 lesson）、
+  `POST /api/eval/harness/proposals/:id/reject`、`GET
+/api/eval/harness/versions?workspace=<jid>`（版本历史含 active 标记）、
+  `POST /api/eval/harness/versions/:id/rollback?workspace=<jid>`（只改文件
+  侧 ACTIVE 指针，版本表保持纯追加）、`GET /api/eval/harness/lessons?workspace=<jid>`
+  （只读经验教训，cue/lesson/evidence 三字段齐才入库）
 
 ## 管理、监控与问题报告
 

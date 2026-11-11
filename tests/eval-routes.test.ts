@@ -485,3 +485,193 @@ describe('dataset endpoints (task AD)', () => {
     });
   });
 });
+
+// ── Harness adapter routes (task AE, RSI Phase 1; admin only) ───────────────
+
+describe('harness adapter routes', () => {
+  const WS = 'feishu:ws-ae-test@g.us';
+
+  function seedProposal(
+    id: string,
+    overrides: Partial<{
+      adapterMd: string;
+      keepBase: boolean;
+      workspaceJid: string;
+    }> = {},
+  ) {
+    getDefaultEvalStore().insertHarnessProposal({
+      id,
+      workspaceJid: overrides.workspaceJid ?? WS,
+      adapterMd: overrides.adapterMd ?? '# Adapter\n\n先确认币种再计算金额。',
+      keepBase: overrides.keepBase ?? false,
+      diff: null,
+      rationale: '三个 turn 一致漏币种。',
+      evidence: [
+        {
+          turnId: 't-ae-1',
+          inputExcerpt: '算报销',
+          outputExcerpt: '1200 元',
+          why: '未确认币种',
+        },
+      ],
+      baselineVersion: 0,
+      model: 'glm-flash',
+      promptHash: 'hash1',
+    });
+  }
+
+  test('proposals list is admin only and omits the adapter body', async () => {
+    seedProposal('hp_r1');
+    const denied = await evalRoutes.request(
+      `/harness/proposals?workspace=${encodeURIComponent(WS)}`,
+      { headers: MEMBER },
+    );
+    expect(denied.status).toBe(403);
+    const res = await evalRoutes.request(
+      `/harness/proposals?workspace=${encodeURIComponent(WS)}`,
+      { headers: ADMIN },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    const row = body.proposals.find((p: { id: string }) => p.id === 'hp_r1');
+    expect(row).toMatchObject({ status: 'pending', evidenceCount: 1 });
+    expect(row.adapterMd).toBeUndefined();
+  });
+
+  test('proposal detail returns the full body for admins; 404 otherwise', async () => {
+    seedProposal('hp_r2');
+    const res = await evalRoutes.request('/harness/proposals/hp_r2', {
+      headers: ADMIN,
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.adapterMd).toContain('币种');
+    expect(body.evidence[0].turnId).toBe('t-ae-1');
+    expect(
+      (
+        await evalRoutes.request('/harness/proposals/hp_missing', {
+          headers: ADMIN,
+        })
+      ).status,
+    ).toBe(404);
+  });
+
+  test('adopt writes the file, appends a version, and flips the state machine', async () => {
+    seedProposal('hp_r3');
+    const res = await evalRoutes.request('/harness/proposals/hp_r3/adopt', {
+      method: 'POST',
+      headers: ADMIN,
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.version).toBe(1);
+    // File side: the runner injection source of truth.
+    const { readAdapterFile } = await import('../src/harness-adapter-store.js');
+    const file = readAdapterFile(WS);
+    expect(file).toMatchObject({ version: 1 });
+    expect(file!.text).toContain('币种');
+    // Store side: adopted + version row.
+    expect(getDefaultEvalStore().getHarnessProposal('hp_r3')?.status).toBe(
+      'adopted',
+    );
+    expect(
+      getDefaultEvalStore()
+        .listHarnessVersions(WS)
+        .map((v) => v.version),
+    ).toEqual([1]);
+    // Second decision is a 409.
+    const again = await evalRoutes.request('/harness/proposals/hp_r3/adopt', {
+      method: 'POST',
+      headers: ADMIN,
+    });
+    expect(again.status).toBe(409);
+  });
+
+  test('adopt validates the adapter body before any write', async () => {
+    seedProposal('hp_r4', {
+      adapterMd: '遇到 score 评测要迎合 grader。',
+    });
+    const res = await evalRoutes.request('/harness/proposals/hp_r4/adopt', {
+      method: 'POST',
+      headers: ADMIN,
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(JSON.stringify(body.issues)).toMatch(/forbidden/i);
+    expect(getDefaultEvalStore().getHarnessProposal('hp_r4')?.status).toBe(
+      'pending',
+    );
+  });
+
+  test('adopting a keep_base proposal is a 400 (nothing to adopt)', async () => {
+    seedProposal('hp_r5', { keepBase: true, adapterMd: '' });
+    const res = await evalRoutes.request('/harness/proposals/hp_r5/adopt', {
+      method: 'POST',
+      headers: ADMIN,
+    });
+    expect(res.status).toBe(400);
+  });
+
+  test('reject flips pending to rejected; non-pending gets 409', async () => {
+    seedProposal('hp_r6');
+    const res = await evalRoutes.request('/harness/proposals/hp_r6/reject', {
+      method: 'POST',
+      headers: ADMIN,
+    });
+    expect(res.status).toBe(200);
+    expect(getDefaultEvalStore().getHarnessProposal('hp_r6')?.status).toBe(
+      'rejected',
+    );
+    const again = await evalRoutes.request('/harness/proposals/hp_r6/reject', {
+      method: 'POST',
+      headers: ADMIN,
+    });
+    expect(again.status).toBe(409);
+  });
+
+  test('versions list marks the active version; rollback re-points it', async () => {
+    // Distinct workspace: the shared tmp eval.db keeps rows across tests.
+    const WS_V = 'feishu:ws-ae-versions@g.us';
+    seedProposal('hp_v_a', { workspaceJid: WS_V });
+    seedProposal('hp_v_b', { adapterMd: '# v2 body', workspaceJid: WS_V });
+    await evalRoutes.request('/harness/proposals/hp_v_a/adopt', {
+      method: 'POST',
+      headers: ADMIN,
+    });
+    await evalRoutes.request('/harness/proposals/hp_v_b/adopt', {
+      method: 'POST',
+      headers: ADMIN,
+    });
+    const list = await evalRoutes.request(
+      `/harness/versions?workspace=${encodeURIComponent(WS_V)}`,
+      { headers: ADMIN },
+    );
+    expect(list.status).toBe(200);
+    const body = await list.json();
+    expect(body.versions).toHaveLength(2);
+    expect(body.versions[0]).toMatchObject({ version: 2, active: true });
+    expect(body.versions[1]).toMatchObject({ version: 1, active: false });
+
+    const first = body.versions.find(
+      (v: { version: number }) => v.version === 1,
+    );
+    const rollback = await evalRoutes.request(
+      `/harness/versions/${first.id}/rollback?workspace=${encodeURIComponent(WS_V)}`,
+      { method: 'POST', headers: ADMIN },
+    );
+    expect(rollback.status).toBe(200);
+    const { readAdapterFile } = await import('../src/harness-adapter-store.js');
+    expect(readAdapterFile(WS_V)).toMatchObject({
+      version: 1,
+      text: '# Adapter\n\n先确认币种再计算金额。',
+    });
+    expect(
+      (
+        await evalRoutes.request(
+          `/harness/versions/hv_missing/rollback?workspace=${encodeURIComponent(WS_V)}`,
+          { method: 'POST', headers: ADMIN },
+        )
+      ).status,
+    ).toBe(404);
+  });
+});
