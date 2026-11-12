@@ -1,23 +1,9 @@
 {
-  "task": "任务AH - RSI Phase 3：跨 workspace 复用与提案流水线（半自动）。① 近邻 lesson 注入：proposer 证据树带上其他 workspace 的可迁移经验（src/harness-probe.ts 新增 pickNeighborLessons 纯函数——中文 2-gram/英文分词词面匹配 cue，排除本 workspace，top-3，prompt 免责声明；--no-neighbors 回退）；② 证据分簇：clusterTurns 纯函数（channel+30 分钟时间窗+输入相似度合并，簇带 inputVariance 信号），evolve 证据按簇组织（--no-cluster 回退）；③ adapter 克隆走提案门：POST /harness/versions/:id/clone 以任一历史版本全文为目标 workspace 新建 pending 提案（不直写文件）；④ Web 一键 evolve：src/harness-evolve-trigger.ts（照 eval-trigger 模式：spawn 子进程+单飞锁+超时 kill+状态快照，独立新文件）、GET /harness/evidence-status（自上次提案新 turn 计数）、提示条（≥10 条）+「生成提案」按钮（admin，轮询状态）；明确不做：全自动采纳（已关闭）、skills/工具面扩展、全链路 probe、WS 进度、lesson 向量检索；无 schema 变更（eval-store 仅加 listAllHarnessLessons/countTurnsSince 两读方法）。用户 2026-11-12 指示立项交接新窗口；计划 docs/task-ah-rsi-phase3-plan.md，交接 docs/task-ah-rsi-phase3-handoff.md",
-  "base": "06baaf0",
+  "task": "任务AI - Runner 早夭流恢复：pi-runner.ts:372-374 排队不变量（Pi session ended with uncompleted input turns）把供给侧断流升级为 runner 进程退出（2026-11-12 实证：glm 网关一次断流杀掉健康 12.6 分钟 runner，恢复靠宿主回卷重放）。修复=降级为优雅返回 prematureEnd+走 main 既有 requeue 通道自动重试；同一 delivery id 连续第二次早夭发布带回执（ipcReceipts）的终态 per-turn 错误（inputTurnCompleted:false），全程序不退出；模块级早夭计数器（成功即清零，容量 32）；promptError/fatalError 等真致命路径不动；不改宿主/无 schema 变更/零新依赖。方案 A（复用 requeue），不做 runner 内原地 re-prompt（方案 B）。计划 docs/task-ai-runner-premature-stream-recovery-plan.md（2026-11-12 用户指示按流程立项审批）",
+  "base": "e88f3c5",
   "allow": [
-    "docs/task-ah-rsi-phase3-plan.md",
-    "docs/task-ah-rsi-phase3-handoff.md",
-    "src/harness-evolve-trigger.ts",
-    "tests/harness-evolve-trigger.test.ts",
-    "src/harness-proposer.ts",
-    "src/eval-store.ts",
-    "scripts/eval-harness-evolve.ts",
-    "src/routes/eval.ts",
-    "web/src/pages/EvalPage.tsx",
-    "tests/harness-proposer.test.ts",
-    "tests/eval-store.test.ts",
-    "tests/eval-harness-evolve.test.ts",
-    "tests/eval-routes.test.ts",
-    "tests/eval-frontend.test.tsx",
-    "docs/API.md",
-    "AGENTS.md",
-    "CLAUDE.md"
+    "docs/task-ai-runner-premature-stream-recovery-plan.md",
+    "container/agent-runner/src/runtime/pi/pi-runner.ts",
+    "tests/agent-runtime-migration.test.ts"
   ]
 }

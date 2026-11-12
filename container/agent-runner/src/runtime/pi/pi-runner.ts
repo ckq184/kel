@@ -7,6 +7,7 @@ import type {
 import type { McpContext } from '../../mcp-tools.js';
 import {
   IpcTurnDeliveryTracker,
+  latestIpcDeliveryId,
   type IpcDeliveryReceipt,
   type IpcInputMessage,
 } from '../../ipc-delivery.js';
@@ -26,7 +27,48 @@ type PiQueryRunResult = {
   cancelledIpcReceipts?: IpcDeliveryReceipt[];
   pipedMessagesDuringQuery: IpcInputMessage[];
   durableInputTurnCompleted?: boolean;
+  /**
+   * Task AI: the provider stream ended before the pending input turn(s) got a
+   * result. No throw, nothing acked — main's requeue path retries the turn,
+   * keeping the runner process alive (2026-11-12 incident: this used to be a
+   * process-killing invariant).
+   */
+  prematureEnd?: boolean;
+  /** Task AI: retry budget exhausted — terminal per-turn error published with receipts. */
+  prematureTerminal?: boolean;
 };
+
+// ── Premature-end budget (task AI) ──────────────────────────────────────────
+//
+// One auto-retry per delivery id; a second consecutive premature end acks the
+// turn with a terminal error (stops the host replay storm instead of looping
+// across processes). Any completed turn resets the whole map — conservative
+// toward retrying. Bounded so a churning set of delivery ids cannot grow it.
+
+const PREMATURE_END_BUDGET = 1;
+const PREMATURE_END_TRACKER_MAX = 32;
+const prematureEndCounts = new Map<string, number>();
+
+function prematureEndKey(
+  tracker: IpcTurnDeliveryTracker,
+  fallbackTurnId: string | undefined,
+): string {
+  return (
+    latestIpcDeliveryId(tracker.unacknowledgedMessages) ||
+    fallbackTurnId ||
+    'anonymous'
+  );
+}
+
+function bumpPrematureEnd(key: string): number {
+  const next = (prematureEndCounts.get(key) ?? 0) + 1;
+  prematureEndCounts.set(key, next);
+  if (prematureEndCounts.size > PREMATURE_END_TRACKER_MAX) {
+    const oldest = prematureEndCounts.keys().next().value;
+    if (oldest !== undefined) prematureEndCounts.delete(oldest);
+  }
+  return next;
+}
 
 type PiQueryRunOptions = {
   runtime: AgentRuntime;
@@ -238,6 +280,8 @@ export async function runPiQueryAttempt(
   let cancelledIpcReceipts: IpcDeliveryReceipt[] = [];
   let completionPublished = false;
   let promptError: unknown;
+  let prematureEnded = false;
+  let prematureTerminal = false;
 
   const unsubscribe = session.subscribe((event) =>
     emitRuntimeEvent(event, options, resultState),
@@ -248,6 +292,11 @@ export async function runPiQueryAttempt(
     completionPublished = true;
     const receipts = options.tracker.completeNextTurn();
     const inputTurnCompleted = result.finalizationReason === 'completed';
+    if (inputTurnCompleted) {
+      // Task AI: a healthy turn clears the premature-end budget — the next
+      // stream cut deserves a fresh auto-retry.
+      prematureEndCounts.clear();
+    }
     // The Pi runtime folds turn usage into RuntimeResult instead of streaming
     // it. Re-emit it as the same `usage` StreamEvent the Claude path produces
     // (and the host ledger consumes) BEFORE the terminal output, mirroring the
@@ -371,7 +420,45 @@ export async function runPiQueryAttempt(
       if (promptDone && !options.tracker.hasPendingTurns) break;
       if (promptDone && !session.isStreaming && !resultState.result) {
         if (!options.tracker.hasPendingTurns) break;
-        throw new Error('Pi session ended with uncompleted input turns');
+        // Task AI: the stream ended before the pending turn(s) got a result
+        // (2026-11-12 incident: provider cut mid-answer). This used to throw
+        // and kill the whole runner; now it degrades — first premature end
+        // returns for a requeue retry, a second consecutive one publishes a
+        // terminal per-turn error WITH receipts so the host stops replaying.
+        const key = prematureEndKey(
+          options.tracker,
+          options.containerInput.turnId,
+        );
+        const seen = prematureEndCounts.get(key) ?? 0;
+        if (seen < PREMATURE_END_BUDGET) {
+          bumpPrematureEnd(key);
+          prematureEnded = true;
+          options.log(
+            `Pi session ended prematurely with ${options.tracker.unacknowledgedMessages.length} pending input turn(s) (key=${key}); returning for requeue retry`,
+          );
+          break;
+        }
+        prematureEndCounts.delete(key);
+        prematureTerminal = true;
+        const terminalReceipts = options.tracker.completeNextTurn();
+        options.log(
+          `Pi session ended prematurely again (key=${key}); publishing terminal per-turn error`,
+        );
+        options.emit({
+          status: 'error',
+          result: null,
+          newSessionId: session.sessionId,
+          sourceKind: options.sourceKindOverride ?? 'sdk_final',
+          finalizationReason: 'error',
+          inputTurnCompleted: false,
+          queryIdle: !options.tracker.hasPendingTurns,
+          ...(terminalReceipts.length > 0
+            ? { ipcReceipts: terminalReceipts }
+            : {}),
+          error:
+            'Pi session ended prematurely with pending input turns (retry budget exhausted); please resend the message.',
+        });
+        break;
       }
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
@@ -415,5 +502,7 @@ export async function runPiQueryAttempt(
     ...(cancelledIpcReceipts.length > 0 ? { cancelledIpcReceipts } : {}),
     pipedMessagesDuringQuery: options.tracker.unacknowledgedMessages,
     durableInputTurnCompleted: completionPublished && !interruptedDuringQuery,
+    ...(prematureEnded ? { prematureEnd: true } : {}),
+    ...(prematureTerminal ? { prematureTerminal: true } : {}),
   };
 }
