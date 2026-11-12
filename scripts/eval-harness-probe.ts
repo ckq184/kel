@@ -79,6 +79,39 @@ export function parseProbeArgs(argv: string[]): ProbeCliOptions | null {
   return options;
 }
 
+/**
+ * Backoff wrapper around every probe LLM call (task AG follow-up). The
+ * endpoint dropped connections mid-run three probes in a row (~25 rapid
+ * calls in), which fail-fast turned into a lost, already-paid run; a short
+ * retry absorbs exactly those transient disconnects. Sleep is injectable so
+ * the retry contract stays unit-testable.
+ */
+export async function completeWithRetry(
+  client: { model: string; complete(prompt: string): Promise<string> },
+  prompt: string,
+  options: {
+    retries?: number;
+    delaysMs?: number[];
+    sleep?: (ms: number) => Promise<void>;
+  } = {},
+): Promise<string> {
+  const retries = options.retries ?? 3;
+  const delays = options.delaysMs ?? [2_000, 5_000, 10_000];
+  const sleep =
+    options.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await client.complete(prompt);
+    } catch (error) {
+      lastError = error;
+      if (attempt === retries) break;
+      await sleep(delays[Math.min(attempt, delays.length - 1)]);
+    }
+  }
+  throw lastError;
+}
+
 export type ProbePlanReject =
   | { kind: 'proposal_not_found' }
   | { kind: 'proposal_not_pending'; status: string }
@@ -227,15 +260,18 @@ async function main(): Promise<void> {
 
     const rounds = [];
     for (const query of acceptanceSet!.queries) {
-      const baselineText = await client.complete(
+      const baselineText = await completeWithRetry(
+        client,
         probeArmPrompt({ question: query.text, adapterBlock: baselineBlock }),
       );
-      const proposedText = await client.complete(
+      const proposedText = await completeWithRetry(
+        client,
         probeArmPrompt({ question: query.text, adapterBlock: proposedBlock }),
       );
       // Blind, anonymous, both orders; a failed parse keeps the round as tie.
       const judgeDirect = parseBlindJudge(
-        await client.complete(
+        await completeWithRetry(
+          client,
           blindJudgePrompt({
             question: query.text,
             expectNotes: query.expectNotes,
@@ -245,7 +281,8 @@ async function main(): Promise<void> {
         ),
       );
       const judgeSwapped = parseBlindJudge(
-        await client.complete(
+        await completeWithRetry(
+          client,
           blindJudgePrompt({
             question: query.text,
             expectNotes: query.expectNotes,

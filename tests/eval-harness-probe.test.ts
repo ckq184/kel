@@ -1,7 +1,8 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
 import {
   buildProbePlan,
+  completeWithRetry,
   parseProbeArgs,
 } from '../scripts/eval-harness-probe.js';
 import type {
@@ -203,5 +204,57 @@ describe('buildProbePlan', () => {
     });
     expect(rejected).toMatchObject({ kind: 'acceptance_set_invalid' });
     expect(rejected.issues?.length).toBeGreaterThan(0);
+  });
+});
+
+// ── completeWithRetry (task AG follow-up: mid-run endpoint disconnects) ────
+
+describe('completeWithRetry', () => {
+  test('returns on the first success without sleeping', async () => {
+    const sleeps: number[] = [];
+    const complete = vi.fn(async () => 'ok');
+    const result = await completeWithRetry({ model: 'm', complete }, 'p', {
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+    });
+    expect(result).toBe('ok');
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(sleeps).toEqual([]);
+  });
+
+  test('retries through transient failures with backoff, then succeeds', async () => {
+    const sleeps: number[] = [];
+    let attempts = 0;
+    const complete = vi.fn(async () => {
+      attempts += 1;
+      if (attempts < 3) throw new TypeError('fetch failed');
+      return 'recovered';
+    });
+    const result = await completeWithRetry({ model: 'm', complete }, 'p', {
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+    });
+    expect(result).toBe('recovered');
+    expect(complete).toHaveBeenCalledTimes(3);
+    expect(sleeps).toEqual([2000, 5000]);
+  });
+
+  test('exhausts retries and rethrows the last error', async () => {
+    const sleeps: number[] = [];
+    const complete = vi.fn(async () => {
+      throw new TypeError('fetch failed');
+    });
+    await expect(
+      completeWithRetry({ model: 'm', complete }, 'p', {
+        sleep: async (ms) => {
+          sleeps.push(ms);
+        },
+      }),
+    ).rejects.toThrow('fetch failed');
+    // default 3 retries → 4 attempts, 3 backoffs
+    expect(complete).toHaveBeenCalledTimes(4);
+    expect(sleeps).toEqual([2000, 5000, 10000]);
   });
 });
