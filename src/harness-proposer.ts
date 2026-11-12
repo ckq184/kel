@@ -68,6 +68,196 @@ function excerpt(text: string): string {
     : text;
 }
 
+// ── Lexical matching helpers (task AH, RSI Phase 3) ─────────────────────────
+//
+// Runtime deps are frozen and neither evolve nor probe touches an embedder, so
+// cross-workspace transfer rides on plain lexical overlap: CJK text as 2-grams
+// (single-char runs stay single tokens), latin text as whole words.
+
+/** Inline tokenizer shared by neighbor-lesson matching and clustering. */
+function tokenizeForMatch(text: string): Set<string> {
+  const tokens = new Set<string>();
+  const normalized = text.toLowerCase();
+  for (const match of normalized.match(/[a-z0-9]+/g) ?? []) {
+    if (match.length >= 2) tokens.add(`w:${match}`);
+  }
+  for (const run of normalized.match(/[\u4e00-\u9fff]+/g) ?? []) {
+    if (run.length === 1) {
+      tokens.add(`c:${run}`);
+      continue;
+    }
+    for (let i = 0; i + 1 < run.length; i++) {
+      tokens.add(`c:${run.slice(i, i + 2)}`);
+    }
+  }
+  return tokens;
+}
+
+export interface NeighborLessonCandidate {
+  workspaceJid: string;
+  cue: string;
+  lesson: string;
+  evidence: string;
+  confidence: string | null;
+}
+
+export interface NeighborLessonPick extends NeighborLessonCandidate {
+  /** How many cue tokens the recent turn texts contain (raw overlap). */
+  score: number;
+}
+
+/**
+ * hermit's transferability sell, lexical edition: lessons distilled in OTHER
+ * workspaces can seed this workspace's proposal — ranked by cue/turn token
+ * overlap, top-N, self-workspace rows excluded (they are already injected).
+ * Heuristic signal only; the proposer prompt carries the caution disclaimer.
+ */
+export function pickNeighborLessons(input: {
+  selfJid: string;
+  selfTurnTexts: string[];
+  allLessons: NeighborLessonCandidate[];
+  limit?: number;
+}): NeighborLessonPick[] {
+  const limit = Math.max(1, input.limit ?? 3);
+  const turnTokens = new Set<string>();
+  for (const text of input.selfTurnTexts) {
+    for (const token of tokenizeForMatch(text)) turnTokens.add(token);
+  }
+  if (turnTokens.size === 0) return [];
+  const scored: NeighborLessonPick[] = [];
+  for (const lesson of input.allLessons) {
+    if (lesson.workspaceJid === input.selfJid) continue;
+    let score = 0;
+    for (const token of tokenizeForMatch(lesson.cue)) {
+      if (turnTokens.has(token)) score++;
+    }
+    if (score > 0) {
+      scored.push({
+        workspaceJid: lesson.workspaceJid,
+        cue: lesson.cue,
+        lesson: lesson.lesson,
+        evidence: lesson.evidence,
+        confidence: lesson.confidence,
+        score,
+      });
+    }
+  }
+  // Stable sort: equal scores keep pool order (newest lessons first from the
+  // store query), so the pick is deterministic run-to-run.
+  return scored
+    .map((pick, index) => ({ pick, index }))
+    .sort((a, b) => b.pick.score - a.pick.score || a.index - b.index)
+    .slice(0, limit)
+    .map((entry) => entry.pick);
+}
+
+// ── Evidence clustering (task AH, RSI Phase 3) ──────────────────────────────
+
+export interface TurnCluster {
+  clusterId: string;
+  turns: EvidenceTurn[];
+  /** 0-1 input diversity inside the cluster; 0 = singleton/identical inputs. */
+  inputVariance: number;
+}
+
+const CLUSTER_WINDOW_MS = 30 * 60 * 1000;
+/** Common-token ratio (公共词占比) at which two inputs join one cluster. */
+const CLUSTER_MERGE_THRESHOLD = 0.5;
+
+/** Common-token ratio: shared tokens over the smaller token set (0 when empty). */
+function overlapRatio(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  const [small, large] = a.size <= b.size ? [a, b] : [b, a];
+  let shared = 0;
+  for (const token of small) if (large.has(token)) shared++;
+  return shared / small.size;
+}
+
+/**
+ * Pre-computed divergence layout for the evidence tree (task AH §1-3):
+ * sessions = same channel + ≤30-minute gaps; inside a session, inputs merge
+ * when their common-token ratio reaches the threshold (single linkage). The
+ * output covers every input turn exactly once, time-ascending, and each
+ * cluster carries an input-variance label the proposer can read off. Heuristic
+ * presentation only — never a gate.
+ */
+export function clusterTurns(turns: EvidenceTurn[]): TurnCluster[] {
+  const ordered = turns
+    .map((turn, index) => ({
+      turn,
+      index,
+      at: Date.parse(turn.createdAt),
+    }))
+    .sort(
+      (a, b) =>
+        (Number.isNaN(a.at) ? 0 : a.at) - (Number.isNaN(b.at) ? 0 : b.at) ||
+        a.index - b.index,
+    )
+    .map((entry) => entry.turn);
+
+  const sessions: EvidenceTurn[][] = [];
+  for (const turn of ordered) {
+    const session = sessions[sessions.length - 1];
+    const prev = session?.[session.length - 1];
+    const gapOk =
+      prev !== undefined &&
+      prev.channel === turn.channel &&
+      Date.parse(turn.createdAt) - Date.parse(prev.createdAt) <=
+        CLUSTER_WINDOW_MS;
+    if (gapOk) {
+      session.push(turn);
+    } else {
+      sessions.push([turn]);
+    }
+  }
+
+  const clusters: TurnCluster[] = [];
+  for (const session of sessions) {
+    // Sub-clusters inside one session: input-similarity merge, single linkage.
+    const groups: Array<{ turns: EvidenceTurn[]; tokenSets: Set<string>[] }> =
+      [];
+    for (const turn of session) {
+      const tokens = tokenizeForMatch(turn.inputText);
+      let target = -1;
+      for (let g = 0; g < groups.length; g++) {
+        const linked = groups[g].tokenSets.some(
+          (set) => overlapRatio(set, tokens) >= CLUSTER_MERGE_THRESHOLD,
+        );
+        if (linked) {
+          target = g;
+          break;
+        }
+      }
+      if (target === -1) {
+        groups.push({ turns: [turn], tokenSets: [tokens] });
+      } else {
+        groups[target].turns.push(turn);
+        groups[target].tokenSets.push(tokens);
+      }
+    }
+    for (const group of groups) {
+      let variance = 0;
+      if (group.turns.length > 1) {
+        let total = 0;
+        let pairs = 0;
+        for (let i = 0; i < group.tokenSets.length; i++) {
+          for (let j = i + 1; j < group.tokenSets.length; j++) {
+            total += overlapRatio(group.tokenSets[i], group.tokenSets[j]);
+            pairs++;
+          }
+        }
+        variance = pairs > 0 ? 1 - total / pairs : 0;
+      }
+      clusters.push({
+        clusterId: `c${clusters.length + 1}`,
+        turns: group.turns,
+        inputVariance: Math.min(Math.max(variance, 0), 1),
+      });
+    }
+  }
+  return clusters;
+}
+
 // ── Evidence assembly ───────────────────────────────────────────────────────
 
 export function buildEvidence(input: {
@@ -75,6 +265,17 @@ export function buildEvidence(input: {
   turns: EvidenceTurn[];
   currentAdapterMd: string | null;
   lessons: EvidenceLesson[];
+  /**
+   * Task AH: pre-computed cluster layout (clusterTurns). When present the
+   * turns render grouped with an input-variance label; absent = legacy flat
+   * list (byte-identical to the pre-AH output).
+   */
+  clusters?: TurnCluster[];
+  /**
+   * Task AH: lessons transferred from other workspaces (pickNeighborLessons).
+   * An empty list renders nothing — same shape as the legacy call.
+   */
+  neighborLessons?: NeighborLessonPick[];
 }): string {
   const lines: string[] = [];
   lines.push(`# Evidence for workspace ${input.workspaceJid}`);
@@ -102,15 +303,52 @@ export function buildEvidence(input: {
     }
   }
   lines.push('');
-  lines.push('## Recent turns (trajectory evidence)');
-  for (const turn of input.turns) {
-    lines.push(`### turn_id: ${turn.turnId || '(unknown)'}`);
+  if (input.neighborLessons && input.neighborLessons.length > 0) {
+    lines.push('## Neighbor lessons from other workspaces (reference only)');
     lines.push(
-      `- channel: ${turn.channel || 'unknown'} | at: ${turn.createdAt || 'unknown'}`,
+      'These lessons were distilled in OTHER workspaces. They are reference',
     );
-    lines.push(`- input: ${excerpt(turn.inputText) || '(empty)'}`);
-    lines.push(`- output: ${excerpt(turn.outputText) || '(empty)'}`);
+    lines.push(
+      'experience that may not transfer to this one — cite with caution.',
+    );
+    for (const neighbor of input.neighborLessons) {
+      lines.push(
+        `- from ${neighbor.workspaceJid} | cue: ${neighbor.cue} | lesson: ${neighbor.lesson}` +
+          ` | evidence: ${neighbor.evidence}` +
+          (neighbor.confidence ? ` | confidence: ${neighbor.confidence}` : ''),
+      );
+    }
     lines.push('');
+  }
+  lines.push('## Recent turns (trajectory evidence)');
+  const clusters = input.clusters;
+  if (clusters && clusters.length > 0) {
+    for (const cluster of clusters) {
+      lines.push(
+        `### cluster ${cluster.clusterId} — ${cluster.turns.length} turn(s) · ` +
+          `channel ${cluster.turns[0]?.channel || 'unknown'} · ` +
+          `input variance ${cluster.inputVariance.toFixed(2)}`,
+      );
+      for (const turn of cluster.turns) {
+        lines.push(`### turn_id: ${turn.turnId || '(unknown)'}`);
+        lines.push(
+          `- channel: ${turn.channel || 'unknown'} | at: ${turn.createdAt || 'unknown'}`,
+        );
+        lines.push(`- input: ${excerpt(turn.inputText) || '(empty)'}`);
+        lines.push(`- output: ${excerpt(turn.outputText) || '(empty)'}`);
+        lines.push('');
+      }
+    }
+  } else {
+    for (const turn of input.turns) {
+      lines.push(`### turn_id: ${turn.turnId || '(unknown)'}`);
+      lines.push(
+        `- channel: ${turn.channel || 'unknown'} | at: ${turn.createdAt || 'unknown'}`,
+      );
+      lines.push(`- input: ${excerpt(turn.inputText) || '(empty)'}`);
+      lines.push(`- output: ${excerpt(turn.outputText) || '(empty)'}`);
+      lines.push('');
+    }
   }
   return lines.join('\n');
 }

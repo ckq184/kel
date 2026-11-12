@@ -44,6 +44,30 @@ vi.mock('../src/eval-trigger.js', () => ({
   }),
 }));
 
+// Task AH: same treatment for the harness evolve trigger (keep the real JID
+// whitelist from the module under test; swap only the process plumbing).
+const evolveTriggerState = {
+  startResult: { ok: true } as
+    | { ok: true }
+    | { ok: false; error: 'busy' | 'invalid_workspace' },
+  startCalls: [] as Array<Record<string, unknown>>,
+};
+vi.mock('../src/harness-evolve-trigger.js', async (importOriginal) => ({
+  ...((await importOriginal()) as Record<string, unknown>),
+  startHarnessEvolveRun: (input: Record<string, unknown>) => {
+    evolveTriggerState.startCalls.push(input);
+    return evolveTriggerState.startResult;
+  },
+  getHarnessEvolveTriggerState: () => ({
+    running: false,
+    workspace: 'feishu:ws-ah@g.us',
+    startedAt: 1_736_300_000_000,
+    startedBy: 'user-admin',
+    lines: ['phase3 evidence: clusters 4 (40 turns)'],
+    result: null,
+  }),
+}));
+
 // Task AE follow-up: control the lesson-distillation LLM path so adoption can
 // be proven non-blocking. Default = observability-side config disabled (the
 // distiller returns immediately), matching the pre-mock behavior.
@@ -974,5 +998,311 @@ describe('harness acceptance + probe endpoints (task AG)', () => {
     });
     // Summary stays a summary: no per-round payload on the detail view.
     expect(body.latestProbe.rounds).toBeUndefined();
+  });
+});
+
+// ── Task AH (RSI Phase 3): clone / evidence-status / evolve trigger ─────────
+
+describe('harness clone / evidence-status / evolve endpoints (task AH)', () => {
+  const WS_SRC = 'feishu:ws-ah-src@g.us';
+  const WS_TGT = 'feishu:ws-ah-tgt@g.us';
+
+  beforeEach(() => {
+    evolveTriggerState.startCalls.length = 0;
+    evolveTriggerState.startResult = { ok: true };
+  });
+
+  function seedSourceVersion(adapterMd = '# 克隆源 adapter\n\n先声明文件名。') {
+    return getDefaultEvalStore().insertHarnessVersion({
+      workspaceJid: WS_SRC,
+      proposalId: null,
+      adapterMd,
+      adoptedBy: 'user-admin',
+    });
+  }
+
+  // ── POST /harness/versions/:id/clone ─────────────────────────────────────
+
+  test('clone is admin only (401/403)', async () => {
+    const version = seedSourceVersion();
+    const url = `/harness/versions/${version.id}/clone?workspace=${encodeURIComponent(WS_SRC)}`;
+    expect(
+      (
+        await evalRoutes.request(url, {
+          method: 'POST',
+          body: JSON.stringify({ targetWorkspace: WS_TGT }),
+        })
+      ).status,
+    ).toBe(401);
+    expect(
+      (
+        await evalRoutes.request(url, {
+          method: 'POST',
+          headers: MEMBER,
+          body: JSON.stringify({ targetWorkspace: WS_TGT }),
+        })
+      ).status,
+    ).toBe(403);
+  });
+
+  test('clone rejects a missing/empty/same-as-source target with 400', async () => {
+    const version = seedSourceVersion();
+    const url = `/harness/versions/${version.id}/clone?workspace=${encodeURIComponent(WS_SRC)}`;
+    for (const body of [
+      {},
+      { targetWorkspace: '' },
+      { targetWorkspace: '   ' },
+      { targetWorkspace: WS_SRC },
+    ]) {
+      const res = await evalRoutes.request(url, {
+        method: 'POST',
+        headers: ADMIN,
+        body: JSON.stringify(body),
+      });
+      expect(res.status, JSON.stringify(body)).toBe(400);
+    }
+    // Missing source workspace query → 400 too.
+    expect(
+      (
+        await evalRoutes.request(`/harness/versions/${version.id}/clone`, {
+          method: 'POST',
+          headers: ADMIN,
+          body: JSON.stringify({ targetWorkspace: WS_TGT }),
+        })
+      ).status,
+    ).toBe(400);
+  });
+
+  test('clone of an unknown version id is 404', async () => {
+    expect(
+      (
+        await evalRoutes.request(
+          `/harness/versions/hv_missing/clone?workspace=${encodeURIComponent(WS_SRC)}`,
+          {
+            method: 'POST',
+            headers: ADMIN,
+            body: JSON.stringify({ targetWorkspace: WS_TGT }),
+          },
+        )
+      ).status,
+    ).toBe(404);
+  });
+
+  test('clone lands a pending proposal in the target and never writes its file', async () => {
+    const version = seedSourceVersion();
+    const res = await evalRoutes.request(
+      `/harness/versions/${version.id}/clone?workspace=${encodeURIComponent(WS_SRC)}`,
+      {
+        method: 'POST',
+        headers: ADMIN,
+        body: JSON.stringify({ targetWorkspace: WS_TGT }),
+      },
+    );
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.proposal.workspaceJid).toBe(WS_TGT);
+
+    const store = getDefaultEvalStore();
+    const detail = store.getHarnessProposal(body.proposal.id);
+    expect(detail).toMatchObject({
+      workspaceJid: WS_TGT,
+      status: 'pending',
+      keepBase: false,
+      baselineVersion: 0,
+      model: 'clone',
+    });
+    // Full source body + provenance-marked rationale + empty evidence.
+    expect(detail!.adapterMd).toContain('克隆源 adapter');
+    expect(detail!.rationale).toContain(`克隆自 ${WS_SRC} v${version.version}`);
+    expect(detail!.evidence).toEqual([]);
+    // The proposal gate holds: no adapter file for the target workspace.
+    const { readAdapterFile } = await import('../src/harness-adapter-store.js');
+    expect(readAdapterFile(WS_TGT)).toBeNull();
+  });
+
+  test('clone baseline is the target current ACTIVE version', async () => {
+    // Target workspace has an adopted v1 (via the real adopt flow, which
+    // writes its file); the clone must baseline against that, not 0.
+    getDefaultEvalStore().insertHarnessProposal({
+      id: 'hp_ah_tgt1',
+      workspaceJid: WS_TGT,
+      adapterMd: '# 目标已有 adapter',
+      keepBase: false,
+      diff: null,
+      rationale: 'r',
+      evidence: [],
+      baselineVersion: 0,
+      model: 'glm-flash',
+      promptHash: 'hash',
+    });
+    await evalRoutes.request('/harness/proposals/hp_ah_tgt1/adopt', {
+      method: 'POST',
+      headers: ADMIN,
+    });
+    const version = seedSourceVersion('# 第二份克隆源');
+    const res = await evalRoutes.request(
+      `/harness/versions/${version.id}/clone?workspace=${encodeURIComponent(WS_SRC)}`,
+      {
+        method: 'POST',
+        headers: ADMIN,
+        body: JSON.stringify({ targetWorkspace: WS_TGT }),
+      },
+    );
+    expect(res.status).toBe(201);
+    const detail = getDefaultEvalStore().getHarnessProposal(
+      (await res.json()).proposal.id,
+    );
+    expect(detail!.baselineVersion).toBe(1);
+    // Diff is display-only but present for the review UI.
+    expect(typeof detail!.diff).toBe('string');
+  });
+
+  // ── GET /harness/evidence-status ─────────────────────────────────────────
+
+  test('evidence-status is admin only and requires the workspace param', async () => {
+    expect((await evalRoutes.request('/harness/evidence-status')).status).toBe(
+      401,
+    );
+    expect(
+      (
+        await evalRoutes.request('/harness/evidence-status', {
+          headers: MEMBER,
+        })
+      ).status,
+    ).toBe(403);
+    expect(
+      (await evalRoutes.request('/harness/evidence-status', { headers: ADMIN }))
+        .status,
+    ).toBe(400);
+  });
+
+  test('evidence-status counts turns since the last proposal (all when none)', async () => {
+    const WS = 'feishu:ws-ah-es@g.us';
+    const store = getDefaultEvalStore();
+    for (const [id, at] of [
+      ['ah_es_t1', '2026-11-12T10:00:00Z'],
+      ['ah_es_t2', '2026-11-12T11:00:00Z'],
+      ['ah_es_t3', '2026-11-12T12:00:00Z'],
+    ] as const) {
+      store.insertTurn({ turnId: id, workspaceJid: WS, createdAt: at });
+    }
+    store.insertHarnessProposal({
+      id: 'hp_ah_es1',
+      workspaceJid: WS,
+      adapterMd: '',
+      keepBase: true,
+      diff: null,
+      rationale: 'r',
+      evidence: [],
+      baselineVersion: 0,
+      model: 'glm-flash',
+      promptHash: 'hash',
+      createdAt: '2026-11-12T10:30:00Z',
+    });
+
+    const res = await evalRoutes.request(
+      `/harness/evidence-status?workspace=${encodeURIComponent(WS)}`,
+      { headers: ADMIN },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      turnsSinceLastProposal: 2,
+      lastProposalAt: '2026-11-12T10:30:00Z',
+      activeVersion: 0,
+    });
+
+    // A workspace with no proposals counts its whole history.
+    const fresh = await evalRoutes.request(
+      `/harness/evidence-status?workspace=${encodeURIComponent('feishu:ws-ah-none@g.us')}`,
+      { headers: ADMIN },
+    );
+    expect(await fresh.json()).toEqual({
+      turnsSinceLastProposal: 0,
+      lastProposalAt: null,
+      activeVersion: 0,
+    });
+  });
+
+  // ── POST /harness/evolve/trigger + GET /harness/evolve/status ────────────
+
+  test('evolve trigger is admin only (401/403)', async () => {
+    expect(
+      (
+        await evalRoutes.request('/harness/evolve/trigger', {
+          method: 'POST',
+          body: JSON.stringify({ workspace: 'web:ws-a' }),
+        })
+      ).status,
+    ).toBe(401);
+    expect(
+      (
+        await evalRoutes.request('/harness/evolve/trigger', {
+          method: 'POST',
+          headers: MEMBER,
+          body: JSON.stringify({ workspace: 'web:ws-a' }),
+        })
+      ).status,
+    ).toBe(403);
+    expect(
+      (await evalRoutes.request('/harness/evolve/status', { headers: MEMBER }))
+        .status,
+    ).toBe(403);
+  });
+
+  test('evolve trigger rejects missing or non-JID workspaces with 400', async () => {
+    for (const body of [
+      {},
+      { workspace: '' },
+      { workspace: '   ' },
+      { workspace: 'feishu:1@g.us;rm -rf /' },
+      { workspace: 'a b' },
+    ]) {
+      const res = await evalRoutes.request('/harness/evolve/trigger', {
+        method: 'POST',
+        headers: ADMIN,
+        body: JSON.stringify(body),
+      });
+      expect(res.status, JSON.stringify(body)).toBe(400);
+    }
+    expect(evolveTriggerState.startCalls).toHaveLength(0);
+  });
+
+  test('admin evolve trigger returns 202 and forwards the workspace', async () => {
+    const res = await evalRoutes.request('/harness/evolve/trigger', {
+      method: 'POST',
+      headers: ADMIN,
+      body: JSON.stringify({ workspace: 'feishu:ws-ah@g.us' }),
+    });
+    expect(res.status).toBe(202);
+    expect(await res.json()).toMatchObject({
+      accepted: true,
+      workspace: 'feishu:ws-ah@g.us',
+    });
+    expect(evolveTriggerState.startCalls).toEqual([
+      { workspace: 'feishu:ws-ah@g.us', startedBy: 'user-admin' },
+    ]);
+  });
+
+  test('a busy evolve trigger maps to 409', async () => {
+    evolveTriggerState.startResult = { ok: false, error: 'busy' };
+    const res = await evalRoutes.request('/harness/evolve/trigger', {
+      method: 'POST',
+      headers: ADMIN,
+      body: JSON.stringify({ workspace: 'feishu:ws-ah@g.us' }),
+    });
+    expect(res.status).toBe(409);
+  });
+
+  test('evolve status exposes the trigger snapshot to admins', async () => {
+    const res = await evalRoutes.request('/harness/evolve/status', {
+      headers: ADMIN,
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      running: false,
+      workspace: 'feishu:ws-ah@g.us',
+      startedBy: 'user-admin',
+      lines: ['phase3 evidence: clusters 4 (40 turns)'],
+    });
   });
 });

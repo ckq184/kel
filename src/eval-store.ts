@@ -1361,6 +1361,50 @@ export class EvalStore {
   }
 
   /**
+   * All workspaces' lessons, newest first, hard-capped (task AH: the neighbor
+   * pool for pickNeighborLessons — bounded so a large library cannot bloat
+   * the proposer evidence; default 500).
+   */
+  listAllHarnessLessons(limit = 500): HarnessLessonRecord[] {
+    const rows = this.db
+      .prepare(
+        'SELECT * FROM harness_lessons ORDER BY created_at DESC, id DESC LIMIT ?',
+      )
+      .all(Math.min(Math.max(limit, 1), 500)) as HarnessLessonRow[];
+    return rows.map((row) => ({
+      id: row.id,
+      workspaceJid: row.workspace_jid,
+      cue: row.cue,
+      lesson: row.lesson,
+      evidence: row.evidence,
+      confidence: row.confidence,
+      proposalId: row.proposal_id,
+      createdAt: row.created_at,
+    }));
+  }
+
+  /**
+   * Turns recorded for the workspace strictly after `sinceIso`; a null
+   * `sinceIso` counts the whole history (no proposal ever). Feeds the Web
+   * "evidence since last proposal" banner (task AH; ISO strings compare
+   * lexicographically, matching how they are written).
+   */
+  countTurnsSince(workspaceJid: string, sinceIso: string | null): number {
+    const row = sinceIso
+      ? (this.db
+          .prepare(
+            'SELECT COUNT(*) AS total FROM obs_turns WHERE workspace_jid = ? AND created_at > ?',
+          )
+          .get(workspaceJid, sinceIso) as { total: number })
+      : (this.db
+          .prepare(
+            'SELECT COUNT(*) AS total FROM obs_turns WHERE workspace_jid = ?',
+          )
+          .get(workspaceJid) as { total: number });
+    return row.total;
+  }
+
+  /**
    * Workspaces with harness activity (observed turns ∪ proposals), newest
    * turn first; feeds the Web tab's workspace selector (task AF).
    */

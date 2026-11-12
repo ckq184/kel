@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlaskConical, PlayCircle, RefreshCw } from 'lucide-react';
 
 import { api } from '@/api/client';
@@ -1521,6 +1521,27 @@ interface HarnessWorkspaceItem {
   proposalCount: number;
 }
 
+// ── Phase 3 (task AH): banner feed + one-click evolve trigger. No WS events
+// this phase — the panel polls the status endpoint while a run is in flight.
+
+interface EvidenceStatus {
+  turnsSinceLastProposal: number;
+  lastProposalAt: string | null;
+  activeVersion: number;
+}
+
+interface EvolveTriggerState {
+  running: boolean;
+  workspace: string | null;
+  startedAt: number | null;
+  startedBy: string | null;
+  lines: string[];
+  result: { success: boolean; error?: string } | null;
+}
+
+/** Pure frontend threshold for the evidence banner (no config surface). */
+const EVIDENCE_BANNER_THRESHOLD = 10;
+
 // ── Probe report (task AG, RSI Phase 2): read-only evidence under the
 // proposal detail. The probe runs in the CLI (eval:harness-probe); the panel
 // only renders what landed in eval.db.
@@ -1592,6 +1613,19 @@ function HarnessEvolvePanel() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // Task AH: evidence banner + one-click evolve + cross-workspace clone.
+  const [evidenceStatus, setEvidenceStatus] = useState<EvidenceStatus | null>(
+    null,
+  );
+  const [evolveState, setEvolveState] = useState<EvolveTriggerState | null>(
+    null,
+  );
+  const [evolveSubmitting, setEvolveSubmitting] = useState(false);
+  const [cloneVersionId, setCloneVersionId] = useState<string | null>(null);
+  const [cloneTarget, setCloneTarget] = useState('');
+  const [cloning, setCloning] = useState(false);
+  const loadedRef = useRef('');
+  const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const loadAll = useCallback(async (jid: string) => {
     if (!jid.trim()) return;
@@ -1599,7 +1633,7 @@ function HarnessEvolvePanel() {
     setError(null);
     try {
       const query = `workspace=${encodeURIComponent(jid.trim())}`;
-      const [p, v, l, a] = await Promise.all([
+      const [p, v, l, a, es] = await Promise.all([
         api.get<{ proposals: HarnessProposalListItem[] }>(
           `/api/eval/harness/proposals?${query}`,
         ),
@@ -1615,6 +1649,10 @@ function HarnessEvolvePanel() {
             `/api/eval/harness/acceptance/${encodeURIComponent(jid.trim())}`,
           )
           .catch(() => null),
+        // Task AH banner feed; a failed fetch just hides the banner.
+        api
+          .get<EvidenceStatus>(`/api/eval/harness/evidence-status?${query}`)
+          .catch(() => null),
       ]);
       setProposals(p.proposals);
       setVersions(v.versions);
@@ -1622,7 +1660,9 @@ function HarnessEvolvePanel() {
       setAcceptanceText(a ? JSON.stringify(a.queries, null, 2) : '');
       setAcceptanceError(null);
       setAcceptanceNotice(null);
+      setEvidenceStatus(es);
       setLoadedWorkspace(jid.trim());
+      loadedRef.current = jid.trim();
     } catch (err) {
       setError(formatApiError(err));
     } finally {
@@ -1639,6 +1679,70 @@ function HarnessEvolvePanel() {
       .then((data) => setWorkspaces(data.workspaces ?? []))
       .catch(() => {});
   }, []);
+
+  // ── Task AH: evolve-trigger polling (2s while running; completion refreshes
+  // the loaded workspace). No WS events by design (plan §1-5).
+  const stopPolling = useCallback(() => {
+    if (pollTimer.current) {
+      clearInterval(pollTimer.current);
+      pollTimer.current = null;
+    }
+  }, []);
+
+  const startPolling = useCallback(() => {
+    stopPolling();
+    pollTimer.current = setInterval(() => {
+      api
+        .get<EvolveTriggerState>('/api/eval/harness/evolve/status')
+        .then((snap) => {
+          setEvolveState(snap);
+          if (!snap.running) {
+            stopPolling();
+            if (loadedRef.current) void loadAll(loadedRef.current);
+          }
+        })
+        .catch(() => {});
+    }, 2000);
+  }, [loadAll, stopPolling]);
+
+  useEffect(() => {
+    // Initial snapshot; resume polling if a run is already in flight (e.g.
+    // triggered from another tab/window).
+    api
+      .get<EvolveTriggerState>('/api/eval/harness/evolve/status')
+      .then((snap) => {
+        setEvolveState(snap);
+        if (snap.running) startPolling();
+      })
+      .catch(() => {});
+    return () => stopPolling();
+  }, [startPolling, stopPolling]);
+
+  const submitEvolve = useCallback(async () => {
+    if (!loadedWorkspace) return;
+    setEvolveSubmitting(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await api.post('/api/eval/harness/evolve/trigger', {
+        workspace: loadedWorkspace,
+      });
+      setNotice('已触发提案生成（后台子进程执行）——完成后自动刷新列表。');
+      setEvolveState({
+        running: true,
+        workspace: loadedWorkspace,
+        startedAt: Date.now(),
+        startedBy: null,
+        lines: [],
+        result: null,
+      });
+      startPolling();
+    } catch (err) {
+      setError(formatApiError(err));
+    } finally {
+      setEvolveSubmitting(false);
+    }
+  }, [loadedWorkspace, startPolling]);
 
   const openDetail = useCallback(async (id: string) => {
     setDetail(null);
@@ -1724,6 +1828,35 @@ function HarnessEvolvePanel() {
     [loadAll, loadedWorkspace, workspace],
   );
 
+  // Task AH §1-4: cross-workspace reuse goes through the proposal gate — the
+  // clone lands as a PENDING proposal in the target, never a file write.
+  const cloneVersion = useCallback(
+    async (version: HarnessVersionItem) => {
+      setCloning(true);
+      setError(null);
+      setNotice(null);
+      try {
+        const res = await api.post<{
+          ok: boolean;
+          proposal: { id: string; workspaceJid: string };
+        }>(
+          `/api/eval/harness/versions/${version.id}/clone?workspace=${encodeURIComponent(loadedWorkspace)}`,
+          { targetWorkspace: cloneTarget.trim() },
+        );
+        setNotice(
+          `已创建克隆提案 ${res.proposal.id}（${res.proposal.workspaceJid} 待审，含源 v${version.version} 全文）。`,
+        );
+        setCloneVersionId(null);
+        setCloneTarget('');
+      } catch (err) {
+        setError(formatApiError(err));
+      } finally {
+        setCloning(false);
+      }
+    },
+    [cloneTarget, loadedWorkspace],
+  );
+
   return (
     <div className="space-y-4">
       <Card>
@@ -1763,14 +1896,65 @@ function HarnessEvolvePanel() {
               加载
             </Button>
             <span className="text-xs text-muted-foreground">
-              提案由 CLI 生成：npm run eval:harness-evolve -- --workspace
-              &lt;jid&gt;
+              提案由本页「生成提案」或 CLI（npm run eval:harness-evolve）
+              生成；证据分簇与跨 workspace 近邻 lesson 默认开启（CLI 可
+              --no-cluster / --no-neighbors 回退）
             </span>
           </div>
           {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
           {notice && <p className="mt-2 text-sm text-primary">{notice}</p>}
         </CardContent>
       </Card>
+
+      {loadedWorkspace &&
+        evidenceStatus &&
+        evidenceStatus.turnsSinceLastProposal >= EVIDENCE_BANNER_THRESHOLD && (
+          <div
+            data-harness-evidence-banner
+            className="flex flex-wrap items-center gap-3 rounded-lg border border-primary/40 bg-primary/5 p-3"
+          >
+            <span className="text-sm">
+              自上次提案后已攒{' '}
+              <strong>{evidenceStatus.turnsSinceLastProposal}</strong>{' '}
+              条新证据。
+            </span>
+            <Button
+              size="sm"
+              data-harness-evolve-button
+              onClick={() => void submitEvolve()}
+              disabled={evolveSubmitting || evolveState?.running === true}
+            >
+              生成提案
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              发起一次 proposer LLM 调用（真实费用），提案落库后仍由人审。
+            </span>
+          </div>
+        )}
+
+      {loadedWorkspace &&
+        evolveState &&
+        (evolveState.running || (evolveState.lines?.length ?? 0) > 0) && (
+          <div
+            data-harness-evolve-status
+            className="rounded-lg border border-border p-3"
+          >
+            <p className="mb-1 text-xs font-medium">
+              {evolveState.running
+                ? `提案生成中（workspace ${evolveState.workspace ?? ''}）…`
+                : '上次提案生成输出'}
+              {evolveState.startedBy
+                ? `（由 ${evolveState.startedBy} 触发）`
+                : ''}
+              {evolveState.result && !evolveState.result.success
+                ? ` · 失败：${evolveState.result.error}`
+                : ''}
+            </p>
+            <pre className="max-h-40 overflow-y-auto whitespace-pre-wrap break-words rounded bg-muted/50 p-2 text-xs">
+              {evolveState.lines.slice(-12).join('\n')}
+            </pre>
+          </div>
+        )}
 
       {loadedWorkspace && (
         <Card>
@@ -1989,7 +2173,7 @@ function HarnessEvolvePanel() {
             {versions.map((version) => (
               <div
                 key={version.id}
-                className="flex items-center gap-2 rounded-md border border-border p-2 text-sm"
+                className="flex flex-wrap items-center gap-2 rounded-md border border-border p-2 text-sm"
               >
                 <span className="font-mono">v{version.version}</span>
                 {version.active && (
@@ -2001,15 +2185,50 @@ function HarnessEvolvePanel() {
                   {new Date(version.createdAt).toLocaleString()} · 由{' '}
                   {version.adoptedBy} 采纳
                 </span>
-                {!version.active && (
+                <div className="ml-auto flex items-center gap-2">
+                  {!version.active && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void rollback(version)}
+                    >
+                      回滚
+                    </Button>
+                  )}
                   <Button
                     size="sm"
                     variant="outline"
-                    className="ml-auto"
-                    onClick={() => void rollback(version)}
+                    onClick={() => {
+                      setCloneVersionId((current) =>
+                        current === version.id ? null : version.id,
+                      );
+                      setCloneTarget('');
+                      setNotice(null);
+                    }}
                   >
-                    回滚
+                    克隆到…
                   </Button>
+                </div>
+                {cloneVersionId === version.id && (
+                  <div className="flex w-full flex-wrap items-center gap-2">
+                    <input
+                      data-harness-clone-input
+                      className="w-72 rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+                      placeholder="目标工作区 JID（须与当前不同）"
+                      value={cloneTarget}
+                      onChange={(event) => setCloneTarget(event.target.value)}
+                    />
+                    <Button
+                      size="sm"
+                      onClick={() => void cloneVersion(version)}
+                      disabled={!cloneTarget.trim() || cloning}
+                    >
+                      确认克隆
+                    </Button>
+                    <span className="text-xs text-muted-foreground">
+                      以 pending 提案落到目标工作区，仍需人审+探针。
+                    </span>
+                  </div>
                 )}
               </div>
             ))}

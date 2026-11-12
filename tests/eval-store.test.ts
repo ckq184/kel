@@ -1245,3 +1245,65 @@ describe('EvalStore probe tables (v5)', () => {
     }
   });
 });
+
+// ── Cross-workspace queries (task AH, RSI Phase 3; no schema change) ────────
+
+describe('EvalStore cross-workspace queries (task AH)', () => {
+  test('listAllHarnessLessons spans workspaces, newest first, capped', () => {
+    const store = EvalStore.open(freshStorePath('ah-lessons'));
+    try {
+      const seed = (id: string, workspaceJid: string, createdAt: string) => {
+        store.insertHarnessLesson({
+          id,
+          workspaceJid,
+          cue: `cue-${id}`,
+          lesson: `lesson-${id}`,
+          evidence: 'e',
+          confidence: null,
+          proposalId: null,
+        });
+        // insertHarnessLesson stamps now(); backdate deterministically.
+        (store as unknown as { db: Database.Database }).db
+          .prepare('UPDATE harness_lessons SET created_at = ? WHERE id = ?')
+          .run(createdAt, id);
+      };
+      seed('hl_a', 'ws-ah-a@g.us', '2026-11-12T01:00:00Z');
+      seed('hl_b', 'ws-ah-b@g.us', '2026-11-12T02:00:00Z');
+      seed('hl_c', 'ws-ah-a@g.us', '2026-11-12T03:00:00Z');
+
+      const all = store.listAllHarnessLessons();
+      expect(all.map((row) => row.id)).toEqual(['hl_c', 'hl_b', 'hl_a']);
+      expect(all.every((row) => typeof row.workspaceJid === 'string')).toBe(
+        true,
+      );
+      expect(store.listAllHarnessLessons(2)).toHaveLength(2);
+      expect(store.listAllHarnessLessons(2)[0].id).toBe('hl_c');
+    } finally {
+      store.close();
+    }
+  });
+
+  test('countTurnsSince counts one workspace strictly after a timestamp', () => {
+    const store = EvalStore.open(freshStorePath('ah-count'));
+    try {
+      const seed = (turnId: string, workspaceJid: string, createdAt: string) =>
+        store.insertTurn({ turnId, workspaceJid, createdAt });
+      seed('ah_t1', 'ws-ah-x@g.us', '2026-11-12T10:00:00Z');
+      seed('ah_t2', 'ws-ah-x@g.us', '2026-11-12T11:00:00Z');
+      seed('ah_t3', 'ws-ah-x@g.us', '2026-11-12T12:00:00Z');
+      seed('ah_other', 'ws-ah-y@g.us', '2026-11-12T12:30:00Z');
+
+      // null since = the whole workspace history (no proposal ever).
+      expect(store.countTurnsSince('ws-ah-x@g.us', null)).toBe(3);
+      expect(
+        store.countTurnsSince('ws-ah-x@g.us', '2026-11-12T10:30:00Z'),
+      ).toBe(2);
+      expect(
+        store.countTurnsSince('ws-ah-x@g.us', '2026-11-12T13:00:00Z'),
+      ).toBe(0);
+      expect(store.countTurnsSince('ws-ah-none@g.us', null)).toBe(0);
+    } finally {
+      store.close();
+    }
+  });
+});

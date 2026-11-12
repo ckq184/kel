@@ -714,6 +714,29 @@ capturedAt }`（不存 messageIds 全量）。preview 无对应端点——前�
 /api/eval/harness/probes?proposal=<id>`（该提案的探针报告列表，含逐题
   双臂文本与两向 judge 判定）；`GET /api/eval/harness/proposals/:id` 详情
   附带 `latestProbe` 摘要（verdict/票数/要点命中，无报告为 null）
+- Harness 跨 workspace 复用与一键提案（任务 AH，RSI Phase 3，**无 schema
+  变更**——eval-store 仅新增 `listAllHarnessLessons`（全 workspace lesson
+  池，limit 500）/`countTurnsSince`（按时间计数）两读方法，版本仍 v5。
+  evolve CLI 默认启用证据分簇——`clusterTurns`：channel+30 分钟时间窗、
+  簇内按输入公共词占比合并，簇带 input variance 分歧信号——与跨
+  workspace 近邻 lesson——`pickNeighborLessons`：cue 词面匹配 top-3
+  （中文 2-gram/英文按词，排除本 workspace，prompt 内免责声明）；两者
+  均可用 `--no-cluster`/`--no-neighbors` 回退旧行为）：`POST
+/api/eval/harness/versions/:id/clone?workspace=<源jid>`（body
+  `{targetWorkspace}`；以该历史版本全文为目标 workspace 新建 **pending
+  提案**——rationale 标注「克隆自 <源> v<n>」、evidence 空、baseline=目标
+  当前 ACTIVE 版本，**绝不直写目标 adapter 文件**，仍走正常人审+探针；
+  目标为空/与源相同 400、版本不存在 404、成功 201 返回新提案 id）、`GET
+/api/eval/harness/evidence-status?workspace=<jid>`（返回
+  `{turnsSinceLastProposal, lastProposalAt, activeVersion}`——「≥10 条新
+  证据」提示条阈值纯前端判断，不进配置面）、`POST
+/api/eval/harness/evolve/trigger`（body `{workspace}`；照 eval-trigger
+  模式经 `src/harness-evolve-trigger.ts` spawn evolve CLI 子进程——单飞锁
+  （运行中 409）、15 分钟超时 kill、JID 白名单 `[\w:@.-]{1,128}` 关闭
+  win32 shell 注入面；一次 proposer LLM 调用费用；202）、`GET
+/api/eval/harness/evolve/status`（触发器快照与日志 tail；本期无 WS
+  事件，前端 2s 轮询，完成即刷新列表）。四个端点均
+  `manage_system_config`；**全自动采纳明确不做**——采纳/拒绝仍走人审门
 
 ## 管理、监控与问题报告
 

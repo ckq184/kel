@@ -264,7 +264,12 @@ ACTIVE 版本写入）；v5 起加 `harness_acceptance_sets`（按 workspace 的
 Phase 2：`scripts/eval-harness-probe.ts` 对 pending 提案做「当前 ACTIVE vs
 提案」双臂单轮直调 + glm-flash 双向匿名盲选 + 门槛聚合，产 adopt/keep_base/
 inconclusive **建议**辅助人审；单轮直调无工具/无召回属已知覆盖面 gap；
-验收集与报告属 admin 面，proposer 无读取路径——泄漏纪律）。
+验收集与报告属 admin 面，proposer 无读取路径——泄漏纪律）。任务 AH
+（RSI Phase 3）**无 schema 变更、版本仍 v5**：仅新增
+`listAllHarnessLessons(limit=500)`（全 workspace lesson 池，跨 ws 近邻
+匹配用，带 workspaceJid 字段）与 `countTurnsSince(workspaceJid, sinceIso)`
+（`sinceIso` 为 null 时计全部——喂「自上次提案已攒 N 条新证据」提示条的
+动态查询）两读方法。
 不碰 messages.db、不升主库 schema。
 
 `data/harness-adapters/<sanitized-jid>/` 是 workspace 外挂 harness adapter 的

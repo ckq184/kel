@@ -1,5 +1,6 @@
 /**
- * Harness adapter evolution CLI (task AE, RSI Phase 1).
+ * Harness adapter evolution CLI (task AE, RSI Phase 1; Phase 3 defaults from
+ * task AH).
  *
  * One propose step of the harness² loop, CKQClaw edition: read the
  * workspace's recent observed turns (leak-free via sanitizeObsTurn), hand
@@ -11,11 +12,19 @@
  * `npm run eval:auto-recall`, never part of the verify gate):
  *
  *   npm run eval:harness-evolve -- --workspace <chat-jid> [--limit 40] [--dry-run]
+ *                                [--no-cluster] [--no-neighbors]
  *
- *   --workspace   workspace chat JID (the obs_turns.workspace_jid value,
- *                 e.g. feishu:123456 or discord:...)
- *   --limit N     how many recent turns feed the evidence (default 40)
- *   --dry-run     print the proposal + evidence without touching eval.db
+ *   --workspace      workspace chat JID (the obs_turns.workspace_jid value,
+ *                    e.g. feishu:123456 or discord:...)
+ *   --limit N        how many recent turns feed the evidence (default 40)
+ *   --dry-run        print the proposal + evidence without touching eval.db
+ *   --no-cluster     disable turn clustering (task AH fallback to flat turns)
+ *   --no-neighbors   disable cross-workspace neighbor lessons (task AH)
+ *
+ * Phase 3 defaults (task AH): evidence turns cluster by channel+time window
+ * with an input-variance label, and up to 3 lexical-matched lessons from
+ * OTHER workspaces join the evidence tree (hermit's transferability sell;
+ * leak discipline intact — lessons are behavioral, never grader material).
  *
  * Prerequisites: observability on (obs_turns rows exist) and the auto-memory
  * llm endpoint configured (data/config/auto-memory.json — the same glm-flash
@@ -31,7 +40,9 @@ import { readAdapterFile } from '../src/harness-adapter-store.js';
 import {
   buildEvidence,
   buildUnifiedDiff,
+  clusterTurns,
   parseProposerResponse,
+  pickNeighborLessons,
   proposerPrompt,
   proposerPromptHash,
   sanitizeObsTurn,
@@ -44,6 +55,10 @@ export interface EvolveCliOptions {
   workspace: string;
   limit: number;
   dryRun: boolean;
+  /** Task AH: cluster the evidence turns by channel+time+input similarity. */
+  cluster: boolean;
+  /** Task AH: inject up to 3 lexically-matched lessons from other workspaces. */
+  neighbors: boolean;
 }
 
 export function parseEvolveArgs(argv: string[]): EvolveCliOptions | null {
@@ -51,11 +66,17 @@ export function parseEvolveArgs(argv: string[]): EvolveCliOptions | null {
     workspace: '',
     limit: 40,
     dryRun: false,
+    cluster: true,
+    neighbors: true,
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--dry-run') {
       options.dryRun = true;
+    } else if (arg === '--no-cluster') {
+      options.cluster = false;
+    } else if (arg === '--no-neighbors') {
+      options.neighbors = false;
     } else if (arg === '--workspace') {
       options.workspace = argv[++i] ?? '';
     } else if (arg === '--limit') {
@@ -117,15 +138,40 @@ async function main(): Promise<void> {
 
     // Leak-free by construction: judge/cost columns never survive this call.
     const turns = turnsResult.items.map((turn) => sanitizeObsTurn(turn));
+
+    // Phase 3 enhancements (task AH), both optional with --no-* fallbacks.
+    const clusters = options.cluster ? clusterTurns(turns) : undefined;
+    const neighborLessons = options.neighbors
+      ? pickNeighborLessons({
+          selfJid: options.workspace,
+          selfTurnTexts: turns.map((turn) => turn.inputText),
+          allLessons: store.listAllHarnessLessons().map((row) => ({
+            workspaceJid: row.workspaceJid,
+            cue: row.cue,
+            lesson: row.lesson,
+            evidence: row.evidence,
+            confidence: row.confidence,
+          })),
+          limit: 3,
+        })
+      : undefined;
+
     const evidence = buildEvidence({
       workspaceJid: options.workspace,
       turns,
       currentAdapterMd,
       lessons,
+      ...(clusters ? { clusters } : {}),
+      ...(neighborLessons ? { neighborLessons } : {}),
     });
 
     console.error(
       `proposing for ${options.workspace}: ${turns.length} turns, ${lessons.length} lessons, baseline adapter v${currentFile?.version ?? 0}`,
+    );
+    // Phase 3 audit line (stderr): cluster/neighbor counts for the run log.
+    console.error(
+      `phase3 evidence: clusters ${clusters ? clusters.length : 'off'} ` +
+        `(${turns.length} turns), neighbor lessons ${neighborLessons ? neighborLessons.length : 'off'}`,
     );
     const client = createJudgeLlmClient(config.llm);
     const raw = await client.complete(proposerPrompt(evidence));

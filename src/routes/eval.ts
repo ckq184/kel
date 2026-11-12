@@ -275,10 +275,16 @@ import {
 import {
   reflectPrompt,
   parseReflectResponse,
+  buildUnifiedDiff,
   type EvidenceTurn,
 } from '../harness-proposer.js';
 import { getAutoMemoryHostConfig } from '../auto-memory-config.js';
 import { createJudgeLlmClient } from '../recall-judge.js';
+import {
+  startHarnessEvolveRun,
+  getHarnessEvolveTriggerState,
+  WORKSPACE_JID_PATTERN,
+} from '../harness-evolve-trigger.js';
 
 async function distilLesson(proposal: {
   id: string;
@@ -563,6 +569,146 @@ evalRoutes.get(
       probes: getDefaultEvalStore().listHarnessProbes(proposal),
     });
   },
+);
+
+// ── Task AH (RSI Phase 3): cross-workspace reuse + one-click propose.
+// All admin only — the clone is a cost-free but cross-workspace information
+// flow (adapter bodies can carry source-workspace business detail), the
+// evidence counter echoes observed turn fragments, and the evolve trigger
+// spends one real proposer LLM call.
+
+// POST /harness/versions/:id/clone?workspace=<source> — clone any historical
+// version into ANOTHER workspace as a PENDING proposal (plan §1-4). The
+// proposal gate holds: nothing here writes the target adapter file; the clone
+// walks the same human review + probe flow as any other proposal.
+evalRoutes.post(
+  '/harness/versions/:id/clone',
+  authMiddleware,
+  systemConfigMiddleware,
+  async (c) => {
+    const source = c.req.query('workspace');
+    if (!source || !source.trim()) {
+      return c.json({ error: 'workspace query parameter is required' }, 400);
+    }
+    let body: { targetWorkspace?: unknown };
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: 'Invalid JSON body' }, 400);
+    }
+    const target =
+      typeof body.targetWorkspace === 'string'
+        ? body.targetWorkspace.trim()
+        : '';
+    if (!target) {
+      return c.json({ error: 'targetWorkspace is required' }, 400);
+    }
+    if (target === source) {
+      return c.json(
+        { error: 'targetWorkspace must differ from the source workspace' },
+        400,
+      );
+    }
+    const store = getDefaultEvalStore();
+    const version = store
+      .listHarnessVersions(source)
+      .find((row) => row.id === c.req.param('id'));
+    if (!version) return c.json({ error: 'version not found' }, 404);
+
+    // Baseline = what the target workspace actually runs today (file-side
+    // pointer; 0 when it has no adapter yet).
+    const targetFile = readAdapterFile(target);
+    const id = `hp_${randomUUID()}`;
+    store.insertHarnessProposal({
+      id,
+      workspaceJid: target,
+      adapterMd: version.adapterMd,
+      keepBase: false,
+      diff: buildUnifiedDiff(targetFile?.text ?? null, version.adapterMd),
+      rationale: `克隆自 ${source} v${version.version}（跨 workspace 复用，走正常人审+探针）。`,
+      evidence: [],
+      baselineVersion: targetFile?.version ?? 0,
+      model: 'clone',
+      promptHash: 'clone',
+    });
+    return c.json({ ok: true, proposal: { id, workspaceJid: target } }, 201);
+  },
+);
+
+// GET /harness/evidence-status?workspace=<jid> — dynamic banner feed (plan
+// §1-6): turns accumulated since the last proposal. The ≥10 threshold is a
+// pure frontend concern; no config surface.
+evalRoutes.get(
+  '/harness/evidence-status',
+  authMiddleware,
+  systemConfigMiddleware,
+  (c) => {
+    const workspace = c.req.query('workspace');
+    if (!workspace || !workspace.trim()) {
+      return c.json({ error: 'workspace query parameter is required' }, 400);
+    }
+    const store = getDefaultEvalStore();
+    const lastProposalAt =
+      store.listHarnessProposals(workspace, 1)[0]?.createdAt ?? null;
+    return c.json({
+      turnsSinceLastProposal: store.countTurnsSince(workspace, lastProposalAt),
+      lastProposalAt,
+      activeVersion: readAdapterFile(workspace)?.version ?? 0,
+    });
+  },
+);
+
+// POST /harness/evolve/trigger — one-click propose (plan §1-5): spawn the
+// evolve CLI as a child process via src/harness-evolve-trigger.ts. Cost: one
+// proposer LLM call. Single-flight (409 while a run is in flight); the
+// workspace is JID-whitelisted so the spawn argv stays injection-safe.
+evalRoutes.post(
+  '/harness/evolve/trigger',
+  authMiddleware,
+  systemConfigMiddleware,
+  async (c) => {
+    let body: { workspace?: unknown };
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: 'Invalid JSON body' }, 400);
+    }
+    const workspace =
+      typeof body.workspace === 'string' ? body.workspace.trim() : '';
+    if (!workspace) {
+      return c.json({ error: 'workspace is required' }, 400);
+    }
+    if (!WORKSPACE_JID_PATTERN.test(workspace)) {
+      return c.json(
+        { error: 'workspace must be a JID of [\\w:@.-]{1,128}' },
+        400,
+      );
+    }
+    const authUser = c.get('user') as AuthUser;
+    const started = startHarnessEvolveRun({
+      workspace,
+      startedBy: authUser.username,
+    });
+    if (!started.ok) {
+      if (started.error === 'busy') {
+        return c.json(
+          { error: 'A harness evolve run is already in progress' },
+          409,
+        );
+      }
+      return c.json({ error: 'invalid workspace' }, 400);
+    }
+    return c.json({ accepted: true, workspace }, 202);
+  },
+);
+
+// GET /harness/evolve/status — trigger snapshot + log tail (admin only; lines
+// can echo evidence fragments from the CLI stderr).
+evalRoutes.get(
+  '/harness/evolve/status',
+  authMiddleware,
+  systemConfigMiddleware,
+  (c) => c.json(getHarnessEvolveTriggerState()),
 );
 
 export default evalRoutes;

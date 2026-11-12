@@ -514,11 +514,29 @@ const VERSIONS_FIXTURE = {
   ],
 };
 
+// Task AH: idle evolve-trigger snapshot (the shared fallback for every
+// harness-tab mock so the new endpoints never fall through to run shapes).
+const EVOLVE_IDLE = {
+  running: false,
+  workspace: null,
+  startedAt: null,
+  startedBy: null,
+  lines: [] as string[],
+  result: null,
+};
+
 describe('EvalPage harness tab (task AE)', () => {
   beforeEach(() => {
     apiGet.mockImplementation(async (url: string) => {
       if (url.includes('trigger/status')) return IDLE_TRIGGER;
       if (url.startsWith('/api/eval/datasets')) return { datasets: [] };
+      if (url.includes('/api/eval/harness/evidence-status'))
+        return {
+          turnsSinceLastProposal: 0,
+          lastProposalAt: null,
+          activeVersion: 0,
+        };
+      if (url.includes('/api/eval/harness/evolve/status')) return EVOLVE_IDLE;
       if (url.includes('/api/eval/harness/proposals/'))
         return PROPOSAL_DETAIL_FIXTURE;
       if (url.includes('/api/eval/harness/proposals'))
@@ -664,6 +682,13 @@ describe('adapter attribution UI (task AF)', () => {
     apiGet.mockImplementation(async (url: string) => {
       if (url.includes('trigger/status')) return IDLE_TRIGGER;
       if (url.startsWith('/api/eval/datasets')) return { datasets: [] };
+      if (url.includes('/api/eval/harness/evidence-status'))
+        return {
+          turnsSinceLastProposal: 0,
+          lastProposalAt: null,
+          activeVersion: 0,
+        };
+      if (url.includes('/api/eval/harness/evolve/status')) return EVOLVE_IDLE;
       if (url.includes('/api/eval/harness/workspaces'))
         return {
           workspaces: [
@@ -747,6 +772,13 @@ describe('harness probe UI (task AG)', () => {
     apiGet.mockImplementation(async (url: string) => {
       if (url.includes('trigger/status')) return IDLE_TRIGGER;
       if (url.startsWith('/api/eval/datasets')) return { datasets: [] };
+      if (url.includes('/api/eval/harness/evidence-status'))
+        return {
+          turnsSinceLastProposal: 0,
+          lastProposalAt: null,
+          activeVersion: 0,
+        };
+      if (url.includes('/api/eval/harness/evolve/status')) return EVOLVE_IDLE;
       if (url.includes('/api/eval/harness/acceptance/'))
         return ACCEPTANCE_FIXTURE;
       if (url.includes('/api/eval/harness/probes'))
@@ -899,6 +931,13 @@ describe('harness probe UI (task AG)', () => {
     apiGet.mockImplementation(async (url: string) => {
       if (url.includes('trigger/status')) return IDLE_TRIGGER;
       if (url.startsWith('/api/eval/datasets')) return { datasets: [] };
+      if (url.includes('/api/eval/harness/evidence-status'))
+        return {
+          turnsSinceLastProposal: 0,
+          lastProposalAt: null,
+          activeVersion: 0,
+        };
+      if (url.includes('/api/eval/harness/evolve/status')) return EVOLVE_IDLE;
       if (url.includes('/api/eval/harness/acceptance/'))
         return ACCEPTANCE_FIXTURE;
       if (url.includes('/api/eval/harness/probes')) return { probes: [] };
@@ -922,5 +961,180 @@ describe('harness probe UI (task AG)', () => {
     });
     await act(async () => {});
     expect(container?.querySelector('[data-harness-probe-report]')).toBeFalsy();
+  });
+});
+
+// ── Harness Phase 3 UI (task AH): banner, one-click evolve, clone ───────────
+
+const EVIDENCE_HOT = {
+  turnsSinceLastProposal: 12,
+  lastProposalAt: '2026-11-11T00:00:00Z',
+  activeVersion: 1,
+};
+
+const EVIDENCE_COLD = {
+  turnsSinceLastProposal: 3,
+  lastProposalAt: '2026-11-11T00:00:00Z',
+  activeVersion: 1,
+};
+
+const EVOLVE_RUNNING = {
+  running: true,
+  workspace: 'feishu:ws-ae@g.us',
+  startedAt: 1,
+  startedBy: 'user-admin',
+  lines: ['proposing for feishu:ws-ae@g.us'],
+  result: null,
+};
+
+describe('harness Phase 3 UI (task AH)', () => {
+  function stubHarnessAH(evidence: unknown, evolve: unknown) {
+    apiGet.mockImplementation(async (url: string) => {
+      if (url.includes('trigger/status')) return IDLE_TRIGGER;
+      if (url.startsWith('/api/eval/datasets')) return { datasets: [] };
+      if (url.includes('/api/eval/harness/evidence-status')) return evidence;
+      if (url.includes('/api/eval/harness/evolve/status')) return evolve;
+      if (url.includes('/api/eval/harness/workspaces'))
+        return { workspaces: [] };
+      if (url.includes('/api/eval/harness/acceptance/')) return null;
+      if (url.includes('/api/eval/harness/proposals/'))
+        return { ...PROPOSAL_DETAIL_FIXTURE, latestProbe: null };
+      if (url.includes('/api/eval/harness/proposals'))
+        return { proposals: [PROPOSAL_FIXTURE] };
+      if (url.includes('/api/eval/harness/versions')) return VERSIONS_FIXTURE;
+      if (url.includes('/api/eval/harness/lessons')) return { lessons: [] };
+      return { runs: [], total: 0, items: [] };
+    });
+  }
+
+  async function openHarnessTab(): Promise<void> {
+    state.isAdmin = true;
+    await renderPage();
+    const tab = [...container!.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Harness 演化'),
+    );
+    await act(async () => {
+      tab?.click();
+    });
+    await act(async () => {});
+  }
+
+  async function loadWorkspaceData(): Promise<void> {
+    const input = container?.querySelector('[data-harness-workspace]');
+    const nativeSetter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      'value',
+    )?.set;
+    await act(async () => {
+      nativeSetter?.call(input, 'feishu:ws-ae@g.us');
+      (input as HTMLInputElement).dispatchEvent(
+        new Event('input', { bubbles: true }),
+      );
+    });
+    const load = [...container!.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('加载'),
+    );
+    await act(async () => {
+      load?.click();
+    });
+    await act(async () => {});
+  }
+
+  test('≥10 new evidence turns surface the banner with the count and propose button', async () => {
+    stubHarnessAH(EVIDENCE_HOT, EVOLVE_IDLE);
+    await openHarnessTab();
+    await loadWorkspaceData();
+    const banner = container?.querySelector('[data-harness-evidence-banner]');
+    expect(banner).toBeTruthy();
+    expect(banner?.textContent).toContain('12');
+    expect(banner?.textContent).toMatch(/新证据/);
+
+    apiPost.mockResolvedValueOnce({
+      accepted: true,
+      workspace: 'feishu:ws-ae@g.us',
+    });
+    const propose = [...container!.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('生成提案'),
+    );
+    expect(propose).toBeTruthy();
+    await act(async () => {
+      propose?.click();
+    });
+    await act(async () => {});
+    expect(apiPost).toHaveBeenCalledWith('/api/eval/harness/evolve/trigger', {
+      workspace: 'feishu:ws-ae@g.us',
+    });
+  });
+
+  test('below the threshold the banner stays hidden', async () => {
+    stubHarnessAH(EVIDENCE_COLD, EVOLVE_IDLE);
+    await openHarnessTab();
+    await loadWorkspaceData();
+    expect(
+      container?.querySelector('[data-harness-evidence-banner]'),
+    ).toBeFalsy();
+  });
+
+  test('a running evolve disables the propose button and shows the log tail', async () => {
+    stubHarnessAH(EVIDENCE_HOT, EVOLVE_RUNNING);
+    await openHarnessTab();
+    await loadWorkspaceData();
+    const propose = [...container!.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('生成提案'),
+    );
+    expect(propose).toBeTruthy();
+    expect((propose as HTMLButtonElement).disabled).toBe(true);
+    const status = container?.querySelector('[data-harness-evolve-status]');
+    expect(status).toBeTruthy();
+    expect(status?.textContent).toContain('proposing for feishu:ws-ae@g.us');
+  });
+
+  test('version rows clone into another workspace via the proposal gate', async () => {
+    stubHarnessAH(EVIDENCE_COLD, EVOLVE_IDLE);
+    await openHarnessTab();
+    await loadWorkspaceData();
+    expect(container?.textContent).toContain('版本历史');
+
+    const cloneEntry = [...container!.querySelectorAll('button')].find(
+      (button) => button.textContent?.includes('克隆到'),
+    );
+    expect(cloneEntry).toBeTruthy();
+    await act(async () => {
+      cloneEntry?.click();
+    });
+    await act(async () => {});
+
+    const input = container?.querySelector(
+      '[data-harness-clone-input]',
+    ) as HTMLInputElement | null;
+    expect(input).toBeTruthy();
+    const nativeSetter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      'value',
+    )?.set;
+    await act(async () => {
+      nativeSetter?.call(input, 'feishu:ws-target@g.us');
+      input?.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    apiPost.mockResolvedValueOnce({
+      ok: true,
+      proposal: { id: 'hp_clone1', workspaceJid: 'feishu:ws-target@g.us' },
+    });
+    const confirm = [...container!.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('确认克隆'),
+    );
+    expect(confirm).toBeTruthy();
+    await act(async () => {
+      confirm?.click();
+    });
+    await act(async () => {});
+
+    // VERSIONS_FIXTURE lists hv_2 first → the clone targets that row.
+    expect(apiPost).toHaveBeenCalledWith(
+      '/api/eval/harness/versions/hv_2/clone?workspace=feishu%3Aws-ae%40g.us',
+      { targetWorkspace: 'feishu:ws-target@g.us' },
+    );
+    expect(container?.textContent).toContain('hp_clone1');
   });
 });
