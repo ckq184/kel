@@ -29,20 +29,6 @@ function expectRouteBefore(
 }
 
 describe('attachment routing is fail-closed before business side effects', () => {
-  test('Telegram resolves photo and document routes before registration/download', () => {
-    const source = read('src/telegram.ts');
-    expectRouteBefore(
-      section(source, "bot.on('message:photo'", "bot.on('message:document'"),
-      ['storeChatMetadata(jid', 'downloadTelegramPhotoAsBase64('],
-      'isChatAuthorized(jid)',
-    );
-    expectRouteBefore(
-      section(source, "bot.on('message:document'", "bot.on('my_chat_member'"),
-      ['storeChatMetadata(jid', 'downloadTelegramFile('],
-      'isChatAuthorized(jid)',
-    );
-  });
-
   test('QQ resolves direct and group routes before registration/download', () => {
     const source = read('src/qq.ts');
     expectRouteBefore(

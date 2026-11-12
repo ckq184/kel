@@ -201,8 +201,8 @@ export interface ContainerInput {
   chatJid: string;
   /** Workspace-scoped interaction contract for this public Agent turn. */
   interactionMode?: 'assistant' | 'proactive';
-  /** Source JID of the latest message that triggered this run (e.g. `discord:123…`).
-   * Used by per-channel MCP tools (discord_*, etc.) to identify the current
+  /** Source JID of the latest message that triggered this run (e.g. `feishu:123…`).
+   * Used by per-channel MCP tools to identify the current
    * incoming chat. Undefined when chatJid already encodes the IM source. */
   currentSourceJid?: string;
   /** Sanitized identity/capability context for the message that triggered the

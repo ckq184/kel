@@ -25,7 +25,7 @@ beforeAll(() => {
     INSERT INTO registered_groups (
       jid, name, folder, added_at, container_config, created_by, is_home
     ) VALUES (
-      'telegram:legacy-chat', 'Legacy', 'legacy-folder',
+      'qq:c2c:legacy-chat', 'Legacy', 'legacy-folder',
       '2026-07-01T00:00:00.000Z', NULL, 'legacy-owner', 0
     );
     INSERT INTO registered_groups (
@@ -62,7 +62,7 @@ describe('schema v50 channel account protocol lifecycle', () => {
     expect(db.getRouterState('schema_version')).toBe(
       String(db.CURRENT_SCHEMA_VERSION),
     );
-    expect(db.getRegisteredGroup('telegram:legacy-chat')).toMatchObject({
+    expect(db.getRegisteredGroup('qq:c2c:legacy-chat')).toMatchObject({
       channel_account_id: undefined,
       created_by: 'legacy-owner',
     });
@@ -76,7 +76,7 @@ describe('schema v50 channel account protocol lifecycle', () => {
     const account = db.createChannelAccount({
       id: 'account-v49',
       owner_user_id: 'legacy-owner',
-      provider: 'telegram',
+      provider: 'qq',
       name: 'Default bot',
       secret_ref: 'channel-account:account-v49',
     });
@@ -87,16 +87,16 @@ describe('schema v50 channel account protocol lifecycle', () => {
       status: 'disconnected',
     });
 
-    db.setRegisteredGroup('telegram:chat#account:account-v49', {
+    db.setRegisteredGroup('qq:chat#account:account-v49', {
       name: 'Scoped',
       folder: 'legacy-folder',
       added_at: '2026-07-01T00:00:00.000Z',
       created_by: 'legacy-owner',
       channel_account_id: 'account-v49',
     });
-    expect(
-      db.getRegisteredGroup('telegram:chat#account:account-v49'),
-    ).toMatchObject({ channel_account_id: 'account-v49' });
+    expect(db.getRegisteredGroup('qq:chat#account:account-v49')).toMatchObject({
+      channel_account_id: 'account-v49',
+    });
 
     // A sender allowlist is an owner identity anchor, not a permanent audience
     // choice. Once the user explicitly selects "everyone", later startups

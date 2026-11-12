@@ -230,6 +230,8 @@ describe('schema version head', () => {
     // idempotently by the base schema block (task V; no data migration).
     // v74: registered_groups.auto_memory_recall column (task Z; ensureColumn,
     // no data migration).
-    expect(db.CURRENT_SCHEMA_VERSION).toBe(74);
+    // v75: retired Telegram/Discord/WhatsApp channel trim (task AJ; destructive
+    // data cleanup gated by the pre-migration backup).
+    expect(db.CURRENT_SCHEMA_VERSION).toBe(75);
   });
 });

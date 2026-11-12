@@ -40,11 +40,9 @@ const secrets = await import('../src/channel-account-secrets.js');
 const routeModule = await import('../src/routes/channel-accounts.js');
 const routes = routeModule.default;
 const disconnect = vi.fn(async () => undefined);
-const logoutWhatsApp = vi.fn(async () => undefined);
 routeModule.injectChannelAccountDeps({
   reloadChannelAccount: async () => true,
   disconnectChannelAccount: disconnect,
-  logoutUserWhatsApp: logoutWhatsApp,
 });
 
 beforeAll(() => {
@@ -58,12 +56,11 @@ afterAll(() => {
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
-async function create(
-  provider: 'telegram' | 'wechat' | 'whatsapp',
-  name: string,
-) {
+async function create(provider: 'qq' | 'wechat', name: string) {
   const credentials =
-    provider === 'telegram' ? { botToken: `123456:${name}` } : {};
+    provider === 'qq'
+      ? { appId: `app-${name}`, appSecret: `secret-${name}` }
+      : {};
   const response = await routes.request('/', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -75,11 +72,11 @@ async function create(
 
 describe('channel-account deletion cleanup', () => {
   test('bindings block deletion before any protocol artifact is touched', async () => {
-    const account = await create('whatsapp', 'Bound WhatsApp');
+    const account = await create('qq', 'Bound QQ');
     const ref = db.getChannelAccount(account.id)!.secret_ref;
-    const jid = `whatsapp:group@g.us#account:${account.id}`;
+    const jid = `qq:group:shared#account:${account.id}`;
     db.setRegisteredGroup(jid, {
-      name: 'Bound WhatsApp group',
+      name: 'Bound QQ group',
       folder: 'bound-folder',
       added_at: new Date().toISOString(),
       created_by: 'delete-owner',
@@ -94,18 +91,17 @@ describe('channel-account deletion cleanup', () => {
     expect(await response.json()).toMatchObject({ binding_count: 1 });
     expect(db.getChannelAccount(account.id)).toBeDefined();
     expect(secrets.loadChannelAccountSecret(ref)).not.toBeNull();
-    expect(logoutWhatsApp).not.toHaveBeenCalledWith('delete-owner', account.id);
     expect(disconnect).not.toHaveBeenCalledWith(account.id);
   });
 
-  test('unbound WhatsApp deletion logs out the exact account and removes metadata and secret', async () => {
-    const account = await create('whatsapp', 'Unbound WhatsApp');
+  test('unbound QQ deletion disconnects the exact account and removes metadata and secret', async () => {
+    const account = await create('qq', 'Unbound QQ');
     const ref = db.getChannelAccount(account.id)!.secret_ref;
     const response = await routes.request(`/${account.id}`, {
       method: 'DELETE',
     });
     expect(response.status).toBe(200);
-    expect(logoutWhatsApp).toHaveBeenCalledWith('delete-owner', account.id);
+    expect(disconnect).toHaveBeenCalledWith(account.id);
     expect(db.getChannelAccount(account.id)).toBeUndefined();
     expect(secrets.loadChannelAccountSecret(ref)).toBeNull();
   });
@@ -127,7 +123,7 @@ describe('channel-account deletion cleanup', () => {
   });
 
   test('credential provider deletion disconnects before removing the secret', async () => {
-    const account = await create('telegram', 'Delete Telegram');
+    const account = await create('qq', 'Delete QQ');
     const ref = db.getChannelAccount(account.id)!.secret_ref;
     const response = await routes.request(`/${account.id}`, {
       method: 'DELETE',

@@ -2997,28 +2997,6 @@ export function broadcastBillingUpdate(
   safeBroadcast(msg, false, allowedUserIds);
 }
 
-export function broadcastWhatsAppStatus(
-  userId: string,
-  accountId: string,
-  state: {
-    status: 'connecting' | 'qr' | 'connected' | 'disconnected' | 'logged_out';
-    qr?: string;
-    qrDataUrl?: string;
-    error?: string;
-    meJid?: string;
-    meName?: string;
-  },
-): void {
-  const msg: WsMessageOut = {
-    type: 'whatsapp_status',
-    userId,
-    accountId,
-    ...state,
-  };
-  const allowedUserIds = new Set([userId]);
-  safeBroadcast(msg, false, allowedUserIds);
-}
-
 export function broadcastChannelAccountStatus(
   userId: string,
   accountId: string,

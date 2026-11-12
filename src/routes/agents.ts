@@ -172,8 +172,8 @@ function refreshAgentLastImJid(agentId: string): void {
 }
 
 /**
- * Keep native-thread navigation while any Feishu topic group or Telegram
- * forum still maps into the workspace. The source update must be committed
+ * Keep native-thread navigation while any Feishu topic group still maps into
+ * the workspace. The source update must be committed
  * before calling this helper.
  */
 function detachPreviousThreadMapIfLast(
@@ -1103,8 +1103,7 @@ router.get('/:jid/im-groups', authMiddleware, async (c) => {
   }
 
   // Enrich newly discovered Feishu chats so topic containers are recognized.
-  // Telegram Forum capability is persisted by its connector events. Only
-  // query live Feishu metadata when durable capability or avatar data is
+  // Only query live Feishu metadata when durable capability or avatar data is
   // missing. Once persisted, subsequent reads stay cache-only; chat.list sync
   // refreshes names and avatars without an N+1 provider lookup.
   const deps = getWebDeps();

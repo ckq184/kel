@@ -445,8 +445,8 @@ export function BindingsSection() {
             <CardContent className="text-center">
               <MessageSquare className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
               <p className="text-sm text-muted-foreground">
-                暂无 IM 渠道。在飞书、Telegram、QQ、微信、钉钉、Discord 或
-                WhatsApp 中向 Bot 发送消息后，渠道会自动出现在这里。
+                暂无 IM 渠道。在飞书、QQ、微信或钉钉中向 Bot 发送消息后，渠道会
+                自动出现在这里。
               </p>
             </CardContent>
           </Card>

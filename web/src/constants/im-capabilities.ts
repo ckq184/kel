@@ -10,15 +10,7 @@ export interface ImChannelCapabilities {
   supports_file_send: boolean;
 }
 
-export const IM_CHANNEL_ORDER = [
-  'feishu',
-  'telegram',
-  'qq',
-  'wechat',
-  'dingtalk',
-  'discord',
-  'whatsapp',
-] as const;
+export const IM_CHANNEL_ORDER = ['feishu', 'qq', 'wechat', 'dingtalk'] as const;
 
 export type ImChannelType = (typeof IM_CHANNEL_ORDER)[number];
 
@@ -48,17 +40,6 @@ export const IM_CHANNEL_CAPABILITIES: Record<
     supports_streaming_updates: true,
     supports_file_send: true,
   },
-  telegram: {
-    channel_type: 'telegram',
-    label: 'Telegram',
-    can_bind_workspace: true,
-    can_bind_session: true,
-    supports_thread_map: true,
-    supports_activation_modes: false,
-    supports_owner_mention: true,
-    supports_streaming_updates: false,
-    supports_file_send: true,
-  },
   qq: {
     channel_type: 'qq',
     label: 'QQ',
@@ -80,28 +61,6 @@ export const IM_CHANNEL_CAPABILITIES: Record<
     supports_owner_mention: false,
     supports_streaming_updates: false,
     supports_file_send: false,
-  },
-  discord: {
-    channel_type: 'discord',
-    label: 'Discord',
-    can_bind_workspace: true,
-    can_bind_session: true,
-    supports_thread_map: false,
-    supports_activation_modes: true,
-    supports_owner_mention: true,
-    supports_streaming_updates: true,
-    supports_file_send: true,
-  },
-  whatsapp: {
-    channel_type: 'whatsapp',
-    label: 'WhatsApp',
-    can_bind_workspace: true,
-    can_bind_session: true,
-    supports_thread_map: false,
-    supports_activation_modes: true,
-    supports_owner_mention: true,
-    supports_streaming_updates: false,
-    supports_file_send: true,
   },
 };
 

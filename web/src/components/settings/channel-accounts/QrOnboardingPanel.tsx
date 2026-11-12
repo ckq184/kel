@@ -18,7 +18,6 @@ import {
   type ChannelAccount,
   type ChannelOnboardingState,
 } from '../../../stores/channel-accounts';
-import { mergeWhatsAppOnboardingState } from '../../../utils/channel-accounts';
 
 interface QrOnboardingPanelProps {
   account: ChannelAccount;
@@ -74,9 +73,7 @@ export function QrOnboardingPanel({
       const result = await beginOnboarding(account.id);
       setOnboarding(result.onboarding);
       if (result.onboarding.transport_status === 'connected') {
-        toast.success(
-          `${account.provider === 'wechat' ? '微信' : 'WhatsApp'} 已连接`,
-        );
+        toast.success('微信已连接');
       } else if (result.onboarding.auth_status === 'authorized') {
         toast.info('授权有效，已开始连接消息服务');
       }
@@ -127,24 +124,6 @@ export function QrOnboardingPanel({
       setVerifyCode('');
     }
   }, [onboarding.needsVerifyCode, onboarding.status]);
-
-  useEffect(() => {
-    if (account.provider !== 'whatsapp') return;
-    const unsubscribe = wsManager.on(
-      'whatsapp_status',
-      (event: Partial<ChannelOnboardingState> & { accountId?: string }) => {
-        if (event.accountId !== account.id) return;
-        const { accountId: _accountId, ...statusEvent } = event;
-        void _accountId;
-        setOnboarding((current) =>
-          mergeWhatsAppOnboardingState(current, statusEvent),
-        );
-      },
-    );
-    return () => {
-      unsubscribe();
-    };
-  }, [account.id, account.provider]);
 
   useEffect(() => {
     if (account.provider !== 'wechat') return;
@@ -267,7 +246,7 @@ export function QrOnboardingPanel({
             </p>
           )}
           <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
-            {onboardingHelp(account, onboarding)}
+            {onboardingHelp(onboarding)}
           </p>
           {error && (
             <p
@@ -295,14 +274,12 @@ export function QrOnboardingPanel({
           <div className="size-64 max-w-full overflow-hidden rounded-lg bg-white p-2">
             <img
               src={qrImage}
-              alt={`${account.provider === 'wechat' ? '微信' : 'WhatsApp'} 登录二维码`}
+              alt="微信登录二维码"
               className="size-full object-contain"
             />
           </div>
           <p className="max-w-sm text-center text-xs leading-5 text-muted-foreground">
-            {account.provider === 'wechat'
-              ? '请使用微信扫码，并在手机上确认登录。二维码过期后可重新获取。'
-              : '打开 WhatsApp → 已关联设备 → 关联设备，然后扫描二维码。'}
+            请使用微信扫码，并在手机上确认登录。二维码过期后可重新获取。
           </p>
         </div>
       )}
@@ -350,36 +327,6 @@ export function QrOnboardingPanel({
               </Button>
             </div>
           </form>
-        )}
-
-      {account.provider === 'whatsapp' &&
-        authorized &&
-        (onboarding.meName ||
-          onboarding.meJid ||
-          onboarding.phoneNumber ||
-          account.options?.phoneNumber) && (
-          <dl className="grid gap-2 rounded-lg border border-border px-4 py-3 text-xs sm:grid-cols-2">
-            {onboarding.meName && (
-              <div>
-                <dt className="text-muted-foreground">账号</dt>
-                <dd className="mt-0.5 break-all text-foreground">
-                  {onboarding.meName}
-                </dd>
-              </div>
-            )}
-            {(onboarding.phoneNumber ||
-              account.options?.phoneNumber ||
-              onboarding.meJid) && (
-              <div>
-                <dt className="text-muted-foreground">号码</dt>
-                <dd className="mt-0.5 break-all text-foreground">
-                  {onboarding.phoneNumber ||
-                    account.options?.phoneNumber ||
-                    onboarding.meJid}
-                </dd>
-              </div>
-            )}
-          </dl>
         )}
 
       <div className="flex flex-wrap gap-2">
@@ -513,10 +460,7 @@ function onboardingStatusLabel(state: ChannelOnboardingState) {
   return '尚未连接';
 }
 
-function onboardingHelp(
-  account: ChannelAccount,
-  state: ChannelOnboardingState,
-) {
+function onboardingHelp(state: ChannelOnboardingState) {
   if (state.auth_status === 'authorized') {
     if (state.transport_status === 'connected') return '授权和消息连接均正常。';
     if (state.transport_status === 'reconnecting')
@@ -536,13 +480,9 @@ function onboardingHelp(
   if (state.status === 'expired')
     return '二维码已经失效，请重新获取二维码后扫码。';
   if (state.auth_status === 'awaiting_scan')
-    return account.provider === 'wechat'
-      ? '二维码由 CKQClaw 向微信申请，扫码结果会自动保存。'
-      : '扫码完成后，CKQClaw 会保存关联设备会话。';
+    return '二维码由 CKQClaw 向微信申请，扫码结果会自动保存。';
   if (state.auth_status === 'revoked') return '本地授权已清除，需要重新扫码。';
-  return account.provider === 'wechat'
-    ? '点击“扫码连接”获取微信登录二维码。'
-    : '点击“扫码连接”关联 WhatsApp 设备。';
+  return '点击“扫码连接”获取微信登录二维码。';
 }
 
 function getApiMessage(error: unknown, fallback: string) {

@@ -104,7 +104,7 @@ describe('/api/workspaces canonical read routes', () => {
       agentProfileVersion: profile.version,
       identityHash: profile.identity_hash,
     });
-    db.setRegisteredGroup('telegram:canonical-owned-chat', {
+    db.setRegisteredGroup('qq:c2c:canonical-owned-chat', {
       name: 'Canonical Telegram',
       folder: 'owner-home',
       added_at: '2026-07-09T00:00:00.000Z',
@@ -146,7 +146,7 @@ describe('/api/workspaces canonical read routes', () => {
     ]);
     expect(detailBody.channel_mounts).toEqual([
       expect.objectContaining({
-        channel_jid: 'telegram:canonical-owned-chat',
+        channel_jid: 'qq:c2c:canonical-owned-chat',
         workspace_jid: 'web:canonical-owned',
         workspace_folder: 'canonical-owned',
         session_id: null,
@@ -178,7 +178,7 @@ describe('/api/workspaces canonical read routes', () => {
       created_by: OTHER_OWNER_ID,
       is_home: false,
     });
-    db.setRegisteredGroup('telegram:canonical-other-chat', {
+    db.setRegisteredGroup('qq:c2c:canonical-other-chat', {
       name: 'Other Telegram',
       folder: 'other-home',
       added_at: '2026-07-09T00:00:00.000Z',
@@ -192,13 +192,13 @@ describe('/api/workspaces canonical read routes', () => {
     const body = await res.json();
     expect(body.channel_mounts).toContainEqual(
       expect.objectContaining({
-        channel_jid: 'telegram:canonical-owned-chat',
+        channel_jid: 'qq:c2c:canonical-owned-chat',
         workspace_jid: 'web:canonical-owned',
       }),
     );
     expect(body.channel_mounts).not.toContainEqual(
       expect.objectContaining({
-        channel_jid: 'telegram:canonical-other-chat',
+        channel_jid: 'qq:c2c:canonical-other-chat',
       }),
     );
   });

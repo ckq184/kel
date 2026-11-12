@@ -8,12 +8,9 @@ import { MAX_GROUP_NAME_LEN } from './web-context.js';
 
 export const ChannelProviderSchema = z.enum([
   'feishu',
-  'telegram',
   'qq',
   'wechat',
   'dingtalk',
-  'discord',
-  'whatsapp',
 ]);
 
 const ChannelCredentialsSchema = z
@@ -90,17 +87,7 @@ export const TaskPatchSchema = z.object({
     .refine((v) => !isNaN(Date.parse(v)), 'next_run must be ISO 8601')
     .optional(),
   notify_channels: z
-    .array(
-      z.enum([
-        'feishu',
-        'telegram',
-        'qq',
-        'wechat',
-        'dingtalk',
-        'discord',
-        'whatsapp',
-      ]),
-    )
+    .array(z.enum(['feishu', 'qq', 'wechat', 'dingtalk']))
     .nullable()
     .optional(),
 });
@@ -144,17 +131,7 @@ export const TaskCreateSchema = z
     execution_mode: z.enum(['host', 'container']).optional(),
     script_command: z.string().max(MAX_TASK_SCRIPT_COMMAND_LENGTH).optional(),
     notify_channels: z
-      .array(
-        z.enum([
-          'feishu',
-          'telegram',
-          'qq',
-          'wechat',
-          'dingtalk',
-          'discord',
-          'whatsapp',
-        ]),
-      )
+      .array(z.enum(['feishu', 'qq', 'wechat', 'dingtalk']))
       .nullable()
       .optional(),
   })
@@ -943,24 +920,6 @@ export const FeishuConfigSchema = z
     { message: 'At least one config field must be provided' },
   );
 
-export const TelegramConfigSchema = z
-  .object({
-    botToken: z.string().max(2000).optional(),
-    clearBotToken: z.boolean().optional(),
-    proxyUrl: z.string().max(2000).optional(),
-    clearProxyUrl: z.boolean().optional(),
-    enabled: z.boolean().optional(),
-  })
-  .refine(
-    (data) =>
-      typeof data.botToken === 'string' ||
-      data.clearBotToken === true ||
-      typeof data.proxyUrl === 'string' ||
-      data.clearProxyUrl === true ||
-      typeof data.enabled === 'boolean',
-    { message: 'At least one config field must be provided' },
-  );
-
 export const QQConfigSchema = z
   .object({
     appId: z.string().max(2000).optional(),
@@ -1257,46 +1216,6 @@ export const DingTalkConfigSchema = z
       data.clearClientSecret === true ||
       typeof data.enabled === 'boolean' ||
       typeof data.streamingMode === 'string',
-    { message: 'At least one config field must be provided' },
-  );
-
-export const DiscordConfigSchema = z
-  .object({
-    botToken: z.string().max(2000).optional(),
-    clearBotToken: z.boolean().optional(),
-    enabled: z.boolean().optional(),
-    streamingMode: z.enum(['edit', 'off']).optional(),
-  })
-  .refine(
-    (data) =>
-      typeof data.botToken === 'string' ||
-      data.clearBotToken === true ||
-      typeof data.enabled === 'boolean' ||
-      typeof data.streamingMode === 'string',
-    { message: 'At least one config field must be provided' },
-  );
-
-export const WhatsAppConfigSchema = z
-  .object({
-    accountId: z
-      .union([
-        z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
-        // Historical clients may submit an empty value to mean "default".
-        z.literal(''),
-      ])
-      .optional(),
-    phoneNumber: z.string().max(32).optional(),
-    enabled: z.boolean().optional(),
-    // `paired` 由 Baileys 登录回调（saveUserWhatsAppConfig 内部）写入，
-    // 不在 HTTP 层接受 —— 否则用户 PUT { paired: true } 可以伪装扫码完成。
-    // 移除 schema 字段后，路由 handler 已通过解构忽略上行字段，
-    // refine 也只校验剩下三个真实字段。
-  })
-  .refine(
-    (data) =>
-      typeof data.accountId === 'string' ||
-      typeof data.phoneNumber === 'string' ||
-      typeof data.enabled === 'boolean',
     { message: 'At least one config field must be provided' },
   );
 

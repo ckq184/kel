@@ -1,5 +1,4 @@
 import { describe, expect, test, vi } from 'vitest';
-import { ChannelType } from 'discord.js';
 import {
   evaluateChannelAdmission,
   matchesChannelAccountAuthorization,
@@ -7,8 +6,6 @@ import {
   parseChannelPairingCode,
   resolveAdmittedChannelRoute,
 } from '../src/channel-admission.js';
-import { isUnsupportedDiscordGroupDm } from '../src/discord.js';
-import { assertWhatsAppSocketConnected } from '../src/whatsapp.js';
 
 describe('channel admission', () => {
   test('parses only a complete /pair command', () => {
@@ -23,7 +20,7 @@ describe('channel admission', () => {
     const onPairAttempt = vi.fn();
     await expect(
       evaluateChannelAdmission({
-        jid: 'discord:dm:user#account:bot',
+        jid: 'wechat:user#account:bot',
         chatName: 'User',
         text: 'hello',
         isChatAuthorized: () => false,
@@ -37,7 +34,7 @@ describe('channel admission', () => {
     const onPairAttempt = vi.fn(async () => true);
     await expect(
       evaluateChannelAdmission({
-        jid: 'whatsapp:1@s.whatsapp.net#account:bot',
+        jid: 'wechat:1#account:bot',
         chatName: 'User',
         text: '/pair a1b2c3',
         isChatAuthorized: () => false,
@@ -45,7 +42,7 @@ describe('channel admission', () => {
       }),
     ).resolves.toEqual({ kind: 'paired' });
     expect(onPairAttempt).toHaveBeenCalledWith(
-      'whatsapp:1@s.whatsapp.net#account:bot',
+      'wechat:1#account:bot',
       'User',
       'a1b2c3',
     );
@@ -62,15 +59,13 @@ describe('channel admission', () => {
   });
 
   test('configured route resolver is authoritative and fails closed', () => {
-    expect(resolveAdmittedChannelRoute('discord:source')).toEqual({
-      targetJid: 'discord:source',
+    expect(resolveAdmittedChannelRoute('qq:source')).toEqual({
+      targetJid: 'qq:source',
       routing: null,
     });
+    expect(resolveAdmittedChannelRoute('qq:source', () => null)).toBeNull();
     expect(
-      resolveAdmittedChannelRoute('discord:source', () => null),
-    ).toBeNull();
-    expect(
-      resolveAdmittedChannelRoute('discord:source', () => ({
+      resolveAdmittedChannelRoute('qq:source', () => ({
         effectiveJid: 'web:workspace#agent:session',
         agentId: 'session',
       })),
@@ -90,13 +85,9 @@ describe('channel admission', () => {
     }));
     const context = { nativeContextType: 'thread', contextId: '42' };
     expect(
-      resolveAdmittedChannelRoute(
-        'telegram:group#thread:42',
-        resolver,
-        context,
-      ),
+      resolveAdmittedChannelRoute('feishu:group#thread:42', resolver, context),
     ).toMatchObject({ targetJid: 'web:workspace' });
-    expect(resolver).toHaveBeenCalledWith('telegram:group#thread:42', context);
+    expect(resolver).toHaveBeenCalledWith('feishu:group#thread:42', context);
   });
 
   test('rejects stale ownership rows and isolates two bots sharing one external chat id', () => {
@@ -161,25 +152,5 @@ describe('channel admission', () => {
         expectedAccountId: 'bot-a',
       }),
     ).toBe(false);
-  });
-});
-
-describe('provider safety contracts', () => {
-  test('Discord ignores GroupDM but accepts regular DM and guild channels', () => {
-    expect(isUnsupportedDiscordGroupDm(ChannelType.GroupDM)).toBe(true);
-    expect(isUnsupportedDiscordGroupDm(ChannelType.DM)).toBe(false);
-    expect(isUnsupportedDiscordGroupDm(ChannelType.GuildText)).toBe(false);
-  });
-
-  test('WhatsApp outbound requires an actually connected socket', () => {
-    expect(() =>
-      assertWhatsAppSocketConnected(null, { status: 'disconnected' }),
-    ).toThrow('WhatsApp socket is not connected');
-    expect(() =>
-      assertWhatsAppSocketConnected({} as never, { status: 'connecting' }),
-    ).toThrow('WhatsApp socket is not connected');
-    expect(() =>
-      assertWhatsAppSocketConnected({} as never, { status: 'connected' }),
-    ).not.toThrow();
   });
 });

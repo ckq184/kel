@@ -8,8 +8,7 @@ const source = fs.readFileSync(
 );
 
 describe('legacy paired-chat facade isolation', () => {
-  test('Telegram and QQ old routes restrict scoped chats to the legacy account', () => {
-    expect(source).toContain("getLegacyChannelAccount(user.id, 'telegram')");
+  test('QQ old routes restrict scoped chats to the legacy account', () => {
     expect(source).toContain("getLegacyChannelAccount(user.id, 'qq')");
     expect(source).toContain(
       'address.legacy || group.channel_account_id === legacy?.id',

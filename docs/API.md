@@ -325,11 +325,10 @@ Provider：
 - `GET /api/config/appearance/public`，Public
 - `POST|DELETE /api/config/appearance/avatar`
 
-Legacy 渠道 facade 位于 `/api/config/user-im/*`，涵盖飞书、Telegram、QQ、钉钉、
-微信、Discord 和 WhatsApp。它们继续服务旧数据和旧客户端；新 UI 与新功能使用
-`/api/channel-accounts`。
+Legacy 渠道 facade 位于 `/api/config/user-im/*`，涵盖飞书、QQ、钉钉和微信。
+它们继续服务旧数据和旧客户端；新 UI 与新功能使用 `/api/channel-accounts`。
 
-系统级 `/api/config/feishu` 和 `/api/config/telegram` 也只保留兼容用途。
+系统级 `/api/config/feishu` 也只保留兼容用途。
 
 ## 定时任务
 

@@ -57,14 +57,7 @@ export function sanitizeImFilename(raw: string | undefined | null): string {
  */
 export async function saveDownloadedFile(
   groupFolder: string,
-  channel:
-    | 'feishu'
-    | 'telegram'
-    | 'qq'
-    | 'wechat'
-    | 'dingtalk'
-    | 'discord'
-    | 'whatsapp',
+  channel: 'feishu' | 'qq' | 'wechat' | 'dingtalk',
   originalFilename: string,
   buffer: Buffer,
 ): Promise<string> {
@@ -140,7 +133,11 @@ export async function saveDownloadedFile(
   try {
     fs.writeFileSync(fd, buffer);
   } finally {
-    try { fs.closeSync(fd); } catch { /* ignore */ }
+    try {
+      fs.closeSync(fd);
+    } catch {
+      /* ignore */
+    }
   }
 
   // 返回相对于群组工作区根目录的路径

@@ -11,7 +11,7 @@ interface PairingCodeResult {
 }
 
 interface UsePairingCodeOptions {
-  /** API endpoint for generating pairing codes, e.g. '/api/config/user-im/telegram/pairing-code' */
+  /** API endpoint for generating pairing codes, e.g. '/api/channel-accounts/:id/pairing-code' */
   endpoint: string;
 }
 

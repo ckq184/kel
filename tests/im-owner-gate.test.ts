@@ -108,29 +108,14 @@ describe('isDirectMessageJid', () => {
   test('DM jids → true', () => {
     expect(isDirectMessageJid('qq:c2c:user_openid_abc')).toBe(true);
     expect(isDirectMessageJid('dingtalk:c2c:staff123')).toBe(true);
-    expect(isDirectMessageJid('discord:dm:8675309')).toBe(true);
-    expect(isDirectMessageJid('whatsapp:15551234567@s.whatsapp.net')).toBe(
-      true,
-    );
     expect(isDirectMessageJid('wechat:wxid_abc123')).toBe(true);
-    // Telegram private chats have positive ids
-    expect(isDirectMessageJid('telegram:123456789')).toBe(true);
-    expect(
-      isDirectMessageJid('telegram:123456789#account:bot-a#thread:topic-1'),
-    ).toBe(true);
-    expect(
-      isDirectMessageJid('whatsapp:15551234567@s.whatsapp.net#account:bot-a'),
-    ).toBe(true);
+    expect(isDirectMessageJid('wechat:wxid_abc123#account:bot-a')).toBe(true);
   });
 
   test('group jids → false (no auto-claim in groups)', () => {
     expect(isDirectMessageJid('qq:group:group_openid_xyz')).toBe(false);
     expect(isDirectMessageJid('dingtalk:cidAbc123==')).toBe(false);
-    expect(isDirectMessageJid('discord:998877665544')).toBe(false);
-    expect(isDirectMessageJid('whatsapp:120363012345678901@g.us')).toBe(false);
-    // Telegram groups/supergroups have negative ids
-    expect(isDirectMessageJid('telegram:-1001234567890')).toBe(false);
-    expect(isDirectMessageJid('telegram:-100')).toBe(false);
+    expect(isDirectMessageJid('qq:')).toBe(false);
   });
 
   test('feishu never auto-claims (own owner-learn path) → false', () => {

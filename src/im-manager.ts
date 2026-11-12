@@ -11,38 +11,19 @@ import {
   type ChannelMessageDeliveryOptions,
   getChannelType,
   createFeishuChannel,
-  createTelegramChannel,
   createQQChannel,
   createWeChatChannel,
   createDingTalkChannel,
-  createDiscordChannel,
-  isDiscordChannel,
-  createWhatsAppChannel,
 } from './im-channel.js';
-import type {
-  DiscordHistoryMessage,
-  DiscordHistoryOpts,
-  DiscordChannelInfo,
-  DiscordGuildInfo,
-} from './discord.js';
 import { type FeishuConnectionConfig } from './feishu.js';
 import type { FeishuConversationPlan } from './feishu-conversation-policy.js';
-import type { TelegramConnectionConfig } from './telegram.js';
 import type { QQConnectionConfig } from './qq.js';
 import type {
   WeChatConnectionConfig,
   WeChatConnectionState,
 } from './wechat.js';
 import type { DingTalkConnectionConfig } from './dingtalk.js';
-import type { DiscordConnectionConfig } from './discord.js';
-import {
-  getWhatsAppAuthDir,
-  type WhatsAppConnectionConfig,
-  type WhatsAppConnectionState,
-} from './whatsapp.js';
-import { rm } from 'fs/promises';
 import crypto from 'node:crypto';
-import { DATA_DIR } from './config.js';
 import type { StreamingSession } from './im-channel.js';
 import type { StreamingCardLifecycle } from './feishu-streaming-card.js';
 import type { StreamingCardRecord } from './channel-reliability-store.js';
@@ -87,12 +68,6 @@ export interface FeishuConnectConfig {
   enabled?: boolean;
 }
 
-export interface TelegramConnectConfig {
-  botToken: string;
-  proxyUrl?: string;
-  enabled?: boolean;
-}
-
 export interface QQConnectConfig {
   appId: string;
   appSecret: string;
@@ -115,25 +90,6 @@ export interface DingTalkConnectConfig {
   enabled?: boolean;
   streamingMode?: 'card' | 'text';
 }
-
-export interface DiscordConnectConfig {
-  botToken: string;
-  enabled?: boolean;
-  streamingMode?: 'edit' | 'off';
-}
-
-export interface WhatsAppConnectConfig {
-  accountId?: string;
-  phoneNumber?: string;
-  authDir?: string;
-  enabled?: boolean;
-}
-
-/**
- * Re-export from src/whatsapp.ts as the canonical state shape.
- * Kept as a type alias so existing imports from im-manager continue to work.
- */
-export type WhatsAppConnectionStateSnapshot = WhatsAppConnectionState;
 
 export interface ConnectFeishuOptions {
   accountId?: string;
@@ -194,10 +150,6 @@ export interface ConnectFeishuOptions {
 export class IMConnectionManager {
   private connections = new Map<string, UserIMConnection>();
   private adminUserIds = new Set<string>();
-  private lastWhatsAppState = new Map<
-    string,
-    WhatsAppConnectionStateSnapshot
-  >();
   private dingtalkStreamingModes = new Map<string, 'card' | 'text'>();
   // Per-(userId, channelType) 串行化锁。connectChannel / disconnectChannel
   // 必须按顺序排队，否则两次重叠的 reconnect 会让旧 disconnect 的清理跨过新
@@ -212,7 +164,7 @@ export class IMConnectionManager {
   private userLocks = new Map<string, Promise<unknown>>();
   private sealedUsers = new Set<string>();
   // A provider credential must own at most one live connector. Duplicate
-  // Feishu/DingTalk/Telegram/QQ/Discord accounts otherwise compete for the
+  // Feishu/DingTalk/QQ accounts otherwise compete for the
   // same event stream (409 polling conflicts or duplicate replies).
   private credentialClaims = new Map<string, string>();
   private connectionCredentialClaims = new Map<string, string>();
@@ -266,10 +218,6 @@ export class IMConnectionManager {
 
   private channelKey(channelType: string, accountId?: string | null): string {
     return accountId ? `${channelType}\u0000${accountId}` : channelType;
-  }
-
-  private whatsAppStateKey(userId: string, accountId?: string | null): string {
-    return `${userId}\u0000${accountId || 'legacy'}`;
   }
 
   private claimCredential(
@@ -865,50 +813,6 @@ export class IMConnectionManager {
   }
 
   /**
-   * Fetch recent messages from a Discord channel/DM, auto-routing via JID prefix.
-   * Throws if the JID is not a Discord channel or no Discord connection is available.
-   */
-  async getDiscordHistory(
-    jid: string,
-    opts?: DiscordHistoryOpts,
-  ): Promise<DiscordHistoryMessage[]> {
-    const ch = this.requireDiscordChannel(jid, 'getDiscordHistory');
-    return ch.getDiscordHistory(extractProviderTarget(jid), opts);
-  }
-
-  /**
-   * Get Discord channel/DM metadata.
-   */
-  async getDiscordChannelInfo(jid: string): Promise<DiscordChannelInfo> {
-    const ch = this.requireDiscordChannel(jid, 'getDiscordChannelInfo');
-    return ch.getDiscordChannelInfo(extractProviderTarget(jid));
-  }
-
-  /**
-   * Get Discord guild (server) metadata for the channel's parent guild.
-   * Returns null if the JID points to a DM (no guild).
-   */
-  async getDiscordGuildInfo(jid: string): Promise<DiscordGuildInfo | null> {
-    const ch = this.requireDiscordChannel(jid, 'getDiscordGuildInfo');
-    return ch.getDiscordGuildInfo(extractProviderTarget(jid));
-  }
-
-  /**
-   * Resolve the Discord channel adapter for a given JID, asserting type and connectivity.
-   */
-  private requireDiscordChannel(jid: string, op: string) {
-    const channelType = getChannelType(jid);
-    if (channelType !== 'discord') {
-      throw new Error(`${op}: JID is not a Discord channel: ${jid}`);
-    }
-    const ch = this.findChannelForJid(jid, 'discord');
-    if (!ch || !isDiscordChannel(ch)) {
-      throw new Error(`${op}: no connected Discord channel for ${jid}`);
-    }
-    return ch;
-  }
-
-  /**
    * Set typing indicator on an IM chat, auto-routing via JID prefix.
    */
   async setTyping(
@@ -954,7 +858,6 @@ export class IMConnectionManager {
     if (
       channelType !== 'feishu' &&
       channelType !== 'dingtalk' &&
-      channelType !== 'discord' &&
       channelType !== 'qq'
     )
       return undefined;
@@ -1229,75 +1132,6 @@ export class IMConnectionManager {
   }
 
   /**
-   * Connect a Telegram instance for a specific user.
-   */
-  async connectUserTelegram(
-    userId: string,
-    config: TelegramConnectConfig,
-    onNewChat: (chatJid: string, chatName: string) => void,
-    isChatAuthorized?: (jid: string) => boolean,
-    onPairAttempt?: (
-      jid: string,
-      chatName: string,
-      code: string,
-    ) => Promise<boolean>,
-    options?: {
-      accountId?: string;
-      scopeIncomingJids?: boolean;
-      onCommand?: (chatJid: string, command: string) => Promise<string | null>;
-      ignoreMessagesBefore?: number;
-      resolveGroupFolder?: (jid: string) => string | undefined;
-      resolveEffectiveChatJid?: (chatJid: string) => {
-        effectiveJid: string;
-        agentId: string | null;
-        sourceJid?: string;
-      } | null;
-      onAgentMessage?: (baseChatJid: string, agentId: string) => void;
-      onBotAddedToGroup?: (chatJid: string, chatName: string) => void;
-      onBotRemovedFromGroup?: (chatJid: string) => void;
-      onNativeContextDetected?: (
-        chatJid: string,
-        contextType: 'thread',
-      ) => boolean | void | Promise<boolean | void>;
-    },
-  ): Promise<boolean> {
-    if (!config.botToken) {
-      logger.info({ userId }, 'Telegram config empty, skipping connection');
-      return false;
-    }
-
-    const channel = createTelegramChannel({
-      botToken: config.botToken,
-      proxyUrl: config.proxyUrl,
-    });
-
-    return this.connectChannel(
-      userId,
-      'telegram',
-      channel,
-      {
-        onReady: () => {
-          logger.info({ userId }, 'User Telegram bot connected');
-        },
-        onNewChat,
-        isChatAuthorized,
-        onPairAttempt,
-        onCommand: options?.onCommand,
-        ignoreMessagesBefore: options?.ignoreMessagesBefore,
-        resolveGroupFolder: options?.resolveGroupFolder,
-        resolveEffectiveChatJid: options?.resolveEffectiveChatJid,
-        onAgentMessage: options?.onAgentMessage,
-        onBotAddedToGroup: options?.onBotAddedToGroup,
-        onBotRemovedFromGroup: options?.onBotRemovedFromGroup,
-        onNativeContextDetected: options?.onNativeContextDetected,
-      },
-      options?.accountId,
-      options?.scopeIncomingJids,
-      config.botToken,
-    );
-  }
-
-  /**
    * Connect a QQ instance for a specific user.
    */
   async connectUserQQ(
@@ -1357,10 +1191,6 @@ export class IMConnectionManager {
 
   async disconnectUserFeishu(userId: string): Promise<void> {
     await this.disconnectChannel(userId, 'feishu');
-  }
-
-  async disconnectUserTelegram(userId: string): Promise<void> {
-    await this.disconnectChannel(userId, 'telegram');
   }
 
   async disconnectUserChannelAccount(
@@ -1457,179 +1287,6 @@ export class IMConnectionManager {
   }
 
   /**
-   * Connect a WhatsApp instance for a specific user.
-   *
-   * M1：接入 Baileys，QR 状态通过 onConnectionUpdate 推到上层（最终经 WS 推前端）。
-   * 缓存最近一次 state 到 lastWhatsAppState，前端刷新页面时通过 GET 接口拿到。
-   */
-  async connectUserWhatsApp(
-    userId: string,
-    config: WhatsAppConnectConfig,
-    onNewChat: (chatJid: string, chatName: string) => void,
-    options?: {
-      accountId?: string;
-      scopeIncomingJids?: boolean;
-      ignoreMessagesBefore?: number;
-      isChatAuthorized?: (jid: string) => boolean;
-      onPairAttempt?: (
-        jid: string,
-        chatName: string,
-        code: string,
-      ) => Promise<boolean>;
-      onCommand?: (chatJid: string, command: string) => Promise<string | null>;
-      resolveGroupFolder?: (jid: string) => string | undefined;
-      resolveEffectiveChatJid?: (chatJid: string) => {
-        effectiveJid: string;
-        agentId: string | null;
-        sourceJid?: string;
-      } | null;
-      onAgentMessage?: (baseChatJid: string, agentId: string) => void;
-      onBotAddedToGroup?: (chatJid: string, chatName: string) => void;
-      onBotRemovedFromGroup?: (chatJid: string) => void;
-      shouldProcessGroupMessage?: (
-        chatJid: string,
-        senderImId?: string,
-      ) => boolean;
-      isGroupOwnerMessage?: (chatJid: string, senderImId?: string) => boolean;
-      isSenderAllowedInGroup?: (
-        chatJid: string,
-        senderImId?: string,
-      ) => boolean;
-      onConnectionUpdate?: (
-        userId: string,
-        accountId: string,
-        state: WhatsAppConnectionStateSnapshot,
-      ) => void;
-    },
-  ): Promise<boolean> {
-    const channel = createWhatsAppChannel(
-      {
-        accountId: config.accountId,
-        phoneNumber: config.phoneNumber,
-        authDir:
-          config.authDir ??
-          getWhatsAppAuthDir(DATA_DIR, userId, config.accountId),
-      },
-      (state) => {
-        const accountId = options?.accountId || config.accountId || 'legacy';
-        this.lastWhatsAppState.set(
-          this.whatsAppStateKey(userId, accountId),
-          state,
-        );
-        options?.onConnectionUpdate?.(userId, accountId, state);
-      },
-    );
-
-    return this.connectChannel(
-      userId,
-      'whatsapp',
-      channel,
-      {
-        onReady: () => {
-          logger.info({ userId }, 'User WhatsApp channel ready');
-        },
-        onNewChat,
-        isChatAuthorized: options?.isChatAuthorized,
-        onPairAttempt: options?.onPairAttempt,
-        ignoreMessagesBefore: options?.ignoreMessagesBefore,
-        onCommand: options?.onCommand,
-        resolveGroupFolder: options?.resolveGroupFolder,
-        resolveEffectiveChatJid: options?.resolveEffectiveChatJid,
-        onAgentMessage: options?.onAgentMessage,
-        onBotAddedToGroup: options?.onBotAddedToGroup,
-        onBotRemovedFromGroup: options?.onBotRemovedFromGroup,
-        shouldProcessGroupMessage: options?.shouldProcessGroupMessage,
-        isGroupOwnerMessage: options?.isGroupOwnerMessage,
-        isSenderAllowedInGroup: options?.isSenderAllowedInGroup,
-      },
-      options?.accountId,
-      options?.scopeIncomingJids,
-    );
-  }
-
-  getUserWhatsAppState(
-    userId: string,
-    accountId?: string,
-  ): WhatsAppConnectionStateSnapshot {
-    if (accountId) {
-      return (
-        this.lastWhatsAppState.get(
-          this.whatsAppStateKey(userId, accountId),
-        ) ?? { status: 'disconnected' as const }
-      );
-    }
-    // Compatibility for the legacy user-level endpoint: prefer the provider
-    // default account, otherwise return the first state owned by this user.
-    const defaultId = getDefaultChannelAccount(userId, 'whatsapp')?.id;
-    if (defaultId) {
-      const current = this.lastWhatsAppState.get(
-        this.whatsAppStateKey(userId, defaultId),
-      );
-      if (current) return current;
-    }
-    const prefix = `${userId}\u0000`;
-    for (const [key, state] of this.lastWhatsAppState) {
-      if (key.startsWith(prefix)) return state;
-    }
-    return { status: 'disconnected' as const };
-  }
-
-  async disconnectUserWhatsApp(userId: string): Promise<void> {
-    await this.disconnectChannel(userId, 'whatsapp');
-  }
-
-  /**
-   * Full logout for WhatsApp: send logout to WhatsApp servers, drop the socket,
-   * and wipe the local auth state directory so the next enable starts fresh
-   * (forces a new QR scan, possibly a different account).
-   *
-   * Distinct from disconnectUserWhatsApp, which only closes the socket but
-   * keeps the noise/Signal pre-keys on disk for silent reconnect.
-   */
-  async logoutUserWhatsApp(userId: string, accountId?: string): Promise<void> {
-    const conn = this.connections.get(userId);
-    const channelKey = this.channelKey('whatsapp', accountId);
-    const channel = conn?.channels.get(channelKey);
-    // Best-effort: ask Baileys to send the logout to WhatsApp servers before
-    // we tear the socket down. If we already disconnected, the disk wipe below
-    // still clears the persisted credentials, so the user can rescan.
-    const maybeLogout = (
-      channel as unknown as { logout?: () => Promise<void> } | undefined
-    )?.logout;
-    if (typeof maybeLogout === 'function') {
-      try {
-        await maybeLogout.call(channel);
-      } catch (err) {
-        logger.warn(
-          { err, userId },
-          'WhatsApp channel.logout() threw, continuing with auth wipe',
-        );
-      }
-    }
-    if (accountId) {
-      await this.disconnectChannelAccount(userId, 'whatsapp', accountId);
-    } else {
-      await this.disconnectChannel(userId, 'whatsapp');
-    }
-    this.lastWhatsAppState.delete(this.whatsAppStateKey(userId, accountId));
-
-    const authDir = getWhatsAppAuthDir(
-      DATA_DIR,
-      userId,
-      accountId || 'default',
-    );
-    try {
-      await rm(authDir, { recursive: true, force: true });
-      logger.info({ userId, authDir }, 'WhatsApp auth state wiped');
-    } catch (err) {
-      logger.warn(
-        { err, userId, authDir },
-        'WhatsApp authDir wipe failed (state already gone or perms)',
-      );
-    }
-  }
-
-  /**
    * Connect a DingTalk Stream instance for a specific user.
    */
   async connectUserDingTalk(
@@ -1716,74 +1373,6 @@ export class IMConnectionManager {
   }
 
   /**
-   * Connect a Discord instance for a specific user.
-   */
-  async connectUserDiscord(
-    userId: string,
-    config: DiscordConnectConfig,
-    onNewChat: (chatJid: string, chatName: string) => void,
-    options?: {
-      accountId?: string;
-      scopeIncomingJids?: boolean;
-      ignoreMessagesBefore?: number;
-      isChatAuthorized?: (jid: string) => boolean;
-      onPairAttempt?: (
-        jid: string,
-        chatName: string,
-        code: string,
-      ) => Promise<boolean>;
-      onCommand?: (chatJid: string, command: string) => Promise<string | null>;
-      resolveGroupFolder?: (jid: string) => string | undefined;
-      resolveEffectiveChatJid?: (chatJid: string) => {
-        effectiveJid: string;
-        agentId: string | null;
-        sourceJid?: string;
-      } | null;
-      onAgentMessage?: (baseChatJid: string, agentId: string) => void;
-      onBotAddedToGroup?: (chatJid: string, chatName: string) => void;
-      onBotRemovedFromGroup?: (chatJid: string) => void;
-      shouldProcessGroupMessage?: (
-        chatJid: string,
-        senderImId?: string,
-      ) => boolean;
-      isGroupOwnerMessage?: (chatJid: string, senderImId?: string) => boolean;
-    },
-  ): Promise<boolean> {
-    if (!config.botToken) return false;
-    const channel = createDiscordChannel(
-      { botToken: config.botToken },
-      { streamingMode: config.streamingMode ?? 'off' },
-    );
-    return this.connectChannel(
-      userId,
-      'discord',
-      channel,
-      {
-        onReady: () => logger.info({ userId }, 'User Discord bot connected'),
-        onNewChat,
-        ignoreMessagesBefore: options?.ignoreMessagesBefore,
-        isChatAuthorized: options?.isChatAuthorized,
-        onPairAttempt: options?.onPairAttempt,
-        onCommand: options?.onCommand,
-        resolveGroupFolder: options?.resolveGroupFolder,
-        resolveEffectiveChatJid: options?.resolveEffectiveChatJid,
-        onAgentMessage: options?.onAgentMessage,
-        onBotAddedToGroup: options?.onBotAddedToGroup,
-        onBotRemovedFromGroup: options?.onBotRemovedFromGroup,
-        shouldProcessGroupMessage: options?.shouldProcessGroupMessage,
-        isGroupOwnerMessage: options?.isGroupOwnerMessage,
-      },
-      options?.accountId,
-      options?.scopeIncomingJids,
-      config.botToken,
-    );
-  }
-
-  async disconnectUserDiscord(userId: string): Promise<void> {
-    await this.disconnectChannel(userId, 'discord');
-  }
-
-  /**
    * Send a message to a Feishu chat.
    * @deprecated Use sendMessage(jid, text) which auto-routes.
    */
@@ -1799,39 +1388,6 @@ export class IMConnectionManager {
       return;
     }
     logger.warn({ chatJid }, 'No Feishu connection available to send message');
-  }
-
-  /**
-   * Send a message to a Telegram chat.
-   * @deprecated Use sendMessage(jid, text) which auto-routes.
-   */
-  async sendTelegramMessage(
-    chatJid: string,
-    text: string,
-    localImagePaths?: string[],
-  ): Promise<void> {
-    const chatId = extractProviderTarget(chatJid);
-    const channel = this.findChannelForJid(chatJid, 'telegram');
-    if (channel) {
-      await channel.sendMessage(chatId, text, localImagePaths);
-      return;
-    }
-    logger.warn(
-      { chatJid },
-      'No Telegram connection available to send message',
-    );
-  }
-
-  /**
-   * Set Telegram typing chat action for a chat.
-   * @deprecated Use setTyping(jid, isTyping) which auto-routes.
-   */
-  async setTelegramTyping(chatJid: string, isTyping: boolean): Promise<void> {
-    const chatId = extractProviderTarget(chatJid);
-    const channel = this.findChannelForJid(chatJid, 'telegram');
-    if (channel) {
-      await channel.setTyping(chatId, isTyping);
-    }
   }
 
   /**
@@ -1927,11 +1483,6 @@ export class IMConnectionManager {
     return this.hasConnectedType(conn, 'feishu');
   }
 
-  isTelegramConnected(userId: string): boolean {
-    const conn = this.connections.get(userId);
-    return this.hasConnectedType(conn, 'telegram');
-  }
-
   isQQConnected(userId: string): boolean {
     const conn = this.connections.get(userId);
     return this.hasConnectedType(conn, 'qq');
@@ -1945,14 +1496,6 @@ export class IMConnectionManager {
     return false;
   }
 
-  /** Check if any user has an active Telegram connection */
-  isAnyTelegramConnected(): boolean {
-    for (const conn of this.connections.values()) {
-      if (this.hasConnectedType(conn, 'telegram')) return true;
-    }
-    return false;
-  }
-
   isWeChatConnected(userId: string): boolean {
     const conn = this.connections.get(userId);
     return this.hasConnectedType(conn, 'wechat');
@@ -1961,16 +1504,6 @@ export class IMConnectionManager {
   isDingTalkConnected(userId: string): boolean {
     const conn = this.connections.get(userId);
     return this.hasConnectedType(conn, 'dingtalk');
-  }
-
-  isDiscordConnected(userId: string): boolean {
-    const conn = this.connections.get(userId);
-    return this.hasConnectedType(conn, 'discord');
-  }
-
-  isWhatsAppConnected(userId: string): boolean {
-    const conn = this.connections.get(userId);
-    return this.hasConnectedType(conn, 'whatsapp');
   }
 
   private hasConnectedType(
@@ -1998,18 +1531,6 @@ export class IMConnectionManager {
               getDefaultChannelAccount(userId, 'feishu')!.id,
             ),
           )
-        : undefined)
-    );
-  }
-
-  /** Get the Telegram channel for a user */
-  getTelegramConnection(userId: string): IMChannel | undefined {
-    const conn = this.connections.get(userId);
-    const account = getDefaultChannelAccount(userId, 'telegram');
-    return (
-      conn?.channels.get('telegram') ??
-      (account
-        ? conn?.channels.get(this.channelKey('telegram', account.id))
         : undefined)
     );
   }
@@ -2049,7 +1570,7 @@ export class IMConnectionManager {
    * Returns:
    * - object: chat info (reachable)
    * - null: channel supports getChatInfo but chat is not reachable
-   * - undefined: channel does not support getChatInfo (e.g. Telegram, QQ)
+   * - undefined: channel does not support getChatInfo (e.g. QQ)
    */
   async getChatInfo(jid: string): Promise<
     | {
@@ -2089,8 +1610,8 @@ export class IMConnectionManager {
   }
 
   /**
-   * Disconnect all IM channels owned by a single user (feishu / telegram /
-   * qq / wechat / dingtalk / discord / whatsapp). Used when admin disables
+   * Disconnect all IM channels owned by a single user (feishu /
+   * qq / wechat / dingtalk). Used when admin disables
    * or deletes a user — without this, an active feishu bot would keep
    * responding to that user's group messages until the next service restart
    * (loadState filters out non-active users at startup).

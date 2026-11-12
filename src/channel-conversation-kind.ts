@@ -48,26 +48,9 @@ export function resolveChannelConversationKind(
     return baseJid.length > 'dingtalk:'.length ? 'group' : 'unknown';
   }
 
-  if (baseJid.startsWith('discord:')) {
-    if (baseJid.startsWith('discord:dm:')) return 'direct';
-    return baseJid.length > 'discord:'.length ? 'group' : 'unknown';
-  }
-
-  if (baseJid.startsWith('whatsapp:')) {
-    if (baseJid.endsWith('@s.whatsapp.net')) return 'direct';
-    if (baseJid.endsWith('@g.us')) return 'group';
-    return 'unknown';
-  }
-
   // The current WeChat connector is P2P-only.
   if (baseJid.startsWith('wechat:')) {
     return baseJid.length > 'wechat:'.length ? 'direct' : 'unknown';
-  }
-
-  if (baseJid.startsWith('telegram:')) {
-    const id = Number(baseJid.slice('telegram:'.length));
-    if (!Number.isSafeInteger(id) || id === 0) return 'unknown';
-    return id > 0 ? 'direct' : 'group';
   }
 
   return 'unknown';

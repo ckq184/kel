@@ -42,13 +42,13 @@ describe('IM sibling routing tenant boundary', () => {
         updated_at: now,
       });
     }
-    db.setRegisteredGroup('telegram:target', {
+    db.setRegisteredGroup('qq:target', {
       name: 'Target',
       folder: 'colliding-folder',
       added_at: now,
       created_by: 'owner-a',
     });
-    db.setRegisteredGroup('telegram:sibling', {
+    db.setRegisteredGroup('qq:sibling', {
       name: 'Sibling',
       folder: 'colliding-folder',
       added_at: now,
@@ -56,7 +56,7 @@ describe('IM sibling routing tenant boundary', () => {
     });
 
     const foreignChannel: IMChannel = {
-      channelType: 'telegram',
+      channelType: 'qq',
       connect: async () => true,
       disconnect: async () => undefined,
       sendMessage: async () => undefined,
@@ -75,13 +75,11 @@ describe('IM sibling routing tenant boundary', () => {
       ) => IMChannel | undefined;
     };
     internals.connections.set('owner-b', {
-      channels: new Map([['telegram', foreignChannel]]),
+      channels: new Map([['qq', foreignChannel]]),
       connectedAt: new Date(),
     });
 
-    expect(
-      internals.findChannelForJid('telegram:target', 'telegram'),
-    ).toBeUndefined();
+    expect(internals.findChannelForJid('qq:target', 'qq')).toBeUndefined();
   });
 
   test('live connectors reject inbound and outbound traffic after account or user disable', async () => {
@@ -100,7 +98,7 @@ describe('IM sibling routing tenant boundary', () => {
     db.createChannelAccount({
       id: 'inbound-account',
       owner_user_id: 'inbound-owner',
-      provider: 'telegram',
+      provider: 'qq',
       name: 'Inbound account',
       secret_ref: 'test-secret-ref',
       enabled: true,
@@ -112,7 +110,7 @@ describe('IM sibling routing tenant boundary', () => {
       | null = null;
     const sendMessage = vi.fn(async () => undefined);
     const channel: IMChannel = {
-      channelType: 'telegram',
+      channelType: 'qq',
       connect: async (opts) => {
         capturedOpts = opts;
         return true;
@@ -127,7 +125,7 @@ describe('IM sibling routing tenant boundary', () => {
     const manager = new IMConnectionManager();
     await manager.connectChannel(
       'inbound-owner',
-      'telegram',
+      'qq',
       channel,
       {
         onReady: vi.fn(),
@@ -148,17 +146,15 @@ describe('IM sibling routing tenant boundary', () => {
     db.updateChannelAccount('inbound-account', 'inbound-owner', {
       enabled: false,
     });
-    expect(opts.isChatAuthorized!('telegram:chat')).toBe(false);
-    opts.onNewChat('telegram:chat', 'Blocked');
+    expect(opts.isChatAuthorized!('qq:chat')).toBe(false);
+    opts.onNewChat('qq:chat', 'Blocked');
     expect(onNewChat).not.toHaveBeenCalled();
-    await expect(
-      opts.onCommand!('telegram:chat', '/status'),
-    ).resolves.toBeNull();
+    await expect(opts.onCommand!('qq:chat', '/status')).resolves.toBeNull();
     expect(onCommand).not.toHaveBeenCalled();
-    expect(() => opts.resolveEffectiveChatJid!('telegram:chat')).toThrow(
+    expect(() => opts.resolveEffectiveChatJid!('qq:chat')).toThrow(
       'Channel binding resolver rejected route',
     );
-    db.setRegisteredGroup('telegram:chat#account:inbound-account', {
+    db.setRegisteredGroup('qq:chat#account:inbound-account', {
       name: 'Inbound chat',
       folder: 'inbound-folder',
       added_at: now,
@@ -166,10 +162,7 @@ describe('IM sibling routing tenant boundary', () => {
       channel_account_id: 'inbound-account',
     });
     await expect(
-      manager.sendMessage(
-        'telegram:chat#account:inbound-account',
-        'must not send',
-      ),
+      manager.sendMessage('qq:chat#account:inbound-account', 'must not send'),
     ).rejects.toThrow('No IM channel available');
     expect(sendMessage).not.toHaveBeenCalled();
 
@@ -177,10 +170,10 @@ describe('IM sibling routing tenant boundary', () => {
       enabled: true,
     });
     db.updateUserFields('inbound-owner', { status: 'disabled' });
-    expect(opts.isChatAuthorized!('telegram:chat')).toBe(false);
+    expect(opts.isChatAuthorized!('qq:chat')).toBe(false);
     await expect(
       manager.sendMessage(
-        'telegram:chat#account:inbound-account',
+        'qq:chat#account:inbound-account',
         'still must not send',
       ),
     ).rejects.toThrow('No IM channel available');
@@ -188,7 +181,7 @@ describe('IM sibling routing tenant boundary', () => {
     expect(
       manager.isChannelAccountConnected(
         'inbound-owner',
-        'telegram',
+        'qq',
         'inbound-account',
       ),
     ).toBe(false);
@@ -213,21 +206,21 @@ describe('IM sibling routing tenant boundary', () => {
       db.createChannelAccount({
         id,
         owner_user_id: 'multi-bot-owner',
-        provider: 'telegram',
+        provider: 'qq',
         name: id,
         secret_ref: `secret-${id}`,
         enabled: true,
         auth_status: 'authorized',
       });
     }
-    db.setRegisteredGroup('telegram:chat-a#account:account-a', {
+    db.setRegisteredGroup('qq:chat-a#account:account-a', {
       name: 'Chat A',
       folder: 'shared-workspace',
       added_at: now,
       created_by: 'multi-bot-owner',
       channel_account_id: 'account-a',
     });
-    db.setRegisteredGroup('telegram:chat-b#account:account-b', {
+    db.setRegisteredGroup('qq:chat-b#account:account-b', {
       name: 'Chat B',
       folder: 'shared-workspace',
       added_at: now,
@@ -237,7 +230,7 @@ describe('IM sibling routing tenant boundary', () => {
 
     const sendFromB = vi.fn(async () => undefined);
     const channelB: IMChannel = {
-      channelType: 'telegram',
+      channelType: 'qq',
       connect: async () => true,
       disconnect: async () => undefined,
       sendMessage: sendFromB,
@@ -247,7 +240,7 @@ describe('IM sibling routing tenant boundary', () => {
     const manager = new IMConnectionManager();
     await manager.connectChannel(
       'multi-bot-owner',
-      'telegram',
+      'qq',
       channelB,
       { onReady: vi.fn(), onNewChat: vi.fn() },
       'account-b',
@@ -255,7 +248,7 @@ describe('IM sibling routing tenant boundary', () => {
 
     await expect(
       manager.sendMessage(
-        'telegram:chat-a#account:account-a',
+        'qq:chat-a#account:account-a',
         'must not cross Bot accounts',
       ),
     ).rejects.toThrow('No IM channel available');

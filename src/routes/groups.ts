@@ -1762,7 +1762,7 @@ groupRoutes.delete('/:jid', authMiddleware, async (c) => {
     return c.json({ error: 'Group not found' }, 404);
   }
 
-  // IM-prefixed groups (feishu:, telegram:, qq:, etc.) follow a separate
+  // IM-prefixed groups (feishu:, qq:, etc.) follow a separate
   // cleanup path. They share their folder with the owner's home workspace,
   // so we must NOT touch folder-scoped data (sessions, scheduled_tasks) or
   // the workspace directory.

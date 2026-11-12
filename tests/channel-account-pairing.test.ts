@@ -30,7 +30,7 @@ vi.mock('../src/middleware/auth.ts', () => ({
 }));
 
 const db = await import('../src/db.js');
-const pairing = await import('../src/telegram-pairing.js');
+const pairing = await import('../src/channel-pairing.js');
 const routeModule = await import('../src/routes/channel-accounts.js');
 const routes = routeModule.default;
 const removeImGroupRecord = vi.fn(async (jid: string) => {
@@ -54,18 +54,10 @@ afterAll(() => {
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
-type PairingProvider =
-  | 'telegram'
-  | 'qq'
-  | 'wechat'
-  | 'dingtalk'
-  | 'discord'
-  | 'whatsapp';
+type PairingProvider = 'qq' | 'wechat' | 'dingtalk';
 
 function credentialsFor(provider: PairingProvider, name: string) {
   switch (provider) {
-    case 'telegram':
-      return { botToken: `123456:${name}` };
     case 'qq':
       return { appId: `${name}-id`, appSecret: `${name}-secret` };
     case 'dingtalk':
@@ -73,10 +65,7 @@ function credentialsFor(provider: PairingProvider, name: string) {
         clientId: `${name}-client-id`,
         clientSecret: `${name}-client-secret`,
       };
-    case 'discord':
-      return { botToken: `${name}-bot-token` };
     case 'wechat':
-    case 'whatsapp':
       return {};
   }
 }
@@ -123,14 +112,7 @@ describe('account-scoped channel pairing', () => {
     expect(pairing.verifyPairingCode(replacement.code)).toBeNull();
   });
 
-  test.each([
-    'telegram',
-    'qq',
-    'wechat',
-    'dingtalk',
-    'discord',
-    'whatsapp',
-  ] as const)(
+  test.each(['qq', 'wechat', 'dingtalk'] as const)(
     '%s pairing API returns an account-bound code',
     async (provider) => {
       const first = await create(provider, `${provider}-first`);
@@ -160,10 +142,10 @@ describe('account-scoped channel pairing', () => {
   );
 
   test('list and unpair never cross account boundaries', async () => {
-    const first = await create('telegram', 'list-first');
-    const second = await create('telegram', 'list-second');
-    const firstJid = `telegram:same-external#account:${first.id}`;
-    const secondJid = `telegram:same-external#account:${second.id}`;
+    const first = await create('qq', 'list-first');
+    const second = await create('qq', 'list-second');
+    const firstJid = `qq:same-external#account:${first.id}`;
+    const secondJid = `qq:same-external#account:${second.id}`;
     register(firstJid, first.id, 'First bot chat');
     register(secondJid, second.id, 'Second bot chat');
 

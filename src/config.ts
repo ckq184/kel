@@ -35,8 +35,8 @@ export const STORE_DIR = path.join(DATA_DIR, 'db');
 export const GROUPS_DIR = path.join(DATA_DIR, 'groups');
 export const MAIN_GROUP_FOLDER = 'main';
 
-// 文件大小上限（MB）。Web 文件面板上传与 IM 渠道收文件（feishu/telegram/qq/
-// dingtalk/discord/wechat inbound）共用此上限。注意：Web 下载是流式返回已存在
+// 文件大小上限（MB）。Web 文件面板上传与 IM 渠道收文件（feishu/qq/
+// dingtalk/wechat inbound）共用此上限。注意：Web 下载是流式返回已存在
 // 的文件，不受此上限约束。通过 MAX_FILE_SIZE_MB 环境变量调整（默认 50MB）；
 // 非法值回退到 50。
 const _maxFileSizeMb = parseInt(process.env.MAX_FILE_SIZE_MB || '50', 10);

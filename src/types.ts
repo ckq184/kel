@@ -210,19 +210,12 @@ export interface RegisteredGroup {
   conversation_source?: ConversationSource; // 工作区会话来源（默认 manual）
   conversation_nav_mode?: ConversationNavMode; // 工作区会话导航模式（默认 horizontal）
   binding_mode?: ImBindingMode; // IM 绑定模式（默认 single_context）
-  native_context_type?: 'none' | 'thread'; // 渠道原生上下文能力（如飞书话题、Telegram Forum）
+  native_context_type?: 'none' | 'thread'; // 渠道原生上下文能力（如飞书话题）
   feishu_chat_mode?: string; // 飞书群模式：group/topic/p2p 等
   feishu_group_message_type?: string; // 飞书群消息形式：chat/thread
 }
 
-export type ChannelProvider =
-  | 'feishu'
-  | 'telegram'
-  | 'qq'
-  | 'wechat'
-  | 'dingtalk'
-  | 'discord'
-  | 'whatsapp';
+export type ChannelProvider = 'feishu' | 'qq' | 'wechat' | 'dingtalk';
 
 export type ChannelAuthMode = 'credentials' | 'bot_token' | 'qr_session';
 export type ChannelAuthStatus =
@@ -709,7 +702,7 @@ export interface User {
   ai_avatar_url: string | null;
   /**
    * Per-user default for require_mention on auto-registered IM group chats.
-   * When true, newly auto-registered Feishu/Telegram/etc groups start with
+   * When true, newly auto-registered Feishu/QQ/etc groups start with
    * require_mention=1 (only @bot triggers a response). false preserves the
    * legacy default of responding to every owner-sent message in the group.
    * Existing groups are not retroactively changed.
@@ -974,17 +967,6 @@ export type WsMessageOut =
   | { type: 'docker_pull_complete'; success: boolean; error?: string }
   | { type: 'eval_run_log'; line: string }
   | { type: 'eval_run_complete'; success: boolean; error?: string }
-  | {
-      type: 'whatsapp_status';
-      userId: string;
-      accountId?: string;
-      status: 'connecting' | 'qr' | 'connected' | 'disconnected' | 'logged_out';
-      qr?: string;
-      qrDataUrl?: string;
-      error?: string;
-      meJid?: string;
-      meName?: string;
-    }
   | {
       type: 'channel_account_status';
       userId: string;

@@ -22,7 +22,7 @@ plugin command frontmatter. This is a **trusted parser path**:
 `yaml` is **NOT** used to parse user-supplied input from:
 
 - Web UI request bodies
-- IM channel messages (Feishu, Telegram, QQ, WeChat, DingTalk, Discord, WhatsApp)
+- IM channel messages (Feishu, QQ, WeChat, DingTalk)
 - Any HTTP API request body
 
 If a future code path adds user-supplied YAML parsing, that path must be

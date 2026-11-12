@@ -1172,8 +1172,8 @@ export function ChatView({ groupJid, onBack, headerLeft }: ChatViewProps) {
             <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 text-sm">
               <Link className="w-4 h-4 flex-shrink-0" />
               <span className="flex-1 min-w-0">
-                未配置消息渠道（飞书 / Telegram / Discord / QQ / 微信 / 钉钉 /
-                WhatsApp），消息无法与 CKQClaw 的直接对话互通
+                未配置消息渠道（飞书 / QQ / 微信 / 钉钉），消息无法与 CKQClaw
+                的直接对话互通
               </span>
               <button
                 onClick={() => navigate('/setup/channels')}

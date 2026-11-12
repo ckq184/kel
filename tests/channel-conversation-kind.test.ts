@@ -10,13 +10,7 @@ describe('resolveChannelConversationKind', () => {
     ['qq:group:team', 'group'],
     ['dingtalk:c2c:user', 'direct'],
     ['dingtalk:cid-group', 'group'],
-    ['discord:dm:123', 'direct'],
-    ['discord:456', 'group'],
-    ['whatsapp:123@s.whatsapp.net', 'direct'],
-    ['whatsapp:123@g.us', 'group'],
     ['wechat:wxid_user', 'direct'],
-    ['telegram:123#account:bot-a#thread:1', 'direct'],
-    ['telegram:-100123#account:bot-a', 'group'],
   ])('classifies %s as %s', (jid, expected) => {
     expect(resolveChannelConversationKind(jid)).toBe(expected);
   });
@@ -34,9 +28,7 @@ describe('resolveChannelConversationKind', () => {
   });
 
   test('fails closed for malformed and unsupported JIDs', () => {
-    expect(resolveChannelConversationKind('telegram:not-a-number')).toBe(
-      'unknown',
-    );
+    expect(resolveChannelConversationKind('qq:')).toBe('unknown');
     expect(resolveChannelConversationKind('web:main')).toBe('unknown');
   });
 });

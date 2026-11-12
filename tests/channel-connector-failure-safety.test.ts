@@ -24,15 +24,7 @@ describe('provider connector initial failure safety contract', () => {
     expect(qq.slice(start, end)).not.toContain('scheduleReconnect(');
   });
 
-  test('Discord and DingTalk destroy partially initialized clients', () => {
-    const discord = source('src/discord.ts');
-    const discordStart = discord.indexOf(
-      "logger.error({ err }, 'Discord initial connection failed')",
-    );
-    expect(discord.slice(discordStart, discordStart + 700)).toContain(
-      'failedClient.destroy()',
-    );
-
+  test('DingTalk destroys partially initialized clients', () => {
     const dingtalk = source('src/dingtalk.ts');
     const dingtalkStart = dingtalk.indexOf(
       "logger.error({ err }, 'DingTalk initial connection failed')",

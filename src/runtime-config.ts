@@ -71,10 +71,6 @@ const CLAUDE_CUSTOM_ENV_FILE = path.join(
   'claude-custom-env.json',
 );
 const FEISHU_CONFIG_FILE = path.join(CLAUDE_CONFIG_DIR, 'feishu-provider.json');
-const TELEGRAM_CONFIG_FILE = path.join(
-  CLAUDE_CONFIG_DIR,
-  'telegram-provider.json',
-);
 const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const RESERVED_CLAUDE_ENV_KEYS = new Set([
   'CLAUDE_CODE_OAUTH_TOKEN',
@@ -307,24 +303,6 @@ export interface FeishuProviderPublicConfig {
   source: FeishuConfigSource;
 }
 
-export interface TelegramProviderConfig {
-  botToken: string;
-  proxyUrl?: string;
-  enabled?: boolean;
-  updatedAt: string | null;
-}
-
-export type TelegramConfigSource = 'runtime' | 'env' | 'none';
-
-export interface TelegramProviderPublicConfig {
-  hasBotToken: boolean;
-  botTokenMasked: string | null;
-  proxyUrl: string;
-  enabled: boolean;
-  updatedAt: string | null;
-  source: TelegramConfigSource;
-}
-
 interface SecretPayload {
   anthropicAuthToken: string;
   anthropicApiKey: string;
@@ -342,10 +320,6 @@ interface FeishuSecretPayload {
   appSecret: string;
 }
 
-interface TelegramSecretPayload {
-  botToken: string;
-}
-
 interface StoredFeishuProviderConfigV1 {
   version: 1;
   appId: string;
@@ -353,14 +327,6 @@ interface StoredFeishuProviderConfigV1 {
   updatedAt: string;
   ownerOpenId?: string;
   autoIsolateContext?: boolean;
-  secret: EncryptedSecrets;
-}
-
-interface StoredTelegramProviderConfigV1 {
-  version: 1;
-  proxyUrl?: string;
-  enabled?: boolean;
-  updatedAt: string;
   secret: EncryptedSecrets;
 }
 
@@ -572,30 +538,6 @@ function normalizeFeishuAppId(input: unknown): string {
   if (!value) return '';
   if (value.length > MAX_FIELD_LENGTH) {
     throw new Error('Field too long: appId');
-  }
-  return value;
-}
-
-function normalizeTelegramProxyUrl(input: unknown): string {
-  if (input === undefined || input === null) return '';
-  if (typeof input !== 'string') {
-    throw new Error('Invalid field: proxyUrl');
-  }
-  const value = input.trim();
-  if (!value) return '';
-  if (value.length > MAX_FIELD_LENGTH) {
-    throw new Error('Field too long: proxyUrl');
-  }
-
-  let parsed: URL;
-  try {
-    parsed = new URL(value);
-  } catch {
-    throw new Error('Invalid field: proxyUrl');
-  }
-  const protocol = parsed.protocol.toLowerCase();
-  if (!['http:', 'https:', 'socks:', 'socks5:'].includes(protocol)) {
-    throw new Error('Invalid field: proxyUrl');
   }
   return value;
 }
@@ -1922,104 +1864,6 @@ export function toPublicFeishuProviderConfig(
   };
 }
 
-// ========== Telegram Provider Config ==========
-
-function readStoredTelegramConfig(): TelegramProviderConfig | null {
-  if (!fs.existsSync(TELEGRAM_CONFIG_FILE)) return null;
-  const content = fs.readFileSync(TELEGRAM_CONFIG_FILE, 'utf-8');
-  const parsed = JSON.parse(content) as Record<string, unknown>;
-  if (parsed.version !== 1) return null;
-
-  const stored = parsed as unknown as StoredTelegramProviderConfigV1;
-  const secret = decryptChannelSecret<TelegramSecretPayload>(stored.secret);
-  return {
-    botToken: secret.botToken,
-    proxyUrl: normalizeTelegramProxyUrl(stored.proxyUrl ?? ''),
-    enabled: stored.enabled,
-    updatedAt: stored.updatedAt || null,
-  };
-}
-
-function defaultsTelegramFromEnv(): TelegramProviderConfig {
-  const raw = {
-    botToken: process.env.TELEGRAM_BOT_TOKEN || '',
-    proxyUrl: process.env.TELEGRAM_PROXY_URL || '',
-  };
-  return {
-    botToken: raw.botToken.trim(),
-    proxyUrl: normalizeTelegramProxyUrl(raw.proxyUrl),
-    updatedAt: null,
-  };
-}
-
-export function getTelegramProviderConfigWithSource(): {
-  config: TelegramProviderConfig;
-  source: TelegramConfigSource;
-} {
-  try {
-    const stored = readStoredTelegramConfig();
-    if (stored) return { config: stored, source: 'runtime' };
-  } catch (err) {
-    logger.warn(
-      { err },
-      'Failed to read runtime Telegram config, falling back to env',
-    );
-  }
-
-  const fromEnv = defaultsTelegramFromEnv();
-  if (fromEnv.botToken) {
-    return { config: fromEnv, source: 'env' };
-  }
-
-  return { config: fromEnv, source: 'none' };
-}
-
-export function getTelegramProviderConfig(): TelegramProviderConfig {
-  return getTelegramProviderConfigWithSource().config;
-}
-
-export function saveTelegramProviderConfig(
-  next: Omit<TelegramProviderConfig, 'updatedAt'>,
-): TelegramProviderConfig {
-  const normalized: TelegramProviderConfig = {
-    botToken: normalizeSecret(next.botToken, 'botToken'),
-    proxyUrl: normalizeTelegramProxyUrl(next.proxyUrl),
-    enabled: next.enabled,
-    updatedAt: new Date().toISOString(),
-  };
-
-  const payload: StoredTelegramProviderConfigV1 = {
-    version: 1,
-    proxyUrl: normalized.proxyUrl,
-    enabled: normalized.enabled,
-    updatedAt: normalized.updatedAt || new Date().toISOString(),
-    secret: encryptChannelSecret<TelegramSecretPayload>({
-      botToken: normalized.botToken,
-    }),
-  };
-
-  fs.mkdirSync(CLAUDE_CONFIG_DIR, { recursive: true });
-  writeSecretFile(
-    TELEGRAM_CONFIG_FILE,
-    JSON.stringify(payload, null, 2) + '\n',
-  );
-  return normalized;
-}
-
-export function toPublicTelegramProviderConfig(
-  config: TelegramProviderConfig,
-  source: TelegramConfigSource,
-): TelegramProviderPublicConfig {
-  return {
-    hasBotToken: !!config.botToken,
-    botTokenMasked: maskSecret(config.botToken),
-    proxyUrl: config.proxyUrl ?? '',
-    enabled: config.enabled !== false,
-    updatedAt: config.updatedAt,
-    source,
-  };
-}
-
 function maskSecret(value: string): string | null {
   if (!value) return null;
   if (value.length <= 8)
@@ -2786,7 +2630,7 @@ export function appendClaudeConfigAudit(
 
 /**
  * 记录 IM 通道密钥/配置轮换。复用 claude-provider.audit.log 文件以集中
- * 审计；调用方需提供 channel ('feishu'|'telegram'|...) 和 changedFields
+ * 审计；调用方需提供 channel ('feishu'|'qq'|...) 和 changedFields
  * （如 ['appSecret','encryptKey']）。同 appendClaudeConfigAudit 一样不抛错。
  */
 export function appendImConfigAudit(
@@ -3389,13 +3233,6 @@ export interface UserFeishuConfig {
   autoIsolateContext?: boolean; // auto-create isolated conversation for each new IM chat
 }
 
-export interface UserTelegramConfig {
-  botToken: string;
-  proxyUrl?: string;
-  enabled?: boolean;
-  updatedAt: string | null;
-}
-
 export interface UserQQConfig {
   appId: string;
   appSecret: string;
@@ -3422,25 +3259,6 @@ interface StoredDingTalkProviderConfigV1 {
 
 interface DingTalkSecretPayload {
   clientSecret: string;
-}
-
-export interface UserDiscordConfig {
-  botToken: string;
-  enabled?: boolean;
-  streamingMode?: 'edit' | 'off';
-  updatedAt: string | null;
-}
-
-interface StoredDiscordProviderConfigV1 {
-  version: 1;
-  enabled?: boolean;
-  streamingMode?: 'edit' | 'off';
-  updatedAt: string;
-  secret: EncryptedSecrets;
-}
-
-interface DiscordSecretPayload {
-  botToken: string;
 }
 
 interface StoredQQProviderConfigV1 {
@@ -3532,61 +3350,6 @@ export function saveFeishuOwnerOpenId(userId: string, openId: string): void {
   } catch (err) {
     logger.warn({ err, userId }, 'Failed to save Feishu owner open_id');
   }
-}
-
-export function getUserTelegramConfig(
-  userId: string,
-): UserTelegramConfig | null {
-  const filePath = path.join(userImDir(userId), 'telegram.json');
-  try {
-    if (!fs.existsSync(filePath)) return null;
-    const content = fs.readFileSync(filePath, 'utf-8');
-    const parsed = JSON.parse(content) as Record<string, unknown>;
-    if (parsed.version !== 1) return null;
-
-    const stored = parsed as unknown as StoredTelegramProviderConfigV1;
-    const secret = decryptChannelSecret<TelegramSecretPayload>(stored.secret);
-    return {
-      botToken: secret.botToken,
-      proxyUrl: normalizeTelegramProxyUrl(stored.proxyUrl ?? ''),
-      enabled: stored.enabled,
-      updatedAt: stored.updatedAt || null,
-    };
-  } catch (err) {
-    logger.warn({ err, userId }, 'Failed to read user Telegram config');
-    return null;
-  }
-}
-
-export function saveUserTelegramConfig(
-  userId: string,
-  next: Omit<UserTelegramConfig, 'updatedAt'>,
-): UserTelegramConfig {
-  const normalizedProxyUrl = next.proxyUrl
-    ? normalizeTelegramProxyUrl(next.proxyUrl)
-    : '';
-  const normalized: UserTelegramConfig = {
-    botToken: normalizeSecret(next.botToken, 'botToken'),
-    proxyUrl: normalizedProxyUrl || undefined,
-    enabled: next.enabled,
-    updatedAt: new Date().toISOString(),
-  };
-
-  const payload: StoredTelegramProviderConfigV1 = {
-    version: 1,
-    proxyUrl: normalizedProxyUrl || undefined,
-    enabled: normalized.enabled,
-    updatedAt: normalized.updatedAt || new Date().toISOString(),
-    secret: encryptChannelSecret<TelegramSecretPayload>({
-      botToken: normalized.botToken,
-    }),
-  };
-
-  const dir = userImDir(userId);
-  fs.mkdirSync(dir, { recursive: true });
-  const filePath = path.join(dir, 'telegram.json');
-  writeSecretFile(filePath, JSON.stringify(payload, null, 2) + '\n');
-  return normalized;
 }
 
 // ========== QQ User IM Config ==========
@@ -3732,78 +3495,6 @@ export function saveUserWeChatConfig(
   return normalized;
 }
 
-// ========== WhatsApp User IM Config ==========
-
-export interface UserWhatsAppConfig {
-  accountId: string;
-  phoneNumber: string;
-  enabled?: boolean;
-  /** Whether the user has completed Baileys QR pairing (set by future PR) */
-  paired?: boolean;
-  updatedAt: string | null;
-}
-
-interface StoredWhatsAppProviderConfigV1 {
-  version: 1;
-  accountId: string;
-  phoneNumber: string;
-  enabled?: boolean;
-  paired?: boolean;
-  updatedAt: string;
-}
-
-export function getUserWhatsAppConfig(
-  userId: string,
-): UserWhatsAppConfig | null {
-  const filePath = path.join(userImDir(userId), 'whatsapp.json');
-  try {
-    if (!fs.existsSync(filePath)) return null;
-    const content = fs.readFileSync(filePath, 'utf-8');
-    const parsed = JSON.parse(content) as Record<string, unknown>;
-    if (parsed.version !== 1) return null;
-
-    const stored = parsed as unknown as StoredWhatsAppProviderConfigV1;
-    return {
-      accountId: ((stored.accountId as string) ?? 'default').trim(),
-      phoneNumber: ((stored.phoneNumber as string) ?? '').trim(),
-      enabled: stored.enabled,
-      paired: stored.paired,
-      updatedAt: stored.updatedAt || null,
-    };
-  } catch (err) {
-    logger.warn({ err, userId }, 'Failed to read user WhatsApp config');
-    return null;
-  }
-}
-
-export function saveUserWhatsAppConfig(
-  userId: string,
-  next: Omit<UserWhatsAppConfig, 'updatedAt'>,
-): UserWhatsAppConfig {
-  const normalized: UserWhatsAppConfig = {
-    accountId: (next.accountId ?? 'default').trim() || 'default',
-    phoneNumber: (next.phoneNumber ?? '').trim(),
-    enabled: next.enabled,
-    paired: next.paired,
-    updatedAt: new Date().toISOString(),
-  };
-
-  const payload: StoredWhatsAppProviderConfigV1 = {
-    version: 1,
-    accountId: normalized.accountId,
-    phoneNumber: normalized.phoneNumber,
-    enabled: normalized.enabled,
-    paired: normalized.paired,
-    updatedAt: normalized.updatedAt || new Date().toISOString(),
-  };
-
-  const dir = userImDir(userId);
-  fs.mkdirSync(dir, { recursive: true });
-  const filePath = path.join(dir, 'whatsapp.json');
-  writeSecretFile(filePath, JSON.stringify(payload, null, 2) + '\n');
-  return normalized;
-}
-
 // ========== DingTalk User IM Config ==========
 
 export function getUserDingTalkConfig(
@@ -3857,58 +3548,6 @@ export function saveUserDingTalkConfig(
   const dir = userImDir(userId);
   fs.mkdirSync(dir, { recursive: true });
   const filePath = path.join(dir, 'dingtalk.json');
-  writeSecretFile(filePath, JSON.stringify(payload, null, 2) + '\n');
-  return normalized;
-}
-
-// ========== Discord User IM Config ==========
-
-export function getUserDiscordConfig(userId: string): UserDiscordConfig | null {
-  const filePath = path.join(userImDir(userId), 'discord.json');
-  try {
-    if (!fs.existsSync(filePath)) return null;
-    const content = fs.readFileSync(filePath, 'utf-8');
-    const parsed = JSON.parse(content) as Record<string, unknown>;
-    if (parsed.version !== 1) return null;
-
-    const stored = parsed as unknown as StoredDiscordProviderConfigV1;
-    const secret = decryptChannelSecret<DiscordSecretPayload>(stored.secret);
-    return {
-      botToken: secret.botToken,
-      enabled: stored.enabled,
-      streamingMode: stored.streamingMode === 'edit' ? 'edit' : 'off',
-      updatedAt: stored.updatedAt || null,
-    };
-  } catch (err) {
-    logger.warn({ err, userId }, 'Failed to read user Discord config');
-    return null;
-  }
-}
-
-export function saveUserDiscordConfig(
-  userId: string,
-  next: Omit<UserDiscordConfig, 'updatedAt'>,
-): UserDiscordConfig {
-  const normalized: UserDiscordConfig = {
-    botToken: normalizeSecret(next.botToken, 'botToken'),
-    enabled: next.enabled,
-    streamingMode: next.streamingMode === 'edit' ? 'edit' : 'off',
-    updatedAt: new Date().toISOString(),
-  };
-
-  const payload: StoredDiscordProviderConfigV1 = {
-    version: 1,
-    enabled: normalized.enabled,
-    streamingMode: normalized.streamingMode,
-    updatedAt: normalized.updatedAt || new Date().toISOString(),
-    secret: encryptChannelSecret<DiscordSecretPayload>({
-      botToken: normalized.botToken,
-    }),
-  };
-
-  const dir = userImDir(userId);
-  fs.mkdirSync(dir, { recursive: true });
-  const filePath = path.join(dir, 'discord.json');
   writeSecretFile(filePath, JSON.stringify(payload, null, 2) + '\n');
   return normalized;
 }

@@ -70,7 +70,7 @@ export function splitTextChunks(text: string, limit: number): string[] {
 
 // ── IM Message Deduplication LRU Cache ─────────────────────
 //
-// 6 个 IM channel（feishu/telegram/qq/dingtalk/wechat/discord）原本各自实现一份
+// 各 IM channel（feishu/qq/dingtalk/wechat）原本各自实现一份
 // 完全相同的 isDuplicate / markSeen 逻辑。抽到这里收敛。
 //
 // 关键不变量：capacity-eviction 必须放在 markSeen 而不是 isDuplicate。

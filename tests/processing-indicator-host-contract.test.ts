@@ -81,12 +81,7 @@ describe('exact processing indicator host contract', () => {
   });
 
   test('native message delivery itself does not clear a turn indicator', () => {
-    for (const file of [
-      'src/feishu.ts',
-      'src/discord.ts',
-      'src/dingtalk.ts',
-      'src/telegram.ts',
-    ]) {
+    for (const file of ['src/feishu.ts', 'src/dingtalk.ts']) {
       const source = fs.readFileSync(file, 'utf8');
       const sendStart = source.indexOf('async sendMessage(');
       const sendEnd = source.indexOf('\n    },', sendStart) + '\n    },'.length;
@@ -97,7 +92,7 @@ describe('exact processing indicator host contract', () => {
   });
 
   test('provider registry keys omit CKQClaw account scoping on attach', () => {
-    for (const file of ['src/feishu.ts', 'src/discord.ts', 'src/dingtalk.ts']) {
+    for (const file of ['src/feishu.ts', 'src/dingtalk.ts']) {
       expect(fs.readFileSync(file, 'utf8')).toMatch(/extractProviderTarget/);
     }
   });
@@ -119,15 +114,6 @@ describe('exact processing indicator host contract', () => {
     // chat-level typing reaction that the exact per-input ack replaced.
     // Reintroducing a swallowing wrapper would silently orphan ack handles.
     expect(feishu).not.toMatch(/removeReactionBestEffort/);
-
-    const discord = fs.readFileSync('src/discord.ts', 'utf8');
-    const discordRecall = sourceBetween(
-      discord,
-      'async function recallAckReaction(',
-      '// ─── Message Handling',
-    );
-    expect(discordRecall).toMatch(/reaction\.users\.remove/);
-    expect(discordRecall).not.toMatch(/\bcatch\b/);
 
     const dingtalk = fs.readFileSync('src/dingtalk.ts', 'utf8');
     const dingtalkRecall = sourceBetween(

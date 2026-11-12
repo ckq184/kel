@@ -389,11 +389,11 @@ describe('IM manager account lifecycle', () => {
 
   test('one provider credential cannot own two live account connectors', async () => {
     const manager = new IMConnectionManager();
-    const first = fakeChannel('discord');
-    const second = fakeChannel('discord');
+    const first = fakeChannel('qq');
+    const second = fakeChannel('qq');
     await manager.connectChannel(
       'user-a',
-      'discord',
+      'qq',
       first.channel,
       callbacks(),
       'bot-a',
@@ -403,7 +403,7 @@ describe('IM manager account lifecycle', () => {
     await expect(
       manager.connectChannel(
         'user-b',
-        'discord',
+        'qq',
         second.channel,
         callbacks(),
         'bot-b',
@@ -412,11 +412,11 @@ describe('IM manager account lifecycle', () => {
       ),
     ).rejects.toThrow('already connected by another channel account');
 
-    await manager.disconnectChannelAccount('user-a', 'discord', 'bot-a');
+    await manager.disconnectChannelAccount('user-a', 'qq', 'bot-a');
     await expect(
       manager.connectChannel(
         'user-b',
-        'discord',
+        'qq',
         second.channel,
         callbacks(),
         'bot-b',
@@ -429,46 +429,41 @@ describe('IM manager account lifecycle', () => {
 
   test('same provider supports concurrent accounts and scopes inbound JIDs', async () => {
     const manager = new IMConnectionManager();
-    const first = fakeChannel('telegram');
-    const second = fakeChannel('telegram');
+    const first = fakeChannel('qq');
+    const second = fakeChannel('qq');
     const onFirst = vi.fn();
     const onSecond = vi.fn();
     await manager.connectChannel(
       'user-a',
-      'telegram',
+      'qq',
       first.channel,
       callbacks(onFirst),
       'bot-a',
     );
     await manager.connectChannel(
       'user-a',
-      'telegram',
+      'qq',
       second.channel,
       callbacks(onSecond),
       'bot-b',
     );
 
-    first.getOpts()!.onNewChat('telegram:shared', 'Shared');
-    second.getOpts()!.onNewChat('telegram:shared', 'Shared');
-    expect(onFirst).toHaveBeenCalledWith(
-      'telegram:shared#account:bot-a',
-      'Shared',
-    );
-    expect(onSecond).toHaveBeenCalledWith(
-      'telegram:shared#account:bot-b',
-      'Shared',
-    );
-    expect(manager.getConnectedChannelAccountIds('user-a', 'telegram')).toEqual(
-      ['bot-a', 'bot-b'],
-    );
+    first.getOpts()!.onNewChat('qq:shared', 'Shared');
+    second.getOpts()!.onNewChat('qq:shared', 'Shared');
+    expect(onFirst).toHaveBeenCalledWith('qq:shared#account:bot-a', 'Shared');
+    expect(onSecond).toHaveBeenCalledWith('qq:shared#account:bot-b', 'Shared');
+    expect(manager.getConnectedChannelAccountIds('user-a', 'qq')).toEqual([
+      'bot-a',
+      'bot-b',
+    ]);
 
-    await manager.disconnectChannelAccount('user-a', 'telegram', 'bot-a');
-    expect(
-      manager.isChannelAccountConnected('user-a', 'telegram', 'bot-a'),
-    ).toBe(false);
-    expect(
-      manager.isChannelAccountConnected('user-a', 'telegram', 'bot-b'),
-    ).toBe(true);
+    await manager.disconnectChannelAccount('user-a', 'qq', 'bot-a');
+    expect(manager.isChannelAccountConnected('user-a', 'qq', 'bot-a')).toBe(
+      false,
+    );
+    expect(manager.isChannelAccountConnected('user-a', 'qq', 'bot-b')).toBe(
+      true,
+    );
     await manager.disconnectAll();
   });
 
@@ -574,7 +569,7 @@ describe('IM manager account lifecycle', () => {
 
   test('configured binding resolver rejects null for scoped and legacy connectors', async () => {
     const manager = new IMConnectionManager();
-    const scoped = fakeChannel('discord');
+    const scoped = fakeChannel('qq');
     const legacy = fakeChannel('feishu');
     const rejecting = {
       ...callbacks(),
@@ -582,7 +577,7 @@ describe('IM manager account lifecycle', () => {
     };
     await manager.connectChannel(
       'route-owner',
-      'discord',
+      'qq',
       scoped.channel,
       rejecting,
       'bot-a',
@@ -595,9 +590,9 @@ describe('IM manager account lifecycle', () => {
     );
 
     expect(() =>
-      scoped.getOpts()!.resolveEffectiveChatJid!('discord:source'),
+      scoped.getOpts()!.resolveEffectiveChatJid!('qq:source'),
     ).toThrow(
-      'Channel binding resolver rejected route for discord:source#account:bot-a',
+      'Channel binding resolver rejected route for qq:source#account:bot-a',
     );
     expect(() =>
       legacy.getOpts()!.resolveEffectiveChatJid!('feishu:source'),

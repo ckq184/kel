@@ -1,5 +1,4 @@
 import type {
-  ChannelOnboardingState,
   ChannelAccountCreateInput,
   ChannelAccountPatchInput,
   ChannelProvider,
@@ -78,43 +77,6 @@ export const CHANNEL_PROVIDER_OPTIONS: ChannelProviderOption[] = [
     },
     supportsTest: true,
     supportsPairing: false,
-  },
-  {
-    value: 'telegram',
-    label: 'Telegram',
-    description: '使用 Bot Token 接入；保存后通过配对码授权具体聊天。',
-    authMode: 'bot_token',
-    credentials: [
-      {
-        key: 'botToken',
-        label: 'Telegram Bot Token',
-        required: true,
-        secret: true,
-        help: '@BotFather 完成 /newbot 后返回的 Token，不是 Telegram API ID。',
-      },
-      {
-        key: 'proxyUrl',
-        label: '代理 URL（可选）',
-        placeholder: 'http://127.0.0.1:7897 或 socks5://127.0.0.1:7897',
-        help: '只有当服务器无法直连 Telegram 时才需要填写。',
-      },
-    ],
-    setupGuide: {
-      title: '先在 Telegram 创建 Bot',
-      steps: [
-        '打开官方 @BotFather，发送 /newbot。',
-        '按提示设置名称和以 bot 结尾的用户名。',
-        '复制 BotFather 返回的 Token；如需读取群里未 @ Bot 的消息，还要关闭 Privacy Mode。',
-      ],
-      action: {
-        label: '打开 @BotFather',
-        url: 'https://t.me/BotFather',
-      },
-      nextStep:
-        '连接成功后生成配对码，在 Bot 私聊或目标群聊中发送 /pair <配对码>。',
-    },
-    supportsTest: true,
-    supportsPairing: true,
   },
   {
     value: 'qq',
@@ -209,56 +171,6 @@ export const CHANNEL_PROVIDER_OPTIONS: ChannelProviderOption[] = [
     supportsTest: true,
     supportsPairing: true,
   },
-  {
-    value: 'discord',
-    label: 'Discord',
-    description: '使用 Discord Developer Portal 中的 Bot Token 接入。',
-    authMode: 'bot_token',
-    credentials: [
-      {
-        key: 'botToken',
-        label: 'Discord Bot Token',
-        required: true,
-        secret: true,
-        help: '在应用的“Bot”页面复制或重置；不是 Client Secret。',
-      },
-    ],
-    setupGuide: {
-      title: '先创建 Discord Bot',
-      steps: [
-        '在 Discord Developer Portal 创建 Application，然后在“Bot”页添加 Bot 并复制 Token。',
-        '在“Privileged Gateway Intents”开启 Message Content Intent。',
-        '在“Installation”或 OAuth2 生成安装链接，将 Bot 加入服务器并授予读取、发送消息及附件权限。',
-      ],
-      action: {
-        label: '打开 Discord Developer Portal',
-        url: 'https://discord.com/developers/applications',
-      },
-      nextStep:
-        '连接成功后生成配对码，在 Bot 私聊或目标频道中发送 /pair <配对码>。',
-    },
-    supportsTest: true,
-    supportsPairing: true,
-  },
-  {
-    value: 'whatsapp',
-    label: 'WhatsApp',
-    description: '创建账号后使用 WhatsApp 扫码关联设备，无需填写账号标识。',
-    authMode: 'qr_session',
-    credentials: [],
-    setupGuide: {
-      title: '创建后关联 WhatsApp 设备',
-      steps: [
-        '填写账号名称，并在下一步选择默认工作区。',
-        '点击“创建并扫码”，等待 CKQClaw 生成关联设备二维码。',
-        '在手机 WhatsApp 中打开“已关联设备”（iOS 在设置中，Android 在右上角菜单中），点击“关联设备”扫码。',
-      ],
-      nextStep:
-        '设备关联只建立渠道账号；连接后还需要生成配对码，授权具体 WhatsApp 会话。',
-    },
-    supportsTest: false,
-    supportsPairing: true,
-  },
 ];
 
 export function providerDefinition(provider: ChannelProvider) {
@@ -281,54 +193,6 @@ export function supportsChannelConnectionTest(
 
 export function supportsChannelPairing(provider: ChannelProvider): boolean {
   return providerDefinition(provider)?.supportsPairing ?? false;
-}
-
-export type WhatsAppStatusEvent = Partial<ChannelOnboardingState> & {
-  status?: ChannelOnboardingState['status'];
-};
-
-/** Apply one account-scoped WhatsApp socket event without retaining stale QR
- * or online state after the transport has gone away. */
-export function mergeWhatsAppOnboardingState(
-  current: ChannelOnboardingState,
-  event: WhatsAppStatusEvent,
-): ChannelOnboardingState {
-  const next: ChannelOnboardingState = { ...current, ...event };
-  if (event.status !== 'qr') next.qrDataUrl = undefined;
-
-  switch (event.status) {
-    case 'qr':
-      return {
-        ...next,
-        auth_status: 'awaiting_scan',
-        transport_status: 'disconnected',
-      };
-    case 'connected':
-      return {
-        ...next,
-        auth_status: 'authorized',
-        transport_status: 'connected',
-      };
-    case 'connecting':
-      return { ...next, transport_status: 'connecting' };
-    case 'disconnected':
-      return { ...next, transport_status: 'disconnected' };
-    case 'logged_out':
-      return {
-        ...next,
-        auth_status: 'revoked',
-        transport_status: 'disconnected',
-      };
-    case 'error':
-      return {
-        ...next,
-        auth_status:
-          current.auth_status === 'authorized' ? 'authorized' : 'error',
-        transport_status: 'error',
-      };
-    default:
-      return next;
-  }
 }
 
 export function normalizeCredentials(values: Record<string, string>) {

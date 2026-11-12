@@ -912,8 +912,7 @@ function AccountConnectionDialog({
               )}
             </div>
 
-            {(account.provider === 'dingtalk' ||
-              account.provider === 'discord') && (
+            {account.provider === 'dingtalk' && (
               <div>
                 <h3 className="mb-2 text-sm font-medium">回复方式</h3>
                 <ProviderConnectionFields
@@ -1149,7 +1148,6 @@ function AccountStateBadges({ account }: { account: ChannelAccount }) {
 function defaultCredentials(provider: ChannelProvider): Record<string, string> {
   if (provider === 'wechat') return { bypassProxy: 'true' };
   if (provider === 'dingtalk') return { streamingMode: 'card' };
-  if (provider === 'discord') return { streamingMode: 'off' };
   return {};
 }
 
@@ -1158,8 +1156,6 @@ function accountOptions(account: ChannelAccount): Record<string, string> {
     return { bypassProxy: String(account.options?.bypassProxy ?? true) };
   if (account.provider === 'dingtalk')
     return { streamingMode: account.options?.streamingMode ?? 'card' };
-  if (account.provider === 'discord')
-    return { streamingMode: account.options?.streamingMode ?? 'off' };
   return {};
 }
 

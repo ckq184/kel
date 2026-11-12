@@ -26,15 +26,7 @@ const REQUIRED_FILES = [
   'bootstrap.ckqclaw.md',
 ];
 
-const REQUIRED_CHANNELS = [
-  'feishu',
-  'telegram',
-  'qq',
-  'wechat',
-  'dingtalk',
-  'discord',
-  'whatsapp',
-];
+const REQUIRED_CHANNELS = ['feishu', 'qq', 'wechat', 'dingtalk'];
 
 function listMarkdownFiles(dir: string): string[] {
   const files: string[] = [];

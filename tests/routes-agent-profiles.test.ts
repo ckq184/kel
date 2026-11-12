@@ -945,7 +945,7 @@ describe('/api/agent-profiles routes', () => {
       created_by: 'routes-agent-user',
     });
     db.assignWorkspaceAgentProfile('routes-mounted-workspace', profile.id);
-    db.setRegisteredGroup('telegram:routes-mounted-channel', {
+    db.setRegisteredGroup('qq:c2c:routes-mounted-channel', {
       name: 'Mounted Channel',
       folder: 'routes-home',
       added_at: '2026-07-09T00:00:00.000Z',
@@ -954,7 +954,7 @@ describe('/api/agent-profiles routes', () => {
     });
     db.deleteWorkspaceAgentProfile('routes-mounted-workspace');
     expect(
-      db.getAgentChannelMount('telegram:routes-mounted-channel'),
+      db.getAgentChannelMount('qq:c2c:routes-mounted-channel'),
     ).toMatchObject({ agent_profile_id: null });
 
     const res = await routes.request(`/${profile.id}`, { method: 'DELETE' });
@@ -976,7 +976,7 @@ describe('/api/agent-profiles routes', () => {
       agentProfileVersion: defaultProfile.version,
       identityHash: defaultProfile.identity_hash,
     });
-    db.setRegisteredGroup('telegram:routes-agent-mount', {
+    db.setRegisteredGroup('qq:c2c:routes-agent-mount', {
       name: 'Routes Telegram',
       folder: 'routes-agent-home',
       added_at: '2026-07-09T00:00:00.000Z',
@@ -1006,7 +1006,7 @@ describe('/api/agent-profiles routes', () => {
     );
     expect(body.channel_mounts).toContainEqual(
       expect.objectContaining({
-        channel_jid: 'telegram:routes-agent-mount',
+        channel_jid: 'qq:c2c:routes-agent-mount',
         workspace_jid: 'web:routes-agent-workspace',
         workspace_folder: 'routes-agent-workspace',
         session_id: null,

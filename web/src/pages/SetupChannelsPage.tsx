@@ -31,7 +31,7 @@ export function SetupChannelsPage() {
               接入消息渠道（可选）
             </h1>
             <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
-              添加飞书、Telegram、QQ、微信、钉钉、Discord 或 WhatsApp
+              添加飞书、QQ、微信或钉钉
               账号。凭证、扫码和聊天配对会按照各渠道自己的协议完成。
             </p>
           </div>

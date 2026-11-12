@@ -18,7 +18,6 @@ import {
   getRegisteredGroup,
   getSessionWithUser,
 } from './db.js';
-import type { WhatsAppConnectionState } from './whatsapp.js';
 import type { ChannelAccount } from './types.js';
 import type { ChannelAccountSecret } from './channel-account-secrets.js';
 
@@ -84,20 +83,9 @@ export interface WebDeps {
     appSecret: string;
     enabled?: boolean;
   }) => Promise<boolean>;
-  reloadTelegramConnection?: (config: {
-    botToken: string;
-    enabled?: boolean;
-  }) => Promise<boolean>;
   reloadUserIMConfig?: (
     userId: string,
-    channel:
-      | 'feishu'
-      | 'telegram'
-      | 'qq'
-      | 'wechat'
-      | 'dingtalk'
-      | 'discord'
-      | 'whatsapp',
+    channel: 'feishu' | 'qq' | 'wechat' | 'dingtalk',
   ) => Promise<boolean>;
   reloadChannelAccount?: (accountId: string) => Promise<boolean>;
   disconnectChannelAccount?: (accountId: string) => Promise<void>;
@@ -115,20 +103,10 @@ export interface WebDeps {
    */
   reconnectUserIMChannels?: (userId: string) => Promise<void>;
   isFeishuConnected?: () => boolean;
-  isTelegramConnected?: () => boolean;
   isUserFeishuConnected?: (userId: string) => boolean;
-  isUserTelegramConnected?: (userId: string) => boolean;
   isUserQQConnected?: (userId: string) => boolean;
   isUserWeChatConnected?: (userId: string) => boolean;
   isUserDingTalkConnected?: (userId: string) => boolean;
-  isUserDiscordConnected?: (userId: string) => boolean;
-  isUserWhatsAppConnected?: (userId: string) => boolean;
-  getUserWhatsAppState?: (
-    userId: string,
-    accountId?: string,
-  ) => WhatsAppConnectionState;
-  /** Hard logout: clears WhatsApp auth state on disk so next enable starts fresh. */
-  logoutUserWhatsApp?: (userId: string, accountId?: string) => Promise<void>;
   processAgentConversation?: (
     chatJid: string,
     agentId: string,

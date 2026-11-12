@@ -53,14 +53,14 @@ afterAll(() => {
   delete process.env.CHANNEL_TEST_USER;
 });
 
-async function createTelegram(name: string) {
+async function createQQ(name: string) {
   const response = await routes.request('/', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      provider: 'telegram',
+      provider: 'qq',
       name,
-      credentials: { botToken: '123456:test-secret-token' },
+      credentials: { appId: `qq-${name}`, appSecret: 'test-secret-token' },
     }),
   });
   return { response, body: (await response.json()) as any };
@@ -69,10 +69,10 @@ async function createTelegram(name: string) {
 describe('channel account routes', () => {
   test('CRUD never returns credentials or secret_ref and enforces owner ACL', async () => {
     process.env.CHANNEL_TEST_USER = 'owner-a';
-    const created = await createTelegram(`Bot ${Date.now()}`);
+    const created = await createQQ(`Bot ${Date.now()}`);
     expect(created.response.status).toBe(201);
     expect(created.body.account).toMatchObject({
-      provider: 'telegram',
+      provider: 'qq',
       owner_user_id: 'owner-a',
       has_credentials: true,
     });
@@ -107,7 +107,7 @@ describe('channel account routes', () => {
 
   test('publishes one stable encryption key across secret saves', async () => {
     process.env.CHANNEL_TEST_USER = 'owner-a';
-    await createTelegram(`Key owner ${Date.now()}`);
+    await createQQ(`Key owner ${Date.now()}`);
     const keyPath = path.join(tmp, 'config', 'claude-provider.key');
     const firstKey = fs.readFileSync(keyPath, 'utf8');
     channelSecrets.saveChannelAccountSecret('channel-account:key-race-probe', {
@@ -122,7 +122,7 @@ describe('channel account routes', () => {
     'encryption key material sits in a mode-0600 file inside a mode-0700 directory',
     async () => {
       process.env.CHANNEL_TEST_USER = 'owner-a';
-      await createTelegram(`Key mode owner ${Date.now()}`);
+      await createQQ(`Key mode owner ${Date.now()}`);
       const keyPath = path.join(tmp, 'config', 'claude-provider.key');
       expect(fs.statSync(keyPath).mode & 0o777).toBe(0o600);
       expect(fs.statSync(path.dirname(keyPath)).mode & 0o777).toBe(0o700);
@@ -131,7 +131,7 @@ describe('channel account routes', () => {
 
   test('failed connector cleanup keeps the account disabled and reports a retryable partial success', async () => {
     process.env.CHANNEL_TEST_USER = 'owner-a';
-    const created = await createTelegram(`Cleanup failure ${Date.now()}`);
+    const created = await createQQ(`Cleanup failure ${Date.now()}`);
     const accountId = created.body.account.id as string;
     disconnect.mockRejectedValueOnce(new Error('socket did not stop'));
 
@@ -157,10 +157,13 @@ describe('channel account routes', () => {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        provider: 'telegram',
+        provider: 'qq',
         name: `No Agent fallback ${Date.now()}`,
         default_agent_profile_id: 'must-be-ignored',
-        credentials: { botToken: '123456:test-secret-token' },
+        credentials: {
+          appId: `qq-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          appSecret: 'test-secret-token',
+        },
       }),
     });
     expect(response.status).toBe(201);
@@ -173,9 +176,9 @@ describe('channel account routes', () => {
 
   test('delete is blocked while an account-scoped group is bound', async () => {
     process.env.CHANNEL_TEST_USER = 'owner-a';
-    const created = await createTelegram(`Bound ${Date.now()}`);
+    const created = await createQQ(`Bound ${Date.now()}`);
     const accountId = created.body.account.id as string;
-    const jid = `telegram:same-chat#account:${accountId}`;
+    const jid = `qq:same-chat#account:${accountId}`;
     db.setRegisteredGroup(jid, {
       name: 'Bound group',
       folder: 'owner-home',
@@ -220,8 +223,8 @@ describe('channel account routes', () => {
 
   test('failed metadata update restores the previous credential file', async () => {
     process.env.CHANNEL_TEST_USER = 'owner-a';
-    const first = await createTelegram(`Atomic first ${Date.now()}`);
-    const second = await createTelegram(`Atomic second ${Date.now()}`);
+    const first = await createQQ(`Atomic first ${Date.now()}`);
+    const second = await createQQ(`Atomic second ${Date.now()}`);
     const firstAccount = db.getChannelAccount(first.body.account.id)!;
     const original = channelSecrets.loadChannelAccountSecret(
       firstAccount.secret_ref,
@@ -232,7 +235,10 @@ describe('channel account routes', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         name: second.body.account.name,
-        credentials: { botToken: '999999:replacement-must-rollback' },
+        credentials: {
+          appId: 'qq-conflict-rollback',
+          appSecret: 'replacement-must-rollback',
+        },
       }),
     });
     expect(response.status).toBe(409);
@@ -243,8 +249,9 @@ describe('channel account routes', () => {
 
   test('direct POST projects a legacy default before creating a secondary account', async () => {
     process.env.CHANNEL_TEST_USER = 'legacy-direct-post';
-    runtimeConfig.saveUserTelegramConfig('legacy-direct-post', {
-      botToken: '123456:legacy-token',
+    runtimeConfig.saveUserQQConfig('legacy-direct-post', {
+      appId: 'legacy-app',
+      appSecret: 'legacy-token',
       enabled: true,
     });
     db.setRegisteredGroup('web:legacy-direct-home', {
@@ -253,8 +260,8 @@ describe('channel account routes', () => {
       added_at: '2026-07-01T00:00:00.000Z',
       created_by: 'legacy-direct-post',
     });
-    db.setRegisteredGroup('telegram:existing-group', {
-      name: 'Existing Telegram group',
+    db.setRegisteredGroup('qq:existing-group', {
+      name: 'Existing QQ group',
       folder: 'legacy-direct-home',
       added_at: '2026-07-01T00:00:00.000Z',
       created_by: 'legacy-direct-post',
@@ -262,7 +269,7 @@ describe('channel account routes', () => {
     });
 
     // Deliberately POST without first calling GET /channel-accounts.
-    const created = await createTelegram('Second Telegram bot');
+    const created = await createQQ('Second QQ bot');
     expect(created.response.status).toBe(201);
 
     const accounts = db.listChannelAccountsForUser('legacy-direct-post');
@@ -270,13 +277,13 @@ describe('channel account routes', () => {
     const legacyAccount = accounts.find((account) => account.is_legacy_default);
     expect(accounts.find((account) => account.is_default)).toMatchObject({
       is_legacy_default: true,
-      provider: 'telegram',
+      provider: 'qq',
     });
     expect(created.body.account).toMatchObject({
       is_default: false,
       is_legacy_default: false,
     });
-    expect(db.getRegisteredGroup('telegram:existing-group')).toMatchObject({
+    expect(db.getRegisteredGroup('qq:existing-group')).toMatchObject({
       target_main_jid: 'web:legacy-direct-home',
       channel_account_id: legacyAccount?.id,
     });
@@ -284,14 +291,14 @@ describe('channel account routes', () => {
 
   test('legacy default cannot be deleted and first-class edits stay visible through the old facade', async () => {
     process.env.CHANNEL_TEST_USER = 'legacy-facade-owner';
-    runtimeConfig.saveUserTelegramConfig('legacy-facade-owner', {
-      botToken: '123456:legacy-before',
-      proxyUrl: 'http://old-proxy.invalid',
+    runtimeConfig.saveUserQQConfig('legacy-facade-owner', {
+      appId: 'legacy-facade-app',
+      appSecret: 'legacy-before',
       enabled: true,
     });
     const listed = await routes.request('/');
     const account = ((await listed.json()) as any).accounts.find(
-      (item: any) => item.provider === 'telegram',
+      (item: any) => item.provider === 'qq',
     );
     expect(account).toMatchObject({ is_legacy_default: true });
 
@@ -300,17 +307,15 @@ describe('channel account routes', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         credentials: {
-          botToken: '654321:legacy-after',
-          proxyUrl: 'http://new-proxy.invalid',
+          appId: 'legacy-facade-app',
+          appSecret: 'legacy-after',
         },
       }),
     });
     expect(patched.status).toBe(200);
-    expect(
-      runtimeConfig.getUserTelegramConfig('legacy-facade-owner'),
-    ).toMatchObject({
-      botToken: '654321:legacy-after',
-      proxyUrl: 'http://new-proxy.invalid',
+    expect(runtimeConfig.getUserQQConfig('legacy-facade-owner')).toMatchObject({
+      appId: 'legacy-facade-app',
+      appSecret: 'legacy-after',
       enabled: true,
     });
 
@@ -320,7 +325,7 @@ describe('channel account routes', () => {
     expect(removed.status).toBe(409);
     const relisted = await routes.request('/');
     const accounts = ((await relisted.json()) as any).accounts.filter(
-      (item: any) => item.provider === 'telegram',
+      (item: any) => item.provider === 'qq',
     );
     expect(accounts).toHaveLength(1);
     expect(accounts[0].id).toBe(account.id);
@@ -329,11 +334,9 @@ describe('channel account routes', () => {
       method: 'POST',
     });
     expect(toggled.status).toBe(200);
-    expect(
-      runtimeConfig.getUserTelegramConfig('legacy-facade-owner'),
-    ).toMatchObject({
+    expect(runtimeConfig.getUserQQConfig('legacy-facade-owner')).toMatchObject({
       enabled: false,
-      botToken: '654321:legacy-after',
+      appSecret: 'legacy-after',
     });
   });
 
@@ -343,10 +346,10 @@ describe('channel account routes', () => {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        provider: 'telegram',
+        provider: 'qq',
         name: `Rollback ${Date.now()}`,
         enabled: false,
-        credentials: { botToken: '123456:known-good' },
+        credentials: { appId: 'qq-known-good', appSecret: 'known-good' },
       }),
     });
     const created = (await createResponse.json()) as any;
@@ -363,7 +366,7 @@ describe('channel account routes', () => {
       body: JSON.stringify({
         name: 'Must not persist',
         enabled: true,
-        credentials: { botToken: '999999:bad-token' },
+        credentials: { appId: 'qq-known-good', appSecret: 'bad-token' },
       }),
     });
     expect(failed.status).toBe(422);
@@ -379,16 +382,16 @@ describe('channel account routes', () => {
 
   test('failed promotion restores the exact previous default among three accounts', async () => {
     process.env.CHANNEL_TEST_USER = 'three-default-owner';
-    const first = await createTelegram('First default');
-    const second = await createTelegram('Second account');
+    const first = await createQQ('First default');
+    const second = await createQQ('Second account');
     const third = await routes.request('/', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        provider: 'telegram',
+        provider: 'qq',
         name: 'Third account',
         enabled: false,
-        credentials: { botToken: '123456:third-good' },
+        credentials: { appId: 'qq-third-good', appSecret: 'third-good' },
       }),
     });
     const thirdAccount = ((await third.json()) as any).account;
@@ -403,7 +406,7 @@ describe('channel account routes', () => {
       body: JSON.stringify({
         enabled: true,
         is_default: true,
-        credentials: { botToken: '999999:third-bad' },
+        credentials: { appId: 'qq-third-good', appSecret: 'third-bad' },
       }),
     });
     expect(failed.status).toBe(422);
@@ -416,7 +419,7 @@ describe('channel account routes', () => {
 
   test('live disconnected probe downgrades stale connected transport metadata', async () => {
     process.env.CHANNEL_TEST_USER = 'live-probe-owner';
-    const created = await createTelegram('Stale transport');
+    const created = await createQQ('Stale transport');
     db.updateChannelAccountStatus(created.body.account.id, 'connected');
     routeModule.injectChannelAccountDeps({
       reloadChannelAccount: reload,

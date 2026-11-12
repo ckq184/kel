@@ -118,7 +118,7 @@ describe('channel_mounts compatibility model', () => {
   });
 
   test('updating a registered group preserves its SQLite row identity', () => {
-    const jid = 'telegram:stable-row';
+    const jid = 'qq:c2c:stable-row';
     const now = new Date().toISOString();
     setRegisteredGroup(jid, {
       name: 'Before',
@@ -189,8 +189,8 @@ describe('channel_mounts compatibility model', () => {
       spawned_from_jid: null,
     });
 
-    setRegisteredGroup('telegram:chat-a', {
-      name: 'Telegram Chat',
+    setRegisteredGroup('qq:c2c:chat-a', {
+      name: 'QQ direct chat',
       folder: 'home-owner-a',
       added_at: now,
       target_agent_id: 'session-a',
@@ -198,9 +198,9 @@ describe('channel_mounts compatibility model', () => {
       activation_mode: 'when_mentioned',
     });
 
-    expect(getChannelMount('telegram:chat-a')).toMatchObject({
-      channel_jid: 'telegram:chat-a',
-      channel_type: 'telegram',
+    expect(getChannelMount('qq:c2c:chat-a')).toMatchObject({
+      channel_jid: 'qq:c2c:chat-a',
+      channel_type: 'qq',
       workspace_jid: 'web:workspace-a',
       session_id: 'session-a',
       routing_mode: 'single_session',

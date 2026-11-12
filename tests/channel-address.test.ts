@@ -9,13 +9,13 @@ import {
 
 describe('account-scoped channel address', () => {
   test('legacy JIDs remain parseable', () => {
-    expect(parseChannelAddress('telegram:-10001')).toMatchObject({
-      provider: 'telegram',
-      externalChatId: '-10001',
+    expect(parseChannelAddress('qq:group:-10001')).toMatchObject({
+      provider: 'qq',
+      externalChatId: 'group:-10001',
       channelAccountId: null,
       legacy: true,
     });
-    expect(toProviderJid('telegram:-10001')).toBe('telegram:-10001');
+    expect(toProviderJid('qq:group:-10001')).toBe('qq:group:-10001');
   });
 
   test('account scope preserves Feishu thread routing', () => {
@@ -54,7 +54,7 @@ describe('account-scoped channel address', () => {
   });
 
   test('account IDs are safely encoded', () => {
-    const scoped = scopeChannelJid('telegram:42', 'bot/北京');
+    const scoped = scopeChannelJid('qq:42', 'bot/北京');
     expect(parseChannelAddress(scoped)?.channelAccountId).toBe('bot/北京');
     expect(extractProviderTarget(scoped)).toBe('42');
   });

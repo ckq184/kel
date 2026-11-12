@@ -31,7 +31,7 @@ const MAX_TAIL_LINES = 200;
 
 /**
  * Whitelist for workspace JIDs reaching child argv. 1-128 chars of
- * `[\w:@.-]` — covers feishu:123, web:ws-a, discord:9@g.us and excludes every
+ * `[\w:@.-]` — covers feishu:123, web:ws-a and excludes every
  * shell metacharacter (win32 `shell: true` defense, eval-trigger precedent).
  */
 export const WORKSPACE_JID_PATTERN = /^[\w:@.-]{1,128}$/;

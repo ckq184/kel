@@ -43,7 +43,7 @@ beforeAll(() => {
     db.createChannelAccount({
       id,
       owner_user_id: 'jid-owner',
-      provider: 'telegram',
+      provider: 'qq',
       name: id,
       secret_ref: `channel-account:${id}`,
       enabled: true,
@@ -73,7 +73,7 @@ function fakeChannel() {
   let connected = false;
   const sendMessage = vi.fn(async () => undefined);
   const channel: IMChannel = {
-    channelType: 'telegram',
+    channelType: 'qq',
     async connect(value) {
       opts = value;
       connected = true;
@@ -109,23 +109,23 @@ describe('canonical channel-account JID end to end', () => {
     const secondInbound = vi.fn();
     await manager.connectChannel(
       'jid-owner',
-      'telegram',
+      'qq',
       first.channel,
       { onReady: vi.fn(), onNewChat: firstInbound },
       'bot-a',
     );
     await manager.connectChannel(
       'jid-owner',
-      'telegram',
+      'qq',
       second.channel,
       { onReady: vi.fn(), onNewChat: secondInbound },
       'bot-b',
     );
 
-    first.getOpts().onNewChat('telegram:shared-chat', 'Shared');
-    second.getOpts().onNewChat('telegram:shared-chat', 'Shared');
-    const firstJid = 'telegram:shared-chat#account:bot-a';
-    const secondJid = 'telegram:shared-chat#account:bot-b';
+    first.getOpts().onNewChat('qq:shared-chat', 'Shared');
+    second.getOpts().onNewChat('qq:shared-chat', 'Shared');
+    const firstJid = 'qq:shared-chat#account:bot-a';
+    const secondJid = 'qq:shared-chat#account:bot-b';
     expect(firstInbound).toHaveBeenCalledWith(firstJid, 'Shared');
     expect(secondInbound).toHaveBeenCalledWith(secondJid, 'Shared');
     expect(address.channelConversationJid(firstJid)).not.toBe(

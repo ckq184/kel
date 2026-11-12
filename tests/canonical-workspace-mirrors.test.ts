@@ -144,7 +144,7 @@ describe('canonical workspace compatibility mirrors', () => {
       spawned_from_jid: null,
     });
 
-    db.setRegisteredGroup('telegram:mirror-chat-c', {
+    db.setRegisteredGroup('qq:c2c:mirror-chat-c', {
       name: 'Telegram C',
       folder: 'owner-home-c',
       added_at: '2026-07-09T00:00:00.000Z',
@@ -153,8 +153,8 @@ describe('canonical workspace compatibility mirrors', () => {
       reply_policy: 'mirror',
     });
 
-    expect(db.getAgentChannelMount('telegram:mirror-chat-c')).toMatchObject({
-      channel_jid: 'telegram:mirror-chat-c',
+    expect(db.getAgentChannelMount('qq:c2c:mirror-chat-c')).toMatchObject({
+      channel_jid: 'qq:c2c:mirror-chat-c',
       agent_profile_id: profile.id,
       owner_user_id: 'owner-c',
       workspace_jid: 'web:mirror-workspace-c',
@@ -170,13 +170,13 @@ describe('canonical workspace compatibility mirrors', () => {
       identityPrompt: '先审查风险。',
     });
     db.assignWorkspaceAgentProfile('mirror-workspace-c', nextProfile.id);
-    expect(db.getAgentChannelMount('telegram:mirror-chat-c')).toMatchObject({
+    expect(db.getAgentChannelMount('qq:c2c:mirror-chat-c')).toMatchObject({
       agent_profile_id: nextProfile.id,
       workspace_folder: 'mirror-workspace-c',
     });
 
-    db.deleteRegisteredGroup('telegram:mirror-chat-c');
-    expect(db.getAgentChannelMount('telegram:mirror-chat-c')).toBeUndefined();
+    db.deleteRegisteredGroup('qq:c2c:mirror-chat-c');
+    expect(db.getAgentChannelMount('qq:c2c:mirror-chat-c')).toBeUndefined();
   });
 
   test('provider session deletion removes runtime-session projections atomically', () => {
@@ -242,7 +242,7 @@ describe('canonical workspace compatibility mirrors', () => {
       'sdk-delete-me',
       'product-session-delete-me',
     );
-    db.setRegisteredGroup('telegram:mirror-delete-agent-channel', {
+    db.setRegisteredGroup('qq:c2c:mirror-delete-agent-channel', {
       name: 'Delete Agent Channel',
       folder: 'owner-home-delete-agent',
       added_at: '2026-07-10T00:00:00.000Z',
@@ -250,7 +250,7 @@ describe('canonical workspace compatibility mirrors', () => {
       target_agent_id: 'product-session-delete-me',
     });
     expect(
-      db.getAgentChannelMount('telegram:mirror-delete-agent-channel'),
+      db.getAgentChannelMount('qq:c2c:mirror-delete-agent-channel'),
     ).toBeDefined();
 
     db.deleteAgent('product-session-delete-me');
@@ -262,10 +262,10 @@ describe('canonical workspace compatibility mirrors', () => {
       ),
     ).toBeUndefined();
     expect(
-      db.getAgentChannelMount('telegram:mirror-delete-agent-channel'),
+      db.getAgentChannelMount('qq:c2c:mirror-delete-agent-channel'),
     ).toBeUndefined();
     expect(
-      db.getRegisteredGroup('telegram:mirror-delete-agent-channel')
+      db.getRegisteredGroup('qq:c2c:mirror-delete-agent-channel')
         ?.target_agent_id,
     ).toBeUndefined();
   });
@@ -282,7 +282,7 @@ describe('canonical workspace compatibility mirrors', () => {
       name: 'Delete Workspace Profile',
     });
     db.assignWorkspaceAgentProfile('mirror-delete-workspace', profile.id);
-    db.setRegisteredGroup('telegram:mirror-delete-workspace-channel', {
+    db.setRegisteredGroup('qq:c2c:mirror-delete-workspace-channel', {
       name: 'Delete Workspace Channel',
       folder: 'owner-home-delete-workspace',
       added_at: '2026-07-10T00:00:00.000Z',
@@ -296,10 +296,10 @@ describe('canonical workspace compatibility mirrors', () => {
       db.getWorkspaceRecord('web:mirror-delete-workspace'),
     ).toBeUndefined();
     expect(
-      db.getAgentChannelMount('telegram:mirror-delete-workspace-channel'),
+      db.getAgentChannelMount('qq:c2c:mirror-delete-workspace-channel'),
     ).toBeUndefined();
     expect(
-      db.getRegisteredGroup('telegram:mirror-delete-workspace-channel')
+      db.getRegisteredGroup('qq:c2c:mirror-delete-workspace-channel')
         ?.target_main_jid,
     ).toBeUndefined();
     expect(

@@ -4,7 +4,7 @@
  * behavior without booting the full service.
  *
  * The single source of truth for "what defaults should a newly auto-
- * registered Feishu/Telegram/etc group get" lives here. Both the
+ * registered Feishu/QQ/etc group get" lives here. Both the
  * `buildOnNewChat` flow in index.ts and unit tests call this.
  */
 

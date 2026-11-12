@@ -680,7 +680,7 @@ describe('AgentProfile DB model', () => {
       created_by: 'agent-profile-user-f',
     });
     assignWorkspaceAgentProfile(folder, profile.id);
-    setRegisteredGroup('telegram:agent-profile-channel-f', {
+    setRegisteredGroup('qq:c2c:agent-profile-channel-f', {
       name: 'Telegram F',
       folder: 'home-f',
       added_at: new Date().toISOString(),
@@ -690,7 +690,7 @@ describe('AgentProfile DB model', () => {
 
     deleteWorkspaceAgentProfile(folder);
     expect(
-      getAgentChannelMount('telegram:agent-profile-channel-f'),
+      getAgentChannelMount('qq:c2c:agent-profile-channel-f'),
     ).toMatchObject({ agent_profile_id: null });
     expect(archiveAgentProfile(profile.id, 'agent-profile-user-f')).toBe('ok');
   });

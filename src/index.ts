@@ -280,7 +280,6 @@ import {
 } from './channel-reliability-store.js';
 import { ChannelTurnRuntime } from './channel-turn-runtime.js';
 import { resolveStickyChannelOwner } from './channel-session-owner.js';
-import { migrateLegacyWhatsAppAuthDir } from './whatsapp.js';
 import {
   getChannelType,
   extractChatId,
@@ -414,20 +413,14 @@ import {
 } from './agent-profile-prompts.js';
 import {
   getFeishuProviderConfigWithSource,
-  getTelegramProviderConfig,
-  getTelegramProviderConfigWithSource,
   getUserFeishuConfig,
-  getUserTelegramConfig,
   getUserQQConfig,
   getUserWeChatConfig,
   getUserDingTalkConfig,
-  getUserDiscordConfig,
-  getUserWhatsAppConfig,
   getSystemSettings,
   getLegacySystemAutoCompactWindow,
   saveUserFeishuConfig,
   saveFeishuOwnerOpenId,
-  saveUserTelegramConfig,
   saveUserWeChatConfig,
   updateAllSessionCredentials,
 } from './runtime-config.js';
@@ -437,12 +430,9 @@ import {
 } from './schemas.js';
 import type {
   FeishuConnectConfig,
-  TelegramConnectConfig,
   QQConnectConfig,
   WeChatConnectConfig,
   DingTalkConnectConfig,
-  DiscordConnectConfig,
-  WhatsAppConnectConfig,
 } from './im-manager.js';
 import {
   GroupQueue,
@@ -551,7 +541,6 @@ import {
   broadcastTitleGenerating,
   broadcastGroupCreated,
   broadcastBillingUpdate,
-  broadcastWhatsAppStatus,
   broadcastChannelAccountStatus,
   shutdownTerminals,
   shutdownWebServer,
@@ -560,7 +549,7 @@ import {
   broadcastFollowUpUpdate,
 } from './web.js';
 import { installSkillForUser, deleteSkillForUser } from './routes/skills.js';
-import { verifyPairingCode } from './telegram-pairing.js';
+import { verifyPairingCode } from './channel-pairing.js';
 import { sdkQuery } from './sdk-query.js';
 import { executeSessionReset } from './commands.js';
 import {
@@ -3401,7 +3390,7 @@ function sendBillingDeniedMessage(jid: string, content: string): string {
  * `__plugin__` synthetic sender so audits can distinguish the two paths.
  *
  * When `imRouteJid` is a connected IM channel, also fan the reply out to that
- * channel so users on Feishu / Telegram / QQ / DingTalk see the response —
+ * channel so users on Feishu / QQ / DingTalk see the response —
  * without this, plugin-expander system replies (conflict / offline-runner /
  * etc.) would silently drop on IM and the slash command appears to no-op
  * (#20 P1-1).
@@ -3591,7 +3580,7 @@ async function clearSessionRuntimeFiles(
 }
 
 /**
- * Slash command handler for IM channels (Feishu/Telegram).
+ * Slash command handler for IM channels (Feishu).
  * Returns a reply string on success, or null if command not recognized.
  * @param senderImId 发送者的 IM 标识符（如飞书 open_id），由支持的 IM 通道传入
  */
@@ -4836,7 +4825,7 @@ async function clearTrackedProcessingIndicators(
 interface SendMessageOptions {
   /** Stable logical message id for replay-safe Web projection. */
   messageId?: string;
-  /** Whether to forward the reply to the IM channel (Feishu/Telegram). Defaults to true for IM JIDs. */
+  /** Whether to forward the reply to the IM channel (Feishu). Defaults to true for IM JIDs. */
   sendToIM?: boolean;
   /** IM 渠道实际发送的文本（默认与 text 相同）。挂起序列合并时 text 为
    * 全量合并正文（入库/Web），纯文本 IM 渠道无法编辑已发消息，只发本 turn
@@ -4894,7 +4883,6 @@ function migrateSystemIMToPerUser(): void {
     }
 
     let migratedFeishu = false;
-    let migratedTelegram = false;
 
     // Feishu: copy system config → admin per-user (if admin has no per-user config)
     const existingUserFeishu = getUserFeishuConfig(admin.id);
@@ -4911,31 +4899,15 @@ function migrateSystemIMToPerUser(): void {
       }
     }
 
-    // Telegram: copy system config → admin per-user (if admin has no per-user config)
-    const existingUserTelegram = getUserTelegramConfig(admin.id);
-    if (!existingUserTelegram) {
-      const { config: sysTelegram, source: telegramSource } =
-        getTelegramProviderConfigWithSource();
-      if (telegramSource !== 'none' && sysTelegram.botToken) {
-        saveUserTelegramConfig(admin.id, {
-          botToken: sysTelegram.botToken,
-          proxyUrl: sysTelegram.proxyUrl,
-          enabled: sysTelegram.enabled,
-        });
-        migratedTelegram = true;
-      }
-    }
-
     // Write flag file (even if nothing was migrated — to avoid re-checking)
     fs.mkdirSync(path.dirname(flagFile), { recursive: true });
     fs.writeFileSync(flagFile, new Date().toISOString() + '\n', 'utf-8');
 
-    if (migratedFeishu || migratedTelegram) {
+    if (migratedFeishu) {
       logger.info(
         {
           adminId: admin.id,
           feishu: migratedFeishu,
-          telegram: migratedTelegram,
         },
         'Migrated system-level IM config to admin per-user config',
       );
@@ -7110,9 +7082,9 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     | undefined;
   let activeSessionId = getSession(effectiveGroup.folder) || undefined;
   // currentSourceJid: tells the agent-runner which IM chat the latest user
-  // message came from, so per-channel MCP tools (discord_*, etc.) can detect
+  // message came from, so per-channel MCP tools can detect
   // it correctly even when the home container was originally started by a
-  // different chat (e.g. web message before the Discord one arrived).
+  // different chat (e.g. web message before the IM one arrived).
   const currentSourceJid =
     missedMessages[missedMessages.length - 1]?.source_jid || chatJid;
   const currentChannelContext = resolveBatchChannelContext(
@@ -11317,9 +11289,6 @@ function startIpcWatcher(): void {
           'restore_task_result_',
           'list_task_runs_result_',
           'send_file_result_',
-          'discord_get_history_result_',
-          'discord_get_channel_info_result_',
-          'discord_get_server_info_result_',
           'agent_profile_list_result_',
           'agent_profile_get_result_',
           'agent_profile_draft_get_result_',
@@ -11678,10 +11647,9 @@ async function processTaskIpc(
     // For send_file
     filePath?: string;
     fileName?: string;
-    // For list_tasks
+    // For list_tasks / list_task_runs / workspace_memory snapshots
     isAdminHome?: boolean;
     includeDeleted?: boolean;
-    // For discord_get_history
     limit?: number;
     before?: string;
     // Host-side Feishu capability broker
@@ -13313,17 +13281,6 @@ async function processTaskIpc(
       }
       break;
 
-    case 'discord_get_history':
-    case 'discord_get_channel_info':
-    case 'discord_get_server_info':
-      await handleDiscordIpcRequest(
-        data,
-        sourceGroup,
-        sourceGroupEntry,
-        isAdminHome,
-      );
-      break;
-
     case 'feishu_capability': {
       const startedAt = Date.now();
       try {
@@ -13748,7 +13705,7 @@ async function processTaskIpc(
           let resolvedPath = resolution.path;
 
           if (!fs.existsSync(resolvedPath)) {
-            // Fallback: search in downloads subdirs (DingTalk/Telegram files land here)
+            // Fallback: search in downloads subdirs (DingTalk files land here)
             const downloadsDir = path.join(
               GROUPS_DIR,
               sourceGroup,
@@ -14029,112 +13986,6 @@ async function processTaskIpc(
 
     default:
       logger.warn({ type: data.type }, 'Unknown IPC task type');
-  }
-}
-
-/**
- * Handle Discord-specific IPC requests (history, channel info, server info).
- * Writes a result file `{type}_result_{requestId}.json` back to the source group's tasks dir.
- * Authorization: target chatJid must be owned by sourceGroup's user (or admin home for cross-group).
- */
-async function handleDiscordIpcRequest(
-  data: {
-    type: string;
-    chatJid?: string;
-    requestId?: string;
-    limit?: number;
-    before?: string;
-  },
-  sourceGroup: string,
-  sourceGroupEntry: RegisteredGroup | undefined,
-  isAdminHome: boolean,
-): Promise<void> {
-  const requestId = data.requestId;
-  if (!requestId || !SAFE_REQUEST_ID_RE.test(requestId)) {
-    logger.warn(
-      { sourceGroup, type: data.type, requestId },
-      'Rejected Discord IPC request with invalid requestId',
-    );
-    return;
-  }
-
-  const tasksDir = path.join(DATA_DIR, 'ipc', sourceGroup, 'tasks');
-  const tasksDirResolved = path.resolve(tasksDir);
-  const resultFileName = `${data.type}_result_${requestId}.json`;
-  const resultFilePath = path.resolve(tasksDir, resultFileName);
-  if (!resultFilePath.startsWith(`${tasksDirResolved}${path.sep}`)) {
-    logger.warn(
-      { sourceGroup, type: data.type, resultFilePath },
-      'Rejected Discord IPC request with unsafe result file path',
-    );
-    return;
-  }
-  fs.mkdirSync(path.dirname(resultFilePath), { recursive: true });
-
-  const writeResult = (payload: object): void => {
-    const tmpPath = `${resultFilePath}.tmp`;
-    fs.writeFileSync(tmpPath, JSON.stringify(payload));
-    fs.renameSync(tmpPath, resultFilePath);
-  };
-
-  try {
-    const chatJid = data.chatJid;
-    if (!chatJid || !chatJid.startsWith('discord:')) {
-      writeResult({
-        success: false,
-        error: 'chatJid must be a Discord JID (discord:*)',
-      });
-      return;
-    }
-
-    // Authorization: read-only Discord queries — admin home, same folder, or
-    // same owner is enough. We don't require sourceGroup to be `is_home` like
-    // cross-group sends do, because querying channel/history info doesn't
-    // write into another workspace.
-    const targetGroup = registeredGroups[chatJid];
-    const ownerOk =
-      isAdminHome ||
-      (targetGroup && targetGroup.folder === sourceGroup) ||
-      (targetGroup &&
-        sourceGroupEntry?.created_by != null &&
-        targetGroup.created_by === sourceGroupEntry.created_by);
-    if (!targetGroup || !ownerOk) {
-      writeResult({
-        success: false,
-        error: `Not authorized to access Discord chat ${chatJid}`,
-      });
-      return;
-    }
-
-    if (data.type === 'discord_get_history') {
-      const messages = await imManager.getDiscordHistory(chatJid, {
-        limit: data.limit,
-        before: data.before,
-      });
-      // Strip authorId (Discord user Snowflake) before sending to agent.
-      // authorId + authorName uniquely identifies a user even after rename;
-      // letting it reach the agent risks cross-channel forwarding into 3rd-
-      // party LLM logs. Formatted output already only shows authorName.
-      const sanitized = messages.map(({ authorId: _id, ...rest }) => rest);
-      writeResult({ success: true, messages: sanitized });
-    } else if (data.type === 'discord_get_channel_info') {
-      const channel = await imManager.getDiscordChannelInfo(chatJid);
-      writeResult({ success: true, channel });
-    } else if (data.type === 'discord_get_server_info') {
-      const guild = await imManager.getDiscordGuildInfo(chatJid);
-      writeResult({ success: true, guild });
-    } else {
-      writeResult({ success: false, error: `Unknown type: ${data.type}` });
-    }
-  } catch (err) {
-    logger.error(
-      { sourceGroup, type: data.type, err },
-      'Discord IPC request failed',
-    );
-    writeResult({
-      success: false,
-      error: err instanceof Error ? err.message : String(err),
-    });
   }
 }
 
@@ -17208,7 +17059,7 @@ async function startMessageLoop(): Promise<void> {
           }
 
           // Skip groups with target_agent_id — their messages are routed
-          // to conversation agents at IM ingestion time (feishu.ts/telegram.ts)
+          // to conversation agents at IM ingestion time (feishu.ts)
           if (group.target_agent_id) continue;
 
           // Owner gate + billing share a single owner lookup. Owner status
@@ -17880,7 +17731,7 @@ async function ensureDockerRunning(): Promise<void> {
 
 /**
  * Build the onNewChat callback for IM connections.
- * Feishu/Telegram chats auto-register to the user's home group folder.
+ * Feishu chats auto-register to the user's home group folder.
  *
  * When the same IM app is transferred between users (e.g., admin disables
  * their channel and a member enables the same credentials), existing chats
@@ -17889,7 +17740,7 @@ async function ensureDockerRunning(): Promise<void> {
  * In multi-bot setups where the same human talks to multiple bots (each owned
  * by a different CKQClaw user), re-routing is skipped — the chat stays with
  * its original owner as long as that owner still has an active connection on
- * the **same channel type** (feishu/telegram/qq/wechat).
+ * the **same channel type** (feishu/qq/wechat).
  */
 function buildOnNewChat(
   userId: string,
@@ -17969,7 +17820,7 @@ function buildOnNewChat(
       //
       // Distinguish by checking whether the previous owner still has an active
       // connection on the SAME channel type.  Checking all channel types would
-      // produce false positives (e.g., admin's Telegram is still online while
+      // produce false positives (e.g., admin's Feishu is still online while
       // their Feishu app was transferred → skip re-route incorrectly).
       if (!existing.is_home) {
         const previousOwner = existing.created_by;
@@ -18240,35 +18091,6 @@ function buildOnBotRemovedFromGroup(): (chatJid: string) => void {
 }
 
 /**
- * Build Telegram-specific bot-added-to-group handler.
- * Auto-registers the group (via buildOnNewChat) then sends a welcome message
- * guiding the user to bind or create a workspace.
- */
-function buildTelegramBotAddedHandler(
-  userId: string,
-  homeFolder: string,
-): (chatJid: string, chatName: string) => void {
-  const onNewChat = buildOnNewChat(userId, homeFolder);
-  return (chatJid: string, chatName: string) => {
-    onNewChat(chatJid, chatName);
-    const welcome =
-      `已加入「${chatName}」！当前绑定到默认工作区。\n\n` +
-      `/new <名称> — 新建工作区并绑定此群\n` +
-      `/bind <工作区> — 绑定到已有工作区\n` +
-      `/list — 查看所有工作区\n\n` +
-      `也可以直接发消息，我会在默认工作区回复。`;
-    imManager
-      .sendMessage(chatJid, welcome)
-      .catch((err) =>
-        logger.warn(
-          { chatJid, err },
-          'Failed to send Telegram group welcome message',
-        ),
-      );
-  };
-}
-
-/**
  * Build the onBotAddedToGroup handler for Feishu connections.
  * Registers the new group (locked by default) and sends a one-time welcome message.
  */
@@ -18283,7 +18105,7 @@ function buildFeishuBotAddedHandler(
     onNewChat(chatJid, chatName);
     if (isNew) {
       // 文案分支:仅在飞书路径(传入 getOwnerOpenId,DM 可学到 ownerOpenId 并启用 allowlist)
-      // 才提示「已启用发言者白名单」+「私信识别 owner」。通用路径(dingtalk/discord/whatsapp
+      // 才提示「已启用发言者白名单」+「私信识别 owner」。通用路径(dingtalk
       // 不传 getOwnerOpenId)实际未启用白名单,DM 也没有 learnFeishuOwner 通道,引导用
       // /owner_mention 在群内自我认领。
       let welcome: string;
@@ -18761,9 +18583,7 @@ function buildResolveEffectiveChatJid(): (
         ? null
         : resolveNativeThreadContext(messageMeta);
     const nativeThreadDetected =
-      !!nativeThread &&
-      (messageMeta?.nativeContextType === 'thread' ||
-        (channelType === 'telegram' && !!messageMeta?.threadId));
+      !!nativeThread && messageMeta?.nativeContextType === 'thread';
     if (nativeThreadDetected) {
       const upgraded = ensureNativeContextChannelMount(chatJid, group);
       if (!upgraded) return null;
@@ -19370,28 +19190,6 @@ async function reloadChannelAccountById(accountId: string): Promise<boolean> {
           },
         },
       );
-    } else if (account.provider === 'telegram') {
-      connected = await imManager.connectUserTelegram(
-        account.owner_user_id,
-        {
-          botToken: secret.botToken || '',
-          proxyUrl: secret.proxyUrl,
-          enabled: true,
-        },
-        onNewChat,
-        buildIsChatAuthorized(
-          account.owner_user_id,
-          account.id,
-          account.is_legacy_default,
-        ),
-        buildOnPairAttempt(
-          account.owner_user_id,
-          account.id,
-          workspace.jid,
-          account.is_legacy_default,
-        ),
-        { ...common, onBotAddedToGroup: onNewChat },
-      );
     } else if (account.provider === 'qq') {
       connected = await imManager.connectUserQQ(
         account.owner_user_id,
@@ -19537,103 +19335,8 @@ async function reloadChannelAccountById(accountId: string): Promise<boolean> {
           resolveRegisteredGroup: getRegisteredGroup,
         },
       );
-    } else if (account.provider === 'discord') {
-      connected = await imManager.connectUserDiscord(
-        account.owner_user_id,
-        {
-          botToken: secret.botToken || '',
-          streamingMode: secret.streamingMode === 'edit' ? 'edit' : 'off',
-        },
-        onNewChat,
-        {
-          ...common,
-          isChatAuthorized: buildIsChatAuthorized(
-            account.owner_user_id,
-            account.id,
-            account.is_legacy_default,
-          ),
-          onPairAttempt: buildOnPairAttempt(
-            account.owner_user_id,
-            account.id,
-            workspace.jid,
-            account.is_legacy_default,
-          ),
-          onBotAddedToGroup: onNewChat,
-          shouldProcessGroupMessage,
-          isGroupOwnerMessage,
-        },
-      );
-    } else {
-      if (account.is_legacy_default) {
-        migrateLegacyWhatsAppAuthDir(
-          DATA_DIR,
-          account.owner_user_id,
-          secret.accountId,
-          account.id,
-        );
-      }
-      connected = await imManager.connectUserWhatsApp(
-        account.owner_user_id,
-        {
-          accountId: account.id,
-          phoneNumber: secret.phoneNumber,
-          enabled: true,
-        },
-        onNewChat,
-        {
-          ...common,
-          isChatAuthorized: buildIsChatAuthorized(
-            account.owner_user_id,
-            account.id,
-            account.is_legacy_default,
-          ),
-          onPairAttempt: buildOnPairAttempt(
-            account.owner_user_id,
-            account.id,
-            workspace.jid,
-            account.is_legacy_default,
-          ),
-          onBotAddedToGroup: onNewChat,
-          shouldProcessGroupMessage,
-          isGroupOwnerMessage,
-          onConnectionUpdate: (uid, connectedAccountId, state) => {
-            if (state.status === 'connected') {
-              updateChannelAccountAuthStatus(account.id, 'authorized');
-              updateChannelAccountStatus(account.id, 'connected');
-            } else if (state.status === 'qr' || state.status === 'connecting') {
-              updateChannelAccountAuthStatus(account.id, 'awaiting_scan');
-              updateChannelAccountStatus(account.id, 'connecting');
-            } else if (state.status === 'logged_out') {
-              updateChannelAccountAuthStatus(
-                account.id,
-                'revoked',
-                state.error,
-              );
-              updateChannelAccountStatus(
-                account.id,
-                'disconnected',
-                state.error,
-              );
-            } else {
-              updateChannelAccountStatus(
-                account.id,
-                'disconnected',
-                state.error,
-              );
-            }
-            broadcastWhatsAppStatus(uid, connectedAccountId, state);
-          },
-        },
-      );
     }
-    if (account.provider === 'whatsapp') {
-      // Baileys returns after the socket is created, before QR authorization
-      // and before connection.update('open'). The callback above is the only
-      // source allowed to publish transport=connected.
-      if (!connected) {
-        updateChannelAccountStatus(account.id, 'error', 'Connection failed');
-      }
-    } else if (account.provider === 'wechat') {
+    if (account.provider === 'wechat') {
       // connectUserWeChat returns once the local poller is retained. Its
       // connection-state callback is the sole authority for connecting,
       // connected and reconnecting transport states.
@@ -19664,14 +19367,7 @@ async function reloadChannelAccountById(accountId: string): Promise<boolean> {
 
 function syncLegacyConfigToDefaultChannelAccount(
   userId: string,
-  channel:
-    | 'feishu'
-    | 'telegram'
-    | 'qq'
-    | 'wechat'
-    | 'dingtalk'
-    | 'discord'
-    | 'whatsapp',
+  channel: 'feishu' | 'qq' | 'wechat' | 'dingtalk',
 ): ChannelAccount | null {
   if (channel === 'feishu') {
     const value = getUserFeishuConfig(userId);
@@ -19685,21 +19381,6 @@ function syncLegacyConfigToDefaultChannelAccount(
             appId: value.appId,
             appSecret: value.appSecret,
             ownerOpenId: value.ownerOpenId,
-          },
-        })
-      : null;
-  }
-  if (channel === 'telegram') {
-    const value = getUserTelegramConfig(userId);
-    return value
-      ? syncDefaultChannelAccountCredentials({
-          ownerUserId: userId,
-          provider: channel,
-          name: '默认 Telegram',
-          enabled: value.enabled !== false,
-          secret: {
-            botToken: value.botToken,
-            proxyUrl: value.proxyUrl || getTelegramProviderConfig().proxyUrl,
           },
         })
       : null;
@@ -19751,34 +19432,7 @@ function syncLegacyConfigToDefaultChannelAccount(
         })
       : null;
   }
-  if (channel === 'discord') {
-    const value = getUserDiscordConfig(userId);
-    return value
-      ? syncDefaultChannelAccountCredentials({
-          ownerUserId: userId,
-          provider: channel,
-          name: '默认 Discord',
-          enabled: value.enabled !== false,
-          secret: {
-            botToken: value.botToken,
-            streamingMode: value.streamingMode,
-          },
-        })
-      : null;
-  }
-  const value = getUserWhatsAppConfig(userId);
-  return value
-    ? syncDefaultChannelAccountCredentials({
-        ownerUserId: userId,
-        provider: channel,
-        name: '默认 WhatsApp',
-        enabled: value.enabled !== false,
-        secret: {
-          accountId: value.accountId,
-          phoneNumber: value.phoneNumber,
-        },
-      })
-    : null;
+  return null;
 }
 
 function movePathWithFallback(src: string, dst: string): void {
@@ -20104,49 +19758,10 @@ async function main(): Promise<void> {
     return connected;
   };
 
-  const reloadTelegramConnection = async (config: {
-    botToken: string;
-    proxyUrl?: string;
-    enabled?: boolean;
-  }): Promise<boolean> => {
-    // Find admin user
-    const adminUsers = listUsers({
-      status: 'active',
-      role: 'admin',
-      page: 1,
-      pageSize: 1,
-    }).users;
-    const adminUser = adminUsers[0];
-    if (!adminUser) {
-      logger.warn('No admin user found for Telegram reload');
-      return false;
-    }
-
-    const defaultAccount = syncDefaultChannelAccountCredentials({
-      ownerUserId: adminUser.id,
-      provider: 'telegram',
-      name: '默认 Telegram',
-      enabled: config.enabled !== false,
-      secret: { botToken: config.botToken, proxyUrl: config.proxyUrl },
-    });
-    if (!defaultAccount.enabled) {
-      await disconnectChannelAccountById(defaultAccount.id);
-      return false;
-    }
-    return reloadChannelAccountById(defaultAccount.id);
-  };
-
   // Reload a per-user IM channel (hot-reload on user-im config save)
   const reloadUserIMConfig = async (
     userId: string,
-    channel:
-      | 'feishu'
-      | 'telegram'
-      | 'qq'
-      | 'wechat'
-      | 'dingtalk'
-      | 'discord'
-      | 'whatsapp',
+    channel: 'feishu' | 'qq' | 'wechat' | 'dingtalk',
   ): Promise<boolean> => {
     const homeGroup = getUserHomeGroup(userId);
     if (!homeGroup) {
@@ -20228,40 +19843,6 @@ async function main(): Promise<void> {
       }
       logger.info({ userId }, 'User Feishu channel disabled via hot-reload');
       return false;
-    } else if (channel === 'telegram') {
-      await imManager.disconnectUserTelegram(userId);
-      const config = getUserTelegramConfig(userId);
-      const globalTelegramConfig = getTelegramProviderConfig();
-      if (config && config.enabled !== false && config.botToken) {
-        const connected = await imManager.connectUserTelegram(
-          userId,
-          {
-            ...config,
-            proxyUrl: config.proxyUrl || globalTelegramConfig.proxyUrl,
-          },
-          onNewChat,
-          buildIsChatAuthorized(userId),
-          buildOnPairAttempt(userId),
-          {
-            onCommand: handleCommand,
-            ignoreMessagesBefore,
-            resolveGroupFolder: (chatJid: string) =>
-              resolveEffectiveFolder(chatJid),
-            resolveEffectiveChatJid: buildResolveEffectiveChatJid(),
-            onAgentMessage: buildOnAgentMessage(),
-            onNativeContextDetected: buildOnNativeContextDetected(),
-            onBotAddedToGroup: buildTelegramBotAddedHandler(userId, homeFolder),
-            onBotRemovedFromGroup: buildOnBotRemovedFromGroup(),
-          },
-        );
-        logger.info(
-          { userId, connected },
-          'User Telegram connection hot-reloaded',
-        );
-        return connected;
-      }
-      logger.info({ userId }, 'User Telegram channel disabled via hot-reload');
-      return false;
     } else if (channel === 'qq') {
       await imManager.disconnectUserQQ(userId);
       const config = getUserQQConfig(userId);
@@ -20327,37 +19908,6 @@ async function main(): Promise<void> {
       }
       logger.info({ userId }, 'User DingTalk channel disabled via hot-reload');
       return false;
-    } else if (channel === 'discord') {
-      await imManager.disconnectUserDiscord(userId);
-      const config = getUserDiscordConfig(userId);
-      if (config && config.enabled !== false && config.botToken) {
-        const connected = await imManager.connectUserDiscord(
-          userId,
-          config,
-          onNewChat,
-          {
-            isChatAuthorized: buildIsChatAuthorized(userId),
-            onPairAttempt: buildOnPairAttempt(userId),
-            ignoreMessagesBefore,
-            onCommand: handleCommand,
-            resolveGroupFolder: (chatJid: string) =>
-              resolveEffectiveFolder(chatJid),
-            resolveEffectiveChatJid: buildResolveEffectiveChatJid(),
-            onAgentMessage: buildOnAgentMessage(),
-            onBotAddedToGroup: buildOnNewChat(userId, homeFolder),
-            onBotRemovedFromGroup: buildOnBotRemovedFromGroup(),
-            shouldProcessGroupMessage,
-            isGroupOwnerMessage,
-          },
-        );
-        logger.info(
-          { userId, connected },
-          'User Discord connection hot-reloaded',
-        );
-        return connected;
-      }
-      logger.info({ userId }, 'User Discord channel disabled via hot-reload');
-      return false;
     } else if (channel === 'wechat') {
       await imManager.disconnectUserWeChat(userId);
       const config = getUserWeChatConfig(userId);
@@ -20408,46 +19958,8 @@ async function main(): Promise<void> {
       }
       logger.info({ userId }, 'User WeChat channel disabled via hot-reload');
       return false;
-    } else {
-      // WhatsApp (Baileys)
-      await imManager.disconnectUserWhatsApp(userId);
-      const config = getUserWhatsAppConfig(userId);
-      if (config && config.enabled !== false) {
-        const connected = await imManager.connectUserWhatsApp(
-          userId,
-          {
-            accountId: config.accountId,
-            phoneNumber: config.phoneNumber,
-            enabled: config.enabled,
-          },
-          onNewChat,
-          {
-            isChatAuthorized: buildIsChatAuthorized(userId),
-            onPairAttempt: buildOnPairAttempt(userId),
-            ignoreMessagesBefore: Date.now(),
-            onCommand: handleCommand,
-            resolveGroupFolder: (chatJid: string) =>
-              resolveEffectiveFolder(chatJid),
-            resolveEffectiveChatJid: buildResolveEffectiveChatJid(),
-            onAgentMessage: buildOnAgentMessage(),
-            onBotAddedToGroup: buildOnNewChat(userId, homeFolder),
-            onBotRemovedFromGroup: buildOnBotRemovedFromGroup(),
-            shouldProcessGroupMessage,
-            isGroupOwnerMessage,
-            onConnectionUpdate: (uid, accountId, state) => {
-              broadcastWhatsAppStatus(uid, accountId, state);
-            },
-          },
-        );
-        logger.info(
-          { userId, connected },
-          'User WhatsApp connection hot-reloaded',
-        );
-        return connected;
-      }
-      logger.info({ userId }, 'User WhatsApp channel disabled via hot-reload');
-      return false;
     }
+    return false;
   };
 
   // Reconnect all of a user's IM channels from persisted config — symmetric
@@ -20459,22 +19971,11 @@ async function main(): Promise<void> {
     // 解封：disconnectAllUserChannels 把 user 标 sealed 后，所有 connectChannel
     // 都被拒。re-enable / restore 用户时必须先解封否则 reload 全部失败。
     imManager.markUserReconnectable(userId);
-    const channels: Array<
-      | 'feishu'
-      | 'telegram'
-      | 'qq'
-      | 'wechat'
-      | 'dingtalk'
-      | 'discord'
-      | 'whatsapp'
-    > = [
+    const channels: Array<'feishu' | 'qq' | 'wechat' | 'dingtalk'> = [
       'feishu',
-      'telegram',
       'qq',
       'wechat',
       'dingtalk',
-      'discord',
-      'whatsapp',
     ];
     await Promise.allSettled(
       channels.map((channel) => reloadUserIMConfig(userId, channel)),
@@ -20527,7 +20028,6 @@ async function main(): Promise<void> {
     },
     hasEarlierPendingMessages: hasEarlierPendingMessage,
     reloadFeishuConnection,
-    reloadTelegramConnection,
     reloadUserIMConfig,
     reconnectUserIMChannels,
     reloadChannelAccount: reloadChannelAccountById,
@@ -20544,24 +20044,13 @@ async function main(): Promise<void> {
         : false;
     },
     isFeishuConnected: () => imManager.isAnyFeishuConnected(),
-    isTelegramConnected: () => imManager.isAnyTelegramConnected(),
     isUserFeishuConnected: (userId: string) =>
       imManager.isFeishuConnected(userId),
-    isUserTelegramConnected: (userId: string) =>
-      imManager.isTelegramConnected(userId),
     isUserQQConnected: (userId: string) => imManager.isQQConnected(userId),
     isUserWeChatConnected: (userId: string) =>
       imManager.isWeChatConnected(userId),
     isUserDingTalkConnected: (userId: string) =>
       imManager.isDingTalkConnected(userId),
-    isUserDiscordConnected: (userId: string) =>
-      imManager.isDiscordConnected(userId),
-    isUserWhatsAppConnected: (userId: string) =>
-      imManager.isWhatsAppConnected(userId),
-    getUserWhatsAppState: (userId: string, accountId?: string) =>
-      imManager.getUserWhatsAppState(userId, accountId),
-    logoutUserWhatsApp: (userId: string, accountId?: string) =>
-      imManager.logoutUserWhatsApp(userId, accountId),
     processAgentConversation,
     getFeishuChatInfo: (userId: string, chatId: string) =>
       imManager.getFeishuChatInfo(userId, chatId),
@@ -21103,7 +20592,7 @@ async function main(): Promise<void> {
       // Fan-out is opt-in. Without an explicit `notify_channels` the notice
       // goes only to the binding; it used to reach every channel type the owner
       // had connected in that workspace, so a task created in Feishu also
-      // notified Telegram.
+      // notified QQ.
       if (options.notifyChannels && options.notifyChannels.length > 0) {
         broadcastToOwnerIMChannels(
           options.ownerId,
@@ -21246,7 +20735,6 @@ async function main(): Promise<void> {
   // --- IM Connection Pool: connect per-user IM channels ---
   // Load global IM config (backward compat: used for admin if no per-user config exists)
   const globalFeishuConfig = getFeishuProviderConfigWithSource();
-  const globalTelegramConfig = getTelegramProviderConfigWithSource();
 
   // Paginate through all active users (listUsers caps at 200 per page)
   let allActiveUsers: typeof listUsers extends (...args: any) => {
@@ -21280,12 +20768,9 @@ async function main(): Promise<void> {
 
       // Per-user IM config takes precedence; fall back to global config for admin
       const userFeishu = getUserFeishuConfig(user.id);
-      const userTelegram = getUserTelegramConfig(user.id);
       const userQQ = getUserQQConfig(user.id);
       const userWeChat = getUserWeChatConfig(user.id);
       const userDingTalk = getUserDingTalkConfig(user.id);
-      const userDiscord = getUserDiscordConfig(user.id);
-      const userWhatsApp = getUserWhatsAppConfig(user.id);
 
       // Determine effective Feishu config: per-user > global (admin only)
       let effectiveFeishu: FeishuConnectConfig | null = null;
@@ -21303,27 +20788,6 @@ async function main(): Promise<void> {
         effectiveFeishu = {
           appId: gc.appId,
           appSecret: gc.appSecret,
-          enabled: gc.enabled,
-        };
-      }
-
-      // Determine effective Telegram config: per-user > global (admin only)
-      let effectiveTelegram: TelegramConnectConfig | null = null;
-      if (userTelegram && userTelegram.botToken) {
-        effectiveTelegram = {
-          botToken: userTelegram.botToken,
-          proxyUrl:
-            userTelegram.proxyUrl || globalTelegramConfig.config.proxyUrl,
-          enabled: userTelegram.enabled,
-        };
-      } else if (
-        user.role === 'admin' &&
-        globalTelegramConfig.source !== 'none'
-      ) {
-        const gc = globalTelegramConfig.config;
-        effectiveTelegram = {
-          botToken: gc.botToken,
-          proxyUrl: gc.proxyUrl,
           enabled: gc.enabled,
         };
       }
@@ -21362,26 +20826,6 @@ async function main(): Promise<void> {
         };
       }
 
-      // Determine effective Discord config: per-user only (no global fallback)
-      let effectiveDiscord: DiscordConnectConfig | null = null;
-      if (userDiscord && userDiscord.botToken) {
-        effectiveDiscord = {
-          botToken: userDiscord.botToken,
-          enabled: userDiscord.enabled,
-          streamingMode: userDiscord.streamingMode,
-        };
-      }
-
-      // Determine effective WhatsApp config: per-user only, skeleton always disabled by default
-      let effectiveWhatsApp: WhatsAppConnectConfig | null = null;
-      if (userWhatsApp && userWhatsApp.enabled) {
-        effectiveWhatsApp = {
-          accountId: userWhatsApp.accountId,
-          phoneNumber: userWhatsApp.phoneNumber,
-          enabled: userWhatsApp.enabled,
-        };
-      }
-
       try {
         if (effectiveFeishu) {
           ensureLegacyDefaultChannelAccount({
@@ -21393,18 +20837,6 @@ async function main(): Promise<void> {
               appId: effectiveFeishu.appId,
               appSecret: effectiveFeishu.appSecret,
               ownerOpenId: userFeishu?.ownerOpenId,
-            },
-          });
-        }
-        if (effectiveTelegram) {
-          ensureLegacyDefaultChannelAccount({
-            ownerUserId: user.id,
-            provider: 'telegram',
-            name: '默认 Telegram',
-            enabled: effectiveTelegram.enabled !== false,
-            secret: {
-              botToken: effectiveTelegram.botToken,
-              proxyUrl: effectiveTelegram.proxyUrl,
             },
           });
         }
@@ -21445,30 +20877,6 @@ async function main(): Promise<void> {
             secret: {
               clientId: effectiveDingTalk.clientId,
               clientSecret: effectiveDingTalk.clientSecret,
-            },
-          });
-        }
-        if (effectiveDiscord) {
-          ensureLegacyDefaultChannelAccount({
-            ownerUserId: user.id,
-            provider: 'discord',
-            name: '默认 Discord',
-            enabled: effectiveDiscord.enabled !== false,
-            secret: {
-              botToken: effectiveDiscord.botToken,
-              streamingMode: effectiveDiscord.streamingMode,
-            },
-          });
-        }
-        if (effectiveWhatsApp) {
-          ensureLegacyDefaultChannelAccount({
-            ownerUserId: user.id,
-            provider: 'whatsapp',
-            name: '默认 WhatsApp',
-            enabled: effectiveWhatsApp.enabled !== false,
-            secret: {
-              accountId: effectiveWhatsApp.accountId,
-              phoneNumber: effectiveWhatsApp.phoneNumber,
             },
           });
         }
@@ -21664,7 +21072,7 @@ async function checkImBindingsHealth(): Promise<void> {
     try {
       const info = await imManager.getChatInfo(jid);
       if (info === undefined) {
-        // Channel doesn't support getChatInfo (e.g. Telegram, QQ) — skip reachability check
+        // Channel doesn't support getChatInfo (e.g. QQ) — skip reachability check
         continue;
       }
       if (info === null) {

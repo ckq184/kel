@@ -35,7 +35,7 @@ afterAll(() => {
 function connectedTelegram(sent: string[]): IMChannel {
   let connected = false;
   return {
-    channelType: 'telegram',
+    channelType: 'qq',
     async connect() {
       connected = true;
       return true;
@@ -67,7 +67,7 @@ test('switching the UI default never reroutes an unscoped legacy JID', async () 
   const legacy = db.createChannelAccount({
     id: 'legacy-bot',
     owner_user_id: 'legacy-user',
-    provider: 'telegram',
+    provider: 'qq',
     name: 'Legacy bot',
     secret_ref: 'channel-account:legacy-bot',
     is_default: true,
@@ -76,11 +76,11 @@ test('switching the UI default never reroutes an unscoped legacy JID', async () 
   const replacement = db.createChannelAccount({
     id: 'new-default-bot',
     owner_user_id: 'legacy-user',
-    provider: 'telegram',
+    provider: 'qq',
     name: 'New default bot',
     secret_ref: 'channel-account:new-default-bot',
   });
-  db.setRegisteredGroup('telegram:historic-chat', {
+  db.setRegisteredGroup('qq:historic-chat', {
     name: 'Historic chat',
     folder: 'legacy-home',
     added_at: '2026-07-14T00:00:00.000Z',
@@ -95,20 +95,20 @@ test('switching the UI default never reroutes an unscoped legacy JID', async () 
   const opts = { onReady() {}, onNewChat() {} };
   await manager.connectChannel(
     'legacy-user',
-    'telegram',
+    'qq',
     connectedTelegram(legacySent),
     opts,
     legacy.id,
   );
   await manager.connectChannel(
     'legacy-user',
-    'telegram',
+    'qq',
     connectedTelegram(replacementSent),
     opts,
     replacement.id,
   );
 
-  await manager.sendMessage('telegram:historic-chat', 'hello');
+  await manager.sendMessage('qq:historic-chat', 'hello');
   expect(legacySent).toEqual(['historic-chat:hello']);
   expect(replacementSent).toEqual([]);
   await manager.disconnectAll();

@@ -10,7 +10,7 @@ export interface PairedChat {
 }
 
 interface UsePairedChatsOptions {
-  /** Base API path, e.g. '/api/config/user-im/telegram/paired-chats' */
+  /** Base API path, e.g. '/api/channel-accounts/:id/paired-chats' */
   endpoint: string;
 }
 

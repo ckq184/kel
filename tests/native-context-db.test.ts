@@ -33,7 +33,7 @@ afterAll(() => {
 
 describe('native context persistence', () => {
   test('registered group round-trips its provider-native context capability', () => {
-    db.setRegisteredGroup('telegram:-100#account:bot', {
+    db.setRegisteredGroup('qq:group:forum#account:bot', {
       name: 'Forum',
       folder: 'forum-folder',
       added_at: new Date().toISOString(),
@@ -43,7 +43,7 @@ describe('native context persistence', () => {
       binding_mode: 'thread_map',
     });
 
-    expect(db.getRegisteredGroup('telegram:-100#account:bot')).toMatchObject({
+    expect(db.getRegisteredGroup('qq:group:forum#account:bot')).toMatchObject({
       native_context_type: 'thread',
       target_main_jid: 'web:workspace',
       binding_mode: 'thread_map',
@@ -68,16 +68,16 @@ describe('native context persistence', () => {
         spawned_from_jid: null,
         last_im_jid:
           id === 'session-bot-a'
-            ? 'telegram:same#account:bot-a#thread:1#root:one'
-            : 'telegram:same#account:bot-b#thread:1#root:two',
+            ? 'feishu:same#account:bot-a#thread:1#root:one'
+            : 'feishu:same#account:bot-b#thread:1#root:two',
       });
     }
 
-    db.deleteImGroupRecord('telegram:same#account:bot-a');
+    db.deleteImGroupRecord('feishu:same#account:bot-a');
 
     expect(db.getAgent('session-bot-a')?.last_im_jid).toBeNull();
     expect(db.getAgent('session-bot-b')?.last_im_jid).toBe(
-      'telegram:same#account:bot-b#thread:1#root:two',
+      'feishu:same#account:bot-b#thread:1#root:two',
     );
   });
 
@@ -96,13 +96,13 @@ describe('native context persistence', () => {
       updated_at: now,
     });
     db.upsertImContextBinding({
-      source_jid: 'telegram:forum-b#account:bot-b',
+      source_jid: 'feishu:forum-b#account:bot-b',
       context_type: 'thread',
       context_id: 'same-context',
       workspace_jid: 'web:shared-workspace',
-      agent_id: 'session-from-telegram',
-      root_message_id: 'telegram-root',
-      title: 'Telegram topic',
+      agent_id: 'session-from-feishu-forum',
+      root_message_id: 'feishu-root-b',
+      title: 'Feishu topic B',
       last_active_at: now,
       created_at: now,
       updated_at: now,
@@ -120,13 +120,13 @@ describe('native context persistence', () => {
     });
     expect(
       db.getImContextBinding(
-        'telegram:forum-b#account:bot-b',
+        'feishu:forum-b#account:bot-b',
         'thread',
         'same-context',
       ),
     ).toMatchObject({
-      agent_id: 'session-from-telegram',
-      root_message_id: 'telegram-root',
+      agent_id: 'session-from-feishu-forum',
+      root_message_id: 'feishu-root-b',
     });
   });
 

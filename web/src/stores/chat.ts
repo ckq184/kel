@@ -3141,7 +3141,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
         // For user messages (non-reply), set agentWaiting=true so subsequent
         // streaming events are accepted.  This handles messages injected from
-        // Feishu/Telegram which don't go through sendAgentMessage().
+        // Feishu which doesn't go through sendAgentMessage().
         const nextAgentWaiting = isAgentReply
           ? {
               ...s.agentWaiting,

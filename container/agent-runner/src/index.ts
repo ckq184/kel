@@ -526,7 +526,7 @@ function enrichContextAudit(
   return audit;
 }
 
-// 启动期扫描 prompts/channels/*.md，文件名（去 .md 后缀）= channel key（feishu / telegram / qq / dingtalk / ...）
+// 启动期扫描 prompts/channels/*.md，文件名（去 .md 后缀）= channel key（feishu / qq / dingtalk / ...）
 // 新增渠道时只需在 channels/ 下加一个 .md 文件，无需改代码。
 const CHANNEL_GUIDELINES: Record<string, string> = (() => {
   const channelsDir = path.join(PROMPTS_DIR, 'channels');
@@ -4050,7 +4050,7 @@ async function main(): Promise<void> {
   //
   // chatJid is initialized to the IM source of the message that triggered
   // this run (when known) — falls back to the container's startup chatJid.
-  // This lets per-channel MCP tools (discord_*, etc.) see the actual incoming
+  // This lets per-channel MCP tools see the actual incoming
   // chat even when the home container is shared across channels.
   const mcpToolsConfig: McpContext = {
     get chatJid() {

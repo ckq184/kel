@@ -299,7 +299,7 @@ describe('PATCH /:jid execution mode runtime boundary', () => {
 describe('DELETE /:jid blocks channel_mounts-bound workspaces', () => {
   const JID = 'web:mounted-delete-block';
   const FOLDER = 'mounted-delete-block';
-  const IM_JID = 'telegram:mounted-delete-block';
+  const IM_JID = 'qq:c2c:mounted-delete-block';
   const HOME_JID = 'web:mounted-delete-home';
   const HOME_FOLDER = 'mounted-delete-home';
 
@@ -320,7 +320,7 @@ describe('DELETE /:jid blocks channel_mounts-bound workspaces', () => {
     } as any);
     db.upsertChannelMount({
       channel_jid: IM_JID,
-      channel_type: 'telegram',
+      channel_type: 'qq',
       workspace_jid: JID,
       session_id: null,
       routing_mode: 'single_session',
@@ -375,11 +375,11 @@ describe('DELETE /:jid blocks channel_mounts-bound workspaces', () => {
   });
 
   test('confirmed delete reroutes channels and account defaults atomically', async () => {
-    const accountId = 'delete-workspace-telegram-account';
+    const accountId = 'delete-workspace-qq-account';
     db.createChannelAccount({
       id: accountId,
       owner_user_id: OWNER_ID,
-      provider: 'telegram',
+      provider: 'qq',
       name: 'Delete workspace test Bot',
       secret_ref: 'test-secret',
       default_workspace_jid: JID,

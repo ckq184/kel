@@ -69,11 +69,6 @@ async function create(provider: string, credentials: Record<string, string>) {
 describe('provider-specific channel credential contract', () => {
   test.each([
     ['feishu', { appId: 'cli-a', appSecret: 'secret-a' }, 'credentials'],
-    [
-      'telegram',
-      { botToken: '123456:token', proxyUrl: 'http://proxy' },
-      'bot_token',
-    ],
     ['qq', { appId: 'qq-a', appSecret: 'secret-q' }, 'credentials'],
     ['wechat', { bypassProxy: 'true' }, 'qr_session'],
     [
@@ -81,12 +76,6 @@ describe('provider-specific channel credential contract', () => {
       { clientId: 'ding-a', clientSecret: 'secret-d', streamingMode: 'card' },
       'credentials',
     ],
-    [
-      'discord',
-      { botToken: 'discord-token', streamingMode: 'edit' },
-      'bot_token',
-    ],
-    ['whatsapp', { phoneNumber: '+15551234567' }, 'qr_session'],
   ])(
     'accepts the typed %s shape without serializing secrets',
     async (provider, credentials, authMode) => {
@@ -109,17 +98,13 @@ describe('provider-specific channel credential contract', () => {
       const fetched = await routes.request(`/${body.account.id}`);
       const fetchedBody = await fetched.json();
       expect(JSON.stringify(fetchedBody)).not.toContain('secret-');
-      expect(JSON.stringify(fetchedBody)).not.toContain('123456:token');
-      expect(JSON.stringify(fetchedBody)).not.toContain('discord-token');
     },
   );
 
   test.each([
     ['feishu', { appId: 'a', appSecret: 'b', botToken: 'must-not-pass' }],
-    ['telegram', { botToken: 'a', appSecret: 'must-not-pass' }],
     ['qq', { appId: 'a', appSecret: 'b', proxyUrl: 'must-not-pass' }],
     ['wechat', { botToken: 'QR-output-is-not-user-input' }],
-    ['whatsapp', { accountId: 'auth-dir-must-use-immutable-db-id' }],
   ])(
     'rejects unknown %s fields instead of silently persisting them',
     async (provider, credentials) => {
@@ -131,10 +116,8 @@ describe('provider-specific channel credential contract', () => {
 
   test.each([
     ['feishu', { appId: 'missing-secret' }],
-    ['telegram', {}],
     ['qq', { appSecret: 'missing-id' }],
     ['dingtalk', { clientId: 'missing-secret' }],
-    ['discord', {}],
   ])(
     'rejects missing required %s credentials',
     async (provider, credentials) => {
@@ -149,7 +132,6 @@ describe('provider-specific channel credential contract', () => {
       'dingtalk',
       { clientId: 'a', clientSecret: 'b', streamingMode: 'free-text' },
     ],
-    ['discord', { botToken: 'a', streamingMode: 'free-text' }],
     ['wechat', { bypassProxy: 'sometimes' }],
   ])(
     'rejects invalid enum-like option for %s',
@@ -162,14 +144,7 @@ describe('provider-specific channel credential contract', () => {
 
   test('QR providers are draft accounts until protocol authorization finishes', async () => {
     const wechat = await create('wechat', {});
-    const whatsapp = await create('whatsapp', {});
     expect(wechat.body.account).toMatchObject({
-      auth_mode: 'qr_session',
-      auth_status: 'draft',
-      transport_status: 'disconnected',
-      has_credentials: false,
-    });
-    expect(whatsapp.body.account).toMatchObject({
       auth_mode: 'qr_session',
       auth_status: 'draft',
       transport_status: 'disconnected',

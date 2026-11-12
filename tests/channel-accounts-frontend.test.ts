@@ -20,7 +20,6 @@ import {
   buildChannelAccountPayload,
   CHANNEL_PROVIDER_OPTIONS,
   channelAccountKey,
-  mergeWhatsAppOnboardingState,
   providerDefinition,
   supportsChannelConnectionTest,
   validateChannelAccountForm,
@@ -86,12 +85,12 @@ describe('channel account frontend behavior', () => {
 
   test('editing metadata preserves credentials unless replacement is explicit', () => {
     const base = {
-      provider: 'telegram' as const,
+      provider: 'qq' as const,
       name: ' 通知 Bot ',
       enabled: true,
       isDefault: false,
       defaultWorkspaceJid: 'web:workspace',
-      credentials: { botToken: ' must-not-send ' },
+      credentials: { appId: ' must-not-send ' },
       replaceCredentials: false,
     };
 
@@ -103,34 +102,28 @@ describe('channel account frontend behavior', () => {
     });
     expect(
       buildChannelAccountPayload({ ...base, replaceCredentials: true }, 'edit'),
-    ).toMatchObject({ credentials: { botToken: 'must-not-send' } });
+    ).toMatchObject({ credentials: { appId: 'must-not-send' } });
   });
 
   test('exposes connection tests when a provider has a non-destructive probe', () => {
     expect(supportsChannelConnectionTest('feishu')).toBe(true);
-    expect(supportsChannelConnectionTest('telegram')).toBe(true);
     expect(supportsChannelConnectionTest('qq')).toBe(true);
     expect(supportsChannelConnectionTest('wechat')).toBe(true);
     expect(supportsChannelConnectionTest('dingtalk')).toBe(true);
-    expect(supportsChannelConnectionTest('discord')).toBe(true);
-    expect(supportsChannelConnectionTest('whatsapp')).toBe(false);
   });
 
-  test('models WeChat and WhatsApp as QR sessions without editable protocol output', () => {
+  test('models WeChat as a QR session without editable protocol output', () => {
     const wechat = providerDefinition('wechat');
-    const whatsapp = providerDefinition('whatsapp');
 
     expect(wechat.authMode).toBe('qr_session');
     expect(wechat.credentials).toEqual([]);
-    expect(whatsapp.authMode).toBe('qr_session');
-    expect(whatsapp.credentials).toEqual([]);
-    expect(JSON.stringify([wechat, whatsapp])).not.toMatch(
+    expect(JSON.stringify(wechat)).not.toMatch(
       /botToken|ilinkBotId|baseUrl|accountId|phoneNumber/,
     );
   });
 
   test('gives every channel an actionable protocol-specific setup guide', () => {
-    expect(CHANNEL_PROVIDER_OPTIONS).toHaveLength(7);
+    expect(CHANNEL_PROVIDER_OPTIONS).toHaveLength(4);
     for (const provider of CHANNEL_PROVIDER_OPTIONS) {
       expect(provider.setupGuide.title.length).toBeGreaterThan(0);
       expect(provider.setupGuide.steps.length).toBeGreaterThanOrEqual(3);
@@ -140,20 +133,13 @@ describe('channel account frontend behavior', () => {
     expect(providerDefinition('feishu').setupGuide.action?.url).toBe(
       'https://open.feishu.cn/app',
     );
-    expect(providerDefinition('telegram').setupGuide.action?.url).toBe(
-      'https://t.me/BotFather',
-    );
     expect(providerDefinition('qq').setupGuide.action?.url).toBe(
       'https://q.qq.com/qqbot/openclaw/index.html',
     );
     expect(providerDefinition('dingtalk').setupGuide.action?.url).toBe(
       'https://open-dev.dingtalk.com/fe/app',
     );
-    expect(providerDefinition('discord').setupGuide.action?.url).toBe(
-      'https://discord.com/developers/applications',
-    );
     expect(providerDefinition('wechat').setupGuide.action).toBeUndefined();
-    expect(providerDefinition('whatsapp').setupGuide.action).toBeUndefined();
   });
 
   test('explains credential meaning instead of relying on ambiguous field names', () => {
@@ -166,8 +152,8 @@ describe('channel account frontend behavior', () => {
     expect(providerDefinition('qq').credentials[0].help).toContain(
       '不是 QQ 号',
     );
-    expect(providerDefinition('discord').credentials[0].help).toContain(
-      '不是 Client Secret',
+    expect(providerDefinition('dingtalk').credentials[1].help).toContain(
+      '与 Client ID 属于同一个企业内部应用',
     );
   });
 
@@ -178,52 +164,6 @@ describe('channel account frontend behavior', () => {
       'appSecret',
     ]);
     expect(JSON.stringify(feishu)).not.toContain('ownerOpenId');
-  });
-
-  test('downgrades every WhatsApp socket state without retaining false online or stale QR', () => {
-    const connected = {
-      auth_mode: 'qr_session' as const,
-      auth_status: 'authorized' as const,
-      transport_status: 'connected' as const,
-      status: 'connected' as const,
-      qrDataUrl: 'data:image/png;base64,stale',
-    };
-
-    expect(
-      mergeWhatsAppOnboardingState(connected, { status: 'disconnected' }),
-    ).toMatchObject({
-      auth_status: 'authorized',
-      transport_status: 'disconnected',
-      qrDataUrl: undefined,
-    });
-    expect(
-      mergeWhatsAppOnboardingState(connected, { status: 'logged_out' }),
-    ).toMatchObject({
-      auth_status: 'revoked',
-      transport_status: 'disconnected',
-      qrDataUrl: undefined,
-    });
-    expect(
-      mergeWhatsAppOnboardingState(connected, {
-        status: 'error',
-        error: 'socket closed',
-      }),
-    ).toMatchObject({
-      auth_status: 'authorized',
-      transport_status: 'error',
-      error: 'socket closed',
-      qrDataUrl: undefined,
-    });
-    expect(
-      mergeWhatsAppOnboardingState(connected, {
-        status: 'qr',
-        qrDataUrl: 'data:image/png;base64,new',
-      }),
-    ).toMatchObject({
-      auth_status: 'awaiting_scan',
-      transport_status: 'disconnected',
-      qrDataUrl: 'data:image/png;base64,new',
-    });
   });
 
   test('allows creating a QR draft without credentials and retains protocol options', () => {
@@ -250,7 +190,7 @@ describe('channel account frontend behavior', () => {
 
   test('calls account-scoped QR onboarding endpoints and merges returned state', async () => {
     const next = account({
-      provider: 'whatsapp',
+      provider: 'wechat',
       auth_mode: 'qr_session',
       auth_status: 'awaiting_scan',
       transport_status: 'disconnected',

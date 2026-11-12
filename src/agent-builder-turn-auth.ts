@@ -1,5 +1,3 @@
-import { jidNormalizedUser } from 'baileys';
-
 import {
   channelConversationJid,
   parseChannelAddress,
@@ -63,10 +61,6 @@ function isCanonicalImOwnerSender(
   const senderOwnerImId = ownerImIdFromPersistedSender(sourceJid, sender);
   if (!senderOwnerImId) return false;
 
-  if (address.provider === 'whatsapp') {
-    const canonicalOwner = jidNormalizedUser(ownerImId);
-    return canonicalOwner === senderOwnerImId;
-  }
   return ownerImId === senderOwnerImId;
 }
 
@@ -109,12 +103,6 @@ export function ownerImIdFromDirectConversationJid(
   if (!address) return null;
   const id = address.externalChatId;
   switch (address.provider) {
-    case 'telegram': {
-      const value = Number(id);
-      return Number.isFinite(value) && value > 0 ? id : null;
-    }
-    case 'discord':
-      return /^dm:[1-9]\d*$/.test(id) ? id.slice('dm:'.length) : null;
     case 'dingtalk':
       return id.startsWith('c2c:') && id.length > 'c2c:'.length
         ? id.slice('c2c:'.length)
@@ -123,12 +111,6 @@ export function ownerImIdFromDirectConversationJid(
       return id || null;
     case 'qq':
       return id.startsWith('c2c:') && id.length > 'c2c:'.length ? id : null;
-    case 'whatsapp': {
-      const canonical = jidNormalizedUser(id);
-      return /^[^@]+@(s\.whatsapp\.net|lid)$/.test(canonical)
-        ? canonical
-        : null;
-    }
     default:
       return null;
   }
@@ -147,14 +129,6 @@ export function ownerImIdFromPersistedSender(
   switch (address.provider) {
     case 'feishu':
       return sender;
-    case 'telegram': {
-      const match = sender.match(/^tg:([1-9]\d*)$/);
-      return match?.[1] ?? null;
-    }
-    case 'discord': {
-      const match = sender.match(/^discord:([1-9]\d*)$/);
-      return match?.[1] ?? null;
-    }
     case 'dingtalk': {
       const subject = sender.startsWith('dingtalk:')
         ? sender.slice('dingtalk:'.length)
@@ -177,15 +151,6 @@ export function ownerImIdFromPersistedSender(
         ? sender.slice('qq:'.length)
         : '';
       return namespace && subject ? `${namespace}:${subject}` : null;
-    }
-    case 'whatsapp': {
-      if (!sender.startsWith('whatsapp:')) return null;
-      const canonicalSender = jidNormalizedUser(
-        sender.slice('whatsapp:'.length),
-      );
-      return /^[^@]+@(s\.whatsapp\.net|lid)$/.test(canonicalSender)
-        ? canonicalSender
-        : null;
     }
     default:
       return null;
@@ -265,11 +230,7 @@ export function isOwnerProfileOwnerInput(
   if (source?.created_by !== ownerUserId) return false;
   const senderImId = ownerImIdFromPersistedSender(sourceJid, input.sender);
   if (!senderImId) return false;
-  return resolveHomeOwnerImIds(address.provider).some((ownerImId) =>
-    address.provider === 'whatsapp'
-      ? jidNormalizedUser(ownerImId) === senderImId
-      : ownerImId === senderImId,
-  );
+  return resolveHomeOwnerImIds(address.provider).includes(senderImId);
 }
 
 /**

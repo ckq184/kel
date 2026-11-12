@@ -98,7 +98,7 @@ export function parseChannelPairingCode(text: string): string | null {
  * pipeline. A pairing command is consumed here and never reaches the Agent.
  *
  * Channels without an authorization callback retain their legacy open behavior;
- * account-backed Discord/WhatsApp connectors always provide one.
+ * account-backed connectors always provide one.
  */
 export async function evaluateChannelAdmission(
   input: ChannelAdmissionInput,

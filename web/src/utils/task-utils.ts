@@ -10,12 +10,9 @@ export const INTERVAL_UNITS = [
 
 export const CHANNEL_OPTIONS = [
   { key: 'feishu', label: '飞书' },
-  { key: 'telegram', label: 'Telegram' },
   { key: 'qq', label: 'QQ' },
   { key: 'wechat', label: '微信' },
   { key: 'dingtalk', label: '钉钉' },
-  { key: 'discord', label: 'Discord' },
-  { key: 'whatsapp', label: 'WhatsApp' },
 ] as const;
 
 /** Format interval milliseconds to human-readable string (e.g. "5 分钟"). */

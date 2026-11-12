@@ -103,7 +103,7 @@ let db: InstanceType<typeof Database>;
  * restating the number. Hardcoding it meant every schema bump edited a dozen
  * unrelated test files, which is churn that hides real assertion changes.
  */
-export const CURRENT_SCHEMA_VERSION = 74;
+export const CURRENT_SCHEMA_VERSION = 75;
 
 export function isDatabaseInitialized(): boolean {
   return Boolean(db?.open);
@@ -2589,6 +2589,211 @@ export function initDatabase(): void {
   // unique indexes are created idempotently by the base schema block above
   // (CREATE TABLE/INDEX IF NOT EXISTS), so this bump carries no data migration
   // and needs no versioned step; existing usage rows are never repriced.
+
+  // v74 -> v75 (task AJ): retire the Telegram/Discord/WhatsApp IM channels.
+  // User-approved destructive trim (2026-11-12): account rows plus every row
+  // owned by the retired channel JID prefixes (chats/messages, mounts,
+  // bindings, pinned groups, builder drafts, tasks + their runs/logs) are
+  // deleted — the pre-migration backup is the rollback path. Surviving rows
+  // only lose retired references: agent IM pointers are NULLed, task delivery
+  // routes fall back to chat_jid, and notify_channels lists (task column +
+  // run definition snapshots) drop the retired values so the narrowed zod
+  // enum keeps validating stored rows. Workspaces are web:*-keyed and stay.
+  const channelTrimSchemaVersion = Number(
+    getRouterStateInternal('schema_version') ?? '0',
+  );
+  if (channelTrimSchemaVersion < 75) {
+    const retiredPrefixes = ['telegram:', 'discord:', 'whatsapp:'];
+    const retiredLike = retiredPrefixes.map((p) => `${p}%`);
+    const retiredSet = new Set(['telegram', 'discord', 'whatsapp']);
+    const like3 = (col: string) =>
+      retiredLike.map((p) => `${col} LIKE ?`).join(' OR ');
+    const isRetiredJid = (value: unknown): value is string =>
+      typeof value === 'string' &&
+      retiredPrefixes.some((prefix) => value.startsWith(prefix));
+
+    let trimmedTaskNotify = 0;
+    let trimmedTaskRoutes = 0;
+    let trimmedSnapshots = 0;
+
+    const trimRetiredChannels = db.transaction(() => {
+      const deletedCounts: Record<string, number> = {};
+      const deleteBy = (table: string, sql: string, ...params: unknown[]) => {
+        const info = db.prepare(sql).run(...params);
+        if (info.changes > 0) deletedCounts[table] = info.changes;
+      };
+
+      // Children first: FK enforcement is ON and none of these FKs cascade.
+      deleteBy(
+        'messages',
+        `DELETE FROM messages WHERE ${like3('chat_jid')}`,
+        ...retiredLike,
+      );
+      deleteBy(
+        'chats',
+        `DELETE FROM chats WHERE ${like3('jid')}`,
+        ...retiredLike,
+      );
+      const retiredTaskIds = `SELECT id FROM scheduled_tasks WHERE ${like3(
+        'chat_jid',
+      )}`;
+      deleteBy(
+        'task_run_logs',
+        `DELETE FROM task_run_logs WHERE task_id IN (${retiredTaskIds})`,
+        ...retiredLike,
+      );
+      deleteBy(
+        'task_runs',
+        `DELETE FROM task_runs WHERE task_id IN (${retiredTaskIds})`,
+        ...retiredLike,
+      );
+      deleteBy(
+        'scheduled_tasks',
+        `DELETE FROM scheduled_tasks WHERE ${like3('chat_jid')}`,
+        ...retiredLike,
+      );
+      deleteBy(
+        'registered_groups',
+        `DELETE FROM registered_groups WHERE ${like3('jid')}`,
+        ...retiredLike,
+      );
+      deleteBy(
+        'im_context_bindings',
+        `DELETE FROM im_context_bindings WHERE ${like3('source_jid')}`,
+        ...retiredLike,
+      );
+      deleteBy(
+        'channel_mounts',
+        `DELETE FROM channel_mounts WHERE channel_type IN ('telegram', 'discord', 'whatsapp')`,
+      );
+      deleteBy(
+        'agent_channel_mounts',
+        `DELETE FROM agent_channel_mounts WHERE channel_type IN ('telegram', 'discord', 'whatsapp')`,
+      );
+      deleteBy(
+        'user_pinned_groups',
+        `DELETE FROM user_pinned_groups WHERE ${like3('jid')}`,
+        ...retiredLike,
+      );
+      deleteBy(
+        'agent_builder_drafts',
+        `DELETE FROM agent_builder_drafts WHERE ${like3('source_chat_jid')}`,
+        ...retiredLike,
+      );
+      // Agents live on workspace folders, not channels: drop the ones whose
+      // conversation JID was a retired channel, keep the rest and only NULL
+      // their retired IM pointers.
+      deleteBy(
+        'agents',
+        `DELETE FROM agents WHERE ${like3('chat_jid')}`,
+        ...retiredLike,
+      );
+      trimmedTaskRoutes += db
+        .prepare(
+          `UPDATE agents SET last_im_jid = NULL WHERE ${like3('last_im_jid')}`,
+        )
+        .run(...retiredLike).changes;
+      trimmedTaskRoutes += db
+        .prepare(
+          `UPDATE agents SET spawned_from_jid = NULL WHERE ${like3('spawned_from_jid')}`,
+        )
+        .run(...retiredLike).changes;
+      deleteBy(
+        'channel_accounts',
+        `DELETE FROM channel_accounts WHERE provider IN ('telegram', 'discord', 'whatsapp')`,
+      );
+
+      // Delivery routes pointing at retired chats fall back to chat_jid
+      // (same NULL-fallback mapTaskRunRow already applies on read).
+      trimmedTaskRoutes += db
+        .prepare(
+          `UPDATE scheduled_tasks SET delivery_route_jid = NULL WHERE ${like3(
+            'delivery_route_jid',
+          )}`,
+        )
+        .run(...retiredLike).changes;
+
+      // notify_channels trim on surviving tasks (stored as a JSON array).
+      const updateTaskNotify = db.prepare(
+        'UPDATE scheduled_tasks SET notify_channels = ? WHERE id = ?',
+      );
+      for (const row of db
+        .prepare(
+          'SELECT id, notify_channels FROM scheduled_tasks WHERE notify_channels IS NOT NULL',
+        )
+        .all() as Array<{ id: string; notify_channels: string }>) {
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(row.notify_channels);
+        } catch {
+          continue;
+        }
+        if (!Array.isArray(parsed)) continue;
+        const kept = parsed.filter(
+          (channel) => typeof channel === 'string' && !retiredSet.has(channel),
+        );
+        if (kept.length === parsed.length) continue;
+        updateTaskNotify.run(
+          kept.length > 0 ? JSON.stringify(kept) : null,
+          row.id,
+        );
+        trimmedTaskNotify += 1;
+      }
+
+      // Definition snapshots of surviving runs: drop retired notify_channels
+      // values and NULL retired delivery routes so retries/notifications
+      // never resurrect a deleted provider.
+      const updateSnapshot = db.prepare(
+        'UPDATE task_runs SET definition_snapshot = ? WHERE id = ?',
+      );
+      for (const row of db
+        .prepare(
+          'SELECT id, definition_snapshot FROM task_runs WHERE json_valid(definition_snapshot)',
+        )
+        .all() as Array<{ id: string; definition_snapshot: string }>) {
+        let snapshot: Record<string, unknown>;
+        try {
+          snapshot = JSON.parse(row.definition_snapshot) as Record<
+            string,
+            unknown
+          >;
+        } catch {
+          continue;
+        }
+        let changed = false;
+        if (Array.isArray(snapshot.notify_channels)) {
+          const kept = snapshot.notify_channels.filter(
+            (channel) =>
+              typeof channel === 'string' && !retiredSet.has(channel),
+          );
+          if (kept.length !== snapshot.notify_channels.length) {
+            snapshot.notify_channels = kept.length > 0 ? kept : null;
+            changed = true;
+          }
+        }
+        if (isRetiredJid(snapshot.delivery_route_jid)) {
+          snapshot.delivery_route_jid = null;
+          changed = true;
+        }
+        if (!changed) continue;
+        updateSnapshot.run(JSON.stringify(snapshot), row.id);
+        trimmedSnapshots += 1;
+      }
+
+      if (Object.keys(deletedCounts).length > 0 || trimmedTaskNotify > 0) {
+        logger.info(
+          {
+            deletedCounts,
+            trimmedTaskNotify,
+            trimmedTaskRoutes,
+            trimmedSnapshots,
+          },
+          'v75 channel trim: removed retired Telegram/Discord/WhatsApp rows',
+        );
+      }
+    });
+    trimRetiredChannels();
+  }
 
   db.prepare(
     'INSERT OR REPLACE INTO router_state (key, value) VALUES (?, ?)',

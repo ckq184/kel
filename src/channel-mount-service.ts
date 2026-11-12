@@ -118,7 +118,7 @@ export function isImChannelJid(jid: string): boolean {
 
 /**
  * A native-context container owns many platform conversations (for example a
- * Feishu topic group or Telegram Forum). It must route through thread_map;
+ * Feishu topic group). It must route through thread_map;
  * ordinary chats can route either to a workspace main conversation or one
  * explicitly selected session.
  */
@@ -581,7 +581,7 @@ export function hasWorkspaceMountConflict(
 /**
  * Whether another native-context source still maps threads into a workspace.
  *
- * A workspace may be shared by many Feishu topic groups and Telegram forums.
+ * A workspace may be shared by many Feishu topic groups.
  * Callers use this after moving/removing one source so the workspace only
  * returns to horizontal/manual navigation when the final thread-map source
  * leaves. Both canonical `web:{uuid}` and historical `web:{folder}` targets

@@ -107,7 +107,7 @@ beforeEach(() => {
     /* ignore */
   }
   try {
-    db.deleteRegisteredGroup('telegram:bound-session');
+    db.deleteRegisteredGroup('qq:c2c:bound-session');
   } catch {
     /* ignore */
   }
@@ -275,8 +275,8 @@ describe('formal sessions API', () => {
 
     const created = await postSession({ name: 'Bound session' });
     const sessionId = created.body.session.id as string;
-    db.setRegisteredGroup('telegram:bound-session', {
-      name: 'Bound Telegram',
+    db.setRegisteredGroup('qq:c2c:bound-session', {
+      name: 'Bound QQ direct chat',
       folder: 'owner-home',
       added_at: new Date().toISOString(),
       created_by: OWNER_ID,
@@ -286,7 +286,7 @@ describe('formal sessions API', () => {
     const { status, body } = await deleteSessionRoute(sessionId);
     expect(status).toBe(409);
     expect(body.linked_im_groups).toEqual([
-      { jid: 'telegram:bound-session', name: 'Bound Telegram' },
+      { jid: 'qq:c2c:bound-session', name: 'Bound QQ direct chat' },
     ]);
   });
 
@@ -356,19 +356,19 @@ describe('agents IM-binding ACL (owner-only, mirrors CRUD)', () => {
     const first = db.createChannelAccount({
       id: `account-a-${suffix}`,
       owner_user_id: OWNER_ID,
-      provider: 'telegram',
+      provider: 'qq',
       name: 'Support bot',
       secret_ref: `channel-account:account-a-${suffix}`,
     });
     const second = db.createChannelAccount({
       id: `account-b-${suffix}`,
       owner_user_id: OWNER_ID,
-      provider: 'telegram',
+      provider: 'qq',
       name: 'Review bot',
       secret_ref: `channel-account:account-b-${suffix}`,
     });
     for (const account of [first, second]) {
-      db.setRegisteredGroup(`telegram:-1004242#account:${account.id}`, {
+      db.setRegisteredGroup(`qq:group:shared-chat#account:${account.id}`, {
         name: 'Shared external chat',
         folder: GROUP_FOLDER,
         added_at: new Date().toISOString(),
@@ -380,7 +380,7 @@ describe('agents IM-binding ACL (owner-only, mirrors CRUD)', () => {
     const { status, body } = await req('/im-groups', 'GET');
     expect(status).toBe(200);
     const matching = body.imGroups.filter((item: any) =>
-      item.jid.startsWith('telegram:-1004242#account:'),
+      item.jid.startsWith('qq:group:shared-chat#account:'),
     );
     expect(matching).toEqual(
       expect.arrayContaining([
@@ -454,20 +454,20 @@ describe('agents IM-binding ACL (owner-only, mirrors CRUD)', () => {
     });
     const rows = [
       {
-        jid: `telegram:current-${suffix}`,
+        jid: `qq:c2c:current-${suffix}`,
         added_at: '2025-01-01T00:00:00.000Z',
         target_main_jid: GROUP_JID,
       },
       {
-        jid: `telegram:recent-${suffix}`,
+        jid: `qq:c2c:recent-${suffix}`,
         added_at: new Date().toISOString(),
       },
       {
-        jid: `telegram:unbound-${suffix}`,
+        jid: `qq:c2c:unbound-${suffix}`,
         added_at: '2025-02-01T00:00:00.000Z',
       },
       {
-        jid: `telegram:elsewhere-${suffix}`,
+        jid: `qq:c2c:elsewhere-${suffix}`,
         added_at: '2025-03-01T00:00:00.000Z',
         target_main_jid: otherWorkspace,
       },
@@ -964,21 +964,22 @@ describe('agents IM-binding ACL (owner-only, mirrors CRUD)', () => {
     const sessionId = created.body.session.id as string;
     const suffix = Date.now().toString(36);
     const account = db.createChannelAccount({
-      id: `telegram-forum-${suffix}`,
+      id: `feishu-forum-${suffix}`,
       owner_user_id: OWNER_ID,
-      provider: 'telegram',
+      provider: 'feishu',
       name: 'Forum bot',
-      secret_ref: `channel-account:telegram-forum-${suffix}`,
+      secret_ref: `channel-account:feishu-forum-${suffix}`,
       default_workspace_jid: GROUP_JID,
     });
-    const imJid = `telegram:-100${Date.now()}#account:${account.id}`;
+    const imJid = `feishu:forum-${Date.now()}#account:${account.id}`;
     db.setRegisteredGroup(imJid, {
-      name: 'Telegram Forum',
+      name: 'Feishu topic group',
       folder: GROUP_FOLDER,
       added_at: new Date().toISOString(),
       created_by: OWNER_ID,
       channel_account_id: account.id,
       native_context_type: 'thread',
+      feishu_chat_mode: 'topic',
     });
 
     const { status, body } = await req(
@@ -1006,21 +1007,23 @@ describe('agents IM-binding ACL (owner-only, mirrors CRUD)', () => {
     const sessionId = created.body.session.id as string;
     const suffix = Date.now().toString(36);
     const account = db.createChannelAccount({
-      id: `telegram-race-${suffix}`,
+      id: `feishu-race-${suffix}`,
       owner_user_id: OWNER_ID,
-      provider: 'telegram',
+      provider: 'feishu',
       name: `Forum race bot ${suffix}`,
-      secret_ref: `channel-account:telegram-race-${suffix}`,
+      secret_ref: `channel-account:feishu-race-${suffix}`,
       default_workspace_jid: GROUP_JID,
     });
-    const imJid = `telegram:-101${Date.now()}#account:${account.id}`;
+    const imJid = `feishu:race-${Date.now()}#account:${account.id}`;
     db.setRegisteredGroup(imJid, {
-      name: 'Telegram Forum (about to upgrade)',
+      name: 'Feishu group (about to upgrade)',
       folder: GROUP_FOLDER,
       added_at: new Date().toISOString(),
       created_by: OWNER_ID,
       channel_account_id: account.id,
       native_context_type: 'none',
+      feishu_chat_mode: 'group',
+      activation_mode: 'auto',
     });
 
     webContext.setWebDeps({
@@ -1029,6 +1032,7 @@ describe('agents IM-binding ACL (owner-only, mirrors CRUD)', () => {
         db.setRegisteredGroup(imJid, {
           ...current,
           native_context_type: 'thread',
+          feishu_chat_mode: 'topic',
         });
         return null;
       },
@@ -1106,21 +1110,23 @@ describe('agents IM-binding ACL (owner-only, mirrors CRUD)', () => {
     asUser(OWNER_ID);
     const suffix = Date.now().toString(36);
     const account = db.createChannelAccount({
-      id: `telegram-race-ws-${suffix}`,
+      id: `feishu-race-ws-${suffix}`,
       owner_user_id: OWNER_ID,
-      provider: 'telegram',
+      provider: 'feishu',
       name: `Forum race workspace bot ${suffix}`,
-      secret_ref: `channel-account:telegram-race-ws-${suffix}`,
+      secret_ref: `channel-account:feishu-race-ws-${suffix}`,
       default_workspace_jid: GROUP_JID,
     });
-    const imJid = `telegram:-102${Date.now()}#account:${account.id}`;
+    const imJid = `feishu:race-ws-${Date.now()}#account:${account.id}`;
     db.setRegisteredGroup(imJid, {
-      name: 'Telegram Forum (about to upgrade, workspace bind)',
+      name: 'Feishu group (about to upgrade, workspace bind)',
       folder: GROUP_FOLDER,
       added_at: new Date().toISOString(),
       created_by: OWNER_ID,
       channel_account_id: account.id,
       native_context_type: 'none',
+      feishu_chat_mode: 'group',
+      activation_mode: 'auto',
     });
 
     webContext.setWebDeps({
@@ -1129,6 +1135,7 @@ describe('agents IM-binding ACL (owner-only, mirrors CRUD)', () => {
         db.setRegisteredGroup(imJid, {
           ...current,
           native_context_type: 'thread',
+          feishu_chat_mode: 'topic',
         });
         return null;
       },
@@ -1157,16 +1164,16 @@ describe('agents IM-binding ACL (owner-only, mirrors CRUD)', () => {
     const sessionId = created.body.session.id as string;
     const suffix = Date.now().toString(36);
     const account = db.createChannelAccount({
-      id: `whatsapp-default-${suffix}`,
+      id: `wechat-default-${suffix}`,
       owner_user_id: OWNER_ID,
-      provider: 'whatsapp',
-      name: 'WhatsApp account',
-      secret_ref: `channel-account:whatsapp-default-${suffix}`,
+      provider: 'wechat',
+      name: 'WeChat account',
+      secret_ref: `channel-account:wechat-default-${suffix}`,
       default_workspace_jid: GROUP_JID,
     });
-    const imJid = `whatsapp:user-${suffix}@s.whatsapp.net#account:${account.id}`;
+    const imJid = `wechat:user-${suffix}#account:${account.id}`;
     db.setRegisteredGroup(imJid, {
-      name: 'WhatsApp chat',
+      name: 'WeChat chat',
       folder: GROUP_FOLDER,
       added_at: new Date().toISOString(),
       created_by: OWNER_ID,
@@ -1204,16 +1211,16 @@ describe('agents IM-binding ACL (owner-only, mirrors CRUD)', () => {
     const account = db.createChannelAccount({
       id: `multi-route-${suffix}`,
       owner_user_id: OWNER_ID,
-      provider: 'whatsapp',
+      provider: 'wechat',
       name: 'Multi-route account',
       secret_ref: `channel-account:multi-route-${suffix}`,
       default_workspace_jid: GROUP_JID,
     });
-    const firstJid = `whatsapp:first-${suffix}@s.whatsapp.net#account:${account.id}`;
-    const secondJid = `whatsapp:second-${suffix}@s.whatsapp.net#account:${account.id}`;
+    const firstJid = `wechat:first-${suffix}#account:${account.id}`;
+    const secondJid = `wechat:second-${suffix}#account:${account.id}`;
     for (const [index, imJid] of [firstJid, secondJid].entries()) {
       db.setRegisteredGroup(imJid, {
-        name: `WhatsApp chat ${index + 1}`,
+        name: `WeChat chat ${index + 1}`,
         folder: GROUP_FOLDER,
         added_at: new Date(Date.now() + index * 1000).toISOString(),
         created_by: OWNER_ID,
@@ -1236,8 +1243,8 @@ describe('agents IM-binding ACL (owner-only, mirrors CRUD)', () => {
     asUser(OWNER_ID);
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const workspaceJid = `web:native-upgrade-${suffix}`;
-    const firstJid = `telegram:forum-upgrade-a-${suffix}`;
-    const secondJid = `telegram:forum-upgrade-b-${suffix}`;
+    const firstJid = `feishu:forum-upgrade-a-${suffix}`;
+    const secondJid = `feishu:forum-upgrade-b-${suffix}`;
     db.setRegisteredGroup(workspaceJid, {
       name: 'Native upgrade workspace',
       folder: `native-upgrade-${suffix}`,
@@ -1252,6 +1259,7 @@ describe('agents IM-binding ACL (owner-only, mirrors CRUD)', () => {
       target_main_jid: workspaceJid,
       binding_mode: 'single_context' as const,
       native_context_type: 'thread' as const,
+      feishu_chat_mode: 'topic',
     };
     db.setRegisteredGroup(firstJid, base);
     db.setRegisteredGroup(secondJid, base);
@@ -1293,15 +1301,12 @@ describe('agents IM-binding ACL (owner-only, mirrors CRUD)', () => {
       const account = db.createChannelAccount({
         id: `native-restore-${name}-${suffix}`,
         owner_user_id: OWNER_ID,
-        provider: name === 'first' ? 'feishu' : 'telegram',
+        provider: 'feishu',
         name: `${name} bot`,
         secret_ref: `channel-account:native-restore-${name}-${suffix}`,
         default_workspace_jid: defaultWorkspaceJid,
       });
-      const sourceJid =
-        account.provider === 'feishu'
-          ? `feishu:native-${name}-${suffix}#account:${account.id}`
-          : `telegram:-103${Date.now()}#account:${account.id}`;
+      const sourceJid = `feishu:native-${name}-${suffix}#account:${account.id}`;
       sourceJids.push(sourceJid);
       db.setRegisteredGroup(sourceJid, {
         name: `${name} native container`,
@@ -1310,7 +1315,7 @@ describe('agents IM-binding ACL (owner-only, mirrors CRUD)', () => {
         created_by: OWNER_ID,
         channel_account_id: account.id,
         native_context_type: 'thread',
-        ...(account.provider === 'feishu' ? { feishu_chat_mode: 'topic' } : {}),
+        feishu_chat_mode: 'topic',
       });
 
       const bound = await req('/im-binding', 'PUT', {

@@ -3,8 +3,6 @@
 import { randomBytes, createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { Agent as HttpsAgent } from 'node:https';
-import { ProxyAgent } from 'proxy-agent';
 import QRCode from 'qrcode';
 import { Hono } from 'hono';
 import { DATA_DIR } from '../config.js';
@@ -63,12 +61,9 @@ import {
 import {
   ClaudeCustomEnvSchema,
   FeishuConfigSchema,
-  TelegramConfigSchema,
   QQConfigSchema,
   WeChatConfigSchema,
   DingTalkConfigSchema,
-  DiscordConfigSchema,
-  WhatsAppConfigSchema,
   RegistrationConfigSchema,
   AppearanceConfigSchema,
   HostIntegrationSettingsSchema,
@@ -99,10 +94,6 @@ import {
   getFeishuProviderConfigWithSource,
   toPublicFeishuProviderConfig,
   saveFeishuProviderConfig,
-  getTelegramProviderConfig,
-  getTelegramProviderConfigWithSource,
-  toPublicTelegramProviderConfig,
-  saveTelegramProviderConfig,
   getRegistrationConfig,
   saveRegistrationConfig,
   getAppearanceConfig,
@@ -113,18 +104,12 @@ import {
   saveSystemSettings,
   getUserFeishuConfig,
   saveUserFeishuConfig,
-  getUserTelegramConfig,
-  saveUserTelegramConfig,
   getUserQQConfig,
   saveUserQQConfig,
   getUserWeChatConfig,
   saveUserWeChatConfig,
   getUserDingTalkConfig,
   saveUserDingTalkConfig,
-  getUserDiscordConfig,
-  saveUserDiscordConfig,
-  getUserWhatsAppConfig,
-  saveUserWhatsAppConfig,
   updateAllSessionCredentials,
   appendImConfigAudit,
 } from '../runtime-config.js';
@@ -181,28 +166,15 @@ const configRoutes = new Hono<{ Variables: Variables }>();
  */
 function countOtherEnabledImChannels(
   userId: string,
-  excludeChannel:
-    | 'feishu'
-    | 'telegram'
-    | 'qq'
-    | 'wechat'
-    | 'dingtalk'
-    | 'discord'
-    | 'whatsapp',
+  excludeChannel: 'feishu' | 'qq' | 'wechat' | 'dingtalk',
 ): number {
   let count = 0;
   if (excludeChannel !== 'feishu' && getUserFeishuConfig(userId)?.enabled)
-    count++;
-  if (excludeChannel !== 'telegram' && getUserTelegramConfig(userId)?.enabled)
     count++;
   if (excludeChannel !== 'wechat' && getUserWeChatConfig(userId)?.enabled)
     count++;
   if (excludeChannel !== 'qq' && getUserQQConfig(userId)?.enabled) count++;
   if (excludeChannel !== 'dingtalk' && getUserDingTalkConfig(userId)?.enabled)
-    count++;
-  if (excludeChannel !== 'discord' && getUserDiscordConfig(userId)?.enabled)
-    count++;
-  if (excludeChannel !== 'whatsapp' && getUserWhatsAppConfig(userId)?.enabled)
     count++;
   return count;
 }
@@ -213,20 +185,6 @@ export function injectConfigDeps(d: any) {
   deps = d;
   restorePendingProviderRuntimeSafetyBlocks();
   restorePendingAdminHostOnlyRuntimeSafetyBlocks(d);
-}
-
-function createTelegramApiAgent(proxyUrl?: string): HttpsAgent | ProxyAgent {
-  if (proxyUrl && proxyUrl.trim()) {
-    const fixedProxyUrl = proxyUrl.trim();
-    return new ProxyAgent({
-      getProxyForUrl: () => fixedProxyUrl,
-    });
-  }
-  return new HttpsAgent({ keepAlive: false, family: 4 });
-}
-
-function destroyTelegramApiAgent(agent: HttpsAgent | ProxyAgent): void {
-  agent.destroy();
 }
 
 interface ClaudeApplyResultPayload {
@@ -1895,142 +1853,6 @@ configRoutes.put(
   },
 );
 
-// ─── Telegram config ─────────────────────────────────────────────
-
-configRoutes.get('/telegram', authMiddleware, systemConfigMiddleware, (c) => {
-  logDeprecationOnce(
-    'GET /api/config/telegram',
-    'GET /api/config/user-im/telegram',
-  );
-  try {
-    const { config, source } = getTelegramProviderConfigWithSource();
-    const pub = toPublicTelegramProviderConfig(config, source);
-    const connected = deps?.isTelegramConnected?.() ?? false;
-    return c.json({ ...pub, connected });
-  } catch (err) {
-    logger.error({ err }, 'Failed to load Telegram config');
-    return c.json({ error: 'Failed to load Telegram config' }, 500);
-  }
-});
-
-configRoutes.put(
-  '/telegram',
-  authMiddleware,
-  systemConfigMiddleware,
-  async (c) => {
-    const body = await c.req.json().catch(() => ({}));
-    const validation = TelegramConfigSchema.safeParse(body);
-    if (!validation.success) {
-      return c.json(
-        { error: 'Invalid request body', details: validation.error.format() },
-        400,
-      );
-    }
-
-    const current = getTelegramProviderConfig();
-    const next = { ...current };
-    if (typeof validation.data.botToken === 'string') {
-      next.botToken = validation.data.botToken;
-    } else if (validation.data.clearBotToken === true) {
-      next.botToken = '';
-    }
-    if (typeof validation.data.proxyUrl === 'string') {
-      next.proxyUrl = validation.data.proxyUrl;
-    } else if (validation.data.clearProxyUrl === true) {
-      next.proxyUrl = '';
-    }
-    if (typeof validation.data.enabled === 'boolean') {
-      next.enabled = validation.data.enabled;
-    }
-
-    try {
-      const saved = saveTelegramProviderConfig({
-        botToken: next.botToken,
-        proxyUrl: next.proxyUrl,
-        enabled: next.enabled,
-      });
-
-      // Hot-reload: reconnect/disconnect Telegram channel
-      let connected = false;
-      if (deps?.reloadTelegramConnection) {
-        try {
-          connected = await deps.reloadTelegramConnection(saved);
-        } catch (err: unknown) {
-          logger.warn({ err }, 'Failed to reload Telegram connection');
-        }
-      }
-
-      return c.json({
-        ...toPublicTelegramProviderConfig(saved, 'runtime'),
-        connected,
-      });
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Invalid Telegram config payload';
-      logger.warn({ err }, 'Invalid Telegram config payload');
-      return c.json({ error: message }, 400);
-    }
-  },
-);
-
-configRoutes.post(
-  '/telegram/test',
-  authMiddleware,
-  systemConfigMiddleware,
-  async (c) => {
-    const config = getTelegramProviderConfig();
-    if (!config.botToken) {
-      return c.json({ error: 'Telegram bot token not configured' }, 400);
-    }
-
-    const agent = createTelegramApiAgent(config.proxyUrl);
-    try {
-      const { Bot } = await import('grammy');
-      const testBot = new Bot(config.botToken, {
-        client: {
-          timeoutSeconds: 15,
-          baseFetchConfig: {
-            agent,
-          },
-        },
-      });
-
-      let me: { username?: string; id: number; first_name: string } | null =
-        null;
-      let lastErr: unknown = null;
-      for (let i = 0; i < 3; i++) {
-        try {
-          me = await testBot.api.getMe();
-          break;
-        } catch (err) {
-          lastErr = err;
-          // Small retry window for intermittent network timeouts.
-          if (i < 2) await new Promise((resolve) => setTimeout(resolve, 300));
-        }
-      }
-      if (!me) {
-        throw lastErr instanceof Error
-          ? lastErr
-          : new Error('Telegram API request failed');
-      }
-
-      return c.json({
-        success: true,
-        bot_username: me.username,
-        bot_id: me.id,
-        bot_name: me.first_name,
-      });
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Failed to connect to Telegram';
-      logger.warn({ err }, 'Failed to test Telegram connection');
-      return c.json({ error: message }, 400);
-    } finally {
-      destroyTelegramApiAgent(agent);
-    }
-  },
-);
-
 // ─── Registration config ─────────────────────────────────────────
 
 configRoutes.get(
@@ -2681,12 +2503,9 @@ configRoutes.get('/user-im/status', authMiddleware, (c) => {
   const user = c.get('user') as AuthUser;
   return c.json({
     feishu: deps?.isUserFeishuConnected?.(user.id) ?? false,
-    telegram: deps?.isUserTelegramConnected?.(user.id) ?? false,
     qq: deps?.isUserQQConnected?.(user.id) ?? false,
     wechat: deps?.isUserWeChatConnected?.(user.id) ?? false,
     dingtalk: deps?.isUserDingTalkConnected?.(user.id) ?? false,
-    discord: deps?.isUserDiscordConnected?.(user.id) ?? false,
-    whatsapp: deps?.isUserWhatsAppConnected?.(user.id) ?? false,
   });
 });
 
@@ -2879,255 +2698,6 @@ configRoutes.put('/user-im/feishu', authMiddleware, async (c) => {
     return c.json({ error: message }, 400);
   }
 });
-
-configRoutes.get('/user-im/telegram', authMiddleware, (c) => {
-  const user = c.get('user') as AuthUser;
-  try {
-    const config = getUserTelegramConfig(user.id);
-    const connected = deps?.isUserTelegramConnected?.(user.id) ?? false;
-    const globalConfig = getTelegramProviderConfig();
-    const userProxy = config?.proxyUrl || '';
-    const sysProxy = globalConfig.proxyUrl || '';
-    const proxy = resolveProxyInfo(userProxy, sysProxy);
-    if (!config) {
-      return c.json({
-        hasBotToken: false,
-        botTokenMasked: null,
-        enabled: false,
-        updatedAt: null,
-        connected,
-        proxyUrl: '',
-        ...proxy,
-      });
-    }
-    return c.json({
-      ...toPublicTelegramProviderConfig(config, 'runtime'),
-      connected,
-      proxyUrl: userProxy,
-      ...proxy,
-    });
-  } catch (err) {
-    logger.error({ err }, 'Failed to load user Telegram config');
-    return c.json({ error: 'Failed to load user Telegram config' }, 500);
-  }
-});
-
-configRoutes.put('/user-im/telegram', authMiddleware, async (c) => {
-  const user = c.get('user') as AuthUser;
-  const body = await c.req.json().catch(() => ({}));
-  const validation = TelegramConfigSchema.safeParse(body);
-  if (!validation.success) {
-    return c.json(
-      { error: 'Invalid request body', details: validation.error.format() },
-      400,
-    );
-  }
-
-  // Billing: check IM channel limit when enabling
-  if (validation.data.enabled === true && isBillingEnabled()) {
-    const currentTg = getUserTelegramConfig(user.id);
-    if (!currentTg?.enabled) {
-      const limit = checkImChannelLimit(
-        user.id,
-        user.role,
-        countOtherEnabledImChannels(user.id, 'telegram'),
-      );
-      if (!limit.allowed) {
-        return c.json({ error: limit.reason }, 403);
-      }
-    }
-  }
-
-  const current = getUserTelegramConfig(user.id);
-  const next = {
-    botToken: current?.botToken || '',
-    proxyUrl: current?.proxyUrl || '',
-    enabled: current?.enabled ?? true,
-    updatedAt: current?.updatedAt || null,
-  };
-  if (typeof validation.data.botToken === 'string') {
-    const botToken = validation.data.botToken.trim();
-    if (botToken) next.botToken = botToken;
-  } else if (validation.data.clearBotToken === true) {
-    next.botToken = '';
-  }
-  if (typeof validation.data.proxyUrl === 'string') {
-    next.proxyUrl = validation.data.proxyUrl.trim();
-  } else if (validation.data.clearProxyUrl === true) {
-    next.proxyUrl = '';
-  }
-  if (typeof validation.data.enabled === 'boolean') {
-    next.enabled = validation.data.enabled;
-  } else if (!current && next.botToken) {
-    // First-time config with token should connect immediately.
-    next.enabled = true;
-  }
-
-  try {
-    const saved = saveUserTelegramConfig(user.id, {
-      botToken: next.botToken,
-      proxyUrl: next.proxyUrl || undefined,
-      enabled: next.enabled,
-    });
-    appendImConfigAudit(
-      user.username,
-      'telegram',
-      'update',
-      Object.keys(validation.data),
-      { userId: user.id },
-    );
-
-    // Hot-reload: reconnect user's Telegram channel
-    if (deps?.reloadUserIMConfig) {
-      try {
-        await deps.reloadUserIMConfig(user.id, 'telegram');
-      } catch (err) {
-        logger.warn(
-          { err, userId: user.id },
-          'Failed to hot-reload user Telegram connection',
-        );
-      }
-    }
-
-    const connected = deps?.isUserTelegramConnected?.(user.id) ?? false;
-    const userProxy = saved.proxyUrl || '';
-    const sysProxy = getTelegramProviderConfig().proxyUrl || '';
-    return c.json({
-      ...toPublicTelegramProviderConfig(saved, 'runtime'),
-      connected,
-      proxyUrl: userProxy,
-      ...resolveProxyInfo(userProxy, sysProxy),
-    });
-  } catch (err) {
-    const message =
-      err instanceof Error ? err.message : 'Invalid Telegram config payload';
-    logger.warn({ err }, 'Invalid user Telegram config payload');
-    return c.json({ error: message }, 400);
-  }
-});
-
-configRoutes.post('/user-im/telegram/test', authMiddleware, async (c) => {
-  const user = c.get('user') as AuthUser;
-  const config = getUserTelegramConfig(user.id);
-  if (!config?.botToken) {
-    return c.json({ error: 'Telegram bot token not configured' }, 400);
-  }
-
-  const globalTelegramConfig = getTelegramProviderConfig();
-  const effectiveProxy = config.proxyUrl || globalTelegramConfig.proxyUrl;
-  const agent = createTelegramApiAgent(effectiveProxy);
-  try {
-    const { Bot } = await import('grammy');
-    const testBot = new Bot(config.botToken, {
-      client: {
-        timeoutSeconds: 15,
-        baseFetchConfig: {
-          agent,
-        },
-      },
-    });
-    const me = await testBot.api.getMe();
-    return c.json({
-      success: true,
-      bot_username: me.username,
-      bot_id: me.id,
-      bot_name: me.first_name,
-    });
-  } catch (err) {
-    const message =
-      err instanceof Error ? err.message : 'Failed to connect to Telegram';
-    logger.warn({ err }, 'Failed to test user Telegram connection');
-    return c.json({ error: message }, 400);
-  } finally {
-    destroyTelegramApiAgent(agent);
-  }
-});
-
-configRoutes.post(
-  '/user-im/telegram/pairing-code',
-  authMiddleware,
-  async (c) => {
-    const user = c.get('user') as AuthUser;
-    const config = getUserTelegramConfig(user.id);
-    if (!config?.botToken) {
-      return c.json({ error: 'Telegram bot token not configured' }, 400);
-    }
-
-    try {
-      const { generatePairingCode } = await import('../telegram-pairing.js');
-      const result = generatePairingCode(user.id);
-      return c.json(result);
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Failed to generate pairing code';
-      logger.warn({ err }, 'Failed to generate pairing code');
-      return c.json({ error: message }, 500);
-    }
-  },
-);
-
-// List Telegram paired chats for the current user
-configRoutes.get('/user-im/telegram/paired-chats', authMiddleware, (c) => {
-  const user = c.get('user') as AuthUser;
-  const groups = (deps?.getRegisteredGroups() ?? {}) as Record<
-    string,
-    {
-      name: string;
-      added_at: string;
-      created_by?: string;
-      channel_account_id?: string | null;
-    }
-  >;
-  const legacy = getLegacyChannelAccount(user.id, 'telegram');
-  const chats: Array<{ jid: string; name: string; addedAt: string }> = [];
-  for (const [jid, group] of Object.entries(groups)) {
-    const address = parseChannelAddress(jid);
-    if (
-      address?.provider === 'telegram' &&
-      group.created_by === user.id &&
-      (address.legacy || group.channel_account_id === legacy?.id)
-    ) {
-      chats.push({ jid, name: group.name, addedAt: group.added_at });
-    }
-  }
-  return c.json({ chats });
-});
-
-// Remove (unpair) a Telegram chat
-configRoutes.delete(
-  '/user-im/telegram/paired-chats/:jid',
-  authMiddleware,
-  (c) => {
-    const user = c.get('user') as AuthUser;
-    const jid = decodeURIComponent(c.req.param('jid'));
-
-    if (!jid.startsWith('telegram:')) {
-      return c.json({ error: 'Invalid Telegram chat JID' }, 400);
-    }
-
-    const groups = deps?.getRegisteredGroups() ?? {};
-    const group = groups[jid];
-    if (!group) {
-      return c.json({ error: 'Chat not found' }, 404);
-    }
-    if (group.created_by !== user.id) {
-      return c.json({ error: 'Not authorized to remove this chat' }, 403);
-    }
-    const legacy = getLegacyChannelAccount(user.id, 'telegram');
-    const address = parseChannelAddress(jid);
-    if (!address?.legacy && group.channel_account_id !== legacy?.id) {
-      return c.json({ error: 'Not authorized to remove this chat' }, 403);
-    }
-
-    deleteRegisteredGroup(jid);
-    deleteChatHistory(jid);
-    delete groups[jid];
-    logger.info({ jid, userId: user.id }, 'Telegram chat unpaired');
-    return c.json({ success: true });
-  },
-);
-
-// ─── QQ User IM Config ──────────────────────────────────────────
 
 function maskQQAppSecret(secret: string): string | null {
   if (!secret) return null;
@@ -3336,7 +2906,7 @@ configRoutes.post('/user-im/qq/pairing-code', authMiddleware, async (c) => {
   }
 
   try {
-    const { generatePairingCode } = await import('../telegram-pairing.js');
+    const { generatePairingCode } = await import('../channel-pairing.js');
     const result = generatePairingCode(user.id);
     return c.json(result);
   } catch (err) {
@@ -3606,178 +3176,6 @@ configRoutes.post('/user-im/dingtalk/test', authMiddleware, async (c) => {
   }
 });
 
-// ─── Per-user Discord IM config ──────────────────────────────────
-
-configRoutes.get('/user-im/discord', authMiddleware, (c) => {
-  const user = c.get('user') as AuthUser;
-  try {
-    const config = getUserDiscordConfig(user.id);
-    const connected = deps?.isUserDiscordConnected?.(user.id) ?? false;
-    if (!config) {
-      return c.json({
-        hasBotToken: false,
-        botTokenMasked: null,
-        enabled: false,
-        streamingMode: 'off',
-        updatedAt: null,
-        connected,
-      });
-    }
-    return c.json({
-      hasBotToken: !!config.botToken,
-      botTokenMasked: config.botToken
-        ? config.botToken.slice(0, 4) + '***' + config.botToken.slice(-4)
-        : null,
-      enabled: config.enabled ?? false,
-      streamingMode: config.streamingMode ?? 'off',
-      updatedAt: config.updatedAt,
-      connected,
-    });
-  } catch (err) {
-    logger.error({ err }, 'Failed to load user Discord config');
-    return c.json({ error: 'Failed to load Discord config' }, 500);
-  }
-});
-
-configRoutes.put('/user-im/discord', authMiddleware, async (c) => {
-  const user = c.get('user') as AuthUser;
-  const body = await c.req.json().catch(() => ({}));
-  const validation = DiscordConfigSchema.safeParse(body);
-  if (!validation.success) {
-    return c.json(
-      { error: 'Invalid request body', details: validation.error.format() },
-      400,
-    );
-  }
-
-  // Billing: check IM channel limit when enabling
-  if (validation.data.enabled === true && isBillingEnabled()) {
-    const current = getUserDiscordConfig(user.id);
-    if (!current?.enabled) {
-      const limit = checkImChannelLimit(
-        user.id,
-        user.role,
-        countOtherEnabledImChannels(user.id, 'discord'),
-      );
-      if (!limit.allowed) {
-        return c.json({ error: limit.reason }, 403);
-      }
-    }
-  }
-
-  const current = getUserDiscordConfig(user.id);
-  const next = {
-    botToken: current?.botToken || '',
-    enabled: current?.enabled ?? true,
-    streamingMode: current?.streamingMode ?? ('off' as const),
-  };
-
-  if (typeof validation.data.botToken === 'string') {
-    const token = validation.data.botToken.trim();
-    if (token) next.botToken = token;
-  } else if (validation.data.clearBotToken === true) {
-    next.botToken = '';
-  }
-  if (typeof validation.data.enabled === 'boolean') {
-    next.enabled = validation.data.enabled;
-  } else if (!current && next.botToken) {
-    next.enabled = true;
-  }
-  if (typeof validation.data.streamingMode === 'string') {
-    next.streamingMode = validation.data.streamingMode;
-  }
-
-  try {
-    const saved = saveUserDiscordConfig(user.id, next);
-    appendImConfigAudit(
-      user.username,
-      'discord',
-      'update',
-      Object.keys(validation.data),
-      { userId: user.id },
-    );
-
-    // Hot-reload: reconnect user's Discord channel
-    if (deps?.reloadUserIMConfig) {
-      try {
-        await deps.reloadUserIMConfig(user.id, 'discord');
-      } catch (err) {
-        logger.warn({ err, userId: user.id }, 'Failed to hot-reload Discord');
-      }
-    }
-
-    const connected = deps?.isUserDiscordConnected?.(user.id) ?? false;
-    return c.json({
-      hasBotToken: !!saved.botToken,
-      botTokenMasked: saved.botToken
-        ? saved.botToken.slice(0, 4) + '***' + saved.botToken.slice(-4)
-        : null,
-      enabled: saved.enabled ?? false,
-      streamingMode: saved.streamingMode ?? 'off',
-      updatedAt: saved.updatedAt,
-      connected,
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Invalid config';
-    logger.warn({ err }, 'Invalid Discord config');
-    return c.json({ error: message }, 400);
-  }
-});
-
-configRoutes.post('/user-im/discord/test', authMiddleware, async (c) => {
-  const user = c.get('user') as AuthUser;
-  const config = getUserDiscordConfig(user.id);
-
-  if (!config?.botToken) {
-    return c.json({ error: 'Discord Bot Token not configured' }, 400);
-  }
-
-  let timeoutId: NodeJS.Timeout | undefined;
-  try {
-    // Test by creating a temporary Client and logging in
-    const { Client, GatewayIntentBits } = await import('discord.js');
-    const testClient = new Client({ intents: [GatewayIntentBits.Guilds] });
-
-    const result = await Promise.race([
-      new Promise<{ success: true; bot_username: string; bot_name: string }>(
-        (resolve, reject) => {
-          testClient.once('ready', () => {
-            const username = testClient.user?.username || 'unknown';
-            const name = testClient.user?.displayName || username;
-            testClient.destroy();
-            resolve({ success: true, bot_username: username, bot_name: name });
-          });
-          testClient.once('error', (err) => {
-            testClient.destroy();
-            reject(err);
-          });
-          testClient.login(config.botToken).catch((err) => {
-            testClient.destroy();
-            reject(err);
-          });
-        },
-      ),
-      new Promise<never>((_, reject) => {
-        timeoutId = setTimeout(() => {
-          testClient.destroy();
-          reject(new Error('Connection test timed out (10s)'));
-        }, 10000);
-      }),
-    ]);
-
-    return c.json(result);
-  } catch (err) {
-    const message =
-      err instanceof Error ? err.message : 'Connection test failed';
-    logger.warn({ err }, 'Discord connection test failed');
-    return c.json({ error: message }, 400);
-  } finally {
-    // Defense-in-depth: clear the race timer in both success and failure paths
-    // so the process doesn't keep an active handle for up to 10s after the test.
-    if (timeoutId) clearTimeout(timeoutId);
-  }
-});
-
 // ─── Per-user WeChat IM config ──────────────────────────────────
 
 const WECHAT_API_BASE = 'https://ilinkai.weixin.qq.com';
@@ -4019,7 +3417,7 @@ configRoutes.get('/user-im/wechat/qrcode-status', authMiddleware, async (c) => {
 
       // Note: ilink_user_id (the QR scanner) is NOT auto-paired here.
       // The scanner needs to send a message to the bot and use /pair <code>
-      // to complete pairing, same as QQ/Telegram flow.
+      // to complete pairing, same as the QQ flow.
       // This ensures proper group registration via buildOnNewChat/registerGroup.
 
       // Hot-reload: connect WeChat
@@ -4080,189 +3478,6 @@ configRoutes.post('/user-im/wechat/disconnect', authMiddleware, async (c) => {
       err instanceof Error ? err.message : 'Failed to disconnect WeChat';
     logger.error({ err }, 'WeChat disconnect failed');
     return c.json({ error: message }, 500);
-  }
-});
-
-// ─── WhatsApp (Baileys-based, M1: QR login + connection state) ──
-
-configRoutes.get('/user-im/whatsapp', authMiddleware, (c) => {
-  const user = c.get('user') as AuthUser;
-  try {
-    const config = getUserWhatsAppConfig(user.id);
-    const connected = deps?.isUserWhatsAppConnected?.(user.id) ?? false;
-    const state = deps?.getUserWhatsAppState?.(user.id) ?? {
-      status: 'disconnected' as const,
-    };
-    if (!config) {
-      return c.json({
-        accountId: 'default',
-        phoneNumber: '',
-        enabled: false,
-        paired: false,
-        updatedAt: null,
-        connected,
-        state,
-      });
-    }
-    return c.json({
-      accountId: config.accountId || 'default',
-      phoneNumber: config.phoneNumber || '',
-      enabled: config.enabled ?? false,
-      paired: config.paired ?? false,
-      updatedAt: config.updatedAt,
-      connected,
-      state,
-    });
-  } catch (err) {
-    logger.error({ err }, 'Failed to load user WhatsApp config');
-    return c.json({ error: 'Failed to load user WhatsApp config' }, 500);
-  }
-});
-
-configRoutes.put('/user-im/whatsapp', authMiddleware, async (c) => {
-  const user = c.get('user') as AuthUser;
-  const body = await c.req.json().catch(() => ({}));
-  const validation = WhatsAppConfigSchema.safeParse(body);
-  if (!validation.success) {
-    return c.json(
-      { error: 'Invalid request body', details: validation.error.format() },
-      400,
-    );
-  }
-
-  // Billing: check IM channel limit when enabling
-  if (validation.data.enabled === true && isBillingEnabled()) {
-    const currentWa = getUserWhatsAppConfig(user.id);
-    if (!currentWa?.enabled) {
-      const limit = checkImChannelLimit(
-        user.id,
-        user.role,
-        countOtherEnabledImChannels(user.id, 'whatsapp'),
-      );
-      if (!limit.allowed) {
-        return c.json({ error: limit.reason }, 403);
-      }
-    }
-  }
-
-  const current = getUserWhatsAppConfig(user.id);
-  const next = {
-    accountId: current?.accountId || 'default',
-    phoneNumber: current?.phoneNumber || '',
-    enabled: current?.enabled ?? false,
-    paired: current?.paired ?? false,
-  };
-
-  if (typeof validation.data.accountId === 'string') {
-    next.accountId = validation.data.accountId.trim() || 'default';
-  }
-  if (typeof validation.data.phoneNumber === 'string') {
-    next.phoneNumber = validation.data.phoneNumber.trim();
-  }
-  if (typeof validation.data.enabled === 'boolean') {
-    next.enabled = validation.data.enabled;
-  }
-  // paired 已从 schema 移除：由 saveUserWhatsAppConfig 在 Baileys 登录回调
-  // 中写入，前端 PUT 不再接受该字段（防止用户伪装扫码完成）。
-
-  try {
-    const saved = saveUserWhatsAppConfig(user.id, next);
-    appendImConfigAudit(
-      user.username,
-      'whatsapp',
-      'update',
-      Object.keys(validation.data),
-      { userId: user.id },
-    );
-
-    // Hot-reload: reconnect user's WhatsApp channel (skeleton always returns false)
-    if (deps?.reloadUserIMConfig) {
-      try {
-        await deps.reloadUserIMConfig(user.id, 'whatsapp');
-      } catch (err) {
-        logger.warn(
-          { err, userId: user.id },
-          'Failed to hot-reload user WhatsApp connection',
-        );
-      }
-    }
-
-    const connected = deps?.isUserWhatsAppConnected?.(user.id) ?? false;
-    const state = deps?.getUserWhatsAppState?.(user.id) ?? {
-      status: 'disconnected' as const,
-    };
-    return c.json({
-      accountId: saved.accountId,
-      phoneNumber: saved.phoneNumber,
-      enabled: saved.enabled ?? false,
-      paired: saved.paired ?? false,
-      updatedAt: saved.updatedAt,
-      connected,
-      state,
-    });
-  } catch (err) {
-    const message =
-      err instanceof Error ? err.message : 'Invalid WhatsApp config payload';
-    logger.warn({ err }, 'Invalid WhatsApp config');
-    return c.json({ error: message }, 400);
-  }
-});
-
-/**
- * Hard logout: tell WhatsApp servers, drop the socket, wipe local auth state,
- * and persist `enabled=false`/`paired=false`. Next enable forces a fresh QR.
- *
- * Distinct from PUT /user-im/whatsapp { enabled: false }, which only stops the
- * socket but keeps the noise/Signal pre-keys on disk for silent reconnect.
- */
-configRoutes.post('/user-im/whatsapp/logout', authMiddleware, async (c) => {
-  const user = c.get('user') as AuthUser;
-  const current = getUserWhatsAppConfig(user.id);
-  // Compatibility facade: the first-class default account owns the actual
-  // Baileys connection/authDir. Never use the user-editable legacy label as
-  // an auth directory key.
-  const accountId =
-    getDefaultChannelAccount(user.id, 'whatsapp')?.id ??
-    current?.accountId ??
-    'default';
-
-  if (deps?.logoutUserWhatsApp) {
-    try {
-      await deps.logoutUserWhatsApp(user.id, accountId);
-    } catch (err) {
-      logger.warn({ err, userId: user.id }, 'WhatsApp logout deps call failed');
-    }
-  }
-
-  try {
-    const saved = saveUserWhatsAppConfig(user.id, {
-      accountId,
-      phoneNumber: current?.phoneNumber || '',
-      enabled: false,
-      paired: false,
-    });
-    appendImConfigAudit(
-      user.username,
-      'whatsapp',
-      'logout',
-      ['enabled', 'paired'],
-      { userId: user.id, accountId },
-    );
-    const state = deps?.getUserWhatsAppState?.(user.id) ?? {
-      status: 'logged_out' as const,
-    };
-    return c.json({
-      accountId: saved.accountId,
-      phoneNumber: saved.phoneNumber,
-      enabled: saved.enabled ?? false,
-      paired: saved.paired ?? false,
-      updatedAt: saved.updatedAt,
-      connected: false,
-      state,
-    });
-  } catch (err) {
-    logger.error({ err }, 'Failed to persist WhatsApp logout state');
-    return c.json({ error: 'Failed to save logout state' }, 500);
   }
 });
 

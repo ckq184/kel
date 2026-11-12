@@ -1,5 +1,5 @@
 /**
- * Telegram Pairing Code — generate & verify one-time codes for chat binding.
+ * Channel Pairing Code — generate & verify one-time codes for chat binding.
  *
  * - 6-character uppercase alphanumeric code (crypto random)
  * - 5-minute expiry, single use, one active code per user

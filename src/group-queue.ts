@@ -2064,7 +2064,7 @@ export class GroupQueue {
    * query.interrupt(). The container stays alive and accepts new messages.
    */
   interruptQuery(groupJid: string, expectedQueryId?: string): boolean {
-    // Use resolveActiveState so sibling JIDs (feishu/telegram sharing the
+    // Use resolveActiveState so sibling JIDs (feishu/qq sharing the
     // same folder as a web group) are correctly resolved to the active runner.
     const state = this.resolveActiveState(groupJid);
     if (!state || !state.queryInFlight) return false;

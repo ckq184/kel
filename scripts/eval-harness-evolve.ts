@@ -15,7 +15,7 @@
  *                                [--no-cluster] [--no-neighbors]
  *
  *   --workspace      workspace chat JID (the obs_turns.workspace_jid value,
- *                    e.g. feishu:123456 or discord:...)
+ *                    e.g. feishu:123456)
  *   --limit N        how many recent turns feed the evidence (default 40)
  *   --dry-run        print the proposal + evidence without touching eval.db
  *   --no-cluster     disable turn clustering (task AH fallback to flat turns)

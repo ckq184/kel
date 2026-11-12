@@ -63,12 +63,7 @@ export function ensureLegacyDefaultChannelAccount(input: {
         enabled: input.enabled,
         is_default: currentDefault == null,
         is_legacy_default: true,
-        auth_mode:
-          input.provider === 'wechat' || input.provider === 'whatsapp'
-            ? 'qr_session'
-            : input.provider === 'telegram' || input.provider === 'discord'
-              ? 'bot_token'
-              : 'credentials',
+        auth_mode: input.provider === 'wechat' ? 'qr_session' : 'credentials',
         auth_status: 'authorized',
       }),
     );

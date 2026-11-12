@@ -34,22 +34,16 @@ import {
 } from '../channel-account-secrets.js';
 import {
   getUserDingTalkConfig,
-  getUserDiscordConfig,
   getUserFeishuConfig,
   getUserQQConfig,
-  getUserTelegramConfig,
   getUserWeChatConfig,
-  getUserWhatsAppConfig,
   saveUserDingTalkConfig,
-  saveUserDiscordConfig,
   saveUserFeishuConfig,
   saveUserQQConfig,
-  saveUserTelegramConfig,
   saveUserWeChatConfig,
-  saveUserWhatsAppConfig,
 } from '../runtime-config.js';
 import { ensureLegacyDefaultChannelAccount } from '../channel-account-migration.js';
-import { generatePairingCode } from '../telegram-pairing.js';
+import { generatePairingCode } from '../channel-pairing.js';
 import {
   isJidForChannelAccount,
   parseChannelAddress,
@@ -60,7 +54,6 @@ import {
   startWeChatQrOnboarding,
   type WeChatQrStatusValue,
 } from '../wechat-onboarding.js';
-import type { WhatsAppConnectionState } from '../whatsapp.js';
 
 export interface ChannelAccountRouteDeps {
   reloadChannelAccount?: (accountId: string) => Promise<boolean>;
@@ -70,11 +63,6 @@ export interface ChannelAccountRouteDeps {
     secret: ChannelAccountSecret,
   ) => Promise<{ success: boolean; unsupported?: boolean; error?: string }>;
   isChannelAccountConnected?: (accountId: string) => boolean;
-  getUserWhatsAppState?: (
-    userId: string,
-    accountId: string,
-  ) => WhatsAppConnectionState;
-  logoutUserWhatsApp?: (userId: string, accountId: string) => Promise<void>;
   /** Remove DB history, registered-group state, and the process-local routing
    * cache atomically from the application's authoritative lifecycle service. */
   removeImGroupRecord?: (jid: string, reason: string) => void | Promise<void>;
@@ -103,12 +91,9 @@ interface PendingWeChatQr {
 const pendingWeChatQr = new Map<string, PendingWeChatQr>();
 
 export const PAIRING_CHANNEL_PROVIDERS = new Set<ChannelProvider>([
-  'telegram',
   'qq',
   'wechat',
   'dingtalk',
-  'discord',
-  'whatsapp',
 ]);
 
 export function channelProviderSupportsPairing(
@@ -175,12 +160,9 @@ function cancelPendingOnboarding(account: ChannelAccount): void {
 
 const PROVIDER_NAMES: Record<ChannelProvider, string> = {
   feishu: '飞书',
-  telegram: 'Telegram',
   qq: 'QQ',
   wechat: '微信',
   dingtalk: '钉钉',
-  discord: 'Discord',
-  whatsapp: 'WhatsApp',
 };
 
 function publicAccount(account: ChannelAccount): ChannelAccountPublic {
@@ -195,10 +177,6 @@ function publicAccount(account: ChannelAccount): ChannelAccountPublic {
     options.bypassProxy = secret.bypassProxy !== 'false';
   } else if (account.provider === 'dingtalk') {
     options.streamingMode = secret.streamingMode === 'text' ? 'text' : 'card';
-  } else if (account.provider === 'discord') {
-    options.streamingMode = secret.streamingMode === 'edit' ? 'edit' : 'off';
-  } else if (account.provider === 'whatsapp' && secret.phoneNumber) {
-    options.phoneNumber = secret.phoneNumber;
   }
   return {
     ...metadata,
@@ -215,8 +193,7 @@ function publicAccount(account: ChannelAccount): ChannelAccountPublic {
 function authModeForProvider(
   provider: ChannelProvider,
 ): ChannelAccount['auth_mode'] {
-  if (provider === 'wechat' || provider === 'whatsapp') return 'qr_session';
-  if (provider === 'telegram' || provider === 'discord') return 'bot_token';
+  if (provider === 'wechat') return 'qr_session';
   return 'credentials';
 }
 
@@ -228,12 +205,9 @@ function credentialsError(
 ): string | null {
   const required: Record<ChannelProvider, string[]> = {
     feishu: ['appId', 'appSecret'],
-    telegram: ['botToken'],
     qq: ['appId', 'appSecret'],
     wechat: [],
     dingtalk: ['clientId', 'clientSecret'],
-    discord: ['botToken'],
-    whatsapp: [],
   };
   const allowed: Record<ChannelProvider, string[]> = {
     feishu: [
@@ -241,7 +215,6 @@ function credentialsError(
       'appSecret',
       ...(allowInternalQrSecrets ? ['ownerOpenId'] : []),
     ],
-    telegram: ['botToken', 'proxyUrl'],
     qq: ['appId', 'appSecret'],
     wechat: [
       'bypassProxy',
@@ -250,8 +223,6 @@ function credentialsError(
         : []),
     ],
     dingtalk: ['clientId', 'clientSecret', 'streamingMode'],
-    discord: ['botToken', 'streamingMode'],
-    whatsapp: ['phoneNumber'],
   };
   const unknown = Object.keys(credentials).filter(
     (key) => !allowed[provider].includes(key),
@@ -264,13 +235,6 @@ function credentialsError(
     !['card', 'text'].includes(credentials.streamingMode)
   ) {
     return 'DingTalk streamingMode must be card or text';
-  }
-  if (
-    credentials.streamingMode &&
-    provider === 'discord' &&
-    !['edit', 'off'].includes(credentials.streamingMode)
-  ) {
-    return 'Discord streamingMode must be edit or off';
   }
   if (
     credentials.bypassProxy &&
@@ -290,29 +254,21 @@ function credentialsError(
 function onboardingPayload(account: ChannelAccount) {
   const refreshed =
     getChannelAccountForUser(account.id, account.owner_user_id) ?? account;
-  const whatsapp =
-    refreshed.provider === 'whatsapp'
-      ? deps.getUserWhatsAppState?.(refreshed.owner_user_id, refreshed.id)
-      : undefined;
   const qr = pendingWeChatQr.get(refreshed.id);
   return {
     auth_mode: refreshed.auth_mode,
     auth_status: refreshed.auth_status,
     transport_status: projectedTransportStatus(refreshed),
     status:
-      whatsapp?.status ??
       qr?.status ??
       (refreshed.auth_status === 'awaiting_scan'
         ? 'wait'
         : refreshed.auth_status),
     ...(qr?.qrcodeUrl ? { qrcodeUrl: qr.qrcodeUrl } : {}),
     ...(qr?.status === 'need_verifycode' ? { needsVerifyCode: true } : {}),
-    ...(whatsapp?.qrDataUrl ? { qrDataUrl: whatsapp.qrDataUrl } : {}),
-    ...(whatsapp?.error || refreshed.last_error
-      ? { error: whatsapp?.error ?? refreshed.last_error ?? undefined }
+    ...(refreshed.last_error
+      ? { error: refreshed.last_error ?? undefined }
       : {}),
-    ...(whatsapp?.meJid ? { meJid: whatsapp.meJid } : {}),
-    ...(whatsapp?.meName ? { meName: whatsapp.meName } : {}),
   };
 }
 
@@ -338,12 +294,6 @@ function syncLegacyUserImFacade(
       autoIsolateContext: old?.autoIsolateContext ?? false,
       enabled,
     });
-  } else if (account.provider === 'telegram') {
-    saveUserTelegramConfig(account.owner_user_id, {
-      botToken: secret.botToken || '',
-      proxyUrl: secret.proxyUrl,
-      enabled,
-    });
   } else if (account.provider === 'qq') {
     saveUserQQConfig(account.owner_user_id, {
       appId: secret.appId || '',
@@ -366,19 +316,6 @@ function syncLegacyUserImFacade(
       clientId: secret.clientId || '',
       clientSecret: secret.clientSecret || '',
       streamingMode: secret.streamingMode === 'text' ? 'text' : 'card',
-      enabled,
-    });
-  } else if (account.provider === 'discord') {
-    saveUserDiscordConfig(account.owner_user_id, {
-      botToken: secret.botToken || '',
-      streamingMode: secret.streamingMode === 'edit' ? 'edit' : 'off',
-      enabled,
-    });
-  } else {
-    saveUserWhatsAppConfig(account.owner_user_id, {
-      accountId: account.id,
-      phoneNumber: secret.phoneNumber || '',
-      paired: account.auth_status === 'authorized',
       enabled,
     });
   }
@@ -416,15 +353,6 @@ function legacyCredentialsFor(
             appSecret: value.appSecret,
             ownerOpenId: value.ownerOpenId,
           },
-          enabled: value.enabled !== false,
-        }
-      : null;
-  }
-  if (provider === 'telegram') {
-    const value = getUserTelegramConfig(userId);
-    return value
-      ? {
-          secret: { botToken: value.botToken, proxyUrl: value.proxyUrl },
           enabled: value.enabled !== false,
         }
       : null;
@@ -467,25 +395,7 @@ function legacyCredentialsFor(
         }
       : null;
   }
-  if (provider === 'discord') {
-    const value = getUserDiscordConfig(userId);
-    return value
-      ? {
-          secret: {
-            botToken: value.botToken,
-            streamingMode: value.streamingMode,
-          },
-          enabled: value.enabled !== false,
-        }
-      : null;
-  }
-  const value = getUserWhatsAppConfig(userId);
-  return value
-    ? {
-        secret: { accountId: value.accountId, phoneNumber: value.phoneNumber },
-        enabled: value.enabled !== false,
-      }
-    : null;
+  return null;
 }
 
 /** Lazy, idempotent projection of legacy per-user/provider singleton configs. */
@@ -803,36 +713,6 @@ routes.post('/:id/onboarding', authMiddleware, async (c) => {
         updateChannelAccountAuthStatus(account.id, 'awaiting_scan');
         updateChannelAccountStatus(account.id, 'disconnected');
       }
-    } else {
-      const active = deps.getUserWhatsAppState?.(user.id, account.id);
-      // Match OpenClaw's account-scoped active login behavior: a repeated
-      // request must reuse the in-flight QR/socket instead of tearing it down.
-      // This is especially important while the UI is polling or the user
-      // clicks again because the QR image has not rendered yet.
-      if (
-        active?.status === 'connecting' ||
-        active?.status === 'qr' ||
-        active?.status === 'connected'
-      ) {
-        if (active.status === 'connected') {
-          updateChannelAccountAuthStatus(account.id, 'authorized');
-          updateChannelAccountStatus(account.id, 'connected');
-        } else {
-          updateChannelAccountAuthStatus(account.id, 'awaiting_scan');
-          updateChannelAccountStatus(account.id, 'connecting');
-        }
-      } else {
-        updateChannelAccountAuthStatus(account.id, 'awaiting_scan');
-        updateChannelAccountStatus(account.id, 'connecting');
-        const started = await deps.reloadChannelAccount?.(account.id);
-        if (started === false) {
-          updateChannelAccountStatus(
-            account.id,
-            'error',
-            'Failed to start WhatsApp',
-          );
-        }
-      }
     }
     const refreshed = getChannelAccountForUser(account.id, user.id)!;
     return c.json({
@@ -956,20 +836,6 @@ routes.get('/:id/onboarding/status', authMiddleware, async (c) => {
             );
           }
         }
-      }
-    } else if (account.provider === 'whatsapp') {
-      const state = deps.getUserWhatsAppState?.(user.id, account.id);
-      if (state?.status === 'connected') {
-        updateChannelAccountAuthStatus(account.id, 'authorized');
-        updateChannelAccountStatus(account.id, 'connected');
-      } else if (state?.status === 'qr' || state?.status === 'connecting') {
-        updateChannelAccountAuthStatus(account.id, 'awaiting_scan');
-        updateChannelAccountStatus(account.id, 'connecting');
-      } else if (state?.status === 'logged_out') {
-        updateChannelAccountAuthStatus(account.id, 'revoked', state.error);
-        updateChannelAccountStatus(account.id, 'disconnected', state.error);
-      } else if (state?.status === 'disconnected') {
-        updateChannelAccountStatus(account.id, 'disconnected', state.error);
       }
     }
     account = getChannelAccountForUser(account.id, user.id)!;
@@ -1133,11 +999,7 @@ routes.post('/:id/logout', authMiddleware, async (c) => {
   updateChannelAccount(account.id, user.id, { enabled: false });
   cancelPendingOnboarding(account);
   try {
-    if (account.provider === 'whatsapp' && deps.logoutUserWhatsApp) {
-      await deps.logoutUserWhatsApp(user.id, account.id);
-    } else {
-      await deps.disconnectChannelAccount?.(account.id);
-    }
+    await deps.disconnectChannelAccount?.(account.id);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     updateChannelAccountStatus(account.id, 'error', 'Connector logout failed');
@@ -1248,11 +1110,7 @@ routes.delete('/:id', authMiddleware, async (c) => {
     );
   }
   try {
-    if (account.provider === 'whatsapp' && deps.logoutUserWhatsApp) {
-      await deps.logoutUserWhatsApp(user.id, account.id);
-    } else {
-      await deps.disconnectChannelAccount?.(id);
-    }
+    await deps.disconnectChannelAccount?.(id);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return c.json({ error: `Failed to stop channel account: ${message}` }, 502);

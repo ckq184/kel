@@ -172,21 +172,18 @@ describe('channel binding product contract', () => {
   });
 
   test('only transports with a real inbound gate advertise activation modes', () => {
-    expect(IM_CHANNEL_CAPABILITIES.telegram.supports_activation_modes).toBe(
-      false,
-    );
     expect(IM_CHANNEL_CAPABILITIES.qq.supports_activation_modes).toBe(false);
     expect(IM_CHANNEL_CAPABILITIES.wechat.supports_activation_modes).toBe(
       false,
     );
-    for (const provider of ['feishu', 'dingtalk', 'discord', 'whatsapp']) {
+    for (const provider of ['feishu', 'dingtalk']) {
       expect(IM_CHANNEL_CAPABILITIES[provider].supports_activation_modes).toBe(
         true,
       );
     }
   });
 
-  test('Feishu topics and Telegram Forums qualify for native thread mapping', () => {
+  test('Feishu topics qualify for native thread mapping', () => {
     expect(
       isThreadMapCapableChat({ channel_type: 'feishu', chat_mode: 'topic' }),
     ).toBe(true);
@@ -200,18 +197,6 @@ describe('channel binding product contract', () => {
     expect(
       isThreadMapCapableChat({ channel_type: 'feishu', chat_mode: 'group' }),
     ).toBe(false);
-    expect(
-      isThreadMapCapableChat({
-        channel_type: 'telegram',
-        native_context_type: 'thread',
-      }),
-    ).toBe(true);
-    expect(
-      isNativeContextContainer('telegram:group-1', {
-        ...makeWorkspace('Forum', 'forum'),
-        native_context_type: 'thread',
-      }),
-    ).toBe(true);
     expect(
       isNativeContextContainer('feishu:topic-group', {
         ...makeWorkspace('Feishu topic', 'feishu-topic'),
@@ -259,7 +244,7 @@ describe('channel binding product contract', () => {
   });
 
   test('restores to account default atomically and preserves channel policy', () => {
-    const account = makeAccount('telegram-a', 'telegram', 'web:workspace-a');
+    const account = makeAccount('feishu-a', 'feishu', 'web:workspace-a');
     const workspace = {
       ...makeWorkspace('Workspace A', 'workspace-a'),
       created_by: 'owner-a',
@@ -275,9 +260,10 @@ describe('channel binding product contract', () => {
       sender_allowlist: ['sender-a'],
       reply_policy: 'mirror',
       native_context_type: 'thread',
+      feishu_chat_mode: 'topic',
     };
     const restored = buildRestoreDefaultChannelMountUpdate(
-      'telegram:chat#account:telegram-a',
+      'feishu:chat#account:feishu-a',
       source,
       'owner-a',
       {
@@ -345,7 +331,7 @@ describe('channel binding product contract', () => {
       target_agent_id: 'keep-this-session',
     };
     const restored = buildRestoreDefaultChannelMountUpdate(
-      'whatsapp:user@s.whatsapp.net',
+      'wechat:user-a',
       source,
       'owner-a',
       {
@@ -365,11 +351,11 @@ describe('channel binding product contract', () => {
 
   test('rejects an account id owned by another user', () => {
     const foreign = {
-      ...makeAccount('telegram-foreign', 'telegram', 'web:foreign'),
+      ...makeAccount('qq-foreign', 'qq', 'web:foreign'),
       owner_user_id: 'owner-b',
     };
     const restored = buildRestoreDefaultChannelMountUpdate(
-      'telegram:chat#account:telegram-foreign',
+      'qq:chat#account:qq-foreign',
       {
         ...makeWorkspace('Foreign chat', 'foreign-chat'),
         created_by: 'owner-a',

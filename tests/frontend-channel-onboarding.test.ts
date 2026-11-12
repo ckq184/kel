@@ -14,7 +14,7 @@ describe('channel onboarding frontend protocol contract', () => {
     expect(source).not.toContain('WeChatQRDialog');
   });
 
-  test('QR onboarding never exposes WeChat or WhatsApp protocol output as inputs', () => {
+  test('QR onboarding never exposes WeChat protocol output as inputs', () => {
     const fields = read(
       'web/src/components/settings/channel-accounts/ProviderConnectionFields.tsx',
     );
@@ -35,14 +35,13 @@ describe('channel onboarding frontend protocol contract', () => {
     expect(definitions).not.toContain("key: 'ownerOpenId'");
   });
 
-  test('WhatsApp live status is isolated by immutable channel account id', () => {
+  test('live transport status is isolated by immutable channel account id', () => {
     const source = read(
       'web/src/components/settings/channel-accounts/QrOnboardingPanel.tsx',
     );
     const store = read('web/src/stores/channel-accounts.ts');
-    expect(source).toContain("'whatsapp_status'");
+    expect(source).toContain("'channel_account_status'");
     expect(source).toContain('event.accountId !== account.id');
-    expect(source).toContain('mergeWhatsAppOnboardingState');
     expect(store).toContain('/onboarding/status');
   });
 
@@ -114,10 +113,8 @@ describe('channel onboarding frontend protocol contract', () => {
 
     for (const officialUrl of [
       'https://open.feishu.cn/app',
-      'https://t.me/BotFather',
       'https://q.qq.com/qqbot/openclaw/index.html',
       'https://open-dev.dingtalk.com/fe/app',
-      'https://discord.com/developers/applications',
     ]) {
       expect(definitions).toContain(officialUrl);
     }

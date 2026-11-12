@@ -20,7 +20,7 @@
 ## 2. 产品模型
 
 CKQClaw 是基于 Pi Agent Runtime 的自托管、多用户 Agent 工作台，支持 Web 与飞书、
-Telegram、QQ、钉钉、微信、Discord、WhatsApp。
+QQ、钉钉、微信四渠道。
 
 当前产品层级：
 
@@ -63,12 +63,9 @@ Agent Profile（身份、四段 Prompt、能力策略）
 渠道实现位于：
 
 - `src/feishu.ts`
-- `src/telegram.ts`
 - `src/qq.ts`
 - `src/dingtalk.ts`
 - `src/wechat.ts`
-- `src/discord.ts`
-- `src/whatsapp.ts`
 
 HTTP 路由位于 `src/routes/`，完整模块索引见 `docs/API.md`。
 

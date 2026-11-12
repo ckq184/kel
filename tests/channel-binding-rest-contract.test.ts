@@ -64,10 +64,10 @@ describe('channel binding REST contract', () => {
   test('frontend capability table mirrors workspace and native-thread policy', () => {
     const capabilities = read('web/src/constants/im-capabilities.ts');
     expect((capabilities.match(/can_bind_workspace: true/g) ?? []).length).toBe(
-      7,
+      4,
     );
     expect(capabilities).toMatch(
-      /telegram:[\s\S]*supports_thread_map: true[\s\S]*supports_activation_modes: false/,
+      /feishu:[\s\S]*supports_thread_map: true[\s\S]*supports_activation_modes: true/,
     );
     expect(capabilities).toMatch(
       /qq:[\s\S]*supports_thread_map: false[\s\S]*supports_activation_modes: false/,
@@ -95,16 +95,11 @@ describe('channel binding REST contract', () => {
     expect(dialog).toContain('<ChannelAccountBadge');
   });
 
-  test('a detected Telegram Forum is workspace-only before its first topic', () => {
-    const telegram = read('src/telegram.ts');
+  test('a detected native-thread container is workspace-only before its first topic', () => {
     const index = read('src/index.ts');
     const agents = read('src/routes/agents.ts');
     const config = read('src/routes/config.ts');
 
-    expect(telegram).toContain('prepareTelegramForumPairing(');
-    expect(telegram).toMatch(
-      /onPairAttempt\(jid, chatName, code\)[\s\S]*prepareTelegramForumPairing\([\s\S]*ctx\.reply/,
-    );
     expect(index).toContain(
       'return ensureNativeContextChannelMount(chatJid, group) !== null',
     );

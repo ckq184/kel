@@ -419,20 +419,6 @@ describe('Agent Builder owner identity', () => {
       sender: 'ou_owner',
     },
     {
-      name: 'Telegram account-scoped topic',
-      sourceJid: 'telegram:-1001#account:account-a#thread:42',
-      groupJid: 'telegram:-1001#account:account-a',
-      ownerImId: '123',
-      sender: 'tg:123',
-    },
-    {
-      name: 'Discord group',
-      sourceJid: 'discord:channel-1',
-      groupJid: 'discord:channel-1',
-      ownerImId: '123',
-      sender: 'discord:123',
-    },
-    {
       name: 'DingTalk group',
       sourceJid: 'dingtalk:group:conversation-1',
       groupJid: 'dingtalk:group:conversation-1',
@@ -460,13 +446,6 @@ describe('Agent Builder owner identity', () => {
       ownerImId: 'group:owner-open-id',
       sender: 'qq:owner-open-id',
     },
-    {
-      name: 'WhatsApp device-qualified sender',
-      sourceJid: 'whatsapp:group-1@g.us',
-      groupJid: 'whatsapp:group-1@g.us',
-      ownerImId: '15551234@s.whatsapp.net',
-      sender: 'whatsapp:15551234:42@s.whatsapp.net',
-    },
   ])('accepts canonical owner identity for $name', (entry) => {
     expect(
       isAgentBuilderOwnerInput(
@@ -486,16 +465,16 @@ describe('Agent Builder owner identity', () => {
 
   test.each([
     {
-      name: 'Telegram rejects a Discord-shaped sender',
-      sourceJid: 'telegram:chat-1',
-      ownerImId: '123',
-      sender: 'discord:123',
+      name: 'DingTalk rejects a WeChat-shaped sender',
+      sourceJid: 'dingtalk:group:conversation-1',
+      ownerImId: 'owner-open-id',
+      sender: 'wechat:owner-open-id',
     },
     {
-      name: 'Discord rejects a Telegram-shaped sender',
-      sourceJid: 'discord:channel-1',
-      ownerImId: '123',
-      sender: 'tg:123',
+      name: 'WeChat rejects a DingTalk-shaped sender',
+      sourceJid: 'wechat:owner-open-id',
+      ownerImId: 'owner-open-id',
+      sender: 'dingtalk:owner-open-id',
     },
     {
       name: 'QQ group rejects a C2C owner claim',
@@ -504,10 +483,10 @@ describe('Agent Builder owner identity', () => {
       sender: 'qq:owner-open-id',
     },
     {
-      name: 'WhatsApp rejects a group identity as owner',
-      sourceJid: 'whatsapp:group-1@g.us',
-      ownerImId: 'group-1@g.us',
-      sender: 'whatsapp:group-1@g.us',
+      name: 'QQ group rejects a group identity as owner',
+      sourceJid: 'qq:group:conversation-1',
+      ownerImId: 'group:conversation-1',
+      sender: 'qq:conversation-1',
     },
     {
       name: 'unknown channel fails closed',
@@ -558,11 +537,11 @@ describe('Agent Builder owner identity', () => {
   test('rejects an unpaired explicit first-claim owner', () => {
     expect(
       isAgentBuilderOwnerInput(
-        { sender: 'discord:123', source_jid: 'discord:channel-1' },
+        { sender: 'qq:owner-open-id', source_jid: 'qq:c2c:conversation-1' },
         'owner-1',
         () => ({
           created_by: 'owner-1',
-          owner_im_id: '123',
+          owner_im_id: 'c2c:owner-open-id',
           owner_claim_source: 'explicit',
         }),
       ),
@@ -574,20 +553,20 @@ describe('trusted direct owner provenance upgrade', () => {
   test('learns a new admitted direct chat with no owner or provenance', () => {
     expect(
       resolveTrustedDirectOwnerUpgrade(
-        'telegram:123',
-        'tg:123',
+        'qq:c2c:owner-a',
+        'qq:owner-a',
         undefined,
         undefined,
       ),
-    ).toBe('123');
+    ).toBe('c2c:owner-a');
   });
 
   test('does not trust a historical owner without provenance', () => {
     expect(
       resolveTrustedDirectOwnerUpgrade(
-        'telegram:123',
-        'tg:123',
-        '123',
+        'qq:c2c:owner-a',
+        'qq:owner-a',
+        'c2c:owner-a',
         undefined,
       ),
     ).toBeNull();
@@ -601,51 +580,39 @@ describe('trusted direct owner provenance upgrade', () => {
     'transfer_reset',
   ])('does not rewrite protected provenance %s', (source) => {
     expect(
-      resolveTrustedDirectOwnerUpgrade('telegram:123', 'tg:123', '123', source),
+      resolveTrustedDirectOwnerUpgrade(
+        'qq:c2c:owner-a',
+        'qq:owner-a',
+        'c2c:owner-a',
+        source,
+      ),
     ).toBeNull();
   });
 
-  test('rejects a different sender and handles WhatsApp device JIDs canonically', () => {
+  test('rejects a different sender', () => {
     expect(
       resolveTrustedDirectOwnerUpgrade(
-        'telegram:123',
-        'tg:456',
-        '123',
+        'qq:c2c:owner-a',
+        'qq:owner-b',
+        'c2c:owner-a',
         'explicit',
       ),
     ).toBeNull();
-    expect(
-      resolveTrustedDirectOwnerUpgrade(
-        'whatsapp:15551234@s.whatsapp.net',
-        'whatsapp:15551234:42@s.whatsapp.net',
-        undefined,
-        undefined,
-      ),
-    ).toBe('15551234@s.whatsapp.net');
   });
 });
 
 describe('paired direct conversation identity', () => {
   test.each([
-    ['telegram:123#account:bot-a', '123'],
-    ['discord:dm:456#account:bot-a', '456'],
     ['dingtalk:c2c:staff-a', 'staff-a'],
     ['wechat:user-a', 'user-a'],
     ['qq:c2c:open-a#account:bot-a', 'c2c:open-a'],
-    [
-      'whatsapp:15551234:42@s.whatsapp.net#account:bot-a',
-      '15551234@s.whatsapp.net',
-    ],
   ])('derives the native owner from %s', (jid, owner) => {
     expect(ownerImIdFromDirectConversationJid(jid)).toBe(owner);
   });
 
   test.each([
-    'telegram:-1001',
-    'discord:channel-1',
     'dingtalk:group-1',
     'qq:group:open-a',
-    'whatsapp:group@g.us',
     'feishu:p2p-ambiguous',
     'unknown:chat',
   ])('fails closed for non-direct or ambiguous %s', (jid) => {

@@ -128,19 +128,6 @@ export function ProviderConnectionFields({
           }
         />
       )}
-
-      {showOptions && provider === 'discord' && (
-        <OptionSwitch
-          id={`${idPrefix}-streaming-edit`}
-          label="流式编辑"
-          description="开启后持续编辑同一条消息；关闭后完成生成再发送。"
-          checked={(values.streamingMode ?? 'off') === 'edit'}
-          disabled={disabled}
-          onCheckedChange={(checked) =>
-            onChange('streamingMode', checked ? 'edit' : 'off')
-          }
-        />
-      )}
     </div>
   );
 }

@@ -40,13 +40,10 @@
     "@hono/node-server": "^2.0.12",
     "@larksuiteoapi/node-sdk": "^1.58.0",
     "adm-zip": "^0.6.0",
-    "baileys": "^7.0.0-rc13",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.10.0",
     "cron-parser": "^5.5.0",
     "dingtalk-stream": "2.1.6-beta.1",
-    "discord.js": "^14.26.2",
-    "grammy": "^1.40.0",
     "hono": "^4.12.25",
     "node-pty": "^1.1.0",
     "pino": "^9.6.0",
@@ -75,9 +72,6 @@
     "electron-builder": "^26.0.12",
     "esbuild": "^0.25.0"
   },
-  "overrides": {
-    "libsignal": "6.0.0"
-  },
   "engines": {
     "node": ">=20"
   },
@@ -98,7 +92,6 @@
     "self-hosted",
     "feishu",
     "lark",
-    "telegram",
     "chatbot",
     "docker",
     "mcp",
@@ -108,7 +101,6 @@
   "allowScripts": {
     "@google/genai@1.52.0": true,
     "protobufjs@7.6.5": true,
-    "baileys@7.0.0-rc13": true,
     "better-sqlite3@12.11.1": true,
     "electron@39.8.10": true,
     "electron-winstaller@5.4.0": true,

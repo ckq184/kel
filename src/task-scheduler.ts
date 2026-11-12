@@ -3076,15 +3076,7 @@ function retryPayloadForReceipt(
   ) {
     return payload;
   }
-  const knownChannelTypes = new Set([
-    'feishu',
-    'telegram',
-    'qq',
-    'wechat',
-    'dingtalk',
-    'discord',
-    'whatsapp',
-  ]);
+  const knownChannelTypes = new Set(['feishu', 'qq', 'wechat', 'dingtalk']);
   let failedChannels = receipt.summary.failed_channels.filter((channel) =>
     knownChannelTypes.has(channel),
   );
