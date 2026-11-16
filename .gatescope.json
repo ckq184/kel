@@ -1,6 +1,6 @@
 {
-  "task": "任务AM - 内置身份锚定：identity.ckqclaw.md 增加底层模型/上下文窗口应答口径（模型由 Provider 配置决定、不做模型身份宣称、窗口以平台声明为准），用户 2026-11-16 拍板「轻方案：改 prompt 文件即可」；prompt-loader 契约测试锁定新锚定文案",
-  "base": "996bf78",
+  "task": "任务AN - 内置身份锚定加固：任务AM 的否定式口径在老会话历史污染下漏网（模型仍自称 Claude 驱动），按用户批准的草稿改为正面固定台词 + 显式中和环境信号与会话历史两个污染源；prompt-loader 契约测试同步锁定",
+  "base": "6b58e9f",
   "allow": [
     "container/agent-runner/prompts/identity.ckqclaw.md",
     "tests/prompt-loader.test.ts"

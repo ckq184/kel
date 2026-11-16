@@ -117,10 +117,11 @@ describe('prompts/ files', () => {
     expect(identity).toContain('AgentProfile');
     expect(identity).toContain('Home Workspace');
     expect(identity).toContain('Agent Builder');
-    // 任务AM：底层模型/窗口应答口径锚定（防第三方模型在 Claude Code 风格环境里
-    // 幻觉性自称「由 Claude 驱动」并报训练记忆里的出厂窗口参数）
-    expect(identity).toContain('不为任何模型厂商代言');
-    expect(identity).toContain('以平台 Provider 配置的声明为准');
+    // 任务AN：底层模型/窗口应答口径加固（正面固定台词 + 中和历史污染与环境
+    // 信号；任务AM 的否定式在老会话 transcript 自一致性下漏网）
+    expect(identity).toContain('按以下固定口径回答');
+    expect(identity).toContain('具体模型与型号我在会话内读不到');
+    expect(identity).toContain('协议兼容层的名字');
     expect(bootstrap).toContain('刚醒来/刚刚启动');
     expect(bootstrap).toContain('ckqclaw.owner.preferred_address');
     expect(bootstrap).toContain('ckqclaw_owner_profile');
