@@ -1,28 +1,8 @@
 {
-  "task": "任务AL - 上下文窗口声明化：provider 级 contextWindow 预设字段（auto/128k/256k/512k/1M），宿主 buildClaudeEnvLines 剥离 [1m] 后缀并注入 CKQCLAW_CONTEXT_WINDOW，runner 认定优先级=声明>启发式>200k，存量 [1m] 配置兼容按 1M 认定。计划 docs/task-al-context-window-declaration-plan.md（§5 非目标红线：不动 SystemSettingsSection 系统级默认、不动 sdk-query.ts、无 DB 迁移、无会话热切换）",
-  "base": "ef64b06",
+  "task": "任务AM - 内置身份锚定：identity.ckqclaw.md 增加底层模型/上下文窗口应答口径（模型由 Provider 配置决定、不做模型身份宣称、窗口以平台声明为准），用户 2026-11-16 拍板「轻方案：改 prompt 文件即可」；prompt-loader 契约测试锁定新锚定文案",
+  "base": "996bf78",
   "allow": [
-    "docs/task-al-context-window-declaration-plan.md",
-    "container/agent-runner/src/context-window.ts",
-    "container/agent-runner/src/provider-runtime.ts",
-    "container/agent-runner/src/index.ts",
-    "src/runtime-config.ts",
-    "src/container-runner.ts",
-    "src/schemas.ts",
-    "src/routes/config.ts",
-    "web/src/components/settings/types.ts",
-    "web/src/components/settings/ProviderEditor.tsx",
-    "web/src/utils/provider-model.ts",
-    "web/src/pages/SetupProvidersPage.tsx",
-    "web/src/pages/AgentProfilesPage.tsx",
-    "tests/agent-runner-context-window.test.ts",
-    "tests/agent-runner-provider-runtime.test.ts",
-    "tests/runtime-config-env.test.ts",
-    "tests/runtime-config-default-provider.test.ts",
-    "tests/provider-model-settings.test.ts",
-    "tests/frontend-settings-information-architecture.test.ts",
-    "tests/agent-runner-result-usage.test.ts",
-    "tests/session-workflows.test.ts",
-    "CLAUDE.md"
+    "container/agent-runner/prompts/identity.ckqclaw.md",
+    "tests/prompt-loader.test.ts"
   ]
 }
