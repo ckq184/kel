@@ -2026,7 +2026,8 @@ export function AgentProfilesPage() {
                               className="mt-1 text-[11px] leading-5 text-muted-foreground"
                             >
                               根据当前模型自动决定压缩时机。普通模型通常为 200K
-                              上下文；模型名带 [1m] 时按 1M 处理。
+                              上下文；模型配置中声明的上下文窗口（如
+                              1M）优先，历史 [1m] 后缀仍按 1M 处理。
                             </p>
                           </div>
                           <Switch
@@ -2094,7 +2095,8 @@ export function AgentProfilesPage() {
                                   className="mt-1.5 text-[11px] leading-5 text-muted-foreground"
                                 >
                                   可设置 50–90%。例如 80% 在普通模型下为
-                                  160K，在 [1m] 模型下为 800K。
+                                  160K；声明 1M 窗口（或历史 [1m] 后缀）时为
+                                  800K。
                                 </p>
                               </>
                             )}

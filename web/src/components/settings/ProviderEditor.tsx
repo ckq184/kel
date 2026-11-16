@@ -20,12 +20,21 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { api } from '../../api/client';
 import {
+  CONTEXT_WINDOW_OPTIONS,
   buildDefaultProviderEnv,
   buildProviderModel,
   parseProviderModel,
+  resolveProviderContextWindow,
+  type ContextWindowPreset,
 } from '../../utils/provider-model';
 import type { ProviderWithHealth, EnvRow } from './types';
 import { getErrorMessage } from './types';
@@ -42,7 +51,7 @@ const RESERVED_ENV_KEYS = new Set([
 ]);
 
 const DEFAULTED_THIRD_PARTY_ENV_KEYS = new Set(
-  buildDefaultProviderEnv('', false).map((row) => row.key),
+  buildDefaultProviderEnv('', 'auto').map((row) => row.key),
 );
 
 const MANAGED_ENV_SOURCE_LABELS = {
@@ -118,7 +127,9 @@ export function ProviderEditor({
   const [name, setName] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
   const [model, setModel] = useState('');
-  const [oneMillionContext, setOneMillionContext] = useState(false);
+  // 任务AL：窗口声明取代 [1m] 后缀开关（声明 > 启发式 > 200k）
+  const [contextWindow, setContextWindow] =
+    useState<ContextWindowPreset>('auto');
 
   // 官方认证
   const [authTab, setAuthTab] = useState<OfficialAuthTab>('oauth');
@@ -148,7 +159,7 @@ export function ProviderEditor({
   // 状态
   const [saving, setSaving] = useState(false);
 
-  const defaultProviderEnv = buildDefaultProviderEnv(model, oneMillionContext);
+  const defaultProviderEnv = buildDefaultProviderEnv(model, contextWindow);
 
   // 初始化表单
   useEffect(() => {
@@ -160,7 +171,7 @@ export function ProviderEditor({
       setName('');
       setBaseUrl('');
       setModel('');
-      setOneMillionContext(false);
+      setContextWindow('auto');
       setAuthTab('oauth');
       setSetupToken('');
       setApiKey('');
@@ -177,7 +188,14 @@ export function ProviderEditor({
       setBaseUrl(provider.anthropicBaseUrl || '');
       const modelSelection = parseProviderModel(provider.anthropicModel || '');
       setModel(modelSelection.model);
-      setOneMillionContext(modelSelection.oneMillionContext);
+      // 声明优先回显；无声明时存量 [1m] 后缀按 1M 兼容展示
+      const initialContextWindow: ContextWindowPreset =
+        provider.contextWindow && provider.contextWindow !== 'auto'
+          ? provider.contextWindow
+          : modelSelection.oneMillionContext
+            ? 1_000_000
+            : 'auto';
+      setContextWindow(initialContextWindow);
       setAuthTab('oauth');
       setSetupToken('');
       setApiKey('');
@@ -188,10 +206,9 @@ export function ProviderEditor({
       setClearTokenOnSave(false);
       const providerCustomEnv = provider.customEnv || {};
       const defaultEnv = Object.fromEntries(
-        buildDefaultProviderEnv(
-          modelSelection.model,
-          modelSelection.oneMillionContext,
-        ).map((row) => [row.key, row.value]),
+        buildDefaultProviderEnv(modelSelection.model, initialContextWindow).map(
+          (row) => [row.key, row.value],
+        ),
       );
       const initialProviderEnvOverrides: Record<string, string> = {};
       if (provider.type === 'third_party') {
@@ -299,10 +316,9 @@ export function ProviderEditor({
 
   // ─── 保存 ──────────────────────────────────────────────────
   const handleSave = async () => {
+    // 任务AL：模型名只剥离、永不追加 [1m]，窗口语义走独立 contextWindow 声明
     const normalizedModel =
-      providerType === 'third_party'
-        ? buildProviderModel(model, oneMillionContext)
-        : model.trim();
+      providerType === 'third_party' ? buildProviderModel(model) : model.trim();
     if (providerType === 'third_party' && !normalizedModel) {
       setError('请填写第三方 API 支持的模型名称');
       return;
@@ -406,6 +422,9 @@ export function ProviderEditor({
         }
 
         if (normalizedModel) createBody.anthropicModel = normalizedModel;
+        if (providerType === 'third_party') {
+          createBody.contextWindow = contextWindow;
+        }
 
         await api.post('/api/config/claude/providers', createBody);
         setNotice('模型配置已创建。');
@@ -418,6 +437,7 @@ export function ProviderEditor({
 
         if (providerType === 'third_party') {
           patchBody.anthropicBaseUrl = trimmedBaseUrl;
+          patchBody.contextWindow = contextWindow;
         }
         patchBody.anthropicModel = normalizedModel;
 
@@ -862,27 +882,52 @@ export function ProviderEditor({
                   />
                 </div>
 
-                <div className="flex min-h-16 items-center justify-between gap-3 rounded-xl border border-border/80 bg-muted/35 px-3.5 py-2.5">
+                <div className="flex min-h-16 flex-col justify-center gap-1.5 rounded-xl border border-border/80 bg-muted/35 px-3.5 py-2.5">
                   <label
-                    htmlFor="provider-one-million-context"
-                    className="min-w-0"
+                    htmlFor="provider-context-window"
+                    className="text-xs font-medium text-foreground"
                   >
-                    <span className="block text-xs font-medium text-foreground">
-                      1M 上下文
-                    </span>
-                    <span className="mt-0.5 block text-[11px] leading-4 text-muted-foreground">
-                      自动添加 [1m]
-                    </span>
+                    上下文窗口
                   </label>
-                  <Switch
-                    id="provider-one-million-context"
-                    checked={oneMillionContext}
-                    onCheckedChange={setOneMillionContext}
+                  <Select
+                    value={String(contextWindow)}
+                    onValueChange={(value) =>
+                      setContextWindow(
+                        value === 'auto'
+                          ? 'auto'
+                          : (Number(value) as ContextWindowPreset),
+                      )
+                    }
                     disabled={saving}
-                    aria-label="启用 1M 上下文"
-                  />
+                  >
+                    <SelectTrigger
+                      id="provider-context-window"
+                      className="h-8 w-full text-xs"
+                      aria-label="声明上下文窗口"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    {/* 弹窗内容层 z-[10001]（建仓基线遗产）高于 Select portal 默认 z-50，
+                        下拉须抬到其上才可见 */}
+                    <SelectContent className="z-[10002]">
+                      {CONTEXT_WINDOW_OPTIONS.map((option) => (
+                        <SelectItem
+                          key={String(option.value)}
+                          value={String(option.value)}
+                          className="text-xs"
+                        >
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
+
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                上下文窗口请按模型真实支持的最大值选择；声明过大时上游会按其真实窗口截断或报超长。
+                「自动」按 200K 处理，历史配置中的 [1m] 后缀仍按 1M 认定。
+              </p>
 
               <div className="rounded-xl border border-primary/15 bg-primary/[0.035] px-3.5 py-3">
                 <div className="flex items-start gap-2.5">
@@ -894,12 +939,15 @@ export function ProviderEditor({
                     <p className="mt-1 text-xs leading-5 text-muted-foreground">
                       实际模型：
                       <code className="break-all font-medium text-foreground">
-                        {buildProviderModel(model, oneMillionContext) ||
-                          '填写模型后生成'}
+                        {buildProviderModel(model) || '填写模型后生成'}
                       </code>
                       {' · '}
                       上下文窗口：
-                      {oneMillionContext ? '1,000,000' : '200,000'} tokens
+                      {resolveProviderContextWindow(
+                        model,
+                        contextWindow,
+                      ).toLocaleString()}{' '}
+                      tokens
                     </p>
                     <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">
                       默认同步模型映射、压缩窗口、请求超时与兼容参数；可在高级设置中调整。

@@ -1,5 +1,9 @@
 // ─── 统一供应商类型 (V4) ─────────────────────────────────────
 
+// 任务AL：窗口声明预设的单一真相在 utils/provider-model.ts，此处转发。
+import type { ContextWindowPreset } from '../../utils/provider-model';
+export type { ContextWindowPreset };
+
 export interface UnifiedProviderPublic {
   id: string;
   name: string;
@@ -8,6 +12,7 @@ export interface UnifiedProviderPublic {
   weight: number;
   anthropicBaseUrl: string;
   anthropicModel: string;
+  contextWindow?: ContextWindowPreset;
   hasAnthropicAuthToken: boolean;
   anthropicAuthTokenMasked: string | null;
   hasAnthropicApiKey: boolean;
@@ -60,6 +65,7 @@ export interface ClaudeApplyResult {
 export interface ClaudeConfigPublic {
   anthropicBaseUrl: string;
   anthropicModel: string;
+  contextWindow?: ContextWindowPreset;
   updatedAt: string | null;
   hasAnthropicAuthToken: boolean;
   hasAnthropicApiKey: boolean;

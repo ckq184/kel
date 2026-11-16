@@ -140,3 +140,106 @@ describe('default model configuration', () => {
     });
   });
 });
+
+describe('provider context window declaration (任务AL)', () => {
+  test('round-trips a declared window through CRUD, public view and env lines', () => {
+    const provider = runtimeConfig.createProvider({
+      name: 'Declared window gateway',
+      type: 'third_party',
+      anthropicBaseUrl: 'https://declared.example.test',
+      anthropicAuthToken: 'declared-token',
+      anthropicModel: 'glm-5.2',
+      contextWindow: 512_000,
+      enabled: false,
+    });
+
+    // 回显：公开视图带声明值
+    expect(runtimeConfig.toPublicProvider(provider).contextWindow).toBe(
+      512_000,
+    );
+
+    // 存储往返：resolveProviderById → config → env 注入
+    const resolved = runtimeConfig.resolveProviderById(provider.id);
+    expect(resolved.config.contextWindow).toBe(512_000);
+    const lines = runtimeConfig.buildContainerEnvLines(
+      resolved.config,
+      { customEnv: {} },
+      resolved.customEnv,
+    );
+    expect(lines).toContain('CKQCLAW_CONTEXT_WINDOW=512000');
+    expect(lines).toContain('ANTHROPIC_MODEL=glm-5.2');
+    expect(lines).toContain('CLAUDE_CODE_AUTO_COMPACT_WINDOW=512000');
+
+    // patch 回 auto：不再注入声明 env
+    const patched = runtimeConfig.updateProvider(provider.id, {
+      contextWindow: 'auto',
+    });
+    expect(runtimeConfig.toPublicProvider(patched).contextWindow).toBe('auto');
+    const autoLines = runtimeConfig.buildContainerEnvLines(
+      runtimeConfig.resolveProviderById(provider.id).config,
+      { customEnv: {} },
+      {},
+    );
+    expect(
+      autoLines.some((line) => line.startsWith('CKQCLAW_CONTEXT_WINDOW=')),
+    ).toBe(false);
+    expect(autoLines).toContain('CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000');
+  });
+
+  test('legacy [1m] provider migrates to stripped model plus 1M declaration', () => {
+    const provider = runtimeConfig.createProvider({
+      name: 'Legacy suffix gateway',
+      type: 'third_party',
+      anthropicBaseUrl: 'https://legacy.example.test',
+      anthropicAuthToken: 'legacy-token',
+      anthropicModel: 'glm-5.2[1m]',
+      enabled: false,
+    });
+
+    const resolved = runtimeConfig.resolveProviderById(provider.id);
+    const lines = runtimeConfig.buildContainerEnvLines(
+      resolved.config,
+      { customEnv: {} },
+      resolved.customEnv,
+    );
+    // 存量兼容：模型名剥离上送，窗口等价迁移为 1M 声明
+    expect(lines).toContain('ANTHROPIC_MODEL=glm-5.2');
+    expect(lines).toContain('ANTHROPIC_DEFAULT_OPUS_MODEL=glm-5.2');
+    expect(lines).toContain('CKQCLAW_CONTEXT_WINDOW=1000000');
+    expect(lines).toContain('CLAUDE_CODE_AUTO_COMPACT_WINDOW=1000000');
+  });
+
+  test('schema accepts only the declared preset domain', async () => {
+    const { UnifiedProviderCreateSchema } = await import('../src/schemas.js');
+    const base = {
+      name: 'ok',
+      type: 'third_party' as const,
+      anthropicBaseUrl: 'https://schema.example.test',
+    };
+
+    expect(
+      UnifiedProviderCreateSchema.safeParse({
+        ...base,
+        contextWindow: 256_000,
+      }).success,
+    ).toBe(true);
+    expect(
+      UnifiedProviderCreateSchema.safeParse({
+        ...base,
+        contextWindow: 'auto',
+      }).success,
+    ).toBe(true);
+    expect(
+      UnifiedProviderCreateSchema.safeParse({
+        ...base,
+        contextWindow: 123_456,
+      }).success,
+    ).toBe(false);
+    expect(
+      UnifiedProviderCreateSchema.safeParse({
+        ...base,
+        contextWindow: '1m',
+      }).success,
+    ).toBe(false);
+  });
+});

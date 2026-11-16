@@ -102,7 +102,6 @@ import {
   type IpcInputMessage,
 } from './ipc-delivery.js';
 import {
-  isExtendedContextModel,
   resolveAutoCompactWindow,
   resolveLegacyAutoCompactWindow,
 } from './context-window.js';
@@ -2681,14 +2680,14 @@ async function runQueryAttempt(
     };
   }
 
-  // No override = SDK model-aware default: normally 200K; [1m] requests 1M.
+  // Window recognition: provider declaration (任务AL) > [1m] heuristic > 200K.
   // Percentage policy takes precedence over the legacy absolute-token setting.
   const autoCompactPercentage = parseInt(
     process.env.AUTO_COMPACT_PERCENTAGE ?? '0',
     10,
   );
   const percentageWindow = resolveAutoCompactWindow(
-    queryModelRuntime.model,
+    queryModelRuntime.contextWindow,
     autoCompactPercentage,
   );
   const legacyAutoCompactWindow = parseInt(
@@ -2696,7 +2695,7 @@ async function runQueryAttempt(
     10,
   );
   const safeLegacyAutoCompactWindow = resolveLegacyAutoCompactWindow(
-    queryModelRuntime.model,
+    queryModelRuntime.contextWindow,
     legacyAutoCompactWindow,
   );
   const flagSettings: Record<string, unknown> = {};
@@ -3340,11 +3339,11 @@ async function runQueryAttempt(
           contextAudit.warnings.push(contextBudget.warning);
           log(`[WARN] ${contextBudget.warning}`);
         }
-        // 1M 上下文缩水告警：带 [1m] 后缀的模型期望约 1M 上下文窗口，若 SDK / 模型资格判定
-        // 静默退回（例如 200K），在此立即暴露而非等到溢出。push 进 warnings 会让下方
-        // emit 的 displayLevel 自动升为 'primary'，在前端醒目展示。
+        // 1M 上下文缩水告警：按认定窗口（声明 > [1m] 启发式，任务AL）期望约 1M 上下文，
+        // 若 SDK / 模型资格判定静默退回（例如 200K），在此立即暴露而非等到溢出。push 进
+        // warnings 会让下方 emit 的 displayLevel 自动升为 'primary'，在前端醒目展示。
         if (
-          isExtendedContextModel(queryModelRuntime.model) &&
+          queryModelRuntime.contextWindow >= 1_000_000 &&
           contextUsage &&
           contextUsage.maxTokens > 0 &&
           contextUsage.maxTokens < 900_000

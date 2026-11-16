@@ -387,15 +387,16 @@ npm run self-test
 
 ### 常见修改入口
 
-| 任务             | 入口                                                                                                                                                                 |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 新增 Web 设置    | `src/runtime-config.ts`、`src/schemas.ts`、`web/src/components/settings/`                                                                                            |
-| 新增 HTTP API    | 对应 `src/routes/*.ts`，同步 `docs/API.md` 和 ACL                                                                                                                    |
-| 新增 MCP 工具    | `container/agent-runner/src/mcp-tools.ts` 与 `src/index.ts` IPC                                                                                                      |
-| 新增渠道         | 渠道工厂、`src/im-manager.ts`、`src/channel-prefixes.ts`、渠道账号 Schema/UI                                                                                         |
-| 新增 StreamEvent | `shared/stream-event.ts` 后运行 `make sync-types`                                                                                                                    |
-| 修改数据库       | `src/db.ts` 新 migration、升级 `CURRENT_SCHEMA_VERSION`、补迁移测试、**同提交更新 `tests/db-upgrade-safety.test.ts` 的 head pin**（v70/v71 曾连锈两版，任务 K 教训） |
-| 修改 Agent 能力  | Resolver、Capability Preview、Runner 三侧同时验证                                                                                                                    |
+| 任务             | 入口                                                                                                                                                                                                  |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 新增 Web 设置    | `src/runtime-config.ts`、`src/schemas.ts`、`web/src/components/settings/`                                                                                                                             |
+| 上下文窗口声明   | provider 级 `contextWindow`（auto/128k/256k/512k/1M）：宿主 `src/runtime-config.ts` 归一注入 `CKQCLAW_CONTEXT_WINDOW` 并剥离 `[1m]` 后缀，runner `context-window.ts` 认定（声明>启发式>200k，任务AL） |
+| 新增 HTTP API    | 对应 `src/routes/*.ts`，同步 `docs/API.md` 和 ACL                                                                                                                                                     |
+| 新增 MCP 工具    | `container/agent-runner/src/mcp-tools.ts` 与 `src/index.ts` IPC                                                                                                                                       |
+| 新增渠道         | 渠道工厂、`src/im-manager.ts`、`src/channel-prefixes.ts`、渠道账号 Schema/UI                                                                                                                          |
+| 新增 StreamEvent | `shared/stream-event.ts` 后运行 `make sync-types`                                                                                                                                                     |
+| 修改数据库       | `src/db.ts` 新 migration、升级 `CURRENT_SCHEMA_VERSION`、补迁移测试、**同提交更新 `tests/db-upgrade-safety.test.ts` 的 head pin**（v70/v71 曾连锈两版，任务 K 教训）                                  |
+| 修改 Agent 能力  | Resolver、Capability Preview、Runner 三侧同时验证                                                                                                                                                     |
 
 ### 提交前门槛
 

@@ -79,6 +79,7 @@ const RESERVED_CLAUDE_ENV_KEYS = new Set([
   'ANTHROPIC_MODEL',
   'CKQCLAW_CLAUDE_ENDPOINT_KIND',
   'CKQCLAW_FALLBACK_MODEL',
+  'CKQCLAW_CONTEXT_WINDOW',
 ]);
 
 export const CLAUDE_ENDPOINT_KIND_ENV = 'CKQCLAW_CLAUDE_ENDPOINT_KIND';
@@ -99,6 +100,7 @@ const INHERITED_CLAUDE_PROVIDER_ENV_KEYS = [
   'CLAUDE_CODE_EFFORT_LEVEL',
   'CLAUDE_CODE_NO_FLICKER',
   'API_TIMEOUT_MS',
+  'CKQCLAW_CONTEXT_WINDOW',
 ] as const;
 
 /**
@@ -138,6 +140,32 @@ const THIRD_PARTY_RUNTIME_DEFAULTS = {
 
 function isOneMillionContextModel(model: string): boolean {
   return /\[1m\]$/i.test(model.trim());
+}
+
+/**
+ * 任务AL：剥离模型名尾部的 [1m] 后缀。Pi 迁移后该后缀已无协议作用，第三方
+ * Anthropic 兼容端点会因模型名带后缀直接 400；与 runner context-window.ts
+ * 的 stripOneMillionSuffix 保持同款正则（宿主与 runner 分属两个 npm 项目，
+ * 无法共享模块，改动需双侧同步）。
+ */
+function stripOneMillionSuffix(model: string): string {
+  return model
+    .trim()
+    .replace(/(\[1m\])+$/i, '')
+    .trim();
+}
+
+/**
+ * 任务AL：宿主侧认定的有效窗口（声明 > [1m] 启发式 > 200k），用于预填
+ * CLAUDE_CODE_AUTO_COMPACT_WINDOW 与归一注入 CKQCLAW_CONTEXT_WINDOW。
+ */
+function resolveHostContextWindow(config: ClaudeProviderConfig): number {
+  const declared =
+    config.contextWindow && config.contextWindow !== 'auto'
+      ? config.contextWindow
+      : undefined;
+  if (declared !== undefined) return declared;
+  return isOneMillionContextModel(config.anthropicModel) ? 1_000_000 : 200_000;
 }
 const DANGEROUS_ENV_VARS = new Set([
   // Code execution / preload attacks
@@ -239,6 +267,14 @@ export interface CachedOAuthUsage {
   error?: string;
 }
 
+/** 任务AL：provider 级上下文窗口预设档位（合法声明值）。 */
+export const CONTEXT_WINDOW_PRESETS = [
+  128_000, 256_000, 512_000, 1_000_000,
+] as const;
+export type DeclaredContextWindow = (typeof CONTEXT_WINDOW_PRESETS)[number];
+/** `auto` = 现行为（[1m] 启发式 → 1M，否则 200k）。 */
+export type ContextWindowPreset = 'auto' | DeclaredContextWindow;
+
 export interface ClaudeProviderConfig {
   anthropicBaseUrl: string;
   anthropicAuthToken: string;
@@ -246,12 +282,14 @@ export interface ClaudeProviderConfig {
   claudeCodeOauthToken: string;
   claudeOAuthCredentials: ClaudeOAuthCredentials | null;
   anthropicModel: string;
+  contextWindow?: ContextWindowPreset;
   updatedAt: string | null;
 }
 
 export interface ClaudeProviderPublicConfig {
   anthropicBaseUrl: string;
   anthropicModel: string;
+  contextWindow?: ContextWindowPreset;
   updatedAt: string | null;
   hasAnthropicAuthToken: boolean;
   hasAnthropicApiKey: boolean;
@@ -404,6 +442,8 @@ interface StoredProviderV4 {
   weight: number;
   anthropicBaseUrl: string;
   anthropicModel: string;
+  /** 任务AL：窗口声明（非密钥，明文随 provider JSON 落盘）。缺省 = auto。 */
+  contextWindow?: ContextWindowPreset;
   secrets: EncryptedSecrets;
   customEnv?: Record<string, string>;
   updatedAt: string;
@@ -436,6 +476,8 @@ export interface UnifiedProvider {
   anthropicBaseUrl: string;
   anthropicAuthToken: string;
   anthropicModel: string;
+  /** 任务AL：窗口声明预设（auto/128k/256k/512k/1M），缺省 auto。 */
+  contextWindow?: ContextWindowPreset;
   anthropicApiKey: string;
   claudeCodeOauthToken: string;
   claudeOAuthCredentials: ClaudeOAuthCredentials | null;
@@ -452,6 +494,7 @@ export interface UnifiedProviderPublic {
   weight: number;
   anthropicBaseUrl: string;
   anthropicModel: string;
+  contextWindow?: ContextWindowPreset;
   hasAnthropicAuthToken: boolean;
   anthropicAuthTokenMasked: string | null;
   hasAnthropicApiKey: boolean;
@@ -528,6 +571,21 @@ function normalizeModel(input: unknown): string {
     throw new Error('Field too long: anthropicModel');
   }
   return value;
+}
+
+/** 任务AL：窗口声明归一。undefined/null 视为 auto（现行为）；非法值拒绝。 */
+function normalizeContextWindow(
+  input: unknown,
+): ContextWindowPreset | undefined {
+  if (input === undefined || input === null) return undefined;
+  if (input === 'auto') return 'auto';
+  if (
+    typeof input === 'number' &&
+    (CONTEXT_WINDOW_PRESETS as readonly unknown[]).includes(input)
+  ) {
+    return input as DeclaredContextWindow;
+  }
+  throw new Error('Invalid field: contextWindow');
 }
 
 function normalizeFeishuAppId(input: unknown): string {
@@ -611,6 +669,7 @@ function normalizeConfig(
     ),
     claudeOAuthCredentials: input.claudeOAuthCredentials ?? null,
     anthropicModel: normalizeModel(input.anthropicModel),
+    contextWindow: normalizeContextWindow(input.contextWindow),
   };
 }
 
@@ -1084,6 +1143,9 @@ function toStoredProviderV4(provider: UnifiedProvider): StoredProviderV4 {
     weight: Math.max(1, Math.min(100, provider.weight || 1)),
     anthropicBaseUrl: provider.anthropicBaseUrl || '',
     anthropicModel: provider.anthropicModel || '',
+    ...(provider.contextWindow !== undefined
+      ? { contextWindow: provider.contextWindow }
+      : {}),
     secrets: encryptSecrets(secrets),
     ...(Object.keys(sanitizedEnv).length > 0
       ? { customEnv: sanitizedEnv }
@@ -1103,6 +1165,14 @@ function fromStoredProviderV4(stored: StoredProviderV4): UnifiedProvider {
     anthropicBaseUrl: stored.anthropicBaseUrl || '',
     anthropicAuthToken: secrets.anthropicAuthToken || '',
     anthropicModel: stored.anthropicModel || '',
+    // 存储读路径保持本函数一贯的宽容风格：脏值降级为 auto 而非炸掉整个配置。
+    contextWindow: (() => {
+      try {
+        return normalizeContextWindow(stored.contextWindow);
+      } catch {
+        return undefined;
+      }
+    })(),
     anthropicApiKey: secrets.anthropicApiKey || '',
     claudeCodeOauthToken: secrets.claudeCodeOauthToken || '',
     claudeOAuthCredentials: secrets.claudeOAuthCredentials ?? null,
@@ -1386,6 +1456,7 @@ export function createProvider(input: {
   anthropicBaseUrl?: string;
   anthropicAuthToken?: string;
   anthropicModel?: string;
+  contextWindow?: ContextWindowPreset;
   anthropicApiKey?: string;
   claudeCodeOauthToken?: string;
   claudeOAuthCredentials?: ClaudeOAuthCredentials | null;
@@ -1419,6 +1490,7 @@ export function createProvider(input: {
     anthropicModel: input.anthropicModel
       ? normalizeModel(input.anthropicModel)
       : '',
+    contextWindow: normalizeContextWindow(input.contextWindow),
     anthropicApiKey: input.anthropicApiKey
       ? normalizeSecret(input.anthropicApiKey, 'anthropicApiKey')
       : '',
@@ -1445,6 +1517,7 @@ export function updateProvider(
     name?: string;
     anthropicBaseUrl?: string;
     anthropicModel?: string;
+    contextWindow?: ContextWindowPreset;
     customEnv?: Record<string, string>;
     weight?: number;
   },
@@ -1466,6 +1539,9 @@ export function updateProvider(
       : {}),
     ...(patch.anthropicModel !== undefined
       ? { anthropicModel: normalizeModel(patch.anthropicModel) }
+      : {}),
+    ...(patch.contextWindow !== undefined
+      ? { contextWindow: normalizeContextWindow(patch.contextWindow) }
       : {}),
     ...(patch.customEnv !== undefined
       ? {
@@ -1621,6 +1697,7 @@ export function providerToConfig(
     claudeCodeOauthToken: provider.claudeCodeOauthToken,
     claudeOAuthCredentials: provider.claudeOAuthCredentials,
     anthropicModel: provider.anthropicModel,
+    contextWindow: provider.contextWindow,
     updatedAt: provider.updatedAt,
   };
 }
@@ -1637,6 +1714,7 @@ export function toPublicProvider(
     weight: provider.weight,
     anthropicBaseUrl: provider.anthropicBaseUrl,
     anthropicModel: provider.anthropicModel,
+    contextWindow: provider.contextWindow,
     hasAnthropicAuthToken: !!provider.anthropicAuthToken,
     anthropicAuthTokenMasked: maskSecret(provider.anthropicAuthToken),
     hasAnthropicApiKey: !!provider.anthropicApiKey,
@@ -1877,6 +1955,7 @@ export function toPublicClaudeProviderConfig(
   return {
     anthropicBaseUrl: config.anthropicBaseUrl,
     anthropicModel: config.anthropicModel,
+    contextWindow: config.contextWindow,
     updatedAt: config.updatedAt,
     hasAnthropicAuthToken: !!config.anthropicAuthToken,
     hasAnthropicApiKey: !!config.anthropicApiKey,
@@ -2423,16 +2502,30 @@ export function buildClaudeEnvLines(
     }
   }
   if (config.anthropicModel) {
-    lines.push(`ANTHROPIC_MODEL=${sanitizeEnvValue(config.anthropicModel)}`);
+    // 任务AL：剥离 [1m] 后缀后再上送，第三方端点不再收到带后缀的模型名。
+    lines.push(
+      `ANTHROPIC_MODEL=${sanitizeEnvValue(stripOneMillionSuffix(config.anthropicModel))}`,
+    );
+  }
+
+  // 任务AL：窗口声明归一注入——显式声明优先；无声明但检测到旧 [1m] 后缀时
+  // 等价迁移为 1M（存量配置无感）；无声明无后缀不注入，runner 走启发式 200k
+  // 默认，行为与改动前一致。
+  const hostContextWindow = resolveHostContextWindow(config);
+  if (
+    (config.contextWindow !== undefined && config.contextWindow !== 'auto') ||
+    isOneMillionContextModel(config.anthropicModel)
+  ) {
+    lines.push(`CKQCLAW_CONTEXT_WINDOW=${hostContextWindow}`);
   }
 
   // Use explicit profileCustomEnv if provided (pool mode), otherwise active profile.
   const customEnv = profileCustomEnv ?? getActiveProfileCustomEnv();
 
   // Anthropic-compatible third-party endpoints need a predictable Claude Code
-  // runtime. Prefill the implementation-level environment from the model and
-  // [1m] suffix, while allowing provider-level advanced settings to replace
-  // any default explicitly.
+  // runtime. Prefill the implementation-level environment from the declared
+  // context window (任务AL：声明 > [1m] 后缀启发式 > 200k)，while allowing
+  // provider-level advanced settings to replace any default explicitly.
   if (config.anthropicBaseUrl) {
     const configuredValue = (key: string, fallback: string): string =>
       Object.hasOwn(customEnv, key)
@@ -2440,7 +2533,9 @@ export function buildClaudeEnvLines(
         : fallback;
 
     if (config.anthropicModel) {
-      const model = sanitizeEnvValue(config.anthropicModel);
+      const model = sanitizeEnvValue(
+        stripOneMillionSuffix(config.anthropicModel),
+      );
       lines.push(
         `ANTHROPIC_DEFAULT_OPUS_MODEL=${configuredValue('ANTHROPIC_DEFAULT_OPUS_MODEL', model)}`,
       );
@@ -2455,7 +2550,7 @@ export function buildClaudeEnvLines(
     lines.push(
       `CLAUDE_CODE_AUTO_COMPACT_WINDOW=${configuredValue(
         'CLAUDE_CODE_AUTO_COMPACT_WINDOW',
-        isOneMillionContextModel(config.anthropicModel) ? '1000000' : '200000',
+        String(hostContextWindow),
       )}`,
     );
     for (const [key, value] of Object.entries(THIRD_PARTY_RUNTIME_DEFAULTS)) {
@@ -2794,6 +2889,8 @@ export function mergeClaudeEnvConfig(
     claudeOAuthCredentials:
       override.claudeOAuthCredentials ?? global.claudeOAuthCredentials,
     anthropicModel: override.anthropicModel || global.anthropicModel,
+    // 窗口声明是 provider 级属性（任务AL）：工作区覆写不携带该字段，取全局值。
+    contextWindow: global.contextWindow,
     updatedAt: global.updatedAt,
   };
 

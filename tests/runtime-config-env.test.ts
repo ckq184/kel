@@ -64,15 +64,64 @@ describe('buildClaudeEnvLines', () => {
       NO_CUSTOM_ENV,
     );
 
-    expect(lines).toContain('ANTHROPIC_MODEL=glm-5.2[1m]');
-    expect(lines).toContain('ANTHROPIC_DEFAULT_OPUS_MODEL=glm-5.2[1m]');
-    expect(lines).toContain('ANTHROPIC_DEFAULT_SONNET_MODEL=glm-5.2[1m]');
-    expect(lines).toContain('ANTHROPIC_DEFAULT_HAIKU_MODEL=glm-5.2[1m]');
+    // 任务AL：后缀剥离后再上送（根治第三方端点 400），窗口经声明 env 按 1M 认定
+    expect(lines).toContain('ANTHROPIC_MODEL=glm-5.2');
+    expect(lines).toContain('ANTHROPIC_DEFAULT_OPUS_MODEL=glm-5.2');
+    expect(lines).toContain('ANTHROPIC_DEFAULT_SONNET_MODEL=glm-5.2');
+    expect(lines).toContain('ANTHROPIC_DEFAULT_HAIKU_MODEL=glm-5.2');
+    expect(lines).toContain('CKQCLAW_CONTEXT_WINDOW=1000000');
     expect(lines).toContain('CLAUDE_CODE_AUTO_COMPACT_WINDOW=1000000');
     expect(lines).toContain('CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1');
     expect(lines).toContain('CLAUDE_CODE_EFFORT_LEVEL=max');
     expect(lines).toContain('CLAUDE_CODE_NO_FLICKER=1');
     expect(lines).toContain('API_TIMEOUT_MS=3000000');
+  });
+
+  test('declared context window injects without any model suffix', () => {
+    const lines = buildClaudeEnvLines(
+      config({ anthropicModel: 'glm-5.2', contextWindow: 512_000 }),
+      NO_CUSTOM_ENV,
+    );
+
+    expect(lines).toContain('ANTHROPIC_MODEL=glm-5.2');
+    expect(lines).toContain('CKQCLAW_CONTEXT_WINDOW=512000');
+    expect(lines).toContain('CLAUDE_CODE_AUTO_COMPACT_WINDOW=512000');
+  });
+
+  test('declared window wins over a legacy [1m] suffix', () => {
+    const lines = buildClaudeEnvLines(
+      config({ anthropicModel: 'glm-5.2[1m]', contextWindow: 256_000 }),
+      NO_CUSTOM_ENV,
+    );
+
+    expect(lines).toContain('ANTHROPIC_MODEL=glm-5.2');
+    expect(lines).toContain('CKQCLAW_CONTEXT_WINDOW=256000');
+    expect(lines).toContain('CLAUDE_CODE_AUTO_COMPACT_WINDOW=256000');
+  });
+
+  test('no declaration and no suffix stays byte-equivalent with today', () => {
+    const lines = buildClaudeEnvLines(
+      config({ anthropicModel: 'glm-5.2' }),
+      NO_CUSTOM_ENV,
+    );
+
+    expect(lines).toContain('ANTHROPIC_MODEL=glm-5.2');
+    expect(
+      lines.some((line) => line.startsWith('CKQCLAW_CONTEXT_WINDOW=')),
+    ).toBe(false);
+    expect(lines).toContain('CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000');
+  });
+
+  test("explicit 'auto' declaration behaves like no declaration", () => {
+    const lines = buildClaudeEnvLines(
+      config({ anthropicModel: 'glm-5.2[1m]', contextWindow: 'auto' }),
+      NO_CUSTOM_ENV,
+    );
+
+    // auto = 现行为：启发式因后缀按 1M 认定，模型名仍剥离
+    expect(lines).toContain('ANTHROPIC_MODEL=glm-5.2');
+    expect(lines).toContain('CKQCLAW_CONTEXT_WINDOW=1000000');
+    expect(lines).toContain('CLAUDE_CODE_AUTO_COMPACT_WINDOW=1000000');
   });
 
   test('uses defaults but lets provider settings override third-party values', () => {
@@ -114,7 +163,8 @@ describe('buildClaudeEnvLines', () => {
       NO_CUSTOM_ENV,
     );
 
-    expect(lines).toContain('ANTHROPIC_DEFAULT_OPUS_MODEL=glm-5.2[1m]');
+    expect(lines).toContain('ANTHROPIC_DEFAULT_OPUS_MODEL=glm-5.2');
+    expect(lines).toContain('CKQCLAW_CONTEXT_WINDOW=1000000');
     expect(lines).toContain('CLAUDE_CODE_AUTO_COMPACT_WINDOW=1000000');
     expect(lines).not.toContain('ANTHROPIC_DEFAULT_OPUS_MODEL=stale-model');
     expect(lines).not.toContain('CLAUDE_CODE_AUTO_COMPACT_WINDOW=42');
@@ -188,6 +238,25 @@ describe('buildClaudeEnvLines', () => {
     expect(official).toContain('CKQCLAW_CLAUDE_ENDPOINT_KIND=official');
   });
 
+  test('custom env cannot spoof the managed context window declaration', () => {
+    const lines = buildContainerEnvLines(
+      config({ anthropicModel: 'glm-5.2', contextWindow: 256_000 }),
+      {
+        customEnv: {
+          CKQCLAW_CONTEXT_WINDOW: '1000000',
+          PROJECT_ENV: 'kept',
+        },
+      },
+      { CKQCLAW_CONTEXT_WINDOW: '1000000' },
+    );
+
+    expect(lines).toContain('CKQCLAW_CONTEXT_WINDOW=256000');
+    expect(
+      lines.filter((l) => l.startsWith('CKQCLAW_CONTEXT_WINDOW=')).length,
+    ).toBe(1);
+    expect(lines).toContain('PROJECT_ENV=kept');
+  });
+
   test('clears inherited provider values before host-mode config is applied', () => {
     const env: Record<string, string | undefined> = {
       ANTHROPIC_BASE_URL: 'https://stale-proxy.test',
@@ -196,6 +265,7 @@ describe('buildClaudeEnvLines', () => {
       ANTHROPIC_MODEL: 'stale-model',
       ANTHROPIC_CUSTOM_HEADERS: 'x-stale-auth: yes',
       CKQCLAW_CLAUDE_ENDPOINT_KIND: 'custom',
+      CKQCLAW_CONTEXT_WINDOW: '1000000',
       KEEP_ME: 'yes',
     };
 
@@ -207,6 +277,7 @@ describe('buildClaudeEnvLines', () => {
     expect(env.ANTHROPIC_MODEL).toBeUndefined();
     expect(env.ANTHROPIC_CUSTOM_HEADERS).toBeUndefined();
     expect(env.CKQCLAW_CLAUDE_ENDPOINT_KIND).toBeUndefined();
+    expect(env.CKQCLAW_CONTEXT_WINDOW).toBeUndefined();
     expect(env.KEEP_ME).toBe('yes');
 
     const selectedProviderLines = buildContainerEnvLines(

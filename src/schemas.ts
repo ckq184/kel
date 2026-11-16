@@ -1121,6 +1121,15 @@ export const UnifiedProviderCreateSchema = z
     anthropicBaseUrl: ProviderBaseUrlSchema.optional(),
     anthropicAuthToken: z.string().max(2000).optional(),
     anthropicModel: z.string().max(128).optional(),
+    contextWindow: z
+      .union([
+        z.literal('auto'),
+        z.literal(128_000),
+        z.literal(256_000),
+        z.literal(512_000),
+        z.literal(1_000_000),
+      ])
+      .optional(),
     anthropicApiKey: z.string().max(2000).optional(),
     claudeCodeOauthToken: z.string().max(2000).optional(),
     claudeOAuthCredentials: ClaudeOAuthCredentialsSchema.optional(),
@@ -1147,6 +1156,15 @@ export const UnifiedProviderPatchSchema = z
     name: z.string().min(1).max(64).optional(),
     anthropicBaseUrl: ProviderBaseUrlSchema.optional(),
     anthropicModel: z.string().max(128).optional(),
+    contextWindow: z
+      .union([
+        z.literal('auto'),
+        z.literal(128_000),
+        z.literal(256_000),
+        z.literal(512_000),
+        z.literal(1_000_000),
+      ])
+      .optional(),
     customEnv: z.record(z.string().max(256), z.string().max(4096)).optional(),
     weight: z.number().int().min(1).max(100).optional(),
   })
@@ -1155,6 +1173,7 @@ export const UnifiedProviderPatchSchema = z
       data.name !== undefined ||
       data.anthropicBaseUrl !== undefined ||
       data.anthropicModel !== undefined ||
+      data.contextWindow !== undefined ||
       data.customEnv !== undefined ||
       data.weight !== undefined,
     { message: 'At least one field must be provided' },
