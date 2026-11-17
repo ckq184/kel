@@ -1,26 +1,8 @@
 {
-  "task": "任务AO - 前端全局风格对齐 ZCode：default 主题换黑白中性主色+sky 点缀（参考 zai-org/ZCode 设计值，不复制代码不加依赖），登录页推翻固定橙统一新风格，保留三套配色切换与暗色模式，硬编码语义色值恒等清理；docs/task-ao-web-zcode-restyle-plan.md 为完整方案",
-  "base": "204febf",
+  "task": "任务AP - 移除监控页「Anthropic 服务状态」卡片：纯前端功能（浏览器直连 status.claude.com 轮询展示第三方状态文案），全部代码仅在 MonitorPage.tsx（import/state/useEffect/Card 四处），无后端/测试/配置牵连；docs/task-ap-remove-anthropic-status-plan.md 为完整方案",
+  "base": "70c697e",
   "allow": [
-    "docs/task-ao-web-zcode-restyle-plan.md",
-    "web/src/styles/globals.css",
-    "web/src/hooks/useTheme.ts",
-    "web/src/components/settings/PreferencesSection.tsx",
-    "web/index.html",
-    "web/public/manifest.webmanifest",
-    "web/src/pages/LoginPage.tsx",
-    "web/src/pages/EvalPage.tsx",
-    "web/src/components/chat/ChatView.tsx",
-    "web/src/components/chat/MessageInput.tsx",
-    "web/src/components/chat/MessageBubble.tsx",
-    "web/src/components/chat/MessageList.tsx",
-    "web/src/components/chat/StreamingDisplay.tsx",
-    "web/src/components/chat/FilePanel.tsx",
-    "web/src/components/chat/SessionSidebar.tsx",
-    "web/src/components/chat/TerminalPanel.tsx",
-    "web/src/components/tasks/TaskCard.tsx",
-    "web/src/components/tasks/CreateTaskForm.tsx",
-    "web/src/components/tasks/TaskDetail.tsx",
-    "web/src/components/layout/UnifiedSidebar.tsx"
+    "docs/task-ap-remove-anthropic-status-plan.md",
+    "web/src/pages/MonitorPage.tsx"
   ]
 }
