@@ -4078,7 +4078,7 @@ function handleOwnerMentionCommand(
   if (!group) return '未找到当前会话';
 
   if (!senderImId) {
-    return '无法识别发送者身份，请在飞书或钉钉群聊中使用此命令';
+    return '无法识别发送者身份，请在飞书群聊中使用此命令';
   }
 
   if (group.owner_claim_source === 'transfer_reset') {

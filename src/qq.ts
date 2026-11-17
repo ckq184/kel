@@ -280,7 +280,7 @@ export interface QQConnectOpts {
     code: string,
   ) => Promise<boolean>;
   /** 斜杠指令回调。senderImId 是发送者的裸 QQ open_id（不含 `qq:` 前缀），
-   *  与飞书/钉钉 onCommand 传裸 ID 的格式一致，用于主进程 owner-only 检查。 */
+   *  与飞书 onCommand 传裸 ID 的格式一致，用于主进程 owner-only 检查。 */
   onCommand?: (
     chatJid: string,
     command: string,

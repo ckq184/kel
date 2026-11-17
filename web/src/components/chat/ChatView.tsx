@@ -1118,7 +1118,7 @@ export function ChatView({ groupJid, onBack, headerLeft }: ChatViewProps) {
             <div className="flex items-center gap-2 px-4 py-2 bg-warning-bg/60 border-b border-warning/30 text-warning text-sm">
               <Link className="w-4 h-4 flex-shrink-0" />
               <span className="flex-1 min-w-0">
-                未配置消息渠道（飞书 / QQ / 微信 / 钉钉），消息无法与 CKQClaw
+                未配置消息渠道（飞书 / QQ / 微信），消息无法与 CKQClaw
                 的直接对话互通
               </span>
               <button
