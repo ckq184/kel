@@ -5,7 +5,8 @@
 # 日志：/tmp/ckqclaw-dev.log（前后端）、/tmp/ckqclaw-desktop.log（桌面端）
 
 set -u
-cd "$(dirname "$0")" || exit 1
+REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$REPO_DIR" || exit 1
 
 DEV_LOG=/tmp/ckqclaw-dev.log
 DESKTOP_LOG=/tmp/ckqclaw-desktop.log
@@ -13,8 +14,9 @@ DESKTOP_LOG=/tmp/ckqclaw-desktop.log
 echo "[ckqclaw] stopping old services..."
 lsof -ti:3000 -sTCP:LISTEN 2>/dev/null | xargs kill 2>/dev/null
 lsof -ti:5173 -sTCP:LISTEN 2>/dev/null | xargs kill 2>/dev/null
-pkill -f "Personnal-agent-main/node_modules/electron" 2>/dev/null
-pkill -f "tsx src/index.ts" 2>/dev/null
+# 仅杀本仓路径下的 electron / tsx 后端（不得越界杀其他仓库的同名进程）
+pkill -f "$REPO_DIR/node_modules/electron" 2>/dev/null
+pkill -f "$REPO_DIR/node_modules/tsx" 2>/dev/null
 
 # 等端口释放（最多 10 秒）
 for _ in $(seq 1 10); do
@@ -47,7 +49,7 @@ CKQCLAW_RENDERER_URL=http://127.0.0.1:5173 nohup npm run desktop:dev >>"$DESKTOP
 # 等桌面端进程出现（最多 20 秒）
 tries=0
 sleep 2
-until pgrep -f "Personnal-agent-main/node_modules/electron/dist" >/dev/null 2>&1; do
+until pgrep -f "$REPO_DIR/node_modules/electron/dist" >/dev/null 2>&1; do
   tries=$((tries + 1))
   if [ "$tries" -ge 10 ]; then
     echo "[ckqclaw] desktop did not start in time; see $DESKTOP_LOG"
