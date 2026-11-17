@@ -368,7 +368,7 @@ export interface StreamEvent {
   }>;
   /** Token usage data emitted at query completion */
   usage?: {
-    /** Stable logical run ID used to make analytics and billing idempotent. */
+    /** Stable logical run ID used to make usage analytics idempotent. */
     eventId?: string;
     /** Position inside one result's per-message ledger batch (0-based). */
     batchIndex?: number;

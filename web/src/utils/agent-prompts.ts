@@ -76,7 +76,7 @@ export function estimatePromptTokens(value: string): number {
   if (!value.trim()) return 0;
   // Chinese text is commonly close to one token per character, while Latin
   // prose averages roughly four characters per token. This intentionally stays
-  // an estimate so the UI never implies provider-level billing precision.
+  // an estimate so the UI never implies provider-level cost precision.
   const cjk = (value.match(/[\u3400-\u9fff\uf900-\ufaff]/g) || []).length;
   return Math.ceil(cjk + (value.length - cjk) / 4);
 }

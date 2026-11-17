@@ -975,11 +975,6 @@ export type WsMessageOut =
       consecutiveFailures?: number;
       nextRetryMs?: number;
     }
-  | {
-      type: 'billing_update';
-      userId: string;
-      usage: BillingAccessResult;
-    }
   | { type: 'ws_error'; error: string; chatJid?: string }
   | {
       type: 'stream_snapshot';
@@ -1244,26 +1239,4 @@ export interface QuotaCheckResult {
     daily?: QuotaWindowUsage;
     weekly?: QuotaWindowUsage;
   };
-}
-
-export type BillingBlockType =
-  | 'insufficient_balance'
-  | 'plan_inactive'
-  | 'quota_exceeded'
-  | 'resource_limit';
-
-export interface BillingAccessResult {
-  allowed: boolean;
-  blockType?: BillingBlockType;
-  reason?: string;
-  balanceUsd: number;
-  minBalanceUsd: number;
-  balanceMissingUsd?: number;
-  planId: string | null;
-  planName: string | null;
-  subscriptionStatus: 'active' | 'expired' | 'cancelled' | 'default' | null;
-  warningPercent?: number;
-  usage?: QuotaCheckResult['usage'];
-  exceededWindow?: QuotaCheckResult['exceededWindow'];
-  resetAt?: string;
 }
