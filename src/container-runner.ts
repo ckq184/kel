@@ -14,7 +14,6 @@ import os from 'os';
 import path from 'path';
 import { randomUUID } from 'node:crypto';
 
-import { getAutoMemoryHostConfig } from './auto-memory-config.js';
 import { CONTAINER_IMAGE, DATA_DIR, GROUPS_DIR, TIMEZONE } from './config.js';
 import {
   getServerBootId,
@@ -347,20 +346,6 @@ function ensureSettingsJson(
   fs.writeFileSync(projectionFile, projectionContent, { mode: 0o600 });
 }
 
-export function buildAutoMemoryInput(
-  group?: Pick<RegisteredGroup, 'autoMemoryRecall'>,
-): ContainerInput['autoMemory'] {
-  const config = getAutoMemoryHostConfig();
-  if (!config.enabled) return undefined;
-  // Endpoints stay host-side (they feed the host-owned sidecar); runners
-  // receive only the enable flag — plus the workspace recall opt-in (task Z)
-  // — over the stdin bootstrap.
-  return {
-    enabled: true,
-    recall: group?.autoMemoryRecall === true ? { enabled: true } : undefined,
-  };
-}
-
 export interface ContainerInput {
   prompt: string;
   sessionId?: string;
@@ -382,16 +367,6 @@ export interface ContainerInput {
   isHome?: boolean;
   isAdminHome?: boolean;
   isScheduledTask?: boolean;
-  /** Per-workspace auto-memory enable flag. Mirrored in agent-runner types;
-   * the host owns the sidecar and its endpoints — keep both in sync.
-   * `recall.enabled` opts the workspace into per-turn automatic memory
-   * recall injection (task Z). */
-  autoMemory?: {
-    enabled?: boolean;
-    recall?: {
-      enabled?: boolean;
-    };
-  };
   /**
    * Internal per-runner HMAC secret delivered only in the stdin bootstrap.
    * Never expose this in environment variables, files, logs, prompts, or IPC.
@@ -1520,17 +1495,6 @@ export function buildVolumeMounts(
     readonly: true,
   });
 
-  // The auto-memory Python sidecar ships beside the runner source and is
-  // resolved by the compiled client at /app/python. The image bakes a copy at
-  // build time; mounting the host dir keeps hot-fixed sidecars (protocol or
-  // mem0 config changes) reachable without an image rebuild, mirroring the
-  // /app/src and /app/prompts treatment above.
-  mounts.push({
-    hostPath: path.join(projectRoot, 'container', 'agent-runner', 'python'),
-    containerPath: '/app/python',
-    readonly: true,
-  });
-
   // Native Claude user config overlays the isolated session config. Workspace
   // remains the SDK cwd; these read-only mounts provide the same user-level
   // capabilities without redirecting file and shell operations into ~/.claude.
@@ -1860,7 +1824,6 @@ export async function runContainerAgent(
       // the caller's `input` object (queue/log/retry paths reuse the same ref).
       const dockerInput: ContainerInput = {
         ...input,
-        autoMemory: buildAutoMemoryInput(group),
         workspaceMemoryMutationSigningSecret,
         workspaceMemoryRunnerInstanceId,
         plugins: group.created_by
@@ -2896,7 +2859,6 @@ export async function runHostAgent(
       // plugins.
       const hostInput: ContainerInput = {
         ...input,
-        autoMemory: buildAutoMemoryInput(group),
         workspaceMemoryMutationSigningSecret,
         workspaceMemoryRunnerInstanceId,
         plugins: preparedHostPlugins,

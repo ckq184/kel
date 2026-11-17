@@ -32,8 +32,6 @@ export interface GroupInfo {
   agent_profile_avatar_emoji?: string | null;
   agent_profile_avatar_color?: string | null;
   agent_profile_avatar_url?: string | null;
-  /** Per-turn automatic memory recall opt-in (task Z); absent = disabled. */
-  auto_memory_recall?: boolean;
 }
 
 export interface AdditionalMountInput {

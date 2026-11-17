@@ -7,8 +7,6 @@ const WRITE_TOOLS = new Set([
   'mcp__ckqclaw__workspace_memory_remember',
   'mcp__ckqclaw__workspace_memory_update',
   'mcp__ckqclaw__workspace_memory_forget',
-  'mcp__ckqclaw__auto_memory_add',
-  'mcp__ckqclaw__memory_promote',
 ]);
 const OWNER_PROFILE_TOOLS = new Set(['mcp__ckqclaw__ckqclaw_owner_profile']);
 

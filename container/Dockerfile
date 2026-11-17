@@ -168,23 +168,6 @@ RUN set -eu; \
     pip install --no-cache-dir --upgrade "$HEADROOM_SPEC"; \
     python3 -c "from importlib.metadata import version; print('headroom-ai', version('headroom-ai'))"
 
-# mem0ai — self-hosted auto-memory library for the workspace memory sidecar.
-# Not an MCP server: the official mem0 MCP wrapper is archived and only fronts
-# the mem0 platform API. Pinned by scripts/builtin-mcp-catalog.mjs; the wheel
-# is verified against PyPI's published digest (feishu-cli checksums precedent)
-# before install. Runtime deps resolve from official PyPI at install time.
-ARG MEM0AI_VERSION=2.2.1
-RUN set -eu; \
-    EXPECTED="$(curl -fsSL --retry 3 "https://pypi.org/pypi/mem0ai/${MEM0AI_VERSION}/json" \
-      | jq -r --arg f "mem0ai-${MEM0AI_VERSION}-py3-none-any.whl" \
-          '.urls[] | select(.filename == $f) | .digests.sha256')"; \
-    test -n "$EXPECTED"; \
-    pip download --no-cache-dir --no-deps -q -d /tmp/mem0ai-whl "mem0ai==${MEM0AI_VERSION}"; \
-    WHEEL="$(find /tmp/mem0ai-whl -name 'mem0ai-*.whl' | head -n1)"; \
-    echo "${EXPECTED}  ${WHEEL}" | sha256sum -c -; \
-    pip install --no-cache-dir "$WHEEL"; \
-    rm -rf /tmp/mem0ai-whl; \
-    python3 -c "from importlib.metadata import version; print('mem0ai', version('mem0ai'))"
 
 # Resolve the newest stable feishu-cli GitHub release by default, then verify
 # the selected archive against the checksums file published with that release.
@@ -279,7 +262,6 @@ RUN set -eu; \
       node -e "const fs=require('node:fs'); for (const p of ['@earendil-works/pi-coding-agent','@tintinweb/pi-subagents','agent-browser']) { const j=JSON.parse(fs.readFileSync('/app/node_modules/'+p+'/package.json','utf8')); console.log(p+'='+j.version); }"; \
       printf 'feishu-cli=%s\n' "$(cat /usr/local/share/feishu-cli-version)"; \
       printf 'headroom=%s\n' "$(python3 -c "from importlib.metadata import version; print(version('headroom-ai'))")"; \
-      printf 'mem0ai=%s\n' "$(python3 -c "from importlib.metadata import version; print(version('mem0ai'))")"; \
       printf 'chromium=%s\n' "$(chromium --version | awk '{print $2}')"; \
       printf 'oh-my-zsh=%s\n' "$(cat /usr/local/share/oh-my-zsh-version)"; \
     } > /usr/local/share/ckqclaw-tool-versions.txt; \

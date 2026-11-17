@@ -17,13 +17,6 @@ import {
   TIMEZONE,
   isDockerAvailable,
 } from './config.js';
-import {
-  closeAutoMemorySidecarManager,
-  getAutoMemorySidecarManager,
-  handleAutoMemoryIpc,
-  type AutoMemoryIpcData,
-} from './auto-memory-ipc.js';
-import { getAutoMemoryHostConfig } from './auto-memory-config.js';
 import { detectImageMimeType } from './image-detector.js';
 import { interruptibleSleep } from './message-notifier.js';
 import { createIpcSendDeduplicator } from './ipc-send-dedup.js';
@@ -11274,7 +11267,6 @@ function startIpcWatcher(): void {
           'agent_profile_discard_result_',
           'workspace_memory_result_',
           'ckqclaw_owner_profile_result_',
-          'auto_memory_result_',
         ];
         const isResultFile = (name: string) =>
           RESULT_FILE_PREFIXES.some((p) => name.startsWith(p));
@@ -11663,11 +11655,6 @@ async function processTaskIpc(
     expectedAgentVersion?: number;
     definition?: unknown;
     assumptions?: string[];
-    // For auto_memory (T2). Folder/execution mode are host-derived from the
-    // verified IPC namespace, never accepted from the request payload.
-    messages?: Array<{ role: string; content: string }>;
-    metadata?: Record<string, unknown>;
-    memoryId?: string;
   },
   sourceGroup: string, // Verified identity from IPC directory
   isAdminHome: boolean, // Whether source is admin home container
@@ -12193,22 +12180,6 @@ async function processTaskIpc(
           'Workspace Memory IPC request failed',
         );
       }
-      break;
-    }
-
-    case 'auto_memory': {
-      // Folder and execution mode come from the verified IPC namespace
-      // (sourceGroup / sourceGroupEntry) — never from the request payload,
-      // same rule as the workspace_memory case above. The handler owns
-      // validation, sidecar routing, and the coded failure receipts.
-      await handleAutoMemoryIpc(data as AutoMemoryIpcData, {
-        folder: sourceGroup,
-        executionMode: sourceGroupEntry?.executionMode,
-        config: getAutoMemoryHostConfig(),
-        manager: getAutoMemorySidecarManager(),
-        writeResult: (payload) =>
-          writeTaskResult(tasksDir, 'auto_memory', data.requestId, payload),
-      });
       break;
     }
 
@@ -19629,13 +19600,6 @@ async function main(): Promise<void> {
     } catch (err) {
       logger.warn({ err }, 'Error closing IPC watchers');
     }
-
-    // Agents are quiescent now: stop the host-owned auto-memory sidecars so
-    // their stdio pipes are not torn down around in-flight qdrant writes
-    // (quality review M3 — closeAutoMemorySidecarManager was dead code).
-    await closeAutoMemorySidecarManager().catch((err) =>
-      logger.warn({ err }, 'Error stopping auto-memory sidecars'),
-    );
 
     // Agent output is now quiescent. Persist any partial text that did not
     // reach a normal result before touching the external card lifecycle.

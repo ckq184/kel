@@ -27,7 +27,6 @@
 | `/api/config`                      | `src/routes/config.ts`           | Provider、系统与兼容渠道配置  |
 | `/api/tasks`                       | `src/routes/tasks.ts`            | 定时任务和运行                |
 | `/api/memory`                      | `src/routes/memory.ts`           | Workspace Memory v2           |
-| `/api/auto-memory`                 | `src/routes/auto-memory.ts`      | 自动记忆（mem0）管理          |
 | `/api/skills`                      | `src/routes/skills.ts`           | 用户 Skills                   |
 | `/api/mcp-servers`                 | `src/routes/mcp-servers.ts`      | 用户/系统 MCP                 |
 | `/api/plugins`                     | `src/routes/plugins.ts`          | Plugin Catalog 与用户启用状态 |
@@ -520,98 +519,6 @@ Web 和 Runtime 不再把它们当作第二个可写真相源。
 
 完整产品边界与交互约定见
 [Workspace Memory v2](workspace-memory-v2.md)。
-
-## 自动记忆（mem0）管理
-
-自动记忆层是 Workspace 范围内的 episodic 记忆（宿主 mem0 侧车 + Qdrant 本地
-存储），与 Workspace Memory v2 相互独立。管理端点供设置页「自动记忆」分区使用；
-workspace 端点先要求 Login，再按 `:workspaceJid` 执行与 v2 相同的资源级授权
-（读 `canAccessGroup()`、删 `canModifyGroup()`；无权与不存在统一 404）。管理
-响应不携带配置凭据；配置凭据只经 `/config` 端点族以掩码形式出现（任务 X）。
-
-- `GET /api/auto-memory/status`
-  - 可选 Query：`workspaceJid`。不带时只报全局配置态
-    `{ enabled, available, source }`（`source` = `env|file|none`，非敏感），
-    不探测侧车；带时以一次轻量 `list` 探测该 Workspace，失败返回
-    `{ enabled, available: false, reason, source }`（始终 200，
-    探测有短超时预算）。
-- `GET /api/auto-memory/workspaces/:workspaceJid/memories`
-  - Query：`limit=1..100`（默认 20）、`offset>=0`。返回 `{ items }`，每项为
-    `{ id, memory, created_at, updated_at, metadata?, … }`；出站内容经 secret
-    redact。
-- `GET /api/auto-memory/workspaces/:workspaceJid/memories/search`
-  - Query：必填 `q`（1-500 字符）、可选 `limit=1..50`（默认 10）。返回
-    `{ items }`（含 `score`）。
-- `DELETE /api/auto-memory/workspaces/:workspaceJid/memories/:memoryId`
-  - 幂等直通删除单条，返回 `{ deleted: true }`。
-- `DELETE /api/auto-memory/workspaces/:workspaceJid/memories`
-  - 破坏性清空该 Workspace 全部自动记忆（幂等直通，无软删除），返回
-    `{ deletedAll: true }`；UI 层负责危险色二次确认。
-
-### 端点配置（任务 X）
-
-`/api/auto-memory/config` 三端点管理文件通道（`data/config/auto-memory.json`，
-0o600）：全部要求 `manage_system_config`（未登录 401、无权限 403），body 上限
-8KB，响应 `Cache-Control: private, no-store`。环境变量 `CKQCLAW_AUTO_MEMORY`
-设置时文件通道为只读：PUT/DELETE 返回 409 `env_override`，GET 标注
-`source: 'env'`（双通道永不静默互相覆盖）。
-
-- `GET /api/auto-memory/config`
-  - 返回 `{ source, enabled, llm?, embedder? }`；端点视图为
-    `{ baseUrl, model, apiKeyMasked }`（apiKey 掩码，≤8 位全 `***`），
-    baseUrl/model 明文供表单预填。
-- `PUT /api/auto-memory/config`
-  - 入参 `{ llm: { baseUrl, apiKey?, model }, embedder: { … } }`；两侧成对
-    合法（baseUrl 需 http(s)、字段非空且无首尾空白）才落盘，否则 400
-    `invalid_args` 且不写文件。apiKey 缺省、空串或掩码原样回传均表示保留
-    旧值（掩码永不当明文写回）。成功后停止全部运行中侧车（下次调用以新
-    配置 respawn），返回 `{ ok: true, sidecarsRestarted }`。
-- `DELETE /api/auto-memory/config`
-  - 清除文件配置（幂等）并停止全部侧车，返回 `{ ok: true, sidecarsRestarted }`。
-
-未配置（`data/config/auto-memory.json` 缺失或端点不完整）时管理端点返回 503
-`not_configured`；侧车不可用返回 503 `unavailable`（带 reason）；参数非法返回
-400 `invalid_args`。
-
-### 会话提炼采集（任务 Y，多会话合并为任务 Y2，按消息选择为任务 Y3）
-
-手动把会话内容提炼入自动记忆的两端点（聊天窗口「提炼记忆」按钮 → 选择
-对话框，支持按会话/按消息两种模式）：preview 为读权限（`canAccessGroup()`），
-capture 为写权限（`canModifyGroup()`），无权与不存在统一 404。
-
-**按会话模式（任务 Y2）**——采集目标 = 一个工作区内的**主会话 + 各
-conversation 子会话**（可多选合并）；会话标识约定 `agentIds` 元素 `''`
-（空串）= 主会话、其余 = agentId（子会话虚拟 jid `${jid}#agent:{agentId}`），
-值 trim 后去重，未知/已删除的 agentId 贡献 0 条静默跳过。合并后按**共享
-预算**封顶：各目标各取最新 400 条 → 按 timestamp 全局正序合并 → 剔除
-`context_reset` 分隔行与配额通知行（仅文本 content，附件不参与；角色按
-`is_from_me` 映射 user/assistant）→ **总条数 ≤400 且总字符 ≤60k**，从最新
-往回保留（先触先停）；上限服务端固定，不接受客户端传入。
-
-- `GET /api/auto-memory/workspaces/:workspaceJid/capture/preview`
-  - 可选 Query：重复参数 `agentId`（可多次出现，`agentId=` 空值即主会话；
-    缺省 = 仅主会话）。只读 DB 组装、不触发侧车（未配置时也可预览），
-    返回 `{ messages, chars }`（合并后将提炼的条数与总字符数）。
-- `POST /api/auto-memory/workspaces/:workspaceJid/capture`
-  - 按会话模式 Body `{ agentIds?: string[] }`（缺省 = 仅主会话；显式空
-    数组或含非字符串元素 → 400）。组装后经侧车 `add` 送 mem0 提炼（一次
-    LLM 提炼 + embedding，入侧车前先机械 redact）；metadata 携带
-    `{ source: 'chat_capture', agentIds, capturedAt }`。返回
-    `{ ok: true, captured, added, intercepted }`（added = mem0 ADD 事件数，
-    intercepted = 脱敏命中数）。所选目标全部无可提炼消息 400 `invalid_args`；
-    未配置 503 `not_configured`；提炼一次可能 10-60s（manager 每请求 60s
-    超时杀侧车为既有语义，下次调用自动 respawn）。
-  - **按消息模式（任务 Y3）** Body `{ messageIds: string[], agentId? }`：
-    `agentId` 定位单一会话（缺省/空 = 主会话），`messageIds` 为该会话内的
-    消息 id（去重后 ≤400）。与 `agentIds` 互斥，同传 400。服务端按
-    `WHERE chat_jid = 目标 jid AND id IN (...)` 直取行（复合主键天然完成
-    归属校验，其他会话/工作区的 id 查不到即剔除；**不限最新 400 条窗口**，
-    翻页加载到的更早历史均可选）；系统/计费/空行剔除、角色映射、timestamp
-    正序同上；**预算宁拒勿截**——合计字符 >60,000 直接 400（提示减少选择，
-    不静默截断），与按会话模式的截断语义明确分叉。metadata 携带
-    `{ source: 'chat_capture', mode: 'message_pick', agentId?, messageCount,
-capturedAt }`（不存 messageIds 全量）。preview 无对应端点——前端以
-    已加载消息本地合计，服务端 capture 兜底校验。
 
 ## 用量与计费
 

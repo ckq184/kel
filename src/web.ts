@@ -49,7 +49,6 @@ import {
 import authRoutes from './routes/auth.js';
 import groupRoutes from './routes/groups.js';
 import memoryRoutes from './routes/memory.js';
-import autoMemoryRoutes from './routes/auto-memory.js';
 import configRoutes, { injectConfigDeps } from './routes/config.js';
 import tasksRoutes from './routes/tasks.js';
 import adminRoutes from './routes/admin.js';
@@ -270,7 +269,6 @@ app.route('/api/auth', authRoutes);
 app.route('/api/groups', groupRoutes);
 app.route('/api/groups', fileRoutes); // File routes also under /api/groups
 app.route('/api/memory', memoryRoutes);
-app.route('/api/auto-memory', autoMemoryRoutes);
 app.route('/api/config', configRoutes);
 app.route('/api/tasks', tasksRoutes);
 app.route('/api/skills', skillsRoutes);

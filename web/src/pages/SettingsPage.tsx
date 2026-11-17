@@ -20,8 +20,6 @@ import {
 } from '../components/settings/SystemSettingsSection';
 import { UserChannelsSection } from '../components/settings/UserChannelsSection';
 import { ModelPricingSection } from '../components/settings/ModelPricingSection';
-import { AutoMemorySection } from '../components/settings/AutoMemorySection';
-import { AutoMemoryEndpointCard } from '../components/settings/AutoMemoryEndpointCard';
 import { UsersPage } from './UsersPage';
 import { MonitorPage } from './MonitorPage';
 import type { SettingsTab } from '../components/settings/types';
@@ -41,7 +39,6 @@ const VALID_TABS: SettingsTab[] = [
   'preferences',
   'my-channels',
   'security',
-  'auto-memory',
   'groups',
   'agent-profiles',
   'memory',
@@ -157,7 +154,6 @@ export function SettingsPage() {
     groups: '会话管理',
     'agent-profiles': '智能体',
     memory: 'Workspace Memory',
-    'auto-memory': '自动记忆',
     skills: '技能(Skill)管理',
     'mcp-servers': 'MCP 服务器',
     plugins: '插件 (Plugins)',
@@ -266,7 +262,6 @@ export function SettingsPage() {
                         }
                         setError={(message) => message && toast.error(message)}
                       />
-                      <AutoMemoryEndpointCard />
                     </div>
                   )}
                   {activeTab === 'registration' && (
@@ -282,7 +277,6 @@ export function SettingsPage() {
                   {activeTab === 'profile' && <ProfileSection />}
                   {activeTab === 'preferences' && <PreferencesSection />}
                   {activeTab === 'my-channels' && <UserChannelsSection />}
-                  {activeTab === 'auto-memory' && <AutoMemorySection />}
                   {activeTab === 'security' && <SecuritySection />}
                   {activeTab === 'about' && <AboutSection />}
                 </>

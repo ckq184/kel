@@ -92,7 +92,7 @@ CKQClaw 采用本地优先和显式集成的思路：数据库、工作区元数
 - Plugin Catalog 支持扫描、导入、版本快照和用户启用配置。
 - Agent 运行前会计算有效能力 Manifest，并把 Skills、MCP、Memory、Workspace 与渠道上下文按策略注入。
 - 路径穿越、符号链接逃逸、越权 Workspace 与未授权 capability 会在边界层拒绝。
-- mem0 自动记忆库由 `scripts/builtin-mcp-catalog.mjs` 固定版本预置；外部 MCP 服务器可经 `/mcp-servers` 自行配置。
+- 外部 MCP 服务器可经 `/mcp-servers` 自行配置。
 
 ### 渠道与自动化
 

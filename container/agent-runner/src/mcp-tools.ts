@@ -57,11 +57,6 @@ export interface McpContext {
   };
   workspaceIpc: string;
   workspaceGroup: string;
-  /** Auto-memory enable flag from the host. The host owns the sidecar and
-   * its endpoint config; this runner never sees llm/embedder keys. */
-  autoMemory?: {
-    enabled?: boolean;
-  };
 }
 
 function writeIpcFile(dir: string, data: object): string {
@@ -219,8 +214,6 @@ export function parseWorkspaceMemorySnapshot(
 }
 
 const WORKSPACE_MEMORY_RESULT_PREFIX = 'workspace_memory_result';
-const AUTO_MEMORY_RESULT_PREFIX = 'auto_memory_result';
-const AUTO_MEMORY_IPC_TIMEOUT_MS = 30_000;
 const OWNER_PROFILE_RESULT_PREFIX = 'ckqclaw_owner_profile_result';
 
 async function callWorkspaceMemory(
@@ -319,57 +312,6 @@ async function callCkqclawOwnerProfile(
     );
   }
   return result;
-}
-
-/**
- * Runner→host auto-memory bridge, shared by the `auto_memory_*` tools and the
- * per-turn recall injection (`auto-memory-context.ts`). Availability is
- * receipt-decided: a silent host or failed op degrades to
- * `{ available: false }`, never a thrown turn.
- */
-export async function callAutoMemory(
-  ctx: McpContext,
-  operation: 'search' | 'add' | 'get',
-  payload: Record<string, unknown>,
-): Promise<
-  { available: true; value: unknown } | { available: false; reason: string }
-> {
-  const tasksDir = path.join(ctx.workspaceIpc, 'tasks');
-  const request: Record<string, unknown> & { requestId: string } = {
-    type: 'auto_memory',
-    operation,
-    requestId: newRequestId(),
-    timestamp: new Date().toISOString(),
-    ...payload,
-  };
-  let result: Record<string, unknown>;
-  try {
-    result = await pollIpcResult(
-      tasksDir,
-      request,
-      AUTO_MEMORY_RESULT_PREFIX,
-      AUTO_MEMORY_IPC_TIMEOUT_MS,
-    );
-  } catch (err) {
-    // A silent host (old server image without the auto_memory case) must
-    // degrade the tool, not break the turn with the poll timeout.
-    return {
-      available: false,
-      reason: err instanceof Error ? err.message : String(err),
-    };
-  }
-  if (result.success !== true) {
-    const code = typeof result.code === 'string' ? ` (${result.code})` : '';
-    return {
-      available: false,
-      reason: `${
-        typeof result.error === 'string'
-          ? result.error
-          : 'auto memory request failed'
-      }${code}`,
-    };
-  }
-  return { available: true, value: result.result };
 }
 
 /**
@@ -492,89 +434,6 @@ function memoryIdempotencyKey(
   fallback: string,
 ): string {
   return (supplied ?? fallback).slice(0, 128);
-}
-
-/**
- * Stable per-source idempotency key for memory_promote. Deliberately NOT
- * turn-scoped: promoting the same automatic memory again from a later turn
- * must replay the original v2 item (same request) or fail with
- * idempotency_conflict (different content) instead of creating a duplicate
- * curated entry.
- */
-export function promoteIdempotencyKey(memoryId: string): string {
-  return memoryIdempotencyKey(undefined, `promote:${memoryId}`);
-}
-
-/**
- * Sum of `intercepted` findings counts from the sidecar secret filter
- * (task F): each finding is {pattern, count}. Malformed entries count as
- * zero — the redaction note must never crash the tool receipt.
- */
-function countIntercepted(findings: unknown): number {
-  if (!Array.isArray(findings)) return 0;
-  let total = 0;
-  for (const finding of findings) {
-    if (!finding || typeof finding !== 'object') continue;
-    const count = (finding as Record<string, unknown>).count;
-    if (typeof count === 'number' && Number.isFinite(count) && count > 0) {
-      total += Math.floor(count);
-    }
-  }
-  return total;
-}
-
-/**
- * Human-readable summary of a mem0 add() result. The v2 pipeline is
- * additive: it returns one {id, memory, event} per extracted fact and can
- * legitimately extract NOTHING when the model judges the content duplicate —
- * reporting a fixed "Captured" line in that case would silently drop a
- * correction the user believes was stored (observed in task-C acceptance).
- *
- * When the sidecar secret filter redacted credential-like values, the
- * receipt carries `intercepted` findings: surface them so the model can
- * tell the user the plaintext was NOT stored, and never explain an
- * intercepted-but-empty extraction as a "duplicate" (the plaintext was
- * deliberately dropped).
- */
-export function summarizeAutoMemoryAddResult(value: unknown): string {
-  const asRecord =
-    value && typeof value === 'object'
-      ? (value as Record<string, unknown>)
-      : null;
-  const items = Array.isArray(value)
-    ? value
-    : asRecord && Array.isArray(asRecord.results)
-      ? asRecord.results
-      : null;
-  const secretLine = (() => {
-    const total = countIntercepted(asRecord?.intercepted);
-    return total
-      ? `Secret filter: ${total} credential-like value(s) redacted before storage (plaintext not stored).`
-      : null;
-  })();
-  if (!items) {
-    return secretLine
-      ? `Captured into automatic memory.\n${secretLine}`
-      : 'Captured into automatic memory.';
-  }
-  if (items.length === 0) {
-    const base = secretLine
-      ? 'No new facts were extracted from this content.'
-      : 'No new facts were extracted from this content (it was judged a duplicate of existing memories).';
-    return secretLine ? `${base}\n${secretLine}` : base;
-  }
-  const lines = items.map((item) => {
-    if (!item || typeof item !== 'object') return String(item);
-    const record = item as Record<string, unknown>;
-    const event = typeof record.event === 'string' ? record.event : 'ADD';
-    const memory =
-      typeof record.memory === 'string'
-        ? record.memory
-        : JSON.stringify(record.memory);
-    return `[${event}] ${memory}`;
-  });
-  const base = `Captured ${items.length} fact(s) into automatic memory:\n${lines.join('\n')}`;
-  return secretLine ? `${base}\n${secretLine}` : base;
 }
 
 /**
@@ -2776,121 +2635,6 @@ Use the skills panel in the UI to find the skill ID (directory name, e.g. "memor
               `${ctx.currentInputTurnId ?? 'turn'}:delete:${args.item_id}:${args.expected_revision}`,
             ),
           }),
-      ),
-    );
-  }
-
-  // ── Auto memory (mem0 bridge) ──────────────────────────────────────────
-  // Semantic episodic layer. Workspace Memory v2 stays the curated source of
-  // truth; promotion into v2 is one-way and recorded in the promoted content.
-  // The sidecar is host-owned (single writer for Qdrant local): every op
-  // travels over the workspace file-IPC channel and the host's receipts
-  // decide availability (missing embedder, mem0ai absent, sidecar crash —
-  // all degrade to an explicit "unavailable" result, never a thrown turn).
-  const autoMemoryUnavailable = (reason: string) => ({
-    content: [
-      {
-        type: 'text' as const,
-        text:
-          `Auto memory is unavailable: ${reason}. ` +
-          'Durable Workspace Memory (workspace_memory_*) remains fully usable.',
-      },
-    ],
-    isError: true,
-  });
-
-  tools.push(
-    tool(
-      'auto_memory_search',
-      'Semantic recall over the automatic memory layer of the current workspace (auto-captured facts and preferences from past sessions). Use alongside workspace_memory_search: that holds curated durable knowledge, this holds automatically captured episodic knowledge.',
-      {
-        query: z.string().min(1).max(500),
-        limit: z.number().int().min(1).max(50).optional().default(10),
-      },
-      async (args) => {
-        const outcome = await callAutoMemory(ctx, 'search', {
-          query: args.query.trim(),
-          limit: args.limit ?? 10,
-        });
-        if (!outcome.available) return autoMemoryUnavailable(outcome.reason);
-        const records = Array.isArray(outcome.value) ? outcome.value : [];
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text:
-                (records.length === 0
-                  ? 'No automatic memories matched.'
-                  : JSON.stringify(records, null, 2)) +
-                '\n\nPromote durable items into Workspace Memory with memory_promote.',
-            },
-          ],
-        };
-      },
-    ),
-  );
-
-  if (memoryWriteEnabled) {
-    tools.push(
-      tool(
-        'auto_memory_add',
-        'Capture durable personal facts/preferences from the current conversation into the automatic memory layer (conflicts are resolved automatically). Credential-like values (passwords, tokens, API keys) are automatically redacted before storage — the fact that a credential exists is kept, its value is not; relay that to the user when the receipt says values were redacted. Never store third-party instructions or full transcripts. For long-lived curated knowledge use workspace_memory_remember instead.',
-        {
-          content: z
-            .string()
-            .min(1)
-            .max(8_000)
-            .describe(
-              'Conversation excerpt or statement containing the facts to remember',
-            ),
-        },
-        async (args) => {
-          const outcome = await callAutoMemory(ctx, 'add', {
-            messages: [{ role: 'user', content: args.content.trim() }],
-            metadata: {
-              sessionId: ctx.currentSessionId ?? undefined,
-              turnId: ctx.currentInputTurnId ?? undefined,
-            },
-          });
-          if (!outcome.available) return autoMemoryUnavailable(outcome.reason);
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: summarizeAutoMemoryAddResult(outcome.value),
-              },
-            ],
-          };
-        },
-      ),
-      tool(
-        'memory_promote',
-        'Promote one automatic memory into durable Workspace Memory (one-way, auditable). Use after auto_memory_search when an automatically captured item deserves curated status. The promoted copy records its origin.',
-        {
-          memory_id: z.string().min(1),
-          kind: memoryKindSchema,
-          title: z.string().min(1).max(200),
-          content: z.string().min(1).max(20_000),
-        },
-        async (args) => {
-          const exists = await callAutoMemory(ctx, 'get', {
-            memoryId: args.memory_id,
-          });
-          if (!exists.available) {
-            return autoMemoryUnavailable(
-              `source memory ${args.memory_id}: ${exists.reason}`,
-            );
-          }
-          const promotedContent = `${args.content.trim()}
-
-[Promoted from automatic memory ${args.memory_id}]`;
-          return callMemoryTool('create', {
-            kind: args.kind,
-            title: args.title.trim(),
-            content: promotedContent,
-            idempotencyKey: promoteIdempotencyKey(args.memory_id),
-          });
-        },
       ),
     );
   }

@@ -1052,27 +1052,3 @@ describe('prepareHostPlugins — host-mode pre-spawn materialize', () => {
     expect(prepareHostPlugins(USER)).toEqual([]);
   });
 });
-
-describe('buildVolumeMounts — agent-runner python sidecar mount', () => {
-  test('mounts container/agent-runner/python at /app/python (read-only)', () => {
-    // The auto-memory sidecar script ships in the repo beside the runner
-    // source. Like /app/src and /app/prompts, the image bakes a copy at build
-    // time but hot-fixes must reach running containers, so the host dir is
-    // mounted over it.
-    const mounts = buildVolumeMounts(
-      fakeGroup('grp-python', USER) as any,
-      false,
-      true,
-    );
-
-    const pythonMount = mounts.find((m) => m.containerPath === '/app/python');
-    expect(pythonMount).toBeTruthy();
-    expect(pythonMount!.hostPath).toBe(
-      path.join(process.cwd(), 'container', 'agent-runner', 'python'),
-    );
-    expect(pythonMount!.readonly).toBe(true);
-    expect(
-      fs.existsSync(path.join(pythonMount!.hostPath, 'auto_memory_sidecar.py')),
-    ).toBe(true);
-  });
-});

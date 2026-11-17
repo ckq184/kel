@@ -77,7 +77,6 @@ import {
   createSerializedAsyncTrigger,
   loadWorkspaceMemoryTurnContext,
 } from './workspace-memory-context.js';
-import { loadAutoMemoryRecallTurnContext } from './auto-memory-context.js';
 import { loadCkqclawOwnerProfileTurnContext } from './owner-profile-context.js';
 import { createWorkspaceMemoryWriteGuard } from './workspace-memory-runtime.js';
 import {
@@ -1753,26 +1752,19 @@ async function runQueryAttempt(
     }
   };
   activateCurrentInputTurn(coldInputTurnId);
-  const [workspaceMemoryTurn, ownerProfileTurn, autoMemoryRecallTurn] =
-    mcpToolsContext
-      ? await Promise.all([
-          loadWorkspaceMemoryTurnContext(prompt, (query) =>
-            fetchWorkspaceMemorySnapshot(mcpToolsContext, query),
-          ),
-          loadCkqclawOwnerProfileTurnContext(() =>
-            fetchCkqclawOwnerProfileTurn(mcpToolsContext),
-          ),
-          loadAutoMemoryRecallTurnContext(
-            containerInput,
-            prompt,
-            mcpToolsContext,
-          ),
-        ])
-      : [
-          { snapshot: null, block: '' },
-          { result: null, block: '' },
-          { block: '' },
-        ];
+  const [workspaceMemoryTurn, ownerProfileTurn] = mcpToolsContext
+    ? await Promise.all([
+        loadWorkspaceMemoryTurnContext(prompt, (query) =>
+          fetchWorkspaceMemorySnapshot(mcpToolsContext, query),
+        ),
+        loadCkqclawOwnerProfileTurnContext(() =>
+          fetchCkqclawOwnerProfileTurn(mcpToolsContext),
+        ),
+      ])
+    : [
+        { snapshot: null, block: '' },
+        { result: null, block: '' },
+      ];
   const firstWakeAcknowledger = new CkqclawFirstWakeAcknowledger();
   firstWakeAcknowledger.register(
     activeOutputInputTurnId || coldInputTurnId,
@@ -1814,49 +1806,12 @@ async function runQueryAttempt(
       `Workspace memory snapshot revision=${workspaceMemorySnapshot.storeRevision} items=${trace.itemRevisions.length} generatedAt=${trace.generatedAt}`,
     );
   };
-  // Task AB: content-free recall observation. The event carries counts only
-  // (injected / hitCount / latencyMs) — never recall text or the user query —
-  // so the host can persist it into eval.db even in metadata mode.
-  const emitAutoRecallObservation = (
-    observation:
-      | { injected: boolean; hitCount: number; latencyMs: number }
-      | undefined,
-    inputTurnId: string,
-    queryRunId: string | undefined = containerInput.queryRunId,
-  ): void => {
-    if (!observation || !emitOutput) return;
-    writeOutput({
-      status: 'stream',
-      result: null,
-      inputTurnId,
-      streamEvent: {
-        eventType: 'auto_recall',
-        agentScope: 'system',
-        isSynthetic: true,
-        displayLevel: 'detail',
-        title: 'Auto memory recall',
-        summary: `${observation.hitCount} hit(s) in ${observation.latencyMs}ms`,
-        autoRecall: {
-          injected: observation.injected,
-          hitCount: observation.hitCount,
-          latencyMs: observation.latencyMs,
-        },
-        queryRunId,
-        turnId: containerInput.turnId,
-        sessionId,
-      },
-    });
-  };
   if (workspaceMemoryTurn.snapshot) {
     emitWorkspaceMemoryRecall(
       workspaceMemoryTurn.snapshot,
       activeOutputInputTurnId || coldInputTurnId,
     );
   }
-  emitAutoRecallObservation(
-    autoMemoryRecallTurn.observation,
-    activeOutputInputTurnId || coldInputTurnId,
-  );
   const pipedMessagesDuringQuery = ipcDeliveryTracker.unacknowledgedMessages;
   const providerFallbackTurns = new ProviderFallbackTurnLedger({
     prompt,
@@ -1884,12 +1839,9 @@ async function runQueryAttempt(
     const withWorkspaceMemory = workspaceMemoryTurn.block
       ? `${workspaceMemoryTurn.block}\n\n${withChannelContext}`
       : withChannelContext;
-    const withAutoMemoryRecall = autoMemoryRecallTurn.block
-      ? `${autoMemoryRecallTurn.block}\n\n${withWorkspaceMemory}`
-      : withWorkspaceMemory;
     const withOwnerProfile = ownerProfileTurn.block
-      ? `${ownerProfileTurn.block}\n\n${withAutoMemoryRecall}`
-      : withAutoMemoryRecall;
+      ? `${ownerProfileTurn.block}\n\n${withWorkspaceMemory}`
+      : withWorkspaceMemory;
     return shouldAnchorInitialAgentTurn(emitOutput, sourceKindOverride)
       ? anchorUserTurn(withOwnerProfile)
       : withOwnerProfile;
@@ -2241,30 +2193,23 @@ async function runQueryAttempt(
           containerInput.currentSourceJid ||
           containerInput.chatJid,
       );
-      const [workspaceMemoryTurn, ownerProfileTurn, autoMemoryRecallTurn] =
-        mcpToolsContext
-          ? await Promise.all([
-              loadWorkspaceMemoryTurnContext(msg.text, (query) =>
-                fetchWorkspaceMemorySnapshot(mcpToolsContext, query),
-              ),
-              loadCkqclawOwnerProfileTurnContext(() =>
-                fetchCkqclawOwnerProfileTurn(
-                  mcpToolsContext,
-                  5_000,
-                  msg.receipt?.deliveryId,
-                ),
-              ),
-              loadAutoMemoryRecallTurnContext(
-                containerInput,
-                msg.text,
+      const [workspaceMemoryTurn, ownerProfileTurn] = mcpToolsContext
+        ? await Promise.all([
+            loadWorkspaceMemoryTurnContext(msg.text, (query) =>
+              fetchWorkspaceMemorySnapshot(mcpToolsContext, query),
+            ),
+            loadCkqclawOwnerProfileTurnContext(() =>
+              fetchCkqclawOwnerProfileTurn(
                 mcpToolsContext,
+                5_000,
+                msg.receipt?.deliveryId,
               ),
-            ])
-          : [
-              { snapshot: null, block: '' },
-              { result: null, block: '' },
-              { block: '' },
-            ];
+            ),
+          ])
+        : [
+            { snapshot: null, block: '' },
+            { result: null, block: '' },
+          ];
       if (msg.receipt?.deliveryId) {
         firstWakeAcknowledger.register(
           msg.receipt.deliveryId,
@@ -2291,14 +2236,6 @@ async function runQueryAttempt(
           msg.queryRunId || containerInput.queryRunId,
         );
       }
-      emitAutoRecallObservation(
-        autoMemoryRecallTurn.observation,
-        msg.receipt?.deliveryId ||
-          outputCorrelation.currentInputTurnId ||
-          containerInput.turnId ||
-          generateTurnId(),
-        msg.queryRunId || containerInput.queryRunId,
-      );
       const rejected = stream.push(msg.text, msg.images, (message) => {
         const withChannelContext = decorateChannelUserTurn(
           message,
@@ -2307,12 +2244,9 @@ async function runQueryAttempt(
         const withWorkspaceMemory = workspaceMemoryTurn.block
           ? `${workspaceMemoryTurn.block}\n\n${withChannelContext}`
           : withChannelContext;
-        const withAutoMemoryRecall = autoMemoryRecallTurn.block
-          ? `${autoMemoryRecallTurn.block}\n\n${withWorkspaceMemory}`
-          : withWorkspaceMemory;
         const withOwnerProfile = ownerProfileTurn.block
-          ? `${ownerProfileTurn.block}\n\n${withAutoMemoryRecall}`
-          : withAutoMemoryRecall;
+          ? `${ownerProfileTurn.block}\n\n${withWorkspaceMemory}`
+          : withWorkspaceMemory;
         return anchorUserTurn(withOwnerProfile);
       });
       for (const reason of rejected) {
@@ -4081,7 +4015,6 @@ async function main(): Promise<void> {
     },
     workspaceIpc: WORKSPACE_IPC,
     workspaceGroup: WORKSPACE_GROUP,
-    autoMemory: containerInput.autoMemory,
   };
   activeAgentMcpPolicy = resolveAgentMcpPolicy(
     parseAgentMcpPolicyMode(process.env.CKQCLAW_AGENT_MCP_POLICY),

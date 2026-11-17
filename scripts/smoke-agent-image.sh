@@ -18,17 +18,6 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# mem0ai must be importable inside the image — the workspace auto-memory
-# sidecar depends on it (version pin: scripts/builtin-mcp-catalog.mjs).
-smoke_mem0ai() {
-  local image="$1"
-  if ! docker exec "$SMOKE_CONTAINER_NAME" \
-    python3 -c "from importlib.metadata import version; version('mem0ai')" >/dev/null 2>&1; then
-    echo "mem0ai smoke probe failed: not importable" >&2
-    docker logs "$SMOKE_CONTAINER_NAME" >&2 || true
-    exit 1
-  fi
-  echo "mem0ai smoke check passed for $image"
 }
 
 # A digest reference is immutable. Prefer an already loaded local image for
@@ -105,7 +94,6 @@ for ((attempt = 1; attempt <= SMOKE_TIMEOUT_SECONDS; attempt++)); do
     ' <<<"$response" >/dev/null; then
       printf '%s\n' "$response" | jq .
       echo "Chromium CDP HTTP smoke test passed for $IMAGE_REF"
-      smoke_mem0ai "$IMAGE_REF"
       exit 0
     fi
   fi

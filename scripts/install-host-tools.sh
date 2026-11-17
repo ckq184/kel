@@ -2,7 +2,7 @@
 # install-host-tools.sh — Install external tools required by host-mode agents.
 #
 # This script brings the host environment closer to what the Docker container
-# provides (feishu-cli, agent-browser, uv, mem0ai).  It is safe to re-run —
+# provides (feishu-cli, agent-browser, uv).  It is safe to re-run —
 # it skips tools that are already installed and updates the builtin-skills
 # cache.
 #
@@ -124,64 +124,12 @@ install_uv() {
   fi
 }
 
-# ── mem0ai (host-owned auto-memory sidecar library; pin: scripts/builtin-mcp-catalog.mjs) ──
-
-catalog_query() {
-  node "$PROJECT_ROOT/scripts/builtin-mcp-catalog.mjs" "$@"
-}
-
-# component_field <id> <json-key> — single field from the catalog entry.
-component_field() {
-  catalog_query component "$1" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{const v=JSON.parse(d)[process.argv[1]];console.log(v===null||v===undefined?'':String(v))})" "$2"
-}
-
-install_mem0ai() {
-  # The auto-memory sidecar is host-owned (src/auto-memory-sidecar-manager.ts):
-  # host-mode workspaces need mem0ai importable by the host python. Docker
-  # images preinstall it; the version and wheel hash are pinned in
-  # scripts/builtin-mcp-catalog.mjs. A missing mem0ai is not fatal — auto
-  # memory degrades to an explicit "unavailable" tool result.
-  local py
-  if has_cmd python3; then
-    py=python3
-  elif has_cmd python; then
-    py=python
-  else
-    warn "python not found — skipping mem0ai (auto memory stays unavailable)"
-    return 0
-  fi
-  if "$py" -c "import mem0" 2>/dev/null; then
-    skip "mem0ai already installed"
-    return 0
-  fi
-  if ! "$py" -m pip --version >/dev/null 2>&1; then
-    warn "pip unavailable for $py — skipping mem0ai"
-    return 0
-  fi
-  local version filename wheel
-  version="$(component_field mem0ai version)"
-  filename="$(component_field mem0ai artifactFilename)"
-  info "Installing mem0ai==$version from verified wheel..."
-  if ! "$py" -m pip download --no-deps -q -d "$TMP_MCP_DIR" "mem0ai==$version"; then
-    warn "pip download failed for mem0ai==$version"; return 0
-  fi
-  wheel="$(find "$TMP_MCP_DIR" -name "$filename" | head -n1)"
-  if [ -z "$wheel" ]; then
-    warn "mem0ai wheel $filename not found after pip download"; return 0
-  fi
-  catalog_query verify mem0ai "$wheel"
-  "$py" -m pip install "$wheel"
-  ok "mem0ai $version installed"
-}
-
 # ── Main ─────────────────────────────────────────────────────
 
 echo "=== CKQClaw Host Tools Installer ==="
 echo "    OS=$OS  ARCH=$ARCH"
 echo ""
 
-TMP_MCP_DIR="$(mktemp -d)"
-trap 'rm -rf "$TMP_MCP_DIR"' EXIT
 
 if [ "${1:-}" = "skills" ]; then
   refresh_builtin_skills
@@ -192,7 +140,6 @@ install_feishu_cli
 refresh_builtin_skills
 install_agent_browser
 install_uv
-install_mem0ai
 
 echo ""
 echo "=== Done ==="

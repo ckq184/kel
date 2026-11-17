@@ -30,7 +30,6 @@ import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { PromptDialog } from '@/components/common/PromptDialog';
 import {
   ArrowLeft,
-  BrainCircuit,
   ChevronDown,
   ChevronRight,
   Folder,
@@ -57,7 +56,6 @@ const TerminalPanel = lazy(() =>
   import('./TerminalPanel').then((m) => ({ default: m.TerminalPanel })),
 );
 import { ImBindingDialog } from './ImBindingDialog';
-import { CaptureMemoryDialog } from './CaptureMemoryDialog';
 import { SessionSidebar } from './SessionSidebar';
 import { showToast } from '../../utils/toast';
 import {
@@ -81,7 +79,6 @@ const TERMINAL_MAX_RATIO = 0.7;
 // Stable empty references to avoid infinite re-render loops in Zustand selectors
 const EMPTY_AGENTS: import('../../types').AgentInfo[] = [];
 const EMPTY_FOLLOW_UPS: QueuedFollowUp[] = [];
-const EMPTY_MESSAGES: import('../../stores/chat').Message[] = [];
 
 interface ChatViewProps {
   groupJid: string;
@@ -136,9 +133,6 @@ export function ChatView({ groupJid, onBack, headerLeft }: ChatViewProps) {
   const [resetLoading, setResetLoading] = useState(false);
   const [creatingSession, setCreatingSession] = useState(false);
   const [resetAgentId, setResetAgentId] = useState<string | null>(null);
-  // 任务 Y2「提炼记忆」：多会话选择对话框（勾选/预览/确认/busy 全在
-  // CaptureMemoryDialog 内自治，这里只保留一个开关）。
-  const [showCaptureDialog, setShowCaptureDialog] = useState(false);
   // Desktop: visible controls panel height, mounted controls terminal lifecycle.
   const [terminalVisible, setTerminalVisible] = useState(false);
   const [terminalMounted, setTerminalMounted] = useState(false);
@@ -182,7 +176,6 @@ export function ChatView({ groupJid, onBack, headerLeft }: ChatViewProps) {
   const handleWsNewMessage = useChatStore((s) => s.handleWsNewMessage);
   const handleStreamSnapshot = useChatStore((s) => s.handleStreamSnapshot);
   const updateInteractionMode = useChatStore((s) => s.updateInteractionMode);
-  const updateAutoMemoryRecall = useChatStore((s) => s.updateAutoMemoryRecall);
 
   const agents = useChatStore((s) => s.agents[groupJid] ?? EMPTY_AGENTS);
   const activeAgentTab = useChatStore(
@@ -622,41 +615,6 @@ export function ChatView({ groupJid, onBack, headerLeft }: ChatViewProps) {
       toast.error('清除上下文失败，请稍后重试');
     }
   };
-
-  // 任务 Y2：可提炼目标 = 主会话 + 各 conversation 子会话（'' = 主会话，
-  // 与后端 agentIds 空串约定一致）。
-  const captureTargets = useMemo(
-    () => [
-      { id: '', name: `主会话（${group?.name ?? groupJid}）` },
-      ...agents
-        .filter((a) => a.kind === 'conversation')
-        .map((a) => ({ id: a.id, name: a.name || a.id })),
-    ],
-    [group?.name, groupJid, agents],
-  );
-
-  // 任务 Y3：「按消息」模式的数据源 = 当前所在会话（主/子会话）的已加载
-  // 文本消息；系统/计费/空行与后端同样剔除，翻页可加载更早历史。
-  const captureMessageList = activeAgentTab
-    ? (agentMessages[activeAgentTab] ?? EMPTY_MESSAGES)
-    : (groupMessages ?? EMPTY_MESSAGES);
-  const pickerMessages = useMemo(
-    () =>
-      captureMessageList
-        .filter(
-          (m) =>
-            m.sender !== '__system__' &&
-            m.sender !== '__billing__' &&
-            (m.content ?? '').trim().length > 0,
-        )
-        .map((m) => ({
-          id: m.id,
-          role: (m.is_from_me ? 'assistant' : 'user') as 'user' | 'assistant',
-          content: m.content,
-          timestamp: m.timestamp,
-        })),
-    [captureMessageList],
-  );
 
   const handleCreateSession = useCallback(async () => {
     if (creatingSession) return;
@@ -1112,18 +1070,6 @@ export function ChatView({ groupJid, onBack, headerLeft }: ChatViewProps) {
               <span className="hidden sm:inline">渠道绑定</span>
             </button>
           )}
-          {canModifyWorkspaceConfig && (
-            <button
-              type="button"
-              onClick={() => setShowCaptureDialog(true)}
-              className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer"
-              title="提炼记忆"
-              aria-label="提炼记忆"
-            >
-              <BrainCircuit className="h-4 w-4" />
-              <span className="hidden sm:inline">提炼记忆</span>
-            </button>
-          )}
           <button
             onClick={toggleTheme}
             className="hidden min-h-9 min-w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex cursor-pointer"
@@ -1386,10 +1332,6 @@ export function ChatView({ groupJid, onBack, headerLeft }: ChatViewProps) {
         open={showInteractionModeDialog}
         workspaceName={workspaceDisplayName}
         currentMode={interactionMode}
-        autoMemoryRecall={group?.auto_memory_recall === true}
-        onToggleAutoMemoryRecall={(enabled) =>
-          updateAutoMemoryRecall(groupJid, enabled)
-        }
         onClose={() => setShowInteractionModeDialog(false)}
         onSave={(mode) => updateInteractionMode(groupJid, mode)}
       />
@@ -1436,30 +1378,6 @@ export function ChatView({ groupJid, onBack, headerLeft }: ChatViewProps) {
         confirmText="清除"
         confirmVariant="danger"
         loading={resetLoading}
-      />
-
-      {/* Multi-session capture dialog (task Y2 session-merge + task Y3
-          message-pick): selection, previews, confirmation, and receipt
-          toasts live inside it. */}
-      <CaptureMemoryDialog
-        open={showCaptureDialog}
-        groupJid={groupJid}
-        targets={captureTargets}
-        defaultSelected={[activeAgentTab ?? '']}
-        messagePicker={{
-          agentId: activeAgentTab ?? '',
-          messages: pickerMessages,
-          hasMore: activeAgentTab
-            ? !!agentHasMore[activeAgentTab]
-            : !!hasMoreMessages,
-          loadingMore: !activeAgentTab && loading,
-          onLoadMore: () => {
-            if (activeAgentTab)
-              loadAgentMessages(groupJid, activeAgentTab, true);
-            else loadMessages(groupJid, true);
-          },
-        }}
-        onClose={() => setShowCaptureDialog(false)}
       />
 
       {/* IM binding dialog */}

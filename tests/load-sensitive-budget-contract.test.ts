@@ -57,11 +57,6 @@ const LOAD_SENSITIVE_FAMILY: ReadonlyArray<{
     note: 'await 刷新链（任务 K 批次 2）',
   },
   {
-    file: 'tests/auto-memory-secret-filter.test.ts',
-    budget: /timeout:\s*60_000/,
-    note: 'secret-filter 契约（任务 K 时期）',
-  },
-  {
     file: 'tests/githooks-contract.test.ts',
     budget: /\},\s*30_000\)/,
     note: 'hooks 安装器：git init + 两次安装器子进程（任务 L 批次 2 收官轮翻红后修）',
@@ -70,16 +65,6 @@ const LOAD_SENSITIVE_FAMILY: ReadonlyArray<{
     file: 'tests/scope-check-contract.test.ts',
     budget: /\},\s*30_000\)/,
     note: 'check-scope CLI 端到端：git init + 两次 CLI 子进程（任务 L 批次 3 收官轮翻红后修）',
-  },
-  {
-    file: 'tests/auto-memory-sidecar-manager.test.ts',
-    budget: /\},\s*15_000\)/,
-    note: 'Python 侧车子进程家族，旧式字面量预算 ×14（15–40s）',
-  },
-  {
-    file: 'tests/auto-memory-ipc.test.ts',
-    budget: /\},\s*20_000\)/,
-    note: '侧车 IPC 子进程（旧式字面量）',
   },
   {
     file: 'tests/backup-restore-safety.test.ts',
@@ -95,7 +80,7 @@ const LOAD_SENSITIVE_FAMILY: ReadonlyArray<{
 
 describe('负载敏感家族预算护栏（任务 M）', () => {
   test('家族清单非空且文件路径唯一', () => {
-    expect(LOAD_SENSITIVE_FAMILY.length).toBeGreaterThanOrEqual(14);
+    expect(LOAD_SENSITIVE_FAMILY.length).toBeGreaterThanOrEqual(11);
     const files = LOAD_SENSITIVE_FAMILY.map((member) => member.file);
     expect(new Set(files).size).toBe(files.length);
   });

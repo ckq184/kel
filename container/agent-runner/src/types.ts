@@ -216,17 +216,6 @@ export interface ContainerInput {
   /** Whether this is the admin's home container (full privileges). */
   isAdminHome?: boolean;
   isScheduledTask?: boolean;
-  /** Per-workspace auto-memory enable flag from the host stdin bootstrap.
-   * The host owns the sidecar process and its llm/embedder endpoints; those
-   * secrets never enter this runner or its IPC (host-side container-runner
-   * mirrors this shape — keep both in sync). `recall.enabled` opts the
-   * workspace into per-turn automatic memory recall injection (task Z). */
-  autoMemory?: {
-    enabled?: boolean;
-    recall?: {
-      enabled?: boolean;
-    };
-  };
   /**
    * Internal HMAC secret delivered only in the stdin bootstrap. It must remain
    * runner-private and must never be written to IPC, files, env, or prompts.
