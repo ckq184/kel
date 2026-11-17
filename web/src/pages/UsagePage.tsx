@@ -73,7 +73,6 @@ interface AttributionRow {
   label: string;
   tokens: number;
   estimatedCost: number;
-  billedCost: number | null;
   runCount: number;
   modelCallCount: number;
 }
@@ -164,7 +163,6 @@ function buildDailyData(
       outputTokens: 0,
       totalTokens: 0,
       providerEstimatedCostUSD: 0,
-      billedCostUSD: null,
       runCount: 0,
       modelCallCount: 0,
     });
@@ -180,7 +178,6 @@ function buildDailyData(
       point.outputTokens = row.outputTokens;
       point.totalTokens = row.totalTokens;
       point.providerEstimatedCostUSD = row.providerEstimatedCostUSD;
-      point.billedCostUSD = row.billedCostUSD;
       point.runCount = row.runCount;
       point.modelCallCount = row.modelCallCount;
     }
@@ -201,9 +198,6 @@ function buildDailyData(
       row.output_tokens +
       row.reasoning_tokens;
     point.providerEstimatedCostUSD += row.provider_estimated_cost_usd;
-    if (row.billed_cost_usd !== null) {
-      point.billedCostUSD = (point.billedCostUSD || 0) + row.billed_cost_usd;
-    }
     point.runCount += row.run_count;
     point.modelCallCount += row.model_call_count;
   }
@@ -245,7 +239,6 @@ function buildAttributionRows(
       label: identity.label,
       tokens: 0,
       estimatedCost: 0,
-      billedCost: null,
       runCount: 0,
       modelCallCount: 0,
     };
@@ -256,9 +249,6 @@ function buildAttributionRows(
       item.output_tokens +
       item.reasoning_tokens;
     existing.estimatedCost += item.provider_estimated_cost_usd;
-    if (item.billed_cost_usd !== null) {
-      existing.billedCost = (existing.billedCost || 0) + item.billed_cost_usd;
-    }
     existing.runCount += item.run_count;
     existing.modelCallCount += item.model_call_count;
     rows.set(identity.key, existing);
@@ -278,7 +268,6 @@ function attributionRowsFromServer(
         : item.name || item.key,
     tokens: item.totalTokens,
     estimatedCost: item.providerEstimatedCostUSD,
-    billedCost: item.billedCostUSD,
     runCount: item.runCount,
     modelCallCount: item.modelCallCount,
   }));
@@ -305,7 +294,6 @@ function buildFallbackCsv(rows: UsageBreakdown[]): string {
     '输出 Token',
     '推理 Token',
     '模型估算费用 USD',
-    '账单扣费 USD',
     '智能体运行次数',
     '模型调用次数',
   ];
@@ -323,7 +311,6 @@ function buildFallbackCsv(rows: UsageBreakdown[]): string {
       row.output_tokens,
       row.reasoning_tokens,
       row.provider_estimated_cost_usd,
-      row.billed_cost_usd,
       row.run_count,
       row.model_call_count,
     ]
@@ -557,7 +544,7 @@ export function UsagePage() {
             </div>
             <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
               查看智能体运行、Token
-              与模型成本估算。模型估算费用用于分析资源消耗，不等同于账单扣费。
+              与模型成本估算。模型估算费用用于分析资源消耗。
             </p>
             <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
               <span>
@@ -786,7 +773,7 @@ export function UsagePage() {
                 <MetricItem
                   label="模型估算费用 (USD)"
                   value={metricValue(visibleSummary, 'cost')}
-                  note="按内置价格表估算，非账单扣费"
+                  note="按自定义单价与内置价格表估算"
                 />
                 <MetricItem
                   label="平均每次成本"
@@ -1124,7 +1111,6 @@ function UsageTrendTable({
                 <th className="px-3 py-3 text-right font-medium">
                   模型估算费用
                 </th>
-                <th className="px-3 py-3 text-right font-medium">账单扣费</th>
               </>
             )}
             {metric === 'runs' && (
@@ -1156,19 +1142,10 @@ function UsageTrendTable({
                 </>
               )}
               {metric === 'cost' && (
-                <>
-                  <NumberCell
-                    value={formatCost(row.providerEstimatedCostUSD)}
-                    strong
-                  />
-                  <NumberCell
-                    value={
-                      row.billedCostUSD === null
-                        ? '—'
-                        : formatCost(row.billedCostUSD)
-                    }
-                  />
-                </>
+                <NumberCell
+                  value={formatCost(row.providerEstimatedCostUSD)}
+                  strong
+                />
               )}
               {metric === 'runs' && (
                 <>

@@ -21,7 +21,6 @@ export interface DailyUsagePoint {
   outputTokens: number;
   totalTokens: number;
   providerEstimatedCostUSD: number;
-  billedCostUSD: number | null;
   runCount: number;
   modelCallCount: number;
 }
