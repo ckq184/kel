@@ -80,7 +80,7 @@ export const VERIFY_STEPS = [
     name: 'test',
     docCommand: 'make test',
     failHint:
-      '连续重跑出现新失败时先冷却复测再定性：满载下边缘预算/时序用例会轮换翻红，单跑均绿（docs/task-k-windows-test-baseline-triage-plan.md §8）',
+      '连续重跑出现新失败时先冷却复测再定性：满载下边缘预算/时序用例会轮换翻红，单跑均绿',
     commands: [{ run: 'npx vitest run' }],
   },
   {
