@@ -209,13 +209,6 @@ export interface ContainerInput {
    * current turn. This value is mutable on a warm runner and must be replaced
    * whenever a new IPC input becomes current. */
   channelContext?: ChannelTurnContext;
-  /** Active workspace harness adapter (task AE, RSI Phase 1). Host-read file
-   * projection (`data/harness-adapters/<jid>/`); absent when the workspace has
-   * no adopted adapter — the decorated turn must be byte-identical then. */
-  harnessAdapter?: {
-    text: string;
-    version: number;
-  };
   /** @deprecated Use isHome + isAdminHome instead. Kept for backward compatibility with older host processes. */
   isMain?: boolean;
   /** Whether this is the user's home container (admin or member). */

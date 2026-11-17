@@ -36,7 +36,6 @@
 | `/api/pricing`                     | `src/routes/pricing.ts`          | 自定义模型单价规则            |
 | `/api/admin`                       | `src/routes/admin.ts`            | 用户、邀请和审计              |
 | `/api/bug-report`                  | `src/routes/bug-report.ts`       | 脱敏问题报告                  |
-| `/api/eval`                        | `src/routes/eval.ts`             | 原生评测中心（任务 AB）       |
 | `/api/browse`                      | `src/routes/browse.ts`           | Host 目录选择                 |
 | `/api`                             | `src/routes/monitor.ts`          | 健康、状态和 Docker 构建      |
 | `/api/messages`、`/api/follow-ups` | `src/web.ts`                     | 消息发送和 Follow-up          |
@@ -655,87 +654,6 @@ capturedAt }`（不存 messageIds 全量）。preview 无对应端点——前�
 新事件的计价解析优先级：自定义模式串（tier 内最长匹配）→ 内置 Kaboo 表 →
 自定义兜底 → 内置 Sonnet 兜底。规则变更即时生效（缓存显式失效），只影响新事件，
 历史用量行金额不回算。
-
-## 原生评测中心（任务 AB）
-
-数据落独立 `data/db/eval.db`（不动 messages.db）。离线评测由
-`npm run eval:auto-recall` 写入；真实对话 turn 观测由
-`data/config/observability.json` 控制（缺文件即整链路 no-op）。
-
-所有登录用户可读：
-
-- `GET /api/eval/runs`——离线评测 run 列表（最新在前）
-- `GET /api/eval/runs/:id`——单个 run 含逐条查询结果
-- `GET /api/eval/comparison?ids=a,b`——多 run 指标并排（未知 id 返回 null 行）
-
-仅 `manage_system_config`：
-
-- `GET /api/eval/turns`——真实对话 turn 观测，支持 `workspace`/`channel`/
-  `recallInjected`/`judge`（`judged`|`pending`）筛选与 `limit`/`offset` 分页
-- `POST /api/eval/runs/trigger`——（任务 AC）以宿主子进程 spawn 命令行执行器
-  发起一次离线评测（费用敏感；参数白名单：`k` 1–10、`runName`
-  `[\w-]{1,64}`、`reset`、`dataset`（缺省 `auto-recall`）；运行中重复触发
-  409；15 分钟超时）
-- `GET /api/eval/runs/trigger/status`——触发器快照与日志 tail（WS 事件
-  `eval_run_log`/`eval_run_complete` 同步推送，均 admin-only）
-- 评测集管理（任务 AD，`eval.db` v2 `eval_datasets` 表；保存/导入均过
-  `validateGoldenSet` 校验，`issues` 逐条返回）：`GET /api/eval/datasets`
-  （列表不含数据正文）、`GET /api/eval/datasets/:name`、`POST
-/api/eval/datasets`（创建，201）、`PUT /api/eval/datasets/:name`（更新，
-  保留 source）、`DELETE /api/eval/datasets/:name`（builtin 409）。内置集
-  `auto-recall` 由 `scripts/eval/auto-recall-golden.json` 迁移播种
-- Harness adapter 演化（任务 AE，RSI Phase 1，`eval.db` v3 起三表
-  `harness_proposals`/`harness_versions`/`harness_lessons`；提案由
-  CLI `npm run eval:harness-evolve -- --workspace <jid>` 生成，采纳是写入
-  `data/harness-adapters/<jid>/ADAPTER.md` 的人审动作）：`GET
-/api/eval/harness/proposals?workspace=<jid>`（列表不含 adapter 正文）、
-  `GET /api/eval/harness/proposals/:id`（详情含 diff 与证据）、`POST
-/api/eval/harness/proposals/:id/adopt`（校验失败 400；非 pending 409；
-  keep_base 400——采纳即写文件+追加版本+后台蒸馏 lesson，响应不等 LLM）、
-  `POST /api/eval/harness/proposals/:id/reject`、`GET
-/api/eval/harness/versions?workspace=<jid>`（版本历史含 active 标记）、
-  `POST /api/eval/harness/versions/:id/rollback?workspace=<jid>`（只改文件
-  侧 ACTIVE 指针，版本表保持纯追加）、`GET /api/eval/harness/lessons?workspace=<jid>`
-  （只读经验教训，cue/lesson/evidence 三字段齐才入库）、`GET
-/api/eval/harness/workspaces`（任务 AF：有观测 turn 或提案的工作区并集，
-  带 turn/proposal 计数与最近 turn 时间，供 Web 下拉）；另 `obs_turns`
-  自 v4 起带 `adapter_version` 归因列（0=基线，turn 执行时的 adapter 版本，
-  `/api/eval/turns` 返回带出）
-- Harness 探针（任务 AG，RSI Phase 2，`eval.db` v5 起两表
-  `harness_acceptance_sets`/`harness_probes`；探针由 CLI
-  `npm run eval:harness-probe -- --workspace <jid> --proposal <id>
-  [--dry-run]` 手动触发——对 pending 提案做「当前 ACTIVE vs 提案」双臂
-  单轮直调 + glm-flash 双向匿名盲选，报告只是**人审建议**；验收集与
-  报告属 admin 面，proposer 无读取路径）：`GET|PUT
-/api/eval/harness/acceptance/:workspace`（验收集读写；PUT 过
-  `validateAcceptanceSet`——1–10 题、text 非空、expectNotes ≥1、id 唯一，
-  失败 400 带 issues；未配置 GET 404）、`GET
-/api/eval/harness/probes?proposal=<id>`（该提案的探针报告列表，含逐题
-  双臂文本与两向 judge 判定）；`GET /api/eval/harness/proposals/:id` 详情
-  附带 `latestProbe` 摘要（verdict/票数/要点命中，无报告为 null）
-- Harness 跨 workspace 复用与一键提案（任务 AH，RSI Phase 3，**无 schema
-  变更**——eval-store 仅新增 `listAllHarnessLessons`（全 workspace lesson
-  池，limit 500）/`countTurnsSince`（按时间计数）两读方法，版本仍 v5。
-  evolve CLI 默认启用证据分簇——`clusterTurns`：channel+30 分钟时间窗、
-  簇内按输入公共词占比合并，簇带 input variance 分歧信号——与跨
-  workspace 近邻 lesson——`pickNeighborLessons`：cue 词面匹配 top-3
-  （中文 2-gram/英文按词，排除本 workspace，prompt 内免责声明）；两者
-  均可用 `--no-cluster`/`--no-neighbors` 回退旧行为）：`POST
-/api/eval/harness/versions/:id/clone?workspace=<源jid>`（body
-  `{targetWorkspace}`；以该历史版本全文为目标 workspace 新建 **pending
-  提案**——rationale 标注「克隆自 <源> v<n>」、evidence 空、baseline=目标
-  当前 ACTIVE 版本，**绝不直写目标 adapter 文件**，仍走正常人审+探针；
-  目标为空/与源相同 400、版本不存在 404、成功 201 返回新提案 id）、`GET
-/api/eval/harness/evidence-status?workspace=<jid>`（返回
-  `{turnsSinceLastProposal, lastProposalAt, activeVersion}`——「≥10 条新
-  证据」提示条阈值纯前端判断，不进配置面）、`POST
-/api/eval/harness/evolve/trigger`（body `{workspace}`；照 eval-trigger
-  模式经 `src/harness-evolve-trigger.ts` spawn evolve CLI 子进程——单飞锁
-  （运行中 409）、15 分钟超时 kill、JID 白名单 `[\w:@.-]{1,128}` 关闭
-  win32 shell 注入面；一次 proposer LLM 调用费用；202）、`GET
-/api/eval/harness/evolve/status`（触发器快照与日志 tail；本期无 WS
-  事件，前端 2s 轮询，完成即刷新列表）。四个端点均
-  `manage_system_config`；**全自动采纳明确不做**——采纳/拒绝仍走人审门
 
 ## 管理、监控与问题报告
 

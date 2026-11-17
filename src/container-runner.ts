@@ -15,7 +15,6 @@ import path from 'path';
 import { randomUUID } from 'node:crypto';
 
 import { getAutoMemoryHostConfig } from './auto-memory-config.js';
-import { buildHarnessAdapterInput } from './harness-adapter-store.js';
 import { CONTAINER_IMAGE, DATA_DIR, GROUPS_DIR, TIMEZONE } from './config.js';
 import {
   getServerBootId,
@@ -400,13 +399,6 @@ export interface ContainerInput {
   workspaceMemoryMutationSigningSecret?: string;
   /** Public identity paired with the runner-private signing secret. */
   workspaceMemoryRunnerInstanceId?: string;
-  /** Active workspace harness adapter (task AE, RSI Phase 1). Host-read file
-   * projection (`data/harness-adapters/<jid>/`); absent when the workspace has
-   * no adopted adapter. Mirrors the runner-side type — keep both in sync. */
-  harnessAdapter?: {
-    text: string;
-    version: number;
-  };
   /** Isolated task run ID — determines IPC namespace (tasks-run/{taskRunId}/) */
   taskRunId?: string;
   /** Claude session/provider namespace. Tasks use task:<id> while IPC still uses taskRunId. */
@@ -1869,7 +1861,6 @@ export async function runContainerAgent(
       const dockerInput: ContainerInput = {
         ...input,
         autoMemory: buildAutoMemoryInput(group),
-        harnessAdapter: buildHarnessAdapterInput(input.chatJid),
         workspaceMemoryMutationSigningSecret,
         workspaceMemoryRunnerInstanceId,
         plugins: group.created_by
@@ -2906,7 +2897,6 @@ export async function runHostAgent(
       const hostInput: ContainerInput = {
         ...input,
         autoMemory: buildAutoMemoryInput(group),
-        harnessAdapter: buildHarnessAdapterInput(input.chatJid),
         workspaceMemoryMutationSigningSecret,
         workspaceMemoryRunnerInstanceId,
         plugins: preparedHostPlugins,

@@ -68,9 +68,6 @@ const UsersPage = lazy(() =>
 const MonitorPage = lazy(() =>
   import('./pages/MonitorPage').then((m) => ({ default: m.MonitorPage })),
 );
-const EvalPage = lazy(() =>
-  import('./pages/EvalPage').then((m) => ({ default: m.EvalPage })),
-);
 const CapabilitiesPage = lazy(() =>
   import('./pages/CapabilitiesPage').then((m) => ({
     default: m.CapabilitiesPage,
@@ -177,19 +174,6 @@ const appRoutes = createRoutesFromElements(
           <AuthGuard requiredPermission="manage_system_config">
             <Suspense fallback={null}>
               <MonitorPage />
-            </Suspense>
-          </AuthGuard>
-        }
-      />
-      {/* Task AQ (2026-11-17): the whole evaluation center is admin-only,
-          offline runs included — supersedes the task AB all-users split and
-          mirrors the systemConfigMiddleware on every /api/eval/* endpoint. */}
-      <Route
-        path="/eval"
-        element={
-          <AuthGuard requiredPermission="manage_system_config">
-            <Suspense fallback={null}>
-              <EvalPage />
             </Suspense>
           </AuthGuard>
         }

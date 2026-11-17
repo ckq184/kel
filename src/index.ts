@@ -473,9 +473,6 @@ import {
   reconcileMonthlyUsage,
 } from './billing.js';
 import { recordUsageEvent } from './usage-service.js';
-import { turnObserver } from './turn-observer.js';
-import { buildHarnessAdapterInput } from './harness-adapter-store.js';
-import { startRecallJudgeScheduler } from './recall-judge.js';
 import {
   AgentStatus,
   AgentProfile,
@@ -7133,27 +7130,6 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       lastProcessed.id,
       async (result) => {
         try {
-          // Task AB observation tap: synchronous, never throws, and a strict
-          // no-op while observability is off (no data/config/observability.json
-          // → zero eval.db writes). Falls back to lastProcessed.id when the
-          // runner result carries no durable inputTurnId.
-          turnObserver.onResult(
-            {
-              workspaceJid: chatJid,
-              folder: effectiveGroup.folder,
-              channel: chatJid.split(':', 1)[0] || 'unknown',
-              interactionMode,
-              autoRecallEnabled: effectiveGroup.autoMemoryRecall === true,
-              inputText: prompt,
-              defaultTurnId: lastProcessed.id,
-              sessionId: activeSessionId,
-              // Task AF: attribute the turn to the adapter version it ran
-              // under (ACTIVE at observation time; readAdapterFile is
-              // total — read failures report the 0 baseline).
-              adapterVersion: buildHarnessAdapterInput(chatJid)?.version ?? 0,
-            },
-            result,
-          );
           const isInterruptStatus =
             result.status === 'stream' &&
             result.streamEvent?.eventType === 'status' &&
@@ -15241,25 +15217,6 @@ async function processAgentConversation(
       return;
     }
     await activateAgentProjectionForInput(output.inputTurnId);
-    // Task AE follow-up: the task AB observation tap only covered the main
-    // workspace path (processGroupMessages), so #agent: conversation turns
-    // never reached obs_turns. Same tap here — the harness-evolve proposer
-    // needs agent-session evidence too. No-op while observability is off.
-    turnObserver.onResult(
-      {
-        workspaceJid: chatJid,
-        folder: effectiveGroup.folder,
-        channel: chatJid.split(':', 1)[0] || 'unknown',
-        interactionMode,
-        autoRecallEnabled: effectiveGroup.autoMemoryRecall === true,
-        inputText: prompt,
-        defaultTurnId: lastProcessed.id,
-        sessionId,
-        // Task AF attribution: adapter version active for this turn.
-        adapterVersion: buildHarnessAdapterInput(chatJid)?.version ?? 0,
-      },
-      output,
-    );
     if (
       output.ipcReceipts?.length &&
       (!output.providerFailure || output.providerFailureTerminal === true)
@@ -20717,10 +20674,6 @@ async function main(): Promise<void> {
     assistantName: ASSISTANT_NAME,
   };
   startSchedulerLoop(schedulerDeps);
-
-  // Task AB: periodic recall-judge loop. Each tick re-reads the observability
-  // config, so judge.enabled never needs a restart; disabled by default.
-  startRecallJudgeScheduler();
 
   // Inject triggerTaskRun into WebDeps (schedulerDeps must exist first)
   const webDeps = getWebDeps();

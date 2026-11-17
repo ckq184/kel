@@ -248,34 +248,6 @@ data/
 主要数据库当前 Schema 版本以 `src/db.ts` 的 `CURRENT_SCHEMA_VERSION` 为准。
 不要在文档中复制版本号；迁移必须同时具备备份、前向升级和拒绝降级保护。
 
-`data/db/eval.db` 是独立的原生评测库（任务 AB，`src/eval-store.ts` 自版本化
-`PRAGMA user_version`，WAL 双进程安全）：`eval_runs`/`eval_run_items` 存离线
-召回评测（`scripts/eval-auto-recall.ts` 默认落库），`obs_turns` 存真实对话
-turn 观测（`src/turn-observer.ts`，默认关），`harness_proposals`/
-`harness_versions`/`harness_lessons` 存 RSI harness adapter 演化记录（任务
-AE，提案由 `scripts/eval-harness-evolve.ts` 写入、采纳仅经 admin Web 动作），
-`obs_turns.adapter_version` 记录每个 turn 执行时的 adapter 版本（任务 AF
-归因列，0=基线；观测 tap 在主链路与 `#agent:` 会话链路两处读取当前
-ACTIVE 版本写入）；v5 起加 `harness_acceptance_sets`（按 workspace 的探针
-验收集，1–10 题）与 `harness_probes`（A/B 探针报告）两表（任务 AG，RSI
-Phase 2：`scripts/eval-harness-probe.ts` 对 pending 提案做「当前 ACTIVE vs
-提案」双臂单轮直调 + glm-flash 双向匿名盲选 + 门槛聚合，产 adopt/keep_base/
-inconclusive **建议**辅助人审；单轮直调无工具/无召回属已知覆盖面 gap；
-验收集与报告属 admin 面，proposer 无读取路径——泄漏纪律）。任务 AH
-（RSI Phase 3）**无 schema 变更、版本仍 v5**：仅新增
-`listAllHarnessLessons(limit=500)`（全 workspace lesson 池，跨 ws 近邻
-匹配用，带 workspaceJid 字段）与 `countTurnsSince(workspaceJid, sinceIso)`
-（`sinceIso` 为 null 时计全部——喂「自上次提案已攒 N 条新证据」提示条的
-动态查询）两读方法。
-不碰 messages.db、不升主库 schema。
-
-`data/harness-adapters/<sanitized-jid>/` 是 workspace 外挂 harness adapter 的
-运行时数据（任务 AE，RSI Phase 1）：`ADAPTER.md` 为注入正文（16KB 上限、
-禁评分指向词），`ACTIVE` 为生效版本指针（回滚只改指针，版本历史纯追加）。
-宿主 `container-runner` 读取后经 `ContainerInput.harnessAdapter` 下发，runner
-在首轮 user turn 前拼接版本标记 block——无 adapter 时输出与无此功能时逐字节
-一致。该目录属敏感区，写入仅由 admin 采纳/回滚动作触发。
-
 核心表族：
 
 - 用户与认证：`users`、`user_sessions`、`invite_codes`、`auth_audit_log`
@@ -417,17 +389,3 @@ git diff --check
 
 真实 Provider 测试使用 `npm run test:real-model`，会产生真实请求和可能的费用，
 不要把凭据、Endpoint、模型名或未脱敏回复写入日志。
-
-自动召回（自动记忆）检索质量评测使用 `npm run eval:auto-recall`
-（`tsx scripts/eval-auto-recall.ts`，任务 Z 后续 4）：按生产契约（query 截
-500 字、top-k=5，可用 `--k` 覆盖）对 golden set（`scripts/eval/
-auto-recall-golden.json`，verbatim/paraphrase/multi/truncation 四类）经真实
-侧车播种与检索，输出 Recall@k / Hit-rate / MRR / Precision 本地报告到
-`data/eval/auto-recall/`；配置自托管 langfuse 后（env `CKQCLAW_EVAL_LANGFUSE_URL/_PUBLIC_KEY/_SECRET_KEY`
-或 `data/config/eval-langfuse.json`）按其「外部执行器」模式写回 dataset
-items / traces / dataset-run-items / scores（零依赖 REST，Basic auth），
-在 langfuse UI 看运行历史与跨 run 对比；栈生命周期 `npm run eval:langfuse
--- up|down|status`（默认检出目录 `<repo>/../langfuse`）。同样产生真实
-embedder/LLM 请求与费用，不进门禁；隔离存储 `data/eval/auto-recall/store`；
-`--reset` 重播种、`--dry-run` 离线校验、`--no-langfuse` 纯本地。指标纯
-函数与 langfuse 客户端由 `tests/eval-auto-recall-metrics.test.ts` 锁定。
