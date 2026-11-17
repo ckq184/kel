@@ -522,7 +522,7 @@ function enrichContextAudit(
   return audit;
 }
 
-// 启动期扫描 prompts/channels/*.md，文件名（去 .md 后缀）= channel key（feishu / qq / dingtalk / ...）
+// 启动期扫描 prompts/channels/*.md，文件名（去 .md 后缀）= channel key（feishu / qq / wechat / ...）
 // 新增渠道时只需在 channels/ 下加一个 .md 文件，无需改代码。
 const CHANNEL_GUIDELINES: Record<string, string> = (() => {
   const channelsDir = path.join(PROMPTS_DIR, 'channels');

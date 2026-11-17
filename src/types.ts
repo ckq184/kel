@@ -215,7 +215,7 @@ export interface RegisteredGroup {
   feishu_group_message_type?: string; // 飞书群消息形式：chat/thread
 }
 
-export type ChannelProvider = 'feishu' | 'qq' | 'wechat' | 'dingtalk';
+export type ChannelProvider = 'feishu' | 'qq' | 'wechat';
 
 export type ChannelAuthMode = 'credentials' | 'bot_token' | 'qr_session';
 export type ChannelAuthStatus =

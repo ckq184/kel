@@ -52,11 +52,6 @@ const LOAD_SENSITIVE_FAMILY: ReadonlyArray<{
     note: 'docker run 集成 describe；含「10000-file session <10s」真实性能契约断言——该断言按任务 K §8 裁决不放宽（10069ms 惜败属负载现象，冷却即过）',
   },
   {
-    file: 'tests/dingtalk-streaming-card.test.ts',
-    budget: /timeout:\s*30_000/,
-    note: 'await 刷新链（任务 K 批次 2）',
-  },
-  {
     file: 'tests/githooks-contract.test.ts',
     budget: /\},\s*30_000\)/,
     note: 'hooks 安装器：git init + 两次安装器子进程（任务 L 批次 2 收官轮翻红后修）',
@@ -80,7 +75,7 @@ const LOAD_SENSITIVE_FAMILY: ReadonlyArray<{
 
 describe('负载敏感家族预算护栏（任务 M）', () => {
   test('家族清单非空且文件路径唯一', () => {
-    expect(LOAD_SENSITIVE_FAMILY.length).toBeGreaterThanOrEqual(11);
+    expect(LOAD_SENSITIVE_FAMILY.length).toBeGreaterThanOrEqual(10);
     const files = LOAD_SENSITIVE_FAMILY.map((member) => member.file);
     expect(new Set(files).size).toBe(files.length);
   });

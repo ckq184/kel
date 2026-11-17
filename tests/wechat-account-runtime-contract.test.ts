@@ -13,7 +13,7 @@ describe('WeChat first-class account runtime contract', () => {
       "} else if (account.provider === 'wechat') {",
     );
     const end = indexSource.indexOf(
-      "} else if (account.provider === 'dingtalk') {",
+      'function syncLegacyConfigToDefaultChannelAccount(',
       start,
     );
     const branch = indexSource.slice(start, end);
@@ -30,7 +30,7 @@ describe('WeChat first-class account runtime contract', () => {
       "} else if (account.provider === 'wechat') {",
     );
     const end = indexSource.indexOf(
-      "} else if (account.provider === 'dingtalk') {",
+      'function syncLegacyConfigToDefaultChannelAccount(',
       start,
     );
     const branch = indexSource.slice(start, end);
@@ -49,7 +49,7 @@ describe('WeChat first-class account runtime contract', () => {
       "} else if (account.provider === 'wechat') {",
     );
     const end = indexSource.indexOf(
-      "} else if (account.provider === 'dingtalk') {",
+      'function syncLegacyConfigToDefaultChannelAccount(',
       start,
     );
     const branch = indexSource.slice(start, end);

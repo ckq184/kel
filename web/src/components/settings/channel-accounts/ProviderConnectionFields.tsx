@@ -115,19 +115,6 @@ export function ProviderConnectionFields({
           })}
         </div>
       )}
-
-      {showOptions && provider === 'dingtalk' && (
-        <OptionSwitch
-          id={`${idPrefix}-streaming-card`}
-          label="流式卡片"
-          description="开启后以卡片实时更新回复；关闭后发送普通文本。"
-          checked={(values.streamingMode ?? 'card') === 'card'}
-          disabled={disabled}
-          onCheckedChange={(checked) =>
-            onChange('streamingMode', checked ? 'card' : 'text')
-          }
-        />
-      )}
     </div>
   );
 }

@@ -57,7 +57,7 @@ export function sanitizeImFilename(raw: string | undefined | null): string {
  */
 export async function saveDownloadedFile(
   groupFolder: string,
-  channel: 'feishu' | 'qq' | 'wechat' | 'dingtalk',
+  channel: 'feishu' | 'qq' | 'wechat',
   originalFilename: string,
   buffer: Buffer,
 ): Promise<string> {

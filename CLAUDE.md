@@ -64,7 +64,6 @@ Agent Profile（身份、四段 Prompt、能力策略）
 
 - `src/feishu.ts`
 - `src/qq.ts`
-- `src/dingtalk.ts`
 - `src/wechat.ts`
 
 HTTP 路由位于 `src/routes/`，完整模块索引见 `docs/API.md`。

@@ -173,7 +173,7 @@ function computeImRouteForReply(args: {
 const isIm = (jid: string | undefined | null): boolean => {
   if (!jid) return false;
   // Mirror channel-prefixes.ts coverage for the channels we route to.
-  return /^(feishu|telegram|qq|dingtalk|wechat|discord):/.test(jid);
+  return /^(feishu|telegram|qq|wechat|discord):/.test(jid);
 };
 
 describe('sendPluginExpanderReply IM routing — #20 P1-1 fan out to IM', () => {

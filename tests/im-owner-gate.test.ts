@@ -107,14 +107,12 @@ describe('checkImOwnerCommand', () => {
 describe('isDirectMessageJid', () => {
   test('DM jids → true', () => {
     expect(isDirectMessageJid('qq:c2c:user_openid_abc')).toBe(true);
-    expect(isDirectMessageJid('dingtalk:c2c:staff123')).toBe(true);
     expect(isDirectMessageJid('wechat:wxid_abc123')).toBe(true);
     expect(isDirectMessageJid('wechat:wxid_abc123#account:bot-a')).toBe(true);
   });
 
   test('group jids → false (no auto-claim in groups)', () => {
     expect(isDirectMessageJid('qq:group:group_openid_xyz')).toBe(false);
-    expect(isDirectMessageJid('dingtalk:cidAbc123==')).toBe(false);
     expect(isDirectMessageJid('qq:')).toBe(false);
   });
 

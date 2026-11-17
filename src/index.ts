@@ -407,7 +407,6 @@ import {
   getUserFeishuConfig,
   getUserQQConfig,
   getUserWeChatConfig,
-  getUserDingTalkConfig,
   getSystemSettings,
   getLegacySystemAutoCompactWindow,
   saveUserFeishuConfig,
@@ -423,7 +422,6 @@ import type {
   FeishuConnectConfig,
   QQConnectConfig,
   WeChatConnectConfig,
-  DingTalkConnectConfig,
 } from './im-manager.js';
 import {
   GroupQueue,
@@ -3344,7 +3342,7 @@ function sendSystemMessage(jid: string, type: string, detail: string): void {
  * can distinguish it from other system paths.
  *
  * When `imRouteJid` is a connected IM channel, also fan the reply out to that
- * channel so users on Feishu / QQ / DingTalk see the response —
+ * channel so users on Feishu / QQ / WeChat see the response —
  * without this, plugin-expander system replies (conflict / offline-runner /
  * etc.) would silently drop on IM and the slash command appears to no-op
  * (#20 P1-1).
@@ -7992,7 +7990,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
               // The completed card was consumed; create a new one so subsequent
               // messages get a fresh streaming card instead of falling back to static.
               // Previously only rebuilt for partial outputs (#223); now rebuild for
-              // all completions to fix DingTalk "second message gets no reply" bug.
+              // all completions to fix the "second message gets no reply" bug.
               // 挂起中的卡片不轮换：session 保持原状，后续 turn 继续追加。
               if (streamingCardHandledIM && !pendingStreamingCardCompletion) {
                 // Streaming card strips local image references (only img_xxx keys
@@ -13550,7 +13548,7 @@ async function processTaskIpc(
           let resolvedPath = resolution.path;
 
           if (!fs.existsSync(resolvedPath)) {
-            // Fallback: search in downloads subdirs (DingTalk files land here)
+            // Fallback: search in downloads subdirs (IM channel files land here)
             const downloadsDir = path.join(
               GROUPS_DIR,
               sourceGroup,
@@ -13569,7 +13567,7 @@ async function processTaskIpc(
             } else {
               const warnMsg = `⚠️ 文件 "${data.fileName}" 未找到（路径 "${data.filePath}" 不存在）。请引导用户确认正确的文件路径，或使用 'send_file' 时提供正确的相对路径。`;
               broadcastToWebClients(sourceGroup, warnMsg);
-              // Also notify via DingTalk for conversation agents bound to IM
+              // Also notify via IM channel for conversation agents bound to IM
               const imRoute = resolveImRoute({
                 ipcAgentId,
                 isHome,
@@ -17869,8 +17867,8 @@ function buildFeishuBotAddedHandler(
     onNewChat(chatJid, chatName);
     if (isNew) {
       // 文案分支:仅在飞书路径(传入 getOwnerOpenId,DM 可学到 ownerOpenId 并启用 allowlist)
-      // 才提示「已启用发言者白名单」+「私信识别 owner」。通用路径(dingtalk
-      // 不传 getOwnerOpenId)实际未启用白名单,DM 也没有 learnFeishuOwner 通道,引导用
+      // 才提示「已启用发言者白名单」+「私信识别 owner」。通用渠道路径
+      // 不传 getOwnerOpenId,实际未启用白名单,DM 也没有 learnFeishuOwner 通道,引导用
       // /owner_mention 在群内自我认领。
       let welcome: string;
       if (getOwnerOpenId) {
@@ -19071,34 +19069,6 @@ async function reloadChannelAccountById(accountId: string): Promise<boolean> {
           },
         },
       );
-    } else if (account.provider === 'dingtalk') {
-      connected = await imManager.connectUserDingTalk(
-        account.owner_user_id,
-        {
-          clientId: secret.clientId || '',
-          clientSecret: secret.clientSecret || '',
-          streamingMode: secret.streamingMode === 'text' ? 'text' : 'card',
-        },
-        onNewChat,
-        {
-          ...common,
-          isChatAuthorized: buildIsChatAuthorized(
-            account.owner_user_id,
-            account.id,
-            account.is_legacy_default,
-          ),
-          onPairAttempt: buildOnPairAttempt(
-            account.owner_user_id,
-            account.id,
-            workspace.jid,
-            account.is_legacy_default,
-          ),
-          onBotAddedToGroup: onNewChat,
-          shouldProcessGroupMessage,
-          isGroupOwnerMessage,
-          resolveRegisteredGroup: getRegisteredGroup,
-        },
-      );
     }
     if (account.provider === 'wechat') {
       // connectUserWeChat returns once the local poller is retained. Its
@@ -19131,7 +19101,7 @@ async function reloadChannelAccountById(accountId: string): Promise<boolean> {
 
 function syncLegacyConfigToDefaultChannelAccount(
   userId: string,
-  channel: 'feishu' | 'qq' | 'wechat' | 'dingtalk',
+  channel: 'feishu' | 'qq' | 'wechat',
 ): ChannelAccount | null {
   if (channel === 'feishu') {
     const value = getUserFeishuConfig(userId);
@@ -19176,22 +19146,6 @@ function syncLegacyConfigToDefaultChannelAccount(
             cdnBaseUrl: value.cdnBaseUrl,
             getUpdatesBuf: value.getUpdatesBuf,
             bypassProxy: String(value.bypassProxy ?? true),
-          },
-        })
-      : null;
-  }
-  if (channel === 'dingtalk') {
-    const value = getUserDingTalkConfig(userId);
-    return value
-      ? syncDefaultChannelAccountCredentials({
-          ownerUserId: userId,
-          provider: channel,
-          name: '默认钉钉',
-          enabled: value.enabled !== false,
-          secret: {
-            clientId: value.clientId,
-            clientSecret: value.clientSecret,
-            streamingMode: value.streamingMode,
           },
         })
       : null;
@@ -19518,7 +19472,7 @@ async function main(): Promise<void> {
   // Reload a per-user IM channel (hot-reload on user-im config save)
   const reloadUserIMConfig = async (
     userId: string,
-    channel: 'feishu' | 'qq' | 'wechat' | 'dingtalk',
+    channel: 'feishu' | 'qq' | 'wechat',
   ): Promise<boolean> => {
     const homeGroup = getUserHomeGroup(userId);
     if (!homeGroup) {
@@ -19628,43 +19582,6 @@ async function main(): Promise<void> {
       }
       logger.info({ userId }, 'User QQ channel disabled via hot-reload');
       return false;
-    } else if (channel === 'dingtalk') {
-      await imManager.disconnectUserDingTalk(userId);
-      const config = getUserDingTalkConfig(userId);
-      if (
-        config &&
-        config.enabled !== false &&
-        config.clientId &&
-        config.clientSecret
-      ) {
-        const connected = await imManager.connectUserDingTalk(
-          userId,
-          config,
-          onNewChat,
-          {
-            isChatAuthorized: buildIsChatAuthorized(userId),
-            onPairAttempt: buildOnPairAttempt(userId),
-            ignoreMessagesBefore,
-            onCommand: handleCommand,
-            resolveGroupFolder: (chatJid: string) =>
-              resolveEffectiveFolder(chatJid),
-            resolveEffectiveChatJid: buildResolveEffectiveChatJid(),
-            onAgentMessage: buildOnAgentMessage(),
-            onBotAddedToGroup: buildOnNewChat(userId, homeFolder),
-            onBotRemovedFromGroup: buildOnBotRemovedFromGroup(),
-            shouldProcessGroupMessage,
-            isGroupOwnerMessage,
-            resolveRegisteredGroup: getRegisteredGroup,
-          },
-        );
-        logger.info(
-          { userId, connected },
-          'User DingTalk connection hot-reloaded',
-        );
-        return connected;
-      }
-      logger.info({ userId }, 'User DingTalk channel disabled via hot-reload');
-      return false;
     } else if (channel === 'wechat') {
       await imManager.disconnectUserWeChat(userId);
       const config = getUserWeChatConfig(userId);
@@ -19728,11 +19645,10 @@ async function main(): Promise<void> {
     // 解封：disconnectAllUserChannels 把 user 标 sealed 后，所有 connectChannel
     // 都被拒。re-enable / restore 用户时必须先解封否则 reload 全部失败。
     imManager.markUserReconnectable(userId);
-    const channels: Array<'feishu' | 'qq' | 'wechat' | 'dingtalk'> = [
+    const channels: Array<'feishu' | 'qq' | 'wechat'> = [
       'feishu',
       'qq',
       'wechat',
-      'dingtalk',
     ];
     await Promise.allSettled(
       channels.map((channel) => reloadUserIMConfig(userId, channel)),
@@ -19806,8 +19722,6 @@ async function main(): Promise<void> {
     isUserQQConnected: (userId: string) => imManager.isQQConnected(userId),
     isUserWeChatConnected: (userId: string) =>
       imManager.isWeChatConnected(userId),
-    isUserDingTalkConnected: (userId: string) =>
-      imManager.isDingTalkConnected(userId),
     processAgentConversation,
     getFeishuChatInfo: (userId: string, chatId: string) =>
       imManager.getFeishuChatInfo(userId, chatId),
@@ -20451,7 +20365,6 @@ async function main(): Promise<void> {
       const userFeishu = getUserFeishuConfig(user.id);
       const userQQ = getUserQQConfig(user.id);
       const userWeChat = getUserWeChatConfig(user.id);
-      const userDingTalk = getUserDingTalkConfig(user.id);
 
       // Determine effective Feishu config: per-user > global (admin only)
       let effectiveFeishu: FeishuConnectConfig | null = null;
@@ -20497,16 +20410,6 @@ async function main(): Promise<void> {
         };
       }
 
-      // Determine effective DingTalk config: per-user only (no global fallback)
-      let effectiveDingTalk: DingTalkConnectConfig | null = null;
-      if (userDingTalk && userDingTalk.clientId && userDingTalk.clientSecret) {
-        effectiveDingTalk = {
-          clientId: userDingTalk.clientId,
-          clientSecret: userDingTalk.clientSecret,
-          enabled: userDingTalk.enabled,
-        };
-      }
-
       try {
         if (effectiveFeishu) {
           ensureLegacyDefaultChannelAccount({
@@ -20546,18 +20449,6 @@ async function main(): Promise<void> {
               cdnBaseUrl: effectiveWeChat.cdnBaseUrl,
               getUpdatesBuf: effectiveWeChat.getUpdatesBuf,
               bypassProxy: String(userWeChat?.bypassProxy ?? true),
-            },
-          });
-        }
-        if (effectiveDingTalk) {
-          ensureLegacyDefaultChannelAccount({
-            ownerUserId: user.id,
-            provider: 'dingtalk',
-            name: '默认钉钉',
-            enabled: effectiveDingTalk.enabled !== false,
-            secret: {
-              clientId: effectiveDingTalk.clientId,
-              clientSecret: effectiveDingTalk.clientSecret,
             },
           });
         }

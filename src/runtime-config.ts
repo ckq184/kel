@@ -3337,27 +3337,6 @@ export interface UserQQConfig {
   updatedAt: string | null;
 }
 
-export interface UserDingTalkConfig {
-  clientId: string;
-  clientSecret: string;
-  enabled?: boolean;
-  streamingMode?: 'card' | 'text';
-  updatedAt: string | null;
-}
-
-interface StoredDingTalkProviderConfigV1 {
-  version: 1;
-  clientId: string;
-  enabled?: boolean;
-  streamingMode?: 'card' | 'text';
-  updatedAt: string;
-  secret: EncryptedSecrets;
-}
-
-interface DingTalkSecretPayload {
-  clientSecret: string;
-}
-
 interface StoredQQProviderConfigV1 {
   version: 1;
   appId: string;
@@ -3588,63 +3567,6 @@ export function saveUserWeChatConfig(
   const dir = userImDir(userId);
   fs.mkdirSync(dir, { recursive: true });
   const filePath = path.join(dir, 'wechat.json');
-  writeSecretFile(filePath, JSON.stringify(payload, null, 2) + '\n');
-  return normalized;
-}
-
-// ========== DingTalk User IM Config ==========
-
-export function getUserDingTalkConfig(
-  userId: string,
-): UserDingTalkConfig | null {
-  const filePath = path.join(userImDir(userId), 'dingtalk.json');
-  try {
-    if (!fs.existsSync(filePath)) return null;
-    const content = fs.readFileSync(filePath, 'utf-8');
-    const parsed = JSON.parse(content) as Record<string, unknown>;
-    if (parsed.version !== 1) return null;
-
-    const stored = parsed as unknown as StoredDingTalkProviderConfigV1;
-    const secret = decryptChannelSecret<DingTalkSecretPayload>(stored.secret);
-    return {
-      clientId: ((stored.clientId as string) ?? '').trim(),
-      clientSecret: secret.clientSecret,
-      enabled: stored.enabled,
-      streamingMode: stored.streamingMode === 'text' ? 'text' : 'card',
-      updatedAt: stored.updatedAt || null,
-    };
-  } catch (err) {
-    logger.warn({ err, userId }, 'Failed to read user DingTalk config');
-    return null;
-  }
-}
-
-export function saveUserDingTalkConfig(
-  userId: string,
-  next: Omit<UserDingTalkConfig, 'updatedAt'>,
-): UserDingTalkConfig {
-  const normalized: UserDingTalkConfig = {
-    clientId: ((next.clientId as string) ?? '').trim(),
-    clientSecret: normalizeSecret(next.clientSecret, 'clientSecret'),
-    enabled: next.enabled,
-    streamingMode: next.streamingMode === 'text' ? 'text' : 'card',
-    updatedAt: new Date().toISOString(),
-  };
-
-  const payload: StoredDingTalkProviderConfigV1 = {
-    version: 1,
-    clientId: normalized.clientId,
-    enabled: normalized.enabled,
-    streamingMode: normalized.streamingMode === 'text' ? 'text' : 'card',
-    updatedAt: normalized.updatedAt || new Date().toISOString(),
-    secret: encryptChannelSecret<DingTalkSecretPayload>({
-      clientSecret: normalized.clientSecret,
-    }),
-  };
-
-  const dir = userImDir(userId);
-  fs.mkdirSync(dir, { recursive: true });
-  const filePath = path.join(dir, 'dingtalk.json');
   writeSecretFile(filePath, JSON.stringify(payload, null, 2) + '\n');
   return normalized;
 }

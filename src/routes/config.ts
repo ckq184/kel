@@ -63,7 +63,6 @@ import {
   FeishuConfigSchema,
   QQConfigSchema,
   WeChatConfigSchema,
-  DingTalkConfigSchema,
   RegistrationConfigSchema,
   AppearanceConfigSchema,
   HostIntegrationSettingsSchema,
@@ -108,8 +107,6 @@ import {
   saveUserQQConfig,
   getUserWeChatConfig,
   saveUserWeChatConfig,
-  getUserDingTalkConfig,
-  saveUserDingTalkConfig,
   updateAllSessionCredentials,
   appendImConfigAudit,
 } from '../runtime-config.js';
@@ -2485,7 +2482,6 @@ configRoutes.get('/user-im/status', authMiddleware, (c) => {
     feishu: deps?.isUserFeishuConnected?.(user.id) ?? false,
     qq: deps?.isUserQQConnected?.(user.id) ?? false,
     wechat: deps?.isUserWeChatConnected?.(user.id) ?? false,
-    dingtalk: deps?.isUserDingTalkConnected?.(user.id) ?? false,
   });
 });
 
@@ -2964,151 +2960,6 @@ configRoutes.delete('/user-im/qq/paired-chats/:jid', authMiddleware, (c) => {
   delete groups[jid];
   logger.info({ jid, userId: user.id }, 'QQ chat unpaired');
   return c.json({ success: true });
-});
-
-// ─── Per-user DingTalk IM config ──────────────────────────────────
-
-configRoutes.get('/user-im/dingtalk', authMiddleware, (c) => {
-  const user = c.get('user') as AuthUser;
-  try {
-    const config = getUserDingTalkConfig(user.id);
-    const connected = deps?.isUserDingTalkConnected?.(user.id) ?? false;
-    if (!config) {
-      return c.json({
-        clientId: '',
-        hasClientSecret: false,
-        clientSecretMasked: null,
-        enabled: false,
-        streamingMode: 'card',
-        updatedAt: null,
-        connected,
-      });
-    }
-    return c.json({
-      clientId: config.clientId,
-      hasClientSecret: !!config.clientSecret,
-      clientSecretMasked: config.clientSecret
-        ? config.clientSecret.slice(0, 4) +
-          '***' +
-          config.clientSecret.slice(-4)
-        : null,
-      enabled: config.enabled ?? false,
-      streamingMode: config.streamingMode ?? 'card',
-      updatedAt: config.updatedAt,
-      connected,
-    });
-  } catch (err) {
-    logger.error({ err }, 'Failed to load user DingTalk config');
-    return c.json({ error: 'Failed to load DingTalk config' }, 500);
-  }
-});
-
-configRoutes.put('/user-im/dingtalk', authMiddleware, async (c) => {
-  const user = c.get('user') as AuthUser;
-  const body = await c.req.json().catch(() => ({}));
-  const validation = DingTalkConfigSchema.safeParse(body);
-  if (!validation.success) {
-    return c.json(
-      { error: 'Invalid request body', details: validation.error.format() },
-      400,
-    );
-  }
-
-  const current = getUserDingTalkConfig(user.id);
-  const next = {
-    clientId: current?.clientId || '',
-    clientSecret: current?.clientSecret || '',
-    enabled: current?.enabled ?? true,
-    streamingMode: current?.streamingMode ?? 'card',
-  };
-
-  if (typeof validation.data.clientId === 'string') {
-    next.clientId = validation.data.clientId.trim();
-  }
-  if (typeof validation.data.clientSecret === 'string') {
-    const secret = validation.data.clientSecret.trim();
-    if (secret) next.clientSecret = secret;
-  } else if (validation.data.clearClientSecret === true) {
-    next.clientSecret = '';
-  }
-  if (typeof validation.data.enabled === 'boolean') {
-    next.enabled = validation.data.enabled;
-  } else if (!current && (next.clientId || next.clientSecret)) {
-    next.enabled = true;
-  }
-  if (typeof validation.data.streamingMode === 'string') {
-    next.streamingMode = validation.data.streamingMode;
-  }
-
-  try {
-    const saved = saveUserDingTalkConfig(user.id, next);
-    appendImConfigAudit(
-      user.username,
-      'dingtalk',
-      'update',
-      Object.keys(validation.data),
-      { userId: user.id },
-    );
-
-    // Hot-reload: reconnect user's DingTalk channel
-    if (deps?.reloadUserIMConfig) {
-      try {
-        await deps.reloadUserIMConfig(user.id, 'dingtalk');
-      } catch (err) {
-        logger.warn({ err, userId: user.id }, 'Failed to hot-reload DingTalk');
-      }
-    }
-
-    const connected = deps?.isUserDingTalkConnected?.(user.id) ?? false;
-    return c.json({
-      clientId: saved.clientId,
-      hasClientSecret: !!saved.clientSecret,
-      clientSecretMasked: saved.clientSecret
-        ? saved.clientSecret.slice(0, 4) + '***' + saved.clientSecret.slice(-4)
-        : null,
-      enabled: saved.enabled ?? false,
-      streamingMode: saved.streamingMode ?? 'card',
-      updatedAt: saved.updatedAt,
-      connected,
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Invalid config';
-    logger.warn({ err }, 'Invalid DingTalk config');
-    return c.json({ error: message }, 400);
-  }
-});
-
-configRoutes.post('/user-im/dingtalk/test', authMiddleware, async (c) => {
-  const user = c.get('user') as AuthUser;
-  const config = getUserDingTalkConfig(user.id);
-
-  if (!config?.clientId || !config?.clientSecret) {
-    return c.json({ error: 'DingTalk credentials not configured' }, 400);
-  }
-
-  try {
-    // Test by initializing a client and getting access token
-    const { DWClient } = await import('dingtalk-stream');
-    const testClient = new DWClient({
-      clientId: config.clientId,
-      clientSecret: config.clientSecret,
-    });
-
-    // Try to get access token
-    const token = await testClient.getAccessToken();
-    if (!token) {
-      testClient.disconnect?.();
-      return c.json({ error: 'Failed to obtain access token' }, 400);
-    }
-
-    testClient.disconnect?.();
-    return c.json({ success: true });
-  } catch (err) {
-    const message =
-      err instanceof Error ? err.message : 'Connection test failed';
-    logger.warn({ err }, 'DingTalk connection test failed');
-    return c.json({ error: message }, 400);
-  }
 });
 
 // ─── Per-user WeChat IM config ──────────────────────────────────

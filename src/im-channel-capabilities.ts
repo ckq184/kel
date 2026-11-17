@@ -22,17 +22,6 @@ export const IM_CHANNEL_CAPABILITIES: Record<string, ImChannelCapabilities> = {
     supports_streaming_updates: true,
     supports_file_send: true,
   },
-  dingtalk: {
-    channel_type: 'dingtalk',
-    label: '钉钉',
-    can_bind_workspace: true,
-    can_bind_session: true,
-    supports_thread_map: false,
-    supports_activation_modes: true,
-    supports_owner_mention: true,
-    supports_streaming_updates: true,
-    supports_file_send: true,
-  },
   qq: {
     channel_type: 'qq',
     label: 'QQ',

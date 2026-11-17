@@ -114,7 +114,6 @@ describe('channel onboarding frontend protocol contract', () => {
     for (const officialUrl of [
       'https://open.feishu.cn/app',
       'https://q.qq.com/qqbot/openclaw/index.html',
-      'https://open-dev.dingtalk.com/fe/app',
     ]) {
       expect(definitions).toContain(officialUrl);
     }

@@ -176,7 +176,7 @@ describe('channel binding product contract', () => {
     expect(IM_CHANNEL_CAPABILITIES.wechat.supports_activation_modes).toBe(
       false,
     );
-    for (const provider of ['feishu', 'dingtalk']) {
+    for (const provider of ['feishu']) {
       expect(IM_CHANNEL_CAPABILITIES[provider].supports_activation_modes).toBe(
         true,
       );

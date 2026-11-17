@@ -43,11 +43,6 @@ export function resolveChannelConversationKind(
     return 'unknown';
   }
 
-  if (baseJid.startsWith('dingtalk:')) {
-    if (baseJid.startsWith('dingtalk:c2c:')) return 'direct';
-    return baseJid.length > 'dingtalk:'.length ? 'group' : 'unknown';
-  }
-
   // The current WeChat connector is P2P-only.
   if (baseJid.startsWith('wechat:')) {
     return baseJid.length > 'wechat:'.length ? 'direct' : 'unknown';

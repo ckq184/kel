@@ -324,7 +324,6 @@ export function checkImOwnerCommand(
  * Detection is purely structural (no channel handles needed) because every
  * channel that auto-registers DMs encodes DM-ness in the JID it builds:
  *   - qq:        `qq:c2c:{openid}`            (group → `qq:group:...`)
- *   - dingtalk:  `dingtalk:c2c:{staffId}`     (group → `dingtalk:{cid...}`)
  *   - wechat:    `wechat:{userId}`            (1:1 only — no group support)
  *   - feishu:    cannot be told apart from the JID, but Feishu auto-sets
  *                owner_im_id via the DM owner-learn path, so DM auto-claim is

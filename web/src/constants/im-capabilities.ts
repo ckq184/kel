@@ -10,7 +10,7 @@ export interface ImChannelCapabilities {
   supports_file_send: boolean;
 }
 
-export const IM_CHANNEL_ORDER = ['feishu', 'qq', 'wechat', 'dingtalk'] as const;
+export const IM_CHANNEL_ORDER = ['feishu', 'qq', 'wechat'] as const;
 
 export type ImChannelType = (typeof IM_CHANNEL_ORDER)[number];
 
@@ -24,17 +24,6 @@ export const IM_CHANNEL_CAPABILITIES: Record<
     can_bind_workspace: true,
     can_bind_session: true,
     supports_thread_map: true,
-    supports_activation_modes: true,
-    supports_owner_mention: true,
-    supports_streaming_updates: true,
-    supports_file_send: true,
-  },
-  dingtalk: {
-    channel_type: 'dingtalk',
-    label: '钉钉',
-    can_bind_workspace: true,
-    can_bind_session: true,
-    supports_thread_map: false,
     supports_activation_modes: true,
     supports_owner_mention: true,
     supports_streaming_updates: true,

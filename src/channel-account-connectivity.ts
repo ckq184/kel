@@ -107,29 +107,6 @@ export async function testChannelAccountCredentials(
     }
   }
 
-  if (account.provider === 'dingtalk') {
-    try {
-      const { DWClient } = await import('dingtalk-stream');
-      const client = new DWClient({
-        clientId: secret.clientId || '',
-        clientSecret: secret.clientSecret || '',
-      });
-      try {
-        const token = await client.getAccessToken();
-        return token
-          ? { success: true }
-          : { success: false, error: 'Failed to obtain DingTalk access token' };
-      } finally {
-        client.disconnect?.();
-      }
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-      };
-    }
-  }
-
   return {
     success: false,
     unsupported: true,

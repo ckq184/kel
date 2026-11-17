@@ -102,7 +102,7 @@ describe('IM manager account lifecycle', () => {
     await manager.disconnectAll();
   });
 
-  test('Feishu and DingTalk wrappers forward their public credential identities', async () => {
+  test('Feishu wrapper forwards its public credential identity', async () => {
     const manager = new IMConnectionManager();
     const connect = vi.spyOn(manager, 'connectChannel').mockResolvedValue(true);
 
@@ -115,21 +115,11 @@ describe('IM manager account lifecycle', () => {
     expect(connect.mock.calls[0]?.[1]).toBe('feishu');
     expect(connect.mock.calls[0]?.[4]).toBe('feishu-account');
     expect(connect.mock.calls[0]?.[6]).toBe('feishu-app-id');
-
-    await manager.connectUserDingTalk(
-      'dingtalk-owner',
-      { clientId: 'dingtalk-client-id', clientSecret: 'dingtalk-secret' },
-      vi.fn(),
-      { accountId: 'dingtalk-account', scopeIncomingJids: true },
-    );
-    expect(connect.mock.calls[1]?.[1]).toBe('dingtalk');
-    expect(connect.mock.calls[1]?.[4]).toBe('dingtalk-account');
-    expect(connect.mock.calls[1]?.[6]).toBe('dingtalk-client-id');
   });
 
   test.each([
     ['feishu', 'shared-feishu-app'],
-    ['dingtalk', 'shared-dingtalk-client'],
+    ['wechat', 'shared-wechat-token'],
   ])(
     'concurrent %s connectors cannot claim the same credential',
     async (provider, credential) => {
@@ -189,7 +179,7 @@ describe('IM manager account lifecycle', () => {
 
   test.each([
     ['feishu', true, undefined],
-    ['dingtalk', false, async () => false],
+    ['wechat', false, async () => false],
   ])(
     '%s connection failure releases its credential claim',
     async (provider, throws, connectImpl) => {
@@ -270,8 +260,8 @@ describe('IM manager account lifecycle', () => {
     const manager = new IMConnectionManager();
     await manager.connectChannel(
       'first-owner',
-      'dingtalk',
-      fakeChannel('dingtalk').channel,
+      'wechat',
+      fakeChannel('wechat').channel,
       callbacks(),
       'first-account',
       true,
@@ -281,8 +271,8 @@ describe('IM manager account lifecycle', () => {
     await expect(
       manager.connectChannel(
         'second-owner',
-        'dingtalk',
-        fakeChannel('dingtalk').channel,
+        'wechat',
+        fakeChannel('wechat').channel,
         callbacks(),
         'second-account',
         true,
@@ -295,13 +285,13 @@ describe('IM manager account lifecycle', () => {
   test('disconnectAll keeps failed connectors and claims tracked until a successful retry', async () => {
     const manager = new IMConnectionManager();
     let disconnectAttempts = 0;
-    const flaky = fakeChannel('dingtalk', false, undefined, async () => {
+    const flaky = fakeChannel('wechat', false, undefined, async () => {
       disconnectAttempts += 1;
       if (disconnectAttempts === 1) throw new Error('temporary stop failure');
     });
     await manager.connectChannel(
       'first-owner',
-      'dingtalk',
+      'wechat',
       flaky.channel,
       callbacks(),
       'first-account',
@@ -313,8 +303,8 @@ describe('IM manager account lifecycle', () => {
     await expect(
       manager.connectChannel(
         'second-owner',
-        'dingtalk',
-        fakeChannel('dingtalk').channel,
+        'wechat',
+        fakeChannel('wechat').channel,
         callbacks(),
         'second-account',
         true,
@@ -326,8 +316,8 @@ describe('IM manager account lifecycle', () => {
     await expect(
       manager.connectChannel(
         'second-owner',
-        'dingtalk',
-        fakeChannel('dingtalk').channel,
+        'wechat',
+        fakeChannel('wechat').channel,
         callbacks(),
         'second-account',
         true,

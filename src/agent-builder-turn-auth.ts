@@ -103,10 +103,6 @@ export function ownerImIdFromDirectConversationJid(
   if (!address) return null;
   const id = address.externalChatId;
   switch (address.provider) {
-    case 'dingtalk':
-      return id.startsWith('c2c:') && id.length > 'c2c:'.length
-        ? id.slice('c2c:'.length)
-        : null;
     case 'wechat':
       return id || null;
     case 'qq':
@@ -129,12 +125,6 @@ export function ownerImIdFromPersistedSender(
   switch (address.provider) {
     case 'feishu':
       return sender;
-    case 'dingtalk': {
-      const subject = sender.startsWith('dingtalk:')
-        ? sender.slice('dingtalk:'.length)
-        : '';
-      return subject || null;
-    }
     case 'wechat': {
       const subject = sender.startsWith('wechat:')
         ? sender.slice('wechat:'.length)

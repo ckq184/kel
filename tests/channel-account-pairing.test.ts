@@ -54,17 +54,12 @@ afterAll(() => {
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
-type PairingProvider = 'qq' | 'wechat' | 'dingtalk';
+type PairingProvider = 'qq' | 'wechat';
 
 function credentialsFor(provider: PairingProvider, name: string) {
   switch (provider) {
     case 'qq':
       return { appId: `${name}-id`, appSecret: `${name}-secret` };
-    case 'dingtalk':
-      return {
-        clientId: `${name}-client-id`,
-        clientSecret: `${name}-client-secret`,
-      };
     case 'wechat':
       return {};
   }
@@ -112,7 +107,7 @@ describe('account-scoped channel pairing', () => {
     expect(pairing.verifyPairingCode(replacement.code)).toBeNull();
   });
 
-  test.each(['qq', 'wechat', 'dingtalk'] as const)(
+  test.each(['qq', 'wechat'] as const)(
     '%s pairing API returns an account-bound code',
     async (provider) => {
       const first = await create(provider, `${provider}-first`);

@@ -13,7 +13,6 @@ import {
   createFeishuChannel,
   createQQChannel,
   createWeChatChannel,
-  createDingTalkChannel,
 } from './im-channel.js';
 import { type FeishuConnectionConfig } from './feishu.js';
 import type { FeishuConversationPlan } from './feishu-conversation-policy.js';
@@ -22,7 +21,6 @@ import type {
   WeChatConnectionConfig,
   WeChatConnectionState,
 } from './wechat.js';
-import type { DingTalkConnectionConfig } from './dingtalk.js';
 import crypto from 'node:crypto';
 import type { StreamingSession } from './im-channel.js';
 import type { StreamingCardLifecycle } from './feishu-streaming-card.js';
@@ -35,7 +33,6 @@ import {
   getUserById,
   isDatabaseInitialized,
 } from './db.js';
-import { getUserDingTalkConfig } from './runtime-config.js';
 import { logger } from './logger.js';
 import type {
   ChannelMessageMeta,
@@ -82,13 +79,6 @@ export interface WeChatConnectConfig {
   getUpdatesBuf?: string;
   bypassProxy?: boolean;
   enabled?: boolean;
-}
-
-export interface DingTalkConnectConfig {
-  clientId: string;
-  clientSecret: string;
-  enabled?: boolean;
-  streamingMode?: 'card' | 'text';
 }
 
 export interface ConnectFeishuOptions {
@@ -150,7 +140,6 @@ export interface ConnectFeishuOptions {
 export class IMConnectionManager {
   private connections = new Map<string, UserIMConnection>();
   private adminUserIds = new Set<string>();
-  private dingtalkStreamingModes = new Map<string, 'card' | 'text'>();
   // Per-(userId, channelType) 串行化锁。connectChannel / disconnectChannel
   // 必须按顺序排队，否则两次重叠的 reconnect 会让旧 disconnect 的清理跨过新
   // connect 的 channels.set，留下一条悬挂的 live channel（双发消息）。
@@ -164,7 +153,7 @@ export class IMConnectionManager {
   private userLocks = new Map<string, Promise<unknown>>();
   private sealedUsers = new Set<string>();
   // A provider credential must own at most one live connector. Duplicate
-  // Feishu/DingTalk/QQ accounts otherwise compete for the
+  // Feishu/QQ accounts otherwise compete for the
   // same event stream (409 polling conflicts or duplicate replies).
   private credentialClaims = new Map<string, string>();
   private connectionCredentialClaims = new Map<string, string>();
@@ -846,7 +835,7 @@ export class IMConnectionManager {
   }
 
   /**
-   * Create a streaming card session for an IM chat (Feishu or DingTalk).
+   * Create a streaming card session for an IM chat (Feishu or QQ).
    * Returns undefined for unsupported channels.
    */
   async createStreamingSession(
@@ -855,35 +844,7 @@ export class IMConnectionManager {
     lifecycle?: StreamingCardLifecycle,
   ): Promise<StreamingSession | undefined> {
     const channelType = getChannelType(jid);
-    if (
-      channelType !== 'feishu' &&
-      channelType !== 'dingtalk' &&
-      channelType !== 'qq'
-    )
-      return undefined;
-
-    // Check DingTalk streaming mode: if text mode, skip streaming session creation
-    if (channelType === 'dingtalk') {
-      const group = getRegisteredGroup(jid);
-      if (group?.created_by) {
-        const accountId =
-          parseChannelAddress(jid)?.channelAccountId ??
-          group.channel_account_id ??
-          getDefaultChannelAccount(group.created_by, 'dingtalk')?.id;
-        const accountMode = accountId
-          ? this.dingtalkStreamingModes.get(
-              `${group.created_by}\u0000${accountId}`,
-            )
-          : undefined;
-        const legacyMode = getUserDingTalkConfig(
-          group.created_by,
-        )?.streamingMode;
-        if ((accountMode ?? legacyMode) === 'text') {
-          logger.debug({ jid }, 'DingTalk streaming disabled (text mode)');
-          return undefined;
-        }
-      }
-    }
+    if (channelType !== 'feishu' && channelType !== 'qq') return undefined;
 
     const chatId = extractProviderTarget(jid);
     const channel = this.findChannelForJid(jid, channelType);
@@ -1287,92 +1248,6 @@ export class IMConnectionManager {
   }
 
   /**
-   * Connect a DingTalk Stream instance for a specific user.
-   */
-  async connectUserDingTalk(
-    userId: string,
-    config: DingTalkConnectConfig,
-    onNewChat: (chatJid: string, chatName: string) => void,
-    options?: {
-      accountId?: string;
-      scopeIncomingJids?: boolean;
-      ignoreMessagesBefore?: number;
-      isChatAuthorized?: (jid: string) => boolean;
-      onPairAttempt?: (
-        jid: string,
-        chatName: string,
-        code: string,
-      ) => Promise<boolean>;
-      onCommand?: (chatJid: string, command: string) => Promise<string | null>;
-      resolveGroupFolder?: (jid: string) => string | undefined;
-      resolveEffectiveChatJid?: (chatJid: string) => {
-        effectiveJid: string;
-        agentId: string | null;
-        sourceJid?: string;
-      } | null;
-      onAgentMessage?: (baseChatJid: string, agentId: string) => void;
-      onBotAddedToGroup?: (chatJid: string, chatName: string) => void;
-      onBotRemovedFromGroup?: (chatJid: string) => void;
-      shouldProcessGroupMessage?: (
-        chatJid: string,
-        senderImId?: string,
-      ) => boolean;
-      isGroupOwnerMessage?: (chatJid: string, senderImId?: string) => boolean;
-      resolveRegisteredGroup?: (
-        jid: string,
-      ) => { activation_mode?: string } | undefined;
-    },
-  ): Promise<boolean> {
-    if (!config.clientId || !config.clientSecret) {
-      logger.info({ userId }, 'DingTalk config empty, skipping connection');
-      return false;
-    }
-
-    const channel = createDingTalkChannel({
-      clientId: config.clientId,
-      clientSecret: config.clientSecret,
-    });
-
-    if (options?.accountId) {
-      this.dingtalkStreamingModes.set(
-        `${userId}\u0000${options.accountId}`,
-        config.streamingMode === 'text' ? 'text' : 'card',
-      );
-    }
-
-    return this.connectChannel(
-      userId,
-      'dingtalk',
-      channel,
-      {
-        onReady: () => {
-          logger.info({ userId }, 'User DingTalk bot connected');
-        },
-        onNewChat,
-        isChatAuthorized: options?.isChatAuthorized,
-        onPairAttempt: options?.onPairAttempt,
-        ignoreMessagesBefore: options?.ignoreMessagesBefore,
-        onCommand: options?.onCommand,
-        resolveGroupFolder: options?.resolveGroupFolder,
-        resolveEffectiveChatJid: options?.resolveEffectiveChatJid,
-        onAgentMessage: options?.onAgentMessage,
-        onBotAddedToGroup: options?.onBotAddedToGroup,
-        onBotRemovedFromGroup: options?.onBotRemovedFromGroup,
-        shouldProcessGroupMessage: options?.shouldProcessGroupMessage,
-        isGroupOwnerMessage: options?.isGroupOwnerMessage,
-        resolveRegisteredGroup: options?.resolveRegisteredGroup,
-      },
-      options?.accountId,
-      options?.scopeIncomingJids,
-      config.clientId,
-    );
-  }
-
-  async disconnectUserDingTalk(userId: string): Promise<void> {
-    await this.disconnectChannel(userId, 'dingtalk');
-  }
-
-  /**
    * Send a message to a Feishu chat.
    * @deprecated Use sendMessage(jid, text) which auto-routes.
    */
@@ -1501,11 +1376,6 @@ export class IMConnectionManager {
     return this.hasConnectedType(conn, 'wechat');
   }
 
-  isDingTalkConnected(userId: string): boolean {
-    const conn = this.connections.get(userId);
-    return this.hasConnectedType(conn, 'dingtalk');
-  }
-
   private hasConnectedType(
     conn: UserIMConnection | undefined,
     channelType: string,
@@ -1611,7 +1481,7 @@ export class IMConnectionManager {
 
   /**
    * Disconnect all IM channels owned by a single user (feishu /
-   * qq / wechat / dingtalk). Used when admin disables
+   * qq / wechat). Used when admin disables
    * or deletes a user — without this, an active feishu bot would keep
    * responding to that user's group messages until the next service restart
    * (loadState filters out non-active users at startup).

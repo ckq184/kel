@@ -3598,8 +3598,8 @@ export function unregisterMessageId(messageId: string): void {
 // ─── Streaming Session Registry ───────────────────────────────
 
 /**
- * Minimal interface for any streaming card session (Feishu, DingTalk, etc.)
- * Both StreamingCardController and DingTalkStreamingCardController implement this.
+ * Minimal interface for any streaming card session.
+ * StreamingCardController implements this.
  */
 export interface IStreamingSession {
   isActive(): boolean;

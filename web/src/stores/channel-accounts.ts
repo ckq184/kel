@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { api } from '../api/client';
 
-export type ChannelProvider = 'feishu' | 'qq' | 'wechat' | 'dingtalk';
+export type ChannelProvider = 'feishu' | 'qq' | 'wechat';
 
 export type ChannelAuthMode = 'credentials' | 'bot_token' | 'qr_session';
 export type ChannelAuthStatus =

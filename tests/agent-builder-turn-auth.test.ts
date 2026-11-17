@@ -419,13 +419,6 @@ describe('Agent Builder owner identity', () => {
       sender: 'ou_owner',
     },
     {
-      name: 'DingTalk group',
-      sourceJid: 'dingtalk:group:conversation-1',
-      groupJid: 'dingtalk:group:conversation-1',
-      ownerImId: 'owner-open-id',
-      sender: 'dingtalk:owner-open-id',
-    },
-    {
       name: 'WeChat direct chat',
       sourceJid: 'wechat:owner-open-id',
       groupJid: 'wechat:owner-open-id',
@@ -464,18 +457,6 @@ describe('Agent Builder owner identity', () => {
   });
 
   test.each([
-    {
-      name: 'DingTalk rejects a WeChat-shaped sender',
-      sourceJid: 'dingtalk:group:conversation-1',
-      ownerImId: 'owner-open-id',
-      sender: 'wechat:owner-open-id',
-    },
-    {
-      name: 'WeChat rejects a DingTalk-shaped sender',
-      sourceJid: 'wechat:owner-open-id',
-      ownerImId: 'owner-open-id',
-      sender: 'dingtalk:owner-open-id',
-    },
     {
       name: 'QQ group rejects a C2C owner claim',
       sourceJid: 'qq:group:conversation-1',
@@ -603,19 +584,16 @@ describe('trusted direct owner provenance upgrade', () => {
 
 describe('paired direct conversation identity', () => {
   test.each([
-    ['dingtalk:c2c:staff-a', 'staff-a'],
     ['wechat:user-a', 'user-a'],
     ['qq:c2c:open-a#account:bot-a', 'c2c:open-a'],
   ])('derives the native owner from %s', (jid, owner) => {
     expect(ownerImIdFromDirectConversationJid(jid)).toBe(owner);
   });
 
-  test.each([
-    'dingtalk:group-1',
-    'qq:group:open-a',
-    'feishu:p2p-ambiguous',
-    'unknown:chat',
-  ])('fails closed for non-direct or ambiguous %s', (jid) => {
-    expect(ownerImIdFromDirectConversationJid(jid)).toBeNull();
-  });
+  test.each(['qq:group:open-a', 'feishu:p2p-ambiguous', 'unknown:chat'])(
+    'fails closed for non-direct or ambiguous %s',
+    (jid) => {
+      expect(ownerImIdFromDirectConversationJid(jid)).toBeNull();
+    },
+  );
 });

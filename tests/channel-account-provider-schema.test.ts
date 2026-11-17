@@ -71,11 +71,6 @@ describe('provider-specific channel credential contract', () => {
     ['feishu', { appId: 'cli-a', appSecret: 'secret-a' }, 'credentials'],
     ['qq', { appId: 'qq-a', appSecret: 'secret-q' }, 'credentials'],
     ['wechat', { bypassProxy: 'true' }, 'qr_session'],
-    [
-      'dingtalk',
-      { clientId: 'ding-a', clientSecret: 'secret-d', streamingMode: 'card' },
-      'credentials',
-    ],
   ])(
     'accepts the typed %s shape without serializing secrets',
     async (provider, credentials, authMode) => {
@@ -117,7 +112,6 @@ describe('provider-specific channel credential contract', () => {
   test.each([
     ['feishu', { appId: 'missing-secret' }],
     ['qq', { appSecret: 'missing-id' }],
-    ['dingtalk', { clientId: 'missing-secret' }],
   ])(
     'rejects missing required %s credentials',
     async (provider, credentials) => {
@@ -127,13 +121,7 @@ describe('provider-specific channel credential contract', () => {
     },
   );
 
-  test.each([
-    [
-      'dingtalk',
-      { clientId: 'a', clientSecret: 'b', streamingMode: 'free-text' },
-    ],
-    ['wechat', { bypassProxy: 'sometimes' }],
-  ])(
+  test.each([['wechat', { bypassProxy: 'sometimes' }]])(
     'rejects invalid enum-like option for %s',
     async (provider, credentials) => {
       const { response, body } = await create(provider, credentials);

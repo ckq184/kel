@@ -23,14 +23,4 @@ describe('provider connector initial failure safety contract', () => {
     expect(end).toBeGreaterThan(start);
     expect(qq.slice(start, end)).not.toContain('scheduleReconnect(');
   });
-
-  test('DingTalk destroys partially initialized clients', () => {
-    const dingtalk = source('src/dingtalk.ts');
-    const dingtalkStart = dingtalk.indexOf(
-      "logger.error({ err }, 'DingTalk initial connection failed')",
-    );
-    expect(dingtalk.slice(dingtalkStart, dingtalkStart + 700)).toContain(
-      'client.disconnect()',
-    );
-  });
 });

@@ -54,12 +54,4 @@ describe('attachment routing is fail-closed before business side effects', () =>
       'isChatAuthorized?.(jid)',
     );
   });
-
-  test('DingTalk applies the group gate, then resolves before registration/download', () => {
-    expectRouteBefore(
-      section(read('src/dingtalk.ts'), 'async function handleRobotMessage('),
-      ['storeChatMetadata(jid', 'downloadDingTalkFileByDownloadCode('],
-      'shouldProcessGroupMessage',
-    );
-  });
 });

@@ -11,7 +11,6 @@ const PREFIX_TO_TYPE: Record<string, string> = {
   feishu: 'feishu',
   tg: 'telegram',
   qq: 'qq',
-  ding: 'dingtalk',
   discord: 'discord',
   web: 'web',
 };

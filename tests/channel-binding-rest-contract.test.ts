@@ -64,7 +64,7 @@ describe('channel binding REST contract', () => {
   test('frontend capability table mirrors workspace and native-thread policy', () => {
     const capabilities = read('web/src/constants/im-capabilities.ts');
     expect((capabilities.match(/can_bind_workspace: true/g) ?? []).length).toBe(
-      4,
+      3,
     );
     expect(capabilities).toMatch(
       /feishu:[\s\S]*supports_thread_map: true[\s\S]*supports_activation_modes: true/,

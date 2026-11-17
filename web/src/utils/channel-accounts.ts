@@ -134,43 +134,6 @@ export const CHANNEL_PROVIDER_OPTIONS: ChannelProviderOption[] = [
     supportsTest: true,
     supportsPairing: true,
   },
-  {
-    value: 'dingtalk',
-    label: '钉钉',
-    description: '通过钉钉企业内部应用的机器人凭证接入。',
-    authMode: 'credentials',
-    credentials: [
-      {
-        key: 'clientId',
-        label: 'AppKey（Client ID）',
-        required: true,
-        help: '企业内部应用的 Client ID，旧版控制台称为 AppKey。',
-      },
-      {
-        key: 'clientSecret',
-        label: 'AppSecret（Client Secret）',
-        required: true,
-        secret: true,
-        help: '与 Client ID 属于同一个企业内部应用。',
-      },
-    ],
-    setupGuide: {
-      title: '先创建钉钉企业内部应用',
-      steps: [
-        '在钉钉开发者后台创建企业内部应用，并添加机器人能力。',
-        '机器人消息接收模式选择 Stream 模式，无需填写公网回调地址。',
-        '在应用凭证页复制 Client ID（AppKey）和 Client Secret（AppSecret）。',
-      ],
-      action: {
-        label: '打开钉钉开发者后台',
-        url: 'https://open-dev.dingtalk.com/fe/app',
-      },
-      nextStep:
-        '连接成功后发布应用，将 Bot 添加到目标会话，再使用 /pair <配对码> 授权。',
-    },
-    supportsTest: true,
-    supportsPairing: true,
-  },
 ];
 
 export function providerDefinition(provider: ChannelProvider) {

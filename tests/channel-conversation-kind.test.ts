@@ -8,8 +8,6 @@ describe('resolveChannelConversationKind', () => {
   test.each([
     ['qq:c2c:user', 'direct'],
     ['qq:group:team', 'group'],
-    ['dingtalk:c2c:user', 'direct'],
-    ['dingtalk:cid-group', 'group'],
     ['wechat:wxid_user', 'direct'],
   ])('classifies %s as %s', (jid, expected) => {
     expect(resolveChannelConversationKind(jid)).toBe(expected);

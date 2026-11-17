@@ -33,11 +33,9 @@ import {
   type ChannelAccountSecret,
 } from '../channel-account-secrets.js';
 import {
-  getUserDingTalkConfig,
   getUserFeishuConfig,
   getUserQQConfig,
   getUserWeChatConfig,
-  saveUserDingTalkConfig,
   saveUserFeishuConfig,
   saveUserQQConfig,
   saveUserWeChatConfig,
@@ -93,7 +91,6 @@ const pendingWeChatQr = new Map<string, PendingWeChatQr>();
 export const PAIRING_CHANNEL_PROVIDERS = new Set<ChannelProvider>([
   'qq',
   'wechat',
-  'dingtalk',
 ]);
 
 export function channelProviderSupportsPairing(
@@ -162,7 +159,6 @@ const PROVIDER_NAMES: Record<ChannelProvider, string> = {
   feishu: '飞书',
   qq: 'QQ',
   wechat: '微信',
-  dingtalk: '钉钉',
 };
 
 function publicAccount(account: ChannelAccount): ChannelAccountPublic {
@@ -175,8 +171,6 @@ function publicAccount(account: ChannelAccount): ChannelAccountPublic {
   const options: ChannelAccountPublic['options'] = {};
   if (account.provider === 'wechat') {
     options.bypassProxy = secret.bypassProxy !== 'false';
-  } else if (account.provider === 'dingtalk') {
-    options.streamingMode = secret.streamingMode === 'text' ? 'text' : 'card';
   }
   return {
     ...metadata,
@@ -207,7 +201,6 @@ function credentialsError(
     feishu: ['appId', 'appSecret'],
     qq: ['appId', 'appSecret'],
     wechat: [],
-    dingtalk: ['clientId', 'clientSecret'],
   };
   const allowed: Record<ChannelProvider, string[]> = {
     feishu: [
@@ -222,20 +215,12 @@ function credentialsError(
         ? ['botToken', 'ilinkBotId', 'baseUrl', 'cdnBaseUrl', 'getUpdatesBuf']
         : []),
     ],
-    dingtalk: ['clientId', 'clientSecret', 'streamingMode'],
   };
   const unknown = Object.keys(credentials).filter(
     (key) => !allowed[provider].includes(key),
   );
   if (unknown.length)
     return `Unsupported credential fields: ${unknown.join(', ')}`;
-  if (
-    credentials.streamingMode &&
-    provider === 'dingtalk' &&
-    !['card', 'text'].includes(credentials.streamingMode)
-  ) {
-    return 'DingTalk streamingMode must be card or text';
-  }
   if (
     credentials.bypassProxy &&
     provider === 'wechat' &&
@@ -311,13 +296,6 @@ function syncLegacyUserImFacade(
       bypassProxy: secret.bypassProxy !== 'false',
       enabled,
     });
-  } else if (account.provider === 'dingtalk') {
-    saveUserDingTalkConfig(account.owner_user_id, {
-      clientId: secret.clientId || '',
-      clientSecret: secret.clientSecret || '',
-      streamingMode: secret.streamingMode === 'text' ? 'text' : 'card',
-      enabled,
-    });
   }
 }
 
@@ -377,19 +355,6 @@ function legacyCredentialsFor(
             cdnBaseUrl: value.cdnBaseUrl,
             getUpdatesBuf: value.getUpdatesBuf,
             bypassProxy: String(value.bypassProxy ?? true),
-          },
-          enabled: value.enabled !== false,
-        }
-      : null;
-  }
-  if (provider === 'dingtalk') {
-    const value = getUserDingTalkConfig(userId);
-    return value
-      ? {
-          secret: {
-            clientId: value.clientId,
-            clientSecret: value.clientSecret,
-            streamingMode: value.streamingMode,
           },
           enabled: value.enabled !== false,
         }

@@ -109,7 +109,6 @@ describe('channel account frontend behavior', () => {
     expect(supportsChannelConnectionTest('feishu')).toBe(true);
     expect(supportsChannelConnectionTest('qq')).toBe(true);
     expect(supportsChannelConnectionTest('wechat')).toBe(true);
-    expect(supportsChannelConnectionTest('dingtalk')).toBe(true);
   });
 
   test('models WeChat as a QR session without editable protocol output', () => {
@@ -123,7 +122,7 @@ describe('channel account frontend behavior', () => {
   });
 
   test('gives every channel an actionable protocol-specific setup guide', () => {
-    expect(CHANNEL_PROVIDER_OPTIONS).toHaveLength(4);
+    expect(CHANNEL_PROVIDER_OPTIONS).toHaveLength(3);
     for (const provider of CHANNEL_PROVIDER_OPTIONS) {
       expect(provider.setupGuide.title.length).toBeGreaterThan(0);
       expect(provider.setupGuide.steps.length).toBeGreaterThanOrEqual(3);
@@ -135,9 +134,6 @@ describe('channel account frontend behavior', () => {
     );
     expect(providerDefinition('qq').setupGuide.action?.url).toBe(
       'https://q.qq.com/qqbot/openclaw/index.html',
-    );
-    expect(providerDefinition('dingtalk').setupGuide.action?.url).toBe(
-      'https://open-dev.dingtalk.com/fe/app',
     );
     expect(providerDefinition('wechat').setupGuide.action).toBeUndefined();
   });
@@ -151,9 +147,6 @@ describe('channel account frontend behavior', () => {
     ).toBe(true);
     expect(providerDefinition('qq').credentials[0].help).toContain(
       '不是 QQ 号',
-    );
-    expect(providerDefinition('dingtalk').credentials[1].help).toContain(
-      '与 Client ID 属于同一个企业内部应用',
     );
   });
 

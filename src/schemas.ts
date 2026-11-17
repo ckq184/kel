@@ -6,12 +6,7 @@ import { ALL_PERMISSIONS } from './permissions.js';
 import type { Permission } from './types.js';
 import { MAX_GROUP_NAME_LEN } from './web-context.js';
 
-export const ChannelProviderSchema = z.enum([
-  'feishu',
-  'qq',
-  'wechat',
-  'dingtalk',
-]);
+export const ChannelProviderSchema = z.enum(['feishu', 'qq', 'wechat']);
 
 const ChannelCredentialsSchema = z
   .record(z.string(), z.string().max(8192))
@@ -87,7 +82,7 @@ export const TaskPatchSchema = z.object({
     .refine((v) => !isNaN(Date.parse(v)), 'next_run must be ISO 8601')
     .optional(),
   notify_channels: z
-    .array(z.enum(['feishu', 'qq', 'wechat', 'dingtalk']))
+    .array(z.enum(['feishu', 'qq', 'wechat']))
     .nullable()
     .optional(),
 });
@@ -131,7 +126,7 @@ export const TaskCreateSchema = z
     execution_mode: z.enum(['host', 'container']).optional(),
     script_command: z.string().max(MAX_TASK_SCRIPT_COMMAND_LENGTH).optional(),
     notify_channels: z
-      .array(z.enum(['feishu', 'qq', 'wechat', 'dingtalk']))
+      .array(z.enum(['feishu', 'qq', 'wechat']))
       .nullable()
       .optional(),
   })
@@ -1219,24 +1214,6 @@ export const WeChatConfigSchema = z.object({
   clearBotToken: z.boolean().optional(),
   bypassProxy: z.boolean().optional(),
 });
-
-export const DingTalkConfigSchema = z
-  .object({
-    clientId: z.string().max(2000).optional(),
-    clientSecret: z.string().max(2000).optional(),
-    clearClientSecret: z.boolean().optional(),
-    enabled: z.boolean().optional(),
-    streamingMode: z.enum(['card', 'text']).optional(),
-  })
-  .refine(
-    (data) =>
-      typeof data.clientId === 'string' ||
-      typeof data.clientSecret === 'string' ||
-      data.clearClientSecret === true ||
-      typeof data.enabled === 'boolean' ||
-      typeof data.streamingMode === 'string',
-    { message: 'At least one config field must be provided' },
-  );
 
 // --- Custom model pricing schemas (task V) ---
 

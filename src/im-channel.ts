@@ -1,7 +1,7 @@
 /**
  * Unified IM Channel Interface
  *
- * Defines a standard interface for all IM integrations (Feishu, QQ, WeChat, DingTalk)
+ * Defines a standard interface for all IM integrations (Feishu, QQ, WeChat)
  * and provides adapter factories that wrap existing connection implementations.
  */
 import {
@@ -22,11 +22,6 @@ import {
   type WeChatConnectionConfig,
   type WeChatConnectionState,
 } from './wechat.js';
-import {
-  createDingTalkConnection,
-  type DingTalkConnection,
-  type DingTalkConnectionConfig,
-} from './dingtalk.js';
 import { logger } from './logger.js';
 import type {
   ChannelMessageMeta,
@@ -47,15 +42,11 @@ import {
   type StreamingCardLifecycle,
   type StreamingCardOptions,
 } from './feishu-streaming-card.js';
-import type { DingTalkStreamingCardController } from './dingtalk-streaming-card.js';
 import type { QQStreamingController } from './qq-streaming-card.js';
 import { CHANNEL_PREFIXES } from './channel-prefixes.js';
 
-/** Union type for any streaming card controller (Feishu, DingTalk, or QQ) */
-export type StreamingSession =
-  | StreamingCardController
-  | DingTalkStreamingCardController
-  | QQStreamingController;
+/** Union type for any streaming card controller (Feishu or QQ) */
+export type StreamingSession = StreamingCardController | QQStreamingController;
 
 // ─── Unified Interface ──────────────────────────────────────────
 
@@ -171,7 +162,7 @@ export interface IMChannel {
   clearAckReaction?(chatId: string, inputMessageId: string): Promise<void>;
   isConnected(): boolean;
   syncGroups?(): Promise<void>;
-  /** Create a streaming card session for real-time card updates (Feishu or DingTalk) */
+  /** Create a streaming card session for real-time card updates (Feishu or QQ) */
   createStreamingSession?(
     chatId: string,
     onCardCreated?: (messageId: string) => void,
@@ -708,121 +699,6 @@ export function createWeChatChannel(
 
     isConnected(): boolean {
       return inner?.isConnected() ?? false;
-    },
-  };
-
-  return channel;
-}
-
-// ─── DingTalk Adapter ────────────────────────────────────────────
-
-export function createDingTalkChannel(
-  config: DingTalkConnectionConfig,
-): IMChannel {
-  let inner: DingTalkConnection | null = null;
-
-  const channel: IMChannel = {
-    channelType: 'dingtalk',
-
-    async connect(opts: IMChannelConnectOpts): Promise<boolean> {
-      inner = createDingTalkConnection(config);
-      try {
-        await inner.connect({
-          onReady: opts.onReady,
-          onNewChat: opts.onNewChat,
-          isChatAuthorized: opts.isChatAuthorized ?? (() => true),
-          onPairAttempt: opts.onPairAttempt,
-          onCommand: opts.onCommand,
-          ignoreMessagesBefore: opts.ignoreMessagesBefore,
-          resolveGroupFolder: opts.resolveGroupFolder,
-          resolveEffectiveChatJid: opts.resolveEffectiveChatJid,
-          onAgentMessage: opts.onAgentMessage,
-          onBotAddedToGroup: opts.onBotAddedToGroup,
-          onBotRemovedFromGroup: opts.onBotRemovedFromGroup,
-          shouldProcessGroupMessage: opts.shouldProcessGroupMessage,
-          isGroupOwnerMessage: opts.isGroupOwnerMessage,
-          resolveRegisteredGroup: opts.resolveRegisteredGroup,
-          normalizeIncomingJid: opts.normalizeIncomingJid,
-        });
-        return inner.isConnected();
-      } catch (err) {
-        logger.error({ err }, 'DingTalk channel connect failed');
-        return false;
-      }
-    },
-
-    async disconnect(): Promise<void> {
-      if (inner) {
-        await inner.disconnect();
-        inner = null;
-      }
-    },
-
-    async sendMessage(chatId: string, text: string): Promise<void> {
-      if (!inner) {
-        logger.warn(
-          { chatId },
-          'DingTalk channel not connected, skip sending message',
-        );
-        return;
-      }
-      await inner.sendMessage(chatId, text);
-    },
-
-    async setTyping(_chatId: string, _isTyping: boolean): Promise<void> {
-      // DingTalk Stream SDK does not support typing indicators
-    },
-
-    async sendImage(
-      chatId: string,
-      imageBuffer: Buffer,
-      mimeType: string,
-      caption?: string,
-      fileName?: string,
-    ): Promise<void> {
-      if (!inner) {
-        logger.warn(
-          { chatId },
-          'DingTalk channel not connected, skip sending image',
-        );
-        return;
-      }
-      await inner.sendImage(chatId, imageBuffer, mimeType, caption, fileName);
-    },
-
-    async sendFile(
-      chatId: string,
-      filePath: string,
-      fileName: string,
-    ): Promise<void> {
-      if (!inner) {
-        logger.warn(
-          { chatId },
-          'DingTalk channel not connected, skip sending file',
-        );
-        return;
-      }
-      await inner.sendFile(chatId, filePath, fileName);
-    },
-
-    async clearAckReaction(
-      chatId: string,
-      inputMessageId: string,
-    ): Promise<void> {
-      if (!inner) return;
-      await inner.clearAckReaction(chatId, inputMessageId);
-    },
-
-    isConnected(): boolean {
-      return inner?.isConnected() ?? false;
-    },
-
-    async createStreamingSession(
-      chatId: string,
-      onCardCreated?: (messageId: string) => void,
-    ): Promise<StreamingSession | undefined> {
-      if (!inner?.createStreamingSession) return undefined;
-      return inner.createStreamingSession(chatId, onCardCreated);
     },
   };
 

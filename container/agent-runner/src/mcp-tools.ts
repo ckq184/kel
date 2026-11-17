@@ -947,7 +947,7 @@ export function createMcpTools(ctx: McpContext): McpToolDefinition<any>[] {
     // --- send_file ---
     tool(
       'send_file',
-      `Send a file to the current native IM conversation through its bound account (Feishu/QQ/DingTalk/WeChat). The file path must stay inside the workspace/group directory.
+      `Send a file to the current native IM conversation through its bound account (Feishu/QQ/WeChat). The file path must stay inside the workspace/group directory.
 The actual file types and size limit are enforced by the selected provider.`,
       {
         filePath: z

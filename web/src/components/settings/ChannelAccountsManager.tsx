@@ -912,33 +912,6 @@ function AccountConnectionDialog({
               )}
             </div>
 
-            {account.provider === 'dingtalk' && (
-              <div>
-                <h3 className="mb-2 text-sm font-medium">回复方式</h3>
-                <ProviderConnectionFields
-                  provider={account.provider}
-                  values={options}
-                  idPrefix={`options-${account.id}`}
-                  disabled={saving}
-                  showSecrets={false}
-                  onChange={(key, value) =>
-                    setOptions((current) => ({ ...current, [key]: value }))
-                  }
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="mt-2"
-                  disabled={saving}
-                  onClick={() => void saveOptions()}
-                >
-                  {saving && <Loader2 className="size-3.5 animate-spin" />}
-                  保存回复方式
-                </Button>
-              </div>
-            )}
-
             {supportsChannelPairing(account.provider) &&
               account.has_credentials && (
                 <AccountPairingSection account={account} />
@@ -1147,15 +1120,12 @@ function AccountStateBadges({ account }: { account: ChannelAccount }) {
 
 function defaultCredentials(provider: ChannelProvider): Record<string, string> {
   if (provider === 'wechat') return { bypassProxy: 'true' };
-  if (provider === 'dingtalk') return { streamingMode: 'card' };
   return {};
 }
 
 function accountOptions(account: ChannelAccount): Record<string, string> {
   if (account.provider === 'wechat')
     return { bypassProxy: String(account.options?.bypassProxy ?? true) };
-  if (account.provider === 'dingtalk')
-    return { streamingMode: account.options?.streamingMode ?? 'card' };
   return {};
 }
 
