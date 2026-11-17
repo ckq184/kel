@@ -35,14 +35,16 @@ function readTheme(): Theme {
   return 'light';
 }
 
+// 任务 AO（2026-11-17）起默认配色为 default（墨白，ZCode 风）。
+// 存储语义对称：无 key = default；显式选过暖橙/素白的用户保留其选择。
 function readColorScheme(): ColorScheme {
-  if (typeof window === 'undefined') return 'orange';
+  if (typeof window === 'undefined') return 'default';
   const stored =
     window.localStorage.getItem(SCHEME_KEY) ??
     window.localStorage.getItem(LEGACY_SCHEME_KEY);
   if (stored === 'default' || stored === 'orange' || stored === 'neutral')
     return stored;
-  return 'orange';
+  return 'default';
 }
 
 function readFontStyle(): FontStyle {
@@ -67,11 +69,14 @@ function syncMetaThemeColor() {
     document.documentElement.classList.contains('theme-neutral');
   const isOrange = document.documentElement.classList.contains('theme-orange');
   if (isDark) {
-    meta.setAttribute('content', isNeutral ? '#09090b' : '#0f172a');
+    meta.setAttribute(
+      'content',
+      isNeutral ? '#09090b' : isOrange ? '#141414' : '#171717',
+    );
   } else {
     meta.setAttribute(
       'content',
-      isOrange ? '#FAF9F5' : isNeutral ? '#ffffff' : '#ffffff',
+      isOrange ? '#FAF9F5' : isNeutral ? '#ffffff' : '#fafafa',
     );
   }
 }
@@ -120,7 +125,7 @@ export function useTheme() {
   const colorScheme = useSyncExternalStore(
     subscribe,
     readColorScheme,
-    () => 'orange' as ColorScheme,
+    () => 'default' as ColorScheme,
   );
   const fontStyle = useSyncExternalStore(
     subscribe,
@@ -158,7 +163,7 @@ export function useTheme() {
   }, []);
 
   const setColorScheme = useCallback((s: ColorScheme) => {
-    if (s === 'orange') window.localStorage.removeItem(SCHEME_KEY);
+    if (s === 'default') window.localStorage.removeItem(SCHEME_KEY);
     else window.localStorage.setItem(SCHEME_KEY, s);
     applyColorScheme(s);
     notify();

@@ -544,11 +544,11 @@ export function MessageList({
                     }}
                   >
                     <div className="flex items-center gap-3 my-6 px-4">
-                      <div className="flex-1 border-t border-amber-300" />
-                      <span className="text-xs text-amber-600 whitespace-pre-wrap">
+                      <div className="flex-1 border-t border-warning/40" />
+                      <span className="text-xs text-warning whitespace-pre-wrap">
                         {item.content}
                       </span>
-                      <div className="flex-1 border-t border-amber-300" />
+                      <div className="flex-1 border-t border-warning/40" />
                     </div>
                   </div>
                 );
@@ -599,12 +599,12 @@ export function MessageList({
                     }}
                   >
                     <div className="flex items-center gap-3 my-6 px-4">
-                      <div className="flex-1 border-t border-red-300" />
-                      <span className="text-xs text-red-600 whitespace-pre-wrap flex items-center gap-1">
+                      <div className="flex-1 border-t border-error/40" />
+                      <span className="text-xs text-error whitespace-pre-wrap flex items-center gap-1">
                         <AlertTriangle size={14} />
                         {item.content}
                       </span>
-                      <div className="flex-1 border-t border-red-300" />
+                      <div className="flex-1 border-t border-error/40" />
                     </div>
                   </div>
                 );

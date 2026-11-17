@@ -382,7 +382,7 @@ function EvalRunsPanel({
             >
               <div className="w-full max-w-md rounded-xl border border-border bg-card p-4 shadow-lg">
                 <h4 className="mb-2 text-sm font-semibold">运行离线评测</h4>
-                <p className="mb-3 rounded bg-amber-500/10 p-2 text-xs text-amber-600 dark:text-amber-400">
+                <p className="mb-3 rounded bg-warning/10 p-2 text-xs text-warning">
                   将发起真实 embedder/LLM
                   请求并产生费用；评测在宿主以后台子进程执行， 完成后自动写入
                   eval.db 并刷新列表。

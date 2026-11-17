@@ -336,9 +336,7 @@ function TextEditor({
               {file.name}
             </span>
             {dirty && (
-              <span className="text-xs text-amber-500 flex-shrink-0">
-                未保存
-              </span>
+              <span className="text-xs text-warning flex-shrink-0">未保存</span>
             )}
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
@@ -478,9 +476,7 @@ function MarkdownFileViewer({
               {file.name}
             </span>
             {dirty && (
-              <span className="text-xs text-amber-500 flex-shrink-0">
-                未保存
-              </span>
+              <span className="text-xs text-warning flex-shrink-0">未保存</span>
             )}
           </div>
           <div className="flex items-center gap-1 sm:gap-1.5 flex-shrink-0">
@@ -1074,7 +1070,7 @@ export function FilePanel({ groupJid, onClose }: FilePanelProps) {
       </div>
 
       {openDirError && (
-        <div className="px-4 py-2 border-b border-red-100 dark:border-red-800 bg-red-50 dark:bg-red-950/40 text-xs text-red-600 dark:text-red-400">
+        <div className="px-4 py-2 border-b border-error/20 bg-error-bg/60 text-xs text-error">
           {openDirError}
         </div>
       )}
@@ -1208,7 +1204,7 @@ export function FilePanel({ groupJid, onClose }: FilePanelProps) {
                             e.stopPropagation();
                             handleDeleteClick(item);
                           }}
-                          className="p-2.5 rounded hover:bg-red-100 dark:hover:bg-red-950/40 text-muted-foreground hover:text-red-600 dark:hover:text-red-400 transition-colors cursor-pointer"
+                          className="p-2.5 rounded hover:bg-error-bg/60 text-muted-foreground hover:text-error transition-colors cursor-pointer"
                           title="删除"
                           aria-label="删除文件"
                         >

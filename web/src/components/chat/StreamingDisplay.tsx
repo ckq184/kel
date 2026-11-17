@@ -130,40 +130,40 @@ function TaskAgentBlock({
   }, [activeToolIdSignature, agent.id]);
 
   const borderColor = isRunning
-    ? 'border-blue-200/60 dark:border-blue-700/40'
+    ? 'border-info/30'
     : agent.status === 'error'
-      ? 'border-red-200/60 dark:border-red-700/40'
-      : 'border-emerald-200/60 dark:border-emerald-700/40';
+      ? 'border-error/30'
+      : 'border-success/30';
   const bgColor = isRunning
-    ? 'bg-blue-50/40 dark:bg-blue-950/30'
+    ? 'bg-info-bg/40'
     : agent.status === 'error'
-      ? 'bg-red-50/40 dark:bg-red-950/30'
-      : 'bg-emerald-50/40 dark:bg-emerald-950/30';
+      ? 'bg-error-bg/40'
+      : 'bg-success-bg/40';
   const hoverBg = isRunning
-    ? 'hover:bg-blue-50/60 dark:hover:bg-blue-900/30'
+    ? 'hover:bg-info-bg/60'
     : agent.status === 'error'
-      ? 'hover:bg-red-50/60 dark:hover:bg-red-900/30'
-      : 'hover:bg-emerald-50/60 dark:hover:bg-emerald-900/30';
+      ? 'hover:bg-error-bg/60'
+      : 'hover:bg-success-bg/60';
   const dotColor = isRunning
-    ? 'bg-blue-500 animate-pulse'
+    ? 'bg-info animate-pulse'
     : agent.status === 'error'
-      ? 'bg-red-500'
-      : 'bg-emerald-500';
+      ? 'bg-error'
+      : 'bg-success';
   const textColor = isRunning
-    ? 'text-blue-700 dark:text-blue-300'
+    ? 'text-info'
     : agent.status === 'error'
-      ? 'text-red-700 dark:text-red-300'
-      : 'text-emerald-700 dark:text-emerald-300';
+      ? 'text-error'
+      : 'text-success';
   const chevronColor = isRunning
-    ? 'text-blue-400 dark:text-blue-500'
+    ? 'text-info/70'
     : agent.status === 'error'
-      ? 'text-red-400 dark:text-red-500'
-      : 'text-emerald-400 dark:text-emerald-500';
+      ? 'text-error/70'
+      : 'text-success/70';
   const contentBorderColor = isRunning
-    ? 'border-blue-100 dark:border-blue-800/50'
+    ? 'border-info/20'
     : agent.status === 'error'
-      ? 'border-red-100 dark:border-red-800/50'
-      : 'border-emerald-100 dark:border-emerald-800/50';
+      ? 'border-error/20'
+      : 'border-success/20';
 
   return (
     <div
@@ -198,12 +198,12 @@ function TaskAgentBlock({
           {isRunning && streaming && (
             <>
               {streaming.isThinking && (
-                <p className="text-[13px] text-blue-500 dark:text-blue-400 italic flex items-center gap-1">
+                <p className="text-[13px] text-info italic flex items-center gap-1">
                   思考中
                   <span className="flex gap-0.5 ml-0.5">
-                    <span className="w-1 h-1 bg-blue-400 rounded-full animate-bounce [animation-delay:-0.3s]" />
-                    <span className="w-1 h-1 bg-blue-400 rounded-full animate-bounce [animation-delay:-0.15s]" />
-                    <span className="w-1 h-1 bg-blue-400 rounded-full animate-bounce" />
+                    <span className="w-1 h-1 bg-info rounded-full animate-bounce [animation-delay:-0.3s]" />
+                    <span className="w-1 h-1 bg-info rounded-full animate-bounce [animation-delay:-0.15s]" />
+                    <span className="w-1 h-1 bg-info rounded-full animate-bounce" />
                   </span>
                 </p>
               )}
@@ -274,7 +274,7 @@ function SdkTaskRuntimeBlock({
         className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-muted/40 transition-colors"
       >
         <span
-          className={`w-2 h-2 rounded-full ${isRunning ? 'bg-blue-500 animate-pulse' : task.status === 'error' ? 'bg-red-500' : 'bg-emerald-500'}`}
+          className={`w-2 h-2 rounded-full ${isRunning ? 'bg-info animate-pulse' : task.status === 'error' ? 'bg-error' : 'bg-success'}`}
         />
         <span className="text-xs font-medium text-foreground truncate">
           {task.title}
@@ -323,7 +323,7 @@ function SdkTaskRuntimeBlock({
             </div>
           )}
           {task.thinkingTail && (
-            <div className="rounded-md bg-amber-50/50 dark:bg-amber-950/30 border border-amber-200/50 dark:border-amber-800/40 px-2 py-1.5 text-[13px] text-amber-900/70 dark:text-amber-200/70 whitespace-pre-wrap break-words max-h-28 overflow-y-auto">
+            <div className="rounded-md bg-warning-bg/50 border border-warning/25 px-2 py-1.5 text-[13px] text-warning/80 whitespace-pre-wrap break-words max-h-28 overflow-y-auto">
               {task.thinkingTail}
             </div>
           )}
@@ -458,9 +458,7 @@ function TraceRow({
 }) {
   const [open, setOpen] = useState(false);
   const hasDetail = !!item.detail && item.detail !== item.summary;
-  const base = danger
-    ? 'text-red-800/80 dark:text-red-200/80'
-    : 'text-foreground/75';
+  const base = danger ? 'text-error/80' : 'text-foreground/75';
   return (
     <div className={`text-[13px] ${base} break-words`}>
       <div
@@ -500,16 +498,13 @@ function PermissionAlert({
   const denied = streaming.traceEvents.filter((e) => e.kind === 'permission');
   if (denied.length === 0) return null;
   return (
-    <div className="rounded-lg border border-red-300 dark:border-red-800/60 bg-red-50/70 dark:bg-red-950/30 p-2 mb-2">
-      <div className="text-xs font-medium text-red-700 dark:text-red-300 mb-1">
+    <div className="rounded-lg border border-error/40 bg-error-bg/70 p-2 mb-2">
+      <div className="text-xs font-medium text-error mb-1">
         🚫 权限被拒绝 ({denied.length})
       </div>
       <div className="space-y-0.5 max-h-28 overflow-y-auto">
         {denied.slice(-10).map((item) => (
-          <div
-            key={item.id}
-            className="text-[13px] text-red-800/80 dark:text-red-200/80 break-words"
-          >
+          <div key={item.id} className="text-[13px] text-error/80 break-words">
             <span className="font-medium">{item.title}</span>
             {(item.detail || item.summary) && (
               <span className="opacity-75">
@@ -593,13 +588,13 @@ function StreamingContent({
 
       {/* Reasoning block */}
       {streaming.thinkingText && (
-        <div className="mb-3 rounded-xl border border-amber-200/60 dark:border-amber-800/40 bg-amber-50/40 dark:bg-amber-950/30 overflow-hidden">
+        <div className="mb-3 rounded-xl border border-warning/30 bg-warning-bg/40 overflow-hidden">
           <button
             onClick={() => setThinkingExpanded(!thinkingExpanded)}
-            className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-amber-50/60 dark:hover:bg-amber-900/30 transition-colors"
+            className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-warning-bg/60 transition-colors"
           >
             <svg
-              className="w-4 h-4 text-amber-500 flex-shrink-0"
+              className="w-4 h-4 text-warning flex-shrink-0"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -611,7 +606,7 @@ function StreamingContent({
                 d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z"
               />
             </svg>
-            <span className="text-xs font-medium text-amber-700 dark:text-amber-300">
+            <span className="text-xs font-medium text-warning">
               {streaming.isThinking
                 ? 'Reasoning...'
                 : streaming.thinkingDurationMs != null &&
@@ -621,23 +616,23 @@ function StreamingContent({
             </span>
             {streaming.isThinking && (
               <span className="flex gap-0.5 ml-0.5">
-                <span className="w-1 h-1 bg-amber-400 rounded-full animate-bounce [animation-delay:-0.3s]" />
-                <span className="w-1 h-1 bg-amber-400 rounded-full animate-bounce [animation-delay:-0.15s]" />
-                <span className="w-1 h-1 bg-amber-400 rounded-full animate-bounce" />
+                <span className="w-1 h-1 bg-warning rounded-full animate-bounce [animation-delay:-0.3s]" />
+                <span className="w-1 h-1 bg-warning rounded-full animate-bounce [animation-delay:-0.15s]" />
+                <span className="w-1 h-1 bg-warning rounded-full animate-bounce" />
               </span>
             )}
             <span className="flex-1" />
             {thinkingExpanded ? (
-              <ChevronUp className="w-3.5 h-3.5 text-amber-400" />
+              <ChevronUp className="w-3.5 h-3.5 text-warning/70" />
             ) : (
-              <ChevronDown className="w-3.5 h-3.5 text-amber-400" />
+              <ChevronDown className="w-3.5 h-3.5 text-warning/70" />
             )}
           </button>
           {thinkingExpanded && (
             <div
               ref={thinkingRef}
               onScroll={handleThinkingScroll}
-              className="px-3 pb-3 text-sm text-amber-900/70 dark:text-amber-200/70 whitespace-pre-wrap break-words max-h-64 overflow-y-auto border-t border-amber-100 dark:border-amber-800/50"
+              className="px-3 pb-3 text-sm text-warning/80 whitespace-pre-wrap break-words max-h-64 overflow-y-auto border-t border-warning/20"
             >
               {streaming.thinkingText}
             </div>

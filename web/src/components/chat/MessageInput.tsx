@@ -1000,7 +1000,7 @@ export function MessageInput({
           {/* Send error banner */}
           {sendError && (
             <div
-              className={`px-4 py-2 bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 text-xs font-medium border-b border-red-100 dark:border-red-800 flex items-center gap-2 ${isCompact ? 'rounded-t-lg' : 'rounded-t-2xl'}`}
+              className={`px-4 py-2 bg-error-bg/60 text-error text-xs font-medium border-b border-error/20 flex items-center gap-2 ${isCompact ? 'rounded-t-lg' : 'rounded-t-2xl'}`}
             >
               <span>{sendError}</span>
             </div>
@@ -1156,7 +1156,7 @@ export function MessageInput({
                 <button
                   type="button"
                   onClick={onResetSession}
-                  className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-amber-50 dark:hover:bg-amber-950/40 text-muted-foreground hover:text-amber-600 dark:hover:text-amber-400 transition-all cursor-pointer"
+                  className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-warning-bg/60 text-muted-foreground hover:text-warning transition-all cursor-pointer"
                   title="清除上下文"
                   aria-label="清除当前会话上下文"
                 >

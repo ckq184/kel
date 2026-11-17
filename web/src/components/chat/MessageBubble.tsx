@@ -72,13 +72,13 @@ function ReasoningBlock({
       : 'Reasoning';
 
   return (
-    <div className="mb-3 rounded-xl border border-amber-200/60 dark:border-amber-700/40 bg-amber-50/40 dark:bg-amber-950/30 overflow-hidden">
+    <div className="mb-3 rounded-xl border border-warning/30 bg-warning-bg/40 overflow-hidden">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-2 px-3 py-2 pr-16 text-left hover:bg-amber-50/60 dark:hover:bg-amber-950/40 transition-colors"
+        className="w-full flex items-center gap-2 px-3 py-2 pr-16 text-left hover:bg-warning-bg/60 transition-colors"
       >
         <svg
-          className="w-4 h-4 text-amber-500 flex-shrink-0"
+          className="w-4 h-4 text-warning flex-shrink-0"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -90,18 +90,16 @@ function ReasoningBlock({
             d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z"
           />
         </svg>
-        <span className="text-xs font-medium text-amber-700 dark:text-amber-300">
-          {label}
-        </span>
+        <span className="text-xs font-medium text-warning">{label}</span>
         <span className="flex-1" />
         {expanded ? (
-          <ChevronUp className="w-3.5 h-3.5 text-amber-400" />
+          <ChevronUp className="w-3.5 h-3.5 text-warning/70" />
         ) : (
-          <ChevronDown className="w-3.5 h-3.5 text-amber-400" />
+          <ChevronDown className="w-3.5 h-3.5 text-warning/70" />
         )}
       </button>
       {expanded && (
-        <div className="px-3 pb-3 text-sm text-amber-900/70 dark:text-amber-300/70 whitespace-pre-wrap break-words max-h-64 overflow-y-auto border-t border-amber-100 dark:border-amber-800/40">
+        <div className="px-3 pb-3 text-sm text-warning/80 whitespace-pre-wrap break-words max-h-64 overflow-y-auto border-t border-warning/20">
           {content}
         </div>
       )}
@@ -323,19 +321,19 @@ export const MessageBubble = memo(
           {showTime && (
             <div className="flex items-center gap-2 mb-2">
               <span className="text-xs text-muted-foreground">{time}</span>
-              <span className="text-xs font-medium text-red-600">系统消息</span>
+              <span className="text-xs font-medium text-error">系统消息</span>
             </div>
           )}
-          <div className="relative bg-red-50 dark:bg-red-950/30 rounded-xl border border-red-200 dark:border-red-800/60 border-l-[3px] border-l-red-500 px-5 py-4">
+          <div className="relative bg-error-bg/60 rounded-xl border border-error/40 border-l-[3px] border-l-error px-5 py-4">
             <div className="flex items-start gap-3">
-              <div className="flex-shrink-0 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center text-white font-bold text-sm">
+              <div className="flex-shrink-0 w-6 h-6 bg-error rounded-full flex items-center justify-center text-white font-bold text-sm">
                 !
               </div>
               <div className="flex-1">
-                <h3 className="text-sm font-semibold text-red-900 dark:text-red-200 mb-1">
+                <h3 className="text-sm font-semibold text-error mb-1">
                   上下文溢出错误
                 </h3>
-                <p className="text-sm text-red-800 dark:text-red-300 leading-relaxed">
+                <p className="text-sm text-error/80 leading-relaxed">
                   {errorMsg}
                 </p>
               </div>
@@ -369,40 +367,40 @@ export const MessageBubble = memo(
           {showTime && (
             <div className="flex items-center gap-2 mb-2">
               <span className="text-xs text-muted-foreground">{time}</span>
-              <span className="text-xs font-medium text-amber-600">
+              <span className="text-xs font-medium text-warning">
                 {isBalanceBlocked ? '余额提醒' : '配额提醒'}
               </span>
             </div>
           )}
-          <div className="relative bg-amber-50 dark:bg-amber-950/30 rounded-xl border border-amber-200 dark:border-amber-800 border-l-[3px] border-l-amber-500 px-5 py-4">
+          <div className="relative bg-warning-bg/60 rounded-xl border border-warning/40 border-l-[3px] border-l-warning px-5 py-4">
             <div className="flex items-start gap-3">
-              <div className="flex-shrink-0 w-6 h-6 bg-amber-500 rounded-full flex items-center justify-center text-white font-bold text-sm">
+              <div className="flex-shrink-0 w-6 h-6 bg-warning rounded-full flex items-center justify-center text-white font-bold text-sm">
                 !
               </div>
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-1">
-                  <h3 className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+                  <h3 className="text-sm font-semibold text-warning">
                     {isBalanceBlocked ? '余额不足' : `${windowTag}配额已用完`}
                   </h3>
                   {!isBalanceBlocked && exceededWindow && (
                     <span
                       className={`px-1.5 py-0.5 text-[10px] rounded-full font-medium ${
                         exceededWindow === 'daily'
-                          ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+                          ? 'bg-info-bg text-info'
                           : exceededWindow === 'weekly'
-                            ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300'
-                            : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+                            ? 'bg-warning-bg text-warning'
+                            : 'bg-error-bg text-error'
                       }`}
                     >
                       {windowTag}限额
                     </span>
                   )}
                 </div>
-                <p className="text-sm text-amber-800 dark:text-amber-300 leading-relaxed">
+                <p className="text-sm text-warning/90 leading-relaxed">
                   {displayMsg}
                 </p>
                 {resetMatch && (
-                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                  <p className="text-xs text-warning/80 mt-1">
                     预计 {resetMatch[1]} {resetMatch[2]}后自动重置
                   </p>
                 )}

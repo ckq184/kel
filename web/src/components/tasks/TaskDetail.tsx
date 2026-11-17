@@ -48,33 +48,33 @@ const LOG_STATUS_STYLES: Record<
     label: '已排队',
   },
   running: {
-    bg: 'bg-blue-100 dark:bg-blue-900/40',
-    text: 'text-blue-700 dark:text-blue-300',
+    bg: 'bg-info-bg',
+    text: 'text-info',
     label: '运行中',
   },
   recovering: {
-    bg: 'bg-blue-100 dark:bg-blue-900/40',
-    text: 'text-blue-700 dark:text-blue-300',
+    bg: 'bg-info-bg',
+    text: 'text-info',
     label: '正在恢复',
   },
   retry_wait: {
-    bg: 'bg-amber-100 dark:bg-amber-900/40',
-    text: 'text-amber-700 dark:text-amber-300',
+    bg: 'bg-warning-bg',
+    text: 'text-warning',
     label: '等待重试',
   },
   success: {
-    bg: 'bg-green-100 dark:bg-green-900/40',
-    text: 'text-green-700 dark:text-green-300',
+    bg: 'bg-success-bg',
+    text: 'text-success',
     label: '成功',
   },
   error: {
-    bg: 'bg-red-100 dark:bg-red-900/40',
-    text: 'text-red-700 dark:text-red-300',
+    bg: 'bg-error-bg',
+    text: 'text-error',
     label: '失败',
   },
   failed: {
-    bg: 'bg-red-100 dark:bg-red-900/40',
-    text: 'text-red-700 dark:text-red-300',
+    bg: 'bg-error-bg',
+    text: 'text-error',
     label: '失败',
   },
   cancelled: {
@@ -83,8 +83,8 @@ const LOG_STATUS_STYLES: Record<
     label: '已取消',
   },
   missed: {
-    bg: 'bg-amber-100 dark:bg-amber-900/40',
-    text: 'text-amber-700 dark:text-amber-300',
+    bg: 'bg-warning-bg',
+    text: 'text-warning',
     label: '已错过',
   },
   delivered: {
@@ -449,7 +449,7 @@ export function TaskDetail({ task }: TaskDetailProps) {
             </div>
           </div>
           {task.permissions.risk_level === 'high' && (
-            <p className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+            <p className="mt-3 rounded-md bg-warning-bg/60 px-3 py-2 text-xs text-warning">
               高权限任务：可在宿主机执行 Shell 命令，仅管理员可以修改或运行。
             </p>
           )}
@@ -903,7 +903,7 @@ export function TaskDetail({ task }: TaskDetailProps) {
                         >
                           <span
                             className={`min-w-0 flex-1 truncate ${
-                              log.error ? 'text-red-600 dark:text-red-400' : ''
+                              log.error ? 'text-error' : ''
                             }`}
                           >
                             {(log.error || log.result || '').slice(0, 100)}

@@ -291,7 +291,7 @@ export function UnifiedSidebar({
             <TooltipTrigger asChild>
               <button
                 onClick={() => setShowBugReport(true)}
-                className="w-10 h-10 rounded-lg flex items-center justify-center text-muted-foreground hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/30 transition-colors"
+                className="w-10 h-10 rounded-lg flex items-center justify-center text-muted-foreground hover:text-warning hover:bg-warning-bg/60 transition-colors"
               >
                 <Bug className="w-4 h-4" />
               </button>

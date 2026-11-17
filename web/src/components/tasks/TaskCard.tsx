@@ -87,15 +87,15 @@ export function TaskCard({
       return 'bg-muted text-muted-foreground';
     }
     if (effectiveRunning) {
-      return 'bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300';
+      return 'bg-info-bg text-info';
     }
     switch (task.status) {
       case 'active':
-        return 'bg-green-100 dark:bg-green-900/40 text-green-600 dark:text-green-400';
+        return 'bg-success-bg text-success';
       case 'parsing':
-        return 'bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400';
+        return 'bg-info-bg text-info';
       case 'paused':
-        return 'bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400';
+        return 'bg-warning-bg text-warning';
       case 'completed':
         return 'bg-muted text-muted-foreground';
       default:
@@ -161,7 +161,7 @@ export function TaskCard({
             {/* Badges */}
             <div className="flex flex-wrap items-center gap-1.5 mb-2">
               {task.execution_type === 'script' && (
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300">
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-info-bg text-info">
                   脚本
                 </span>
               )}
@@ -240,7 +240,7 @@ export function TaskCard({
                 type="button"
                 onClick={handleRunNow}
                 disabled={runningNow || effectiveRunning}
-                className="flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-amber-50 hover:text-amber-600 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-amber-950/40 dark:hover:text-amber-400"
+                className="flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-warning-bg/60 hover:text-warning disabled:cursor-not-allowed disabled:opacity-50"
                 title={task.status === 'paused' ? '立即执行一次' : '立即运行'}
                 aria-label={
                   task.status === 'paused'
@@ -249,7 +249,7 @@ export function TaskCard({
                 }
               >
                 <Zap
-                  className={`h-5 w-5 ${runningNow || effectiveRunning ? 'animate-pulse text-amber-500' : ''}`}
+                  className={`h-5 w-5 ${runningNow || effectiveRunning ? 'animate-pulse text-warning' : ''}`}
                 />
               </button>
             )}
@@ -292,7 +292,7 @@ export function TaskCard({
                   event.stopPropagation();
                   onStopRun(currentRun.id);
                 }}
-                className="flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600"
+                className="flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-error-bg/60 hover:text-error"
                 title="停止当前运行（不影响后续计划）"
                 aria-label="停止当前运行"
               >
@@ -328,7 +328,7 @@ export function TaskCard({
                   onPurge(task.id);
                 }}
                 disabled={isMutating}
-                className="flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/50 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+                className="flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-error-bg/60 hover:text-error focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-error/50 disabled:cursor-not-allowed disabled:opacity-50"
                 title="永久删除任务和运行历史"
                 aria-label="永久删除任务"
               >
@@ -341,7 +341,7 @@ export function TaskCard({
               type="button"
               onClick={handleDelete}
               disabled={effectiveRunning || isMutating}
-              className="flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+              className="flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-error-bg/60 hover:text-error disabled:cursor-not-allowed disabled:opacity-50"
               title={
                 effectiveRunning ? '请先停止当前运行' : '移到回收站并保留历史'
               }

@@ -403,11 +403,11 @@ function SessionRow({
         className="flex min-w-0 flex-1 items-start gap-2 px-2.5 py-1.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer"
       >
         {titleGenerating ? (
-          <Loader2 className="mt-1 h-3.5 w-3.5 shrink-0 animate-spin text-teal-500" />
+          <Loader2 className="mt-1 h-3.5 w-3.5 shrink-0 animate-spin text-brand-500" />
         ) : running ? (
-          <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
+          <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-success" />
         ) : linkedCount > 0 ? (
-          <MessageSquare className="mt-1 h-3.5 w-3.5 shrink-0 text-teal-600" />
+          <MessageSquare className="mt-1 h-3.5 w-3.5 shrink-0 text-brand-600" />
         ) : (
           <span
             className={cn(

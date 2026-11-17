@@ -548,7 +548,7 @@ export function CreateTaskForm({
                         : '默认继承源工作区的执行模式，选择后将锁定不再自动同步'}
                 </p>
                 {errors.executionMode && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                  <p className="mt-1 text-sm text-error">
                     {errors.executionMode}
                   </p>
                 )}
@@ -562,7 +562,7 @@ export function CreateTaskForm({
             {isScript && (
               <div>
                 <label className="block text-sm font-medium text-foreground mb-2">
-                  脚本命令 <span className="text-red-500">*</span>
+                  脚本命令 <span className="text-error">*</span>
                 </label>
                 <Textarea
                   value={formData.scriptCommand}
@@ -573,12 +573,12 @@ export function CreateTaskForm({
                   maxLength={4096}
                   className={cn(
                     'resize-none font-mono text-sm',
-                    errors.scriptCommand && 'border-red-500',
+                    errors.scriptCommand && 'border-error',
                   )}
                   placeholder="例如: curl -s https://api.example.com/health | jq .status"
                 />
                 {errors.scriptCommand && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                  <p className="mt-1 text-sm text-error">
                     {errors.scriptCommand}
                   </p>
                 )}
@@ -592,7 +592,7 @@ export function CreateTaskForm({
             <div>
               <label className="block text-sm font-medium text-foreground mb-2">
                 {isScript ? '任务描述' : '任务 Prompt'}{' '}
-                {!isScript && <span className="text-red-500">*</span>}
+                {!isScript && <span className="text-error">*</span>}
               </label>
               <Textarea
                 value={formData.prompt}
@@ -600,22 +600,20 @@ export function CreateTaskForm({
                   setFormData({ ...formData, prompt: e.target.value })
                 }
                 rows={isScript ? 2 : 4}
-                className={cn('resize-none', errors.prompt && 'border-red-500')}
+                className={cn('resize-none', errors.prompt && 'border-error')}
                 placeholder={
                   isScript ? '可选的任务描述...' : '输入任务的提示词...'
                 }
               />
               {errors.prompt && (
-                <p className="mt-1 text-sm text-red-600 dark:text-red-400">
-                  {errors.prompt}
-                </p>
+                <p className="mt-1 text-sm text-error">{errors.prompt}</p>
               )}
             </div>
 
             {/* Schedule Type */}
             <div>
               <label className="block text-sm font-medium text-foreground mb-2">
-                调度类型 <span className="text-red-500">*</span>
+                调度类型 <span className="text-error">*</span>
               </label>
               <Select
                 value={formData.scheduleType}
@@ -643,7 +641,7 @@ export function CreateTaskForm({
             {/* Schedule Value */}
             <div>
               <label className="block text-sm font-medium text-foreground mb-2">
-                调度值 <span className="text-red-500">*</span>
+                调度值 <span className="text-error">*</span>
               </label>
               {formData.scheduleType === 'cron' && (
                 <>
@@ -656,7 +654,7 @@ export function CreateTaskForm({
                         scheduleValue: e.target.value,
                       })
                     }
-                    className={cn(errors.scheduleValue && 'border-red-500')}
+                    className={cn(errors.scheduleValue && 'border-error')}
                     placeholder="例如: 0 9 * * * (每天 9 点)"
                   />
                   <p className="mt-1 text-xs text-muted-foreground">
@@ -679,7 +677,7 @@ export function CreateTaskForm({
                       onChange={(e) => setIntervalNumber(e.target.value)}
                       className={cn(
                         'flex-1',
-                        errors.scheduleValue && 'border-red-500',
+                        errors.scheduleValue && 'border-error',
                       )}
                       placeholder="数值"
                     />
@@ -710,7 +708,7 @@ export function CreateTaskForm({
                     type="datetime-local"
                     value={onceDateTime}
                     onChange={(e) => setOnceDateTime(e.target.value)}
-                    className={cn(errors.scheduleValue && 'border-red-500')}
+                    className={cn(errors.scheduleValue && 'border-error')}
                   />
                   <p className="mt-1 text-xs text-muted-foreground">
                     选择任务的执行时间
@@ -718,7 +716,7 @@ export function CreateTaskForm({
                 </>
               )}
               {errors.scheduleValue && (
-                <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                <p className="mt-1 text-sm text-error">
                   {errors.scheduleValue}
                 </p>
               )}

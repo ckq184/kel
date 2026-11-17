@@ -116,6 +116,8 @@
   --color-warning-bg: var(--warning-bg);
   --color-error: var(--error);
   --color-error-bg: var(--error-bg);
+  --color-info: var(--info);
+  --color-info-bg: var(--info-bg);
   --color-surface: var(--surface);
   --shadow-card: var(--card-shadow);
 
@@ -143,58 +145,60 @@
 }
 
 /* =====================================================
-   Design Token values — Teal theme (classic CKQClaw)
-   Primary: #0d9488 (Teal) | Base: Slate
+   Design Token values — Ink & Sky theme (ZCode-aligned)
+   Primary: #0a0a0a (neutral-950，近黑) | Base: neutral
+   Brand accent: sky。设计值参考 zai-org/ZCode（Apache-2.0，
+   仅取设计 token 数值，未复制代码）。任务 AO（2026-11-17）。
    ===================================================== */
 :root {
   /* shadcn/ui semantic tokens */
-  --background: #ffffff;
-  --foreground: #0f172a;
+  --background: #fafafa;
+  --foreground: #404040;
   --card: #ffffff;
-  --card-foreground: #0f172a;
+  --card-foreground: #404040;
   --popover: #ffffff;
-  --popover-foreground: #0f172a;
-  --primary: #0d9488;
-  --primary-foreground: #ffffff;
-  --secondary: #f1f5f9;
-  --secondary-foreground: #0f172a;
-  --muted: #f1f5f9;
-  --muted-foreground: #64748b;
-  --accent: #f0fdfa;
-  --accent-foreground: #134e4a;
+  --popover-foreground: #404040;
+  --primary: #0a0a0a;
+  --primary-foreground: #fafafa;
+  --secondary: #f5f5f5;
+  --secondary-foreground: #262626;
+  --muted: #f5f5f5;
+  --muted-foreground: #737373;
+  --accent: color-mix(in oklab, #0a0a0a 6%, transparent);
+  --accent-foreground: #262626;
   --destructive: #dc2626;
   --destructive-foreground: #ffffff;
-  --border: #e2e8f0;
-  --input: #e2e8f0;
-  --ring: #0d9488;
+  --border: color-mix(in oklab, #0a0a0a 10%, transparent);
+  --input: color-mix(in oklab, #0a0a0a 10%, transparent);
+  --ring: #38bdf8;
   --radius: 0.625rem;
 
-  /* Brand color scale (Teal) */
-  --brand-50: #f0fdfa;
-  --brand-100: #ccfbf1;
-  --brand-200: #99f6e4;
-  --brand-300: #5eead4;
-  --brand-400: #2dd4bf;
-  --brand-500: #0d9488;
-  --brand-600: #0f766e;
-  --brand-700: #115e59;
+  /* Brand color scale (Sky) */
+  --brand-50: #f0f9ff;
+  --brand-100: #e0f2fe;
+  --brand-200: #bae6fd;
+  --brand-300: #7dd3fc;
+  --brand-400: #38bdf8;
+  --brand-500: #0ea5e9;
+  --brand-600: #0284c7;
+  --brand-700: #0369a1;
 
   /* Chart colors */
-  --chart-1: #0d9488;
+  --chart-1: #0ea5e9;
   --chart-2: #d97706;
   --chart-3: #4c6ef5;
   --chart-4: #9333ea;
   --chart-5: #dc2626;
 
   /* Sidebar */
-  --sidebar-background: #f8fafc;
-  --sidebar-foreground: #0f172a;
-  --sidebar-primary: #0d9488;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #f1f5f9;
-  --sidebar-accent-foreground: #0f172a;
-  --sidebar-border: #e2e8f0;
-  --sidebar-ring: #0d9488;
+  --sidebar-background: #f5f5f5;
+  --sidebar-foreground: #404040;
+  --sidebar-primary: #0a0a0a;
+  --sidebar-primary-foreground: #fafafa;
+  --sidebar-accent: color-mix(in oklab, #0a0a0a 6%, transparent);
+  --sidebar-accent-foreground: #262626;
+  --sidebar-border: color-mix(in oklab, #0a0a0a 10%, transparent);
+  --sidebar-ring: #38bdf8;
 
   /* Feedback colors */
   --success: #16a34a;
@@ -203,14 +207,16 @@
   --warning-bg: #fef3c7;
   --error: #dc2626;
   --error-bg: #fee2e2;
+  --info: #0284c7;
+  --info-bg: #f0f9ff;
 
   /* Elevated surface — cards that need to stand out from page background */
   --surface: #ffffff;
 
   /* Code colors */
   --code-block-bg: #f6f8fa;
-  --inline-code-bg: rgba(13, 148, 136, 0.1);
-  --inline-code-text: #0d9488;
+  --inline-code-bg: rgba(14, 164, 233, 0.1);
+  --inline-code-text: #0369a1;
 
   /* AI message card shadow */
   --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
@@ -231,7 +237,7 @@
     rgba(255, 255, 255, 0) 60%
   );
   --glass-inner-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.6);
-  --sidebar: #f8fafc;
+  --sidebar: #f5f5f5;
 }
 
 /* =====================================================
@@ -477,34 +483,34 @@ html.font-anthropic .font-mono {
    Dark mode token overrides
    ===================================================== */
 .dark {
-  --background: #0f172a;
-  --foreground: #e2e8f0;
-  --card: #1e293b;
-  --card-foreground: #e2e8f0;
-  --popover: #1e293b;
-  --popover-foreground: #e2e8f0;
-  --primary: #2dd4bf;
-  --primary-foreground: #0f172a;
-  --secondary: #1e293b;
-  --secondary-foreground: #e2e8f0;
-  --muted: #1e293b;
-  --muted-foreground: #94a3b8;
-  --accent: #134e4a;
-  --accent-foreground: #99f6e4;
+  --background: #171717;
+  --foreground: #e5e5e5;
+  --card: #262626;
+  --card-foreground: #e5e5e5;
+  --popover: #262626;
+  --popover-foreground: #e5e5e5;
+  --primary: #fafafa;
+  --primary-foreground: #0a0a0a;
+  --secondary: #262626;
+  --secondary-foreground: #e5e5e5;
+  --muted: #262626;
+  --muted-foreground: #a3a3a3;
+  --accent: color-mix(in oklab, #ffffff 8%, transparent);
+  --accent-foreground: #fafafa;
   --destructive: #f87171;
   --destructive-foreground: #ffffff;
-  --border: #334155;
-  --input: #334155;
-  --ring: #2dd4bf;
+  --border: color-mix(in oklab, #fafafa 10%, transparent);
+  --input: color-mix(in oklab, #fafafa 10%, transparent);
+  --ring: #0ea5e9;
 
-  --sidebar-background: #0f172a;
-  --sidebar-foreground: #cbd5e1;
-  --sidebar-primary: #2dd4bf;
-  --sidebar-primary-foreground: #0f172a;
-  --sidebar-accent: #1e293b;
-  --sidebar-accent-foreground: #cbd5e1;
-  --sidebar-border: #1e293b;
-  --sidebar-ring: #2dd4bf;
+  --sidebar-background: #0a0a0a;
+  --sidebar-foreground: #d4d4d4;
+  --sidebar-primary: #fafafa;
+  --sidebar-primary-foreground: #0a0a0a;
+  --sidebar-accent: color-mix(in oklab, #ffffff 8%, transparent);
+  --sidebar-accent-foreground: #e5e5e5;
+  --sidebar-border: color-mix(in oklab, #fafafa 10%, transparent);
+  --sidebar-ring: #0ea5e9;
 
   --success: #4ade80;
   --success-bg: #14532d;
@@ -512,17 +518,19 @@ html.font-anthropic .font-mono {
   --warning-bg: #451a03;
   --error: #f87171;
   --error-bg: #450a0a;
+  --info: #38bdf8;
+  --info-bg: #0c4a6e;
 
-  --surface: #1e293b;
+  --surface: #262626;
 
   --code-block-bg: #22272e;
-  --inline-code-bg: rgba(45, 212, 191, 0.15);
-  --inline-code-text: #2dd4bf;
+  --inline-code-bg: rgba(14, 164, 233, 0.15);
+  --inline-code-text: #7dd3fc;
 
   --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 
-  --glass-bg: rgba(15, 23, 42, 0.55);
-  --glass-bg-heavy: rgba(15, 23, 42, 0.8);
+  --glass-bg: rgba(23, 23, 23, 0.55);
+  --glass-bg-heavy: rgba(23, 23, 23, 0.8);
   --glass-border: rgba(255, 255, 255, 0.08);
   --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
   --glass-highlight: linear-gradient(
@@ -531,22 +539,22 @@ html.font-anthropic .font-mono {
     rgba(255, 255, 255, 0) 60%
   );
   --glass-inner-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.06);
-  /* Brand color scale (Teal) — inverted for dark mode */
-  --brand-50: #042f2e;
-  --brand-100: #134e4a;
-  --brand-200: #115e59;
-  --brand-300: #0f766e;
-  --brand-400: #0d9488;
-  --brand-500: #14b8a6;
-  --brand-600: #2dd4bf;
-  --brand-700: #5eead4;
+  /* Brand color scale (Sky) — inverted for dark mode */
+  --brand-50: #082f49;
+  --brand-100: #0c4a6e;
+  --brand-200: #075985;
+  --brand-300: #0369a1;
+  --brand-400: #0284c7;
+  --brand-500: #0ea5e9;
+  --brand-600: #38bdf8;
+  --brand-700: #7dd3fc;
 
-  --chart-1: #2dd4bf;
+  --chart-1: #38bdf8;
   --chart-2: #fbbf24;
   --chart-3: #818cf8;
   --chart-4: #c084fc;
   --chart-5: #f87171;
-  --sidebar: #0f172a;
+  --sidebar: #0a0a0a;
 }
 
 /* =====================================================
@@ -942,71 +950,13 @@ pre code.hljs {
 
 /* =====================================================
    Landing Page — Hero, Glass Cards, Animations
-   Scoped orange theme: override tokens inside .landing-page
-   so buttons, links, badges, icons all render orange
-   regardless of the global theme setting.
 
-   注意：登录页作为品牌入口固定使用橙色配色，不随用户主题
-   偏好切换。这是产品决策，不要将这些 token 改回依赖 :root。
+   决策轨迹：登录页曾作为品牌入口固定使用橙色作用域 token
+   （「产品决策，勿改回依赖 :root」）。任务 AO（2026-11-17，
+   用户批准）推翻该决策：登录页随全局主题（:root / .dark）
+   取色，本节只保留布局与动效；变更记录见
+   docs/task-ao-web-zcode-restyle-plan.md §1.2。
    ===================================================== */
-
-/* Landing-page scoped orange tokens (light mode) */
-.landing-page {
-  --background: #fffbf5;
-  --foreground: #1c1210;
-  --primary: #f97316;
-  --primary-foreground: #ffffff;
-  --ring: #f97316;
-  --muted: #f5ede4;
-  --muted-foreground: #8b7b6b;
-  --border: #ede3d8;
-  --input: #ede3d8;
-  --brand-50: #fff7ed;
-  --brand-100: #ffedd5;
-  --brand-200: #fed7aa;
-  --brand-300: #fdba74;
-  --brand-400: #fb923c;
-  --brand-500: #f97316;
-  --brand-600: #ea580c;
-  --brand-700: #c2410c;
-  --glass-bg: rgba(255, 251, 245, 0.6);
-  --glass-bg-heavy: rgba(255, 251, 245, 0.8);
-  --glass-border: rgba(237, 227, 216, 0.6);
-  --glass-shadow: 0 8px 32px rgba(180, 120, 60, 0.06);
-  --glass-inner-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.7);
-  --glass-blur: 20px;
-  --glass-saturate: 1.8;
-  --error: #dc2626;
-  --error-bg: #fee2e2;
-}
-
-/* Landing-page scoped orange tokens (dark mode) */
-.dark .landing-page {
-  --background: #1a1210;
-  --foreground: #f5ede4;
-  --primary: #fb923c;
-  --primary-foreground: #1a1210;
-  --ring: #fb923c;
-  --muted: #2a2018;
-  --muted-foreground: #a08b7a;
-  --border: #3a2a1e;
-  --input: #3a2a1e;
-  --brand-50: #431407;
-  --brand-100: #7c2d12;
-  --brand-200: #9a3412;
-  --brand-300: #c2410c;
-  --brand-400: #ea580c;
-  --brand-500: #f97316;
-  --brand-600: #fb923c;
-  --brand-700: #fdba74;
-  --glass-bg: rgba(26, 18, 16, 0.6);
-  --glass-bg-heavy: rgba(26, 18, 16, 0.8);
-  --glass-border: rgba(255, 255, 255, 0.08);
-  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-  --glass-inner-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.06);
-  --error: #f87171;
-  --error-bg: #450a0a;
-}
 
 /* Aurora mesh background — organic blobs with noise overlay */
 .landing-gradient-bg {
@@ -1052,13 +1002,13 @@ pre code.hljs {
      每个 blob 的具体 border-radius 在下面的 .landing-aurora-blob-N 中设置 */
 }
 
-/* Blob 1: warm peach-orange — top left */
+/* Blob 1: sky (brand) — top left */
 .landing-aurora-blob-1 {
   width: 70vw;
   height: 65vh;
   top: -20%;
   left: -15%;
-  background: rgba(251, 146, 60, 0.12);
+  background: rgba(14, 164, 233, 0.12);
   border-radius: 30% 70% 70% 30% / 30% 30% 70% 70%;
   animation: aurora-morph-1 20s ease-in-out infinite;
 }
@@ -1097,7 +1047,7 @@ pre code.hljs {
 }
 
 .dark .landing-aurora-blob-1 {
-  background: rgba(251, 146, 60, 0.08);
+  background: rgba(14, 164, 233, 0.08);
 }
 .dark .landing-aurora-blob-2 {
   background: rgba(167, 139, 250, 0.07);
@@ -1191,9 +1141,9 @@ pre code.hljs {
   -webkit-backdrop-filter: blur(12px);
 }
 
-/* Gradient text — orange spectrum */
+/* Gradient text — sky spectrum (follows brand accent) */
 .landing-gradient-text {
-  background: linear-gradient(135deg, #ea580c 0%, #fb923c 50%, #f97316 100%);
+  background: linear-gradient(135deg, #0369a1 0%, #0284c7 50%, #0ea5e9 100%);
   background-size: 200% 200%;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;

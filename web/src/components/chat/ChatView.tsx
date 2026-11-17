@@ -1031,7 +1031,7 @@ export function ChatView({ groupJid, onBack, headerLeft }: ChatViewProps) {
                     ·
                   </span>
                   <span
-                    className={`hidden shrink-0 items-center rounded-full border px-2.5 py-0.5 text-[10px] font-medium sm:inline-flex ${group.execution_mode === 'host' ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-800' : 'bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/30 dark:text-sky-300 dark:border-sky-800'}`}
+                    className={`hidden shrink-0 items-center rounded-full border px-2.5 py-0.5 text-[10px] font-medium sm:inline-flex ${group.execution_mode === 'host' ? 'bg-warning-bg text-warning border-warning/40' : 'bg-brand-50 text-brand-700 border-brand-200'}`}
                   >
                     {group.execution_mode === 'host' ? '宿主机' : 'Docker'}
                   </span>
@@ -1074,7 +1074,7 @@ export function ChatView({ groupJid, onBack, headerLeft }: ChatViewProps) {
                           // narrow headers instead of keeping its label intact.
                           className="inline-flex shrink-0 items-center gap-0.5 whitespace-nowrap"
                         >
-                          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
+                          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success" />
                           {CHANNEL_LABEL[channel] ?? channel}
                         </span>
                       ))}
@@ -1083,8 +1083,8 @@ export function ChatView({ groupJid, onBack, headerLeft }: ChatViewProps) {
             </div>
           </div>
           {currentContextWaiting && (
-            <span className="hidden h-8 shrink-0 items-center gap-1.5 rounded-md bg-emerald-50 px-2.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 sm:inline-flex">
-              <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
+            <span className="hidden h-8 shrink-0 items-center gap-1.5 rounded-md bg-success-bg px-2.5 text-[11px] font-medium text-success sm:inline-flex">
+              <span className="h-2 w-2 animate-pulse rounded-full bg-success" />
               运行中
             </span>
           )}
@@ -1169,7 +1169,7 @@ export function ChatView({ groupJid, onBack, headerLeft }: ChatViewProps) {
           imStatus &&
           !Object.values(imStatus).some(Boolean) &&
           !imBannerDismissed && (
-            <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 text-sm">
+            <div className="flex items-center gap-2 px-4 py-2 bg-warning-bg/60 border-b border-warning/30 text-warning text-sm">
               <Link className="w-4 h-4 flex-shrink-0" />
               <span className="flex-1 min-w-0">
                 未配置消息渠道（飞书 / QQ / 微信 / 钉钉），消息无法与 CKQClaw
@@ -1177,7 +1177,7 @@ export function ChatView({ groupJid, onBack, headerLeft }: ChatViewProps) {
               </span>
               <button
                 onClick={() => navigate('/setup/channels')}
-                className="flex-shrink-0 px-3 py-1 text-xs font-medium rounded-md bg-amber-600 text-white hover:bg-amber-700 transition-colors cursor-pointer"
+                className="flex-shrink-0 px-3 py-1 text-xs font-medium rounded-md bg-warning text-white hover:bg-warning/90 transition-colors cursor-pointer"
               >
                 去配置
               </button>
@@ -1186,7 +1186,7 @@ export function ChatView({ groupJid, onBack, headerLeft }: ChatViewProps) {
                   setImBannerDismissed(true);
                   localStorage.setItem('im-banner-dismissed', '1');
                 }}
-                className="flex-shrink-0 p-0.5 rounded hover:bg-amber-200/60 transition-colors cursor-pointer"
+                className="flex-shrink-0 p-0.5 rounded hover:bg-warning/20 transition-colors cursor-pointer"
                 aria-label="关闭"
               >
                 <X className="w-4 h-4" />
