@@ -142,7 +142,7 @@ describe('settings information architecture', () => {
     // 任务AL：窗口声明选择器取代「1M 上下文」后缀开关
     expect(provider).toContain('上下文窗口');
     expect(provider).toContain('CONTEXT_WINDOW_OPTIONS');
-    expect(provider).toContain('系统预填 Claude Code 运行环境');
+    expect(provider).toContain('系统预填 CKQClaw 运行环境');
     expect(providerList).toContain('设为默认');
     expect(providerList).toContain('系统默认');
     expect(providerList).not.toContain('权重');

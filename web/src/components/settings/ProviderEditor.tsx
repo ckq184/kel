@@ -540,7 +540,7 @@ export function ProviderEditor({
           </DialogTitle>
           <DialogDescription className="text-left text-xs leading-5">
             {providerType === 'third_party'
-              ? '填写端点、密钥和模型即可；Claude Code 运行参数会自动预填，也可在高级设置中调整。'
+              ? '填写端点、密钥和模型即可；CKQClaw 运行参数会自动预填，也可在高级设置中调整。'
               : '配置 Claude 官方认证方式与默认模型。'}
           </DialogDescription>
         </DialogHeader>
@@ -934,7 +934,7 @@ export function ProviderEditor({
                   <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-primary" />
                   <div className="min-w-0">
                     <div className="text-xs font-medium text-foreground">
-                      系统预填 Claude Code 运行环境
+                      系统预填 CKQClaw 运行环境
                     </div>
                     <p className="mt-1 text-xs leading-5 text-muted-foreground">
                       实际模型：
