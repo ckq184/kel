@@ -1,8 +1,17 @@
 {
-  "task": "任务AP - 移除监控页「Anthropic 服务状态」卡片：纯前端功能（浏览器直连 status.claude.com 轮询展示第三方状态文案），全部代码仅在 MonitorPage.tsx（import/state/useEffect/Card 四处），无后端/测试/配置牵连；docs/task-ap-remove-anthropic-status-plan.md 为完整方案",
-  "base": "70c697e",
+  "task": "任务AQ - 评测页整页收紧为 admin-only：推翻任务AB「离线 Runs 全员可见」决策，/eval 路由包 AuthGuard(manage_system_config)、GET /runs|/runs/:id|/comparison 三端点加 systemConfigMiddleware、导航项按权限隐藏、AGENTS/CLAUDE/ACL-MATRIX 三处文档同步；docs/task-aq-eval-admin-only-plan.md 为完整方案",
+  "base": "65d1753",
   "allow": [
-    "docs/task-ap-remove-anthropic-status-plan.md",
-    "web/src/pages/MonitorPage.tsx"
+    "docs/task-aq-eval-admin-only-plan.md",
+    "tests/eval-routes.test.ts",
+    "src/routes/eval.ts",
+    "web/src/App.tsx",
+    "web/src/pages/EvalPage.tsx",
+    "web/src/components/layout/nav-items.ts",
+    "web/src/components/layout/UnifiedSidebar.tsx",
+    "web/src/components/layout/BottomTabBar.tsx",
+    "docs/ACL-MATRIX.md",
+    "AGENTS.md",
+    "CLAUDE.md"
   ]
 }
