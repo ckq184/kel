@@ -15,7 +15,6 @@ import {
   CheckCircle,
   Download,
   Loader2,
-  ExternalLink,
 } from 'lucide-react';
 import { PageHeader } from '@/components/common/PageHeader';
 import { SkeletonStatCards } from '@/components/common/Skeletons';
@@ -40,7 +39,6 @@ export function MonitorPage() {
   );
   const logEndRef = useRef<HTMLDivElement>(null);
   const [providers, setProviders] = useState<SimpleProvider[]>([]);
-  const [claudeStatus, setClaudeStatus] = useState<string | null>(null);
 
   useEffect(() => {
     loadStatus();
@@ -51,34 +49,6 @@ export function MonitorPage() {
 
     return () => clearInterval(interval);
   }, [loadStatus]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const loadClaudeStatus = async () => {
-      try {
-        const response = await fetch(
-          'https://status.claude.com/api/v2/status.json',
-        );
-        if (!response.ok) return;
-        const data = (await response.json()) as {
-          status?: { indicator?: string; description?: string };
-        };
-        if (!cancelled) {
-          setClaudeStatus(
-            data.status?.description || data.status?.indicator || null,
-          );
-        }
-      } catch {
-        if (!cancelled) setClaudeStatus(null);
-      }
-    };
-    void loadClaudeStatus();
-    const timer = window.setInterval(loadClaudeStatus, 5 * 60 * 1000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, []);
 
   // WebSocket listeners for Docker Hub pull progress
   useEffect(() => {
@@ -154,29 +124,6 @@ export function MonitorPage() {
 
         {status && (
           <div className="space-y-6">
-            <Card>
-              <CardContent className="flex items-center justify-between gap-4">
-                <div>
-                  <h2 className="text-sm font-semibold text-foreground">
-                    Anthropic 服务状态
-                  </h2>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {claudeStatus ||
-                      '暂时无法读取外部状态，请打开官方状态页确认。'}
-                  </p>
-                </div>
-                <a
-                  href="https://status.claude.com"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-medium text-foreground hover:bg-muted"
-                >
-                  官方状态页
-                  <ExternalLink className="size-3.5" />
-                </a>
-              </CardContent>
-            </Card>
-
             {/* Docker 镜像状态 */}
             {status.dockerRequired === false ? (
               <Card>

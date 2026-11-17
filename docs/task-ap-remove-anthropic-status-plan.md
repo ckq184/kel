@@ -23,18 +23,26 @@
 
 ## 3. 风险
 
-| # | 风险 | 缓解 |
-|---|---|---|
-| R1 | 用户可见功能移除（监控页少一张卡） | 即需求本身 |
-| R2 | 删除后监控页其余卡片回归 | 纯删除不动容器结构；浏览器目检 |
-| R3 | dist 旧产物残留 | verify build 自动重建 |
-| R4 | scope 漂移 | allow 仅 2 路径 + check-scope |
+| #   | 风险                               | 缓解                           |
+| --- | ---------------------------------- | ------------------------------ |
+| R1  | 用户可见功能移除（监控页少一张卡） | 即需求本身                     |
+| R2  | 删除后监控页其余卡片回归           | 纯删除不动容器结构；浏览器目检 |
+| R3  | dist 旧产物残留                    | verify build 自动重建          |
+| R4  | scope 漂移                         | allow 仅 2 路径 + check-scope  |
 
 ## 4. 验收标准
 
 1. `npm run verify` 六步全过；`node scripts/check-scope.mjs` 过
 2. 浏览器目检 `/monitor`：Anthropic 卡片消失，Docker 镜像/队列/系统信息/群组状态卡片正常
 3. 全仓源码 grep `status.claude|claudeStatus` 仅剩本计划文档
+
+### 4.1 验收结果（2026-11-17 执行时实录）
+
+1. ✅ `npm run verify` 6/6 步全绿（33.2s）
+2. ✅ `check-scope`：3 个路径全在声明范围内
+3. ✅ 源码 grep `status.claude|claudeStatus|Anthropic` 在 MonitorPage.tsx 及全仓 src/shared/tests/web 源码 0 命中；verify 重建后的 `web/dist/assets/` 亦 0 命中
+4. ✅ 结构核读：`{status &&}` 容器（space-y-6）首子元素平滑过渡为 Docker 镜像卡，JSX 结构完整
+5. ⚠️ 浏览器登录态目检未执行：`/monitor` 需 `manage_system_config` 权限与后端账号，agent 无权在用户运行库创建账号。以 web tsc（含于 build 步）+ 结构核读替代；纯删除场景风险低，建议用户下次登录后顺手确认监控页观感
 
 ## 5. 执行步骤
 
