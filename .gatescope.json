@@ -4,6 +4,7 @@
   "allow": [
     "docs/task-aq-eval-admin-only-plan.md",
     "tests/eval-routes.test.ts",
+    "tests/eval-frontend.test.tsx",
     "src/routes/eval.ts",
     "web/src/App.tsx",
     "web/src/pages/EvalPage.tsx",

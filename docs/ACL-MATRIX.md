@@ -230,6 +230,7 @@ read-only 投影按 host-issued turn ID 精确匹配当前或已接纳的 queued
 | `/api/pricing/*` 自定义模型单价                   | `manage_system_config`                             |
 | `/api/auto-memory/config` 凭据端点（任务 X）      | `manage_system_config`                             |
 | `/api/docker/pull`、运行监控管理                  | `manage_system_config`                             |
+| `/api/eval/*` 评测中心（任务 AQ 起整页/全部端点） | `manage_system_config`                             |
 | `/api/status/channel-outbox/*` 人工裁决           | `manage_system_config`                             |
 | `POST /api/groups/:jid/reset-owner`               | admin break-glass，同时仍验证目标资源              |
 

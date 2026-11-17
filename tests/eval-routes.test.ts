@@ -161,8 +161,8 @@ describe('GET /runs', () => {
     expect(res.status).toBe(401);
   });
 
-  test('any logged-in user can list runs (newest first)', async () => {
-    const res = await evalRoutes.request('/runs', { headers: MEMBER });
+  test('admins can list runs (newest first)', async () => {
+    const res = await evalRoutes.request('/runs', { headers: ADMIN });
     expect(res.status).toBe(200);
     const body = await res.json();
     const ids = body.runs.map((run: { id: string }) => run.id);
@@ -172,11 +172,16 @@ describe('GET /runs', () => {
     const first = body.runs.find((run: { id: string }) => run.id === 'run-a');
     expect(first).toMatchObject({ name: 'alpha', kind: 'recall', k: 5 });
   });
+
+  test('members without manage_system_config get 403', async () => {
+    const res = await evalRoutes.request('/runs', { headers: MEMBER });
+    expect(res.status).toBe(403);
+  });
 });
 
 describe('GET /runs/:id', () => {
-  test('returns run with items for logged-in users', async () => {
-    const res = await evalRoutes.request('/runs/run-a', { headers: MEMBER });
+  test('returns run with items for admins', async () => {
+    const res = await evalRoutes.request('/runs/run-a', { headers: ADMIN });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.run.id).toBe('run-a');
@@ -191,8 +196,13 @@ describe('GET /runs/:id', () => {
   });
 
   test('unknown run id is 404', async () => {
-    const res = await evalRoutes.request('/runs/missing', { headers: MEMBER });
+    const res = await evalRoutes.request('/runs/missing', { headers: ADMIN });
     expect(res.status).toBe(404);
+  });
+
+  test('members without manage_system_config get 403', async () => {
+    const res = await evalRoutes.request('/runs/run-a', { headers: MEMBER });
+    expect(res.status).toBe(403);
   });
 
   test('unauthenticated callers get 401', async () => {
@@ -204,7 +214,7 @@ describe('GET /runs/:id', () => {
 describe('GET /comparison', () => {
   test('places requested runs side by side; unknown ids stay null', async () => {
     const res = await evalRoutes.request('/comparison?ids=run-a,run-b,nope', {
-      headers: MEMBER,
+      headers: ADMIN,
     });
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -219,8 +229,15 @@ describe('GET /comparison', () => {
   });
 
   test('missing ids query is 400', async () => {
-    const res = await evalRoutes.request('/comparison', { headers: MEMBER });
+    const res = await evalRoutes.request('/comparison', { headers: ADMIN });
     expect(res.status).toBe(400);
+  });
+
+  test('members without manage_system_config get 403', async () => {
+    const res = await evalRoutes.request('/comparison?ids=run-a', {
+      headers: MEMBER,
+    });
+    expect(res.status).toBe(403);
   });
 
   test('unauthenticated callers get 401', async () => {

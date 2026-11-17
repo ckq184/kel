@@ -351,10 +351,11 @@ no-op、零写库**）；env `CKQCLAW_OBSERVABILITY_ENABLED` /
   hash+model 版本化落库、连续失败 5 次熔断 warn-once；复位靠重启或改本
   配置）。judge 只评「注入过召回且已完结且存有文本」的 turn。
 - 离线评测 `npm run eval:auto-recall` 默认写入 eval.db（`--langfuse` 可选
-  导出保留）；看板为 Web 管理台「评测」页（`/eval`，真实对话 tab 仅
-  `manage_system_config`）。评测页另有 admin-only「运行评测」按钮（任务 AC，
-  `POST /api/eval/runs/trigger` 以子进程 spawn 同一脚本，WS 进度
-  `eval_run_log`/`eval_run_complete`，互斥 + 15 分钟超时）。
+  导出保留）；看板为 Web 管理台「评测」页（`/eval`，**整页仅
+  `manage_system_config`**——任务 AQ 起含离线 Runs 与全部 `/api/eval/*`
+  端点，AB 时代「离线 Runs 全员可见」已推翻）。评测页另有 admin-only
+  「运行评测」按钮（任务 AC，`POST /api/eval/runs/trigger` 以子进程 spawn
+  同一脚本，WS 进度 `eval_run_log`/`eval_run_complete`，互斥 + 15 分钟超时）。
 - 评测集管理（任务 AD）：eval.db v2 `eval_datasets` 表存多套 golden set
   （内置 `auto-recall` 由仓库 JSON 播种），「评测集」tab（admin）可视化
   编辑/导入/导出，保存过 `validateGoldenSet`；评测按 `--dataset`/触发弹窗

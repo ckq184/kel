@@ -137,12 +137,17 @@ describe('EvalPage wiring (files + routes)', () => {
     expect(source).toContain('hasPermission');
   });
 
-  test('App.tsx routes /eval with the admin gate only where required', () => {
+  test('App.tsx gates the whole /eval route on manage_system_config', () => {
     const source = fs.readFileSync(path.join(webRoot, 'App.tsx'), 'utf8');
     expect(source).toMatch(
       /lazy\(\s*\(\)\s*=>\s*import\('\.\/pages\/EvalPage'\)/,
     );
     expect(source).toContain('path="/eval"');
+    // Task AQ: the whole page is admin-only — the route wraps EvalPage in
+    // AuthGuard(manage_system_config) instead of per-tab filtering.
+    expect(source).toMatch(
+      /path="\/eval"[\s\S]{0,200}requiredPermission="manage_system_config"/,
+    );
   });
 
   test('nav-items carries the eval entry', () => {
@@ -168,12 +173,18 @@ describe('EvalPage tabs (DOM)', () => {
     expect(container?.textContent).toMatch(/82/);
   });
 
-  test('members never see the observed-turns tab', async () => {
+  test('member store state renders the same tabs — gating lives at the route', async () => {
+    // Task AQ: the page is admin-only at the route (AuthGuard); the component
+    // no longer branches on member state, so a member-store render shows the
+    // same four tabs. Such a render is unreachable in the real app.
     state.isAdmin = false;
     await renderPage();
     const tabButtons = [...container!.querySelectorAll('button[role="tab"]')];
     expect(tabButtons.map((button) => button.textContent)).toEqual([
       '离线评测',
+      '真实对话',
+      '评测集',
+      'Harness 演化',
     ]);
   });
 
@@ -302,7 +313,7 @@ function stubDatasets(apiGetMock: ReturnType<typeof vi.fn>, withDetail = true) {
 }
 
 describe('EvalPage datasets tab (task AD)', () => {
-  test('admins see the datasets tab; members do not', async () => {
+  test('all four tabs render; member gating moved to the route (task AQ)', async () => {
     state.isAdmin = true;
     stubDatasets(apiGet);
     await renderPage();
@@ -316,12 +327,19 @@ describe('EvalPage datasets tab (task AD)', () => {
       'Harness 演化',
     ]);
 
+    // Task AQ: the component no longer filters tabs for member store state —
+    // the /eval route's AuthGuard keeps members out entirely.
     state.isAdmin = false;
     await renderPage();
     const memberTabs = [
       ...container!.querySelectorAll('button[role="tab"]'),
     ].map((button) => button.textContent);
-    expect(memberTabs).toEqual(['离线评测']);
+    expect(memberTabs).toEqual([
+      '离线评测',
+      '真实对话',
+      '评测集',
+      'Harness 演化',
+    ]);
   });
 
   test('dataset list renders builtin set; editor opens with visual rows', async () => {
@@ -559,13 +577,17 @@ describe('EvalPage harness tab (task AE)', () => {
     await act(async () => {});
   }
 
-  test('member never sees the harness tab', async () => {
-    state.isAdmin = false;
-    await renderPage();
-    const tabs = [...container!.querySelectorAll('button[role="tab"]')].map(
-      (button) => button.textContent,
+  test('member access is blocked at the route, not by tab filtering', () => {
+    // Task AQ: "member never sees the harness tab" is now enforced by the
+    // /eval route guard — assert the guard exists in App.tsx instead of a
+    // member DOM render (which the route makes unreachable).
+    const source = fs.readFileSync(
+      path.resolve(__dirname, '../web/src/App.tsx'),
+      'utf8',
     );
-    expect(tabs).not.toContain('Harness 演化');
+    expect(source).toMatch(
+      /path="\/eval"[\s\S]{0,200}requiredPermission="manage_system_config"/,
+    );
   });
 
   async function loadWorkspaceData(): Promise<void> {

@@ -17,12 +17,14 @@
 - `web/src/pages/EvalPage.tsx:2288-2299`：tabs 数组 member 分支仅「离线评测」；其余 tab/端点（turns/datasets/harness/trigger）本就 admin-only
 - WS 进度广播（`src/web.ts` `safeBroadcast` adminOnly=true 按 admin 角色过滤）已不达 member，无需动
 - 测试：`tests/eval-routes.test.ts` 用 `x-test-user` 头构造 ADMIN/MEMBER（:103-127）；:255 有 member 403 断言先例；:164-229 的 MEMBER 200/404/400 用例需改
+- **执行期补充（2026-11-17）**：另发现 `tests/eval-frontend.test.tsx`（29 用例，位于根 `tests/`——勘察时只搜了 `web/` 故漏报）断言旧契约「member 仅见离线评测 tab」，其中 3 用例随新契约改写（tabs 不再按 member 状态分支，门控上移至 /eval 路由 AuthGuard，以 App.tsx 源码断言 + member 态恒四 tab 的 DOM 断言表达）；已补入 allow 列表
 
 ## 2. 方案
 
 ### 2.1 后端（TDD）
 
 测试先行（`tests/eval-routes.test.ts`）：
+
 - `any logged-in user can list runs`（:164）→ 拆为 admin 200（断言原样）+ member 403
 - `/runs/:id` 三用例：`returns run with items`（:178 MEMBER 200）→ ADMIN 头；`unknown run id is 404`（:193）→ ADMIN 头 + 新增 member 403 用例；401 用例不动
 - `/comparison` 同法：`places requested runs side by side`（:205）→ ADMIN；`missing ids query is 400`（:221）→ ADMIN + 新增 member 403；401 不动
@@ -44,19 +46,26 @@
 
 ## 3. 风险
 
-| # | 风险 | 缓解 |
-|---|---|---|
-| R1 | member 失去离线评测入口（用户可见功能移除） | 即需求本身；导航项同步隐藏 |
-| R2 | member 旧标签页收 403 错误横幅 | 刷新即被 AuthGuard 拦截，不做迁移逻辑 |
-| R3 | WS 按 admin 角色 vs REST 按权限的既有口径差异 | 本次不动（行为不变），本文档注明 |
-| R4 | nav 权限字段为新增通用机制 | 缺省不过滤，向后兼容；tsc 兜底 |
-| R5 | 三处文档漂移 | 同批更新 + docs:check |
+| #   | 风险                                          | 缓解                                  |
+| --- | --------------------------------------------- | ------------------------------------- |
+| R1  | member 失去离线评测入口（用户可见功能移除）   | 即需求本身；导航项同步隐藏            |
+| R2  | member 旧标签页收 403 错误横幅                | 刷新即被 AuthGuard 拦截，不做迁移逻辑 |
+| R3  | WS 按 admin 角色 vs REST 按权限的既有口径差异 | 本次不动（行为不变），本文档注明      |
+| R4  | nav 权限字段为新增通用机制                    | 缺省不过滤，向后兼容；tsc 兜底        |
+| R5  | 三处文档漂移                                  | 同批更新 + docs:check                 |
 
 ## 4. 验收标准
 
 1. `tests/eval-routes.test.ts`：三端点 401（未登录）/ 403（member）/ 200·404·400（admin）全形状覆盖，全绿
 2. `npm run verify` 六步全过；`node scripts/check-scope.mjs` 过
 3. 权限行为以测试用例为判定依据（浏览器双账号目检不可行，同任务 AP 原因）
+
+### 4.1 验收结果（2026-11-17 执行时实录）
+
+1. ✅ TDD 全程：`tests/eval-routes.test.ts` 3 个新 member-403 用例先红后绿，终态 51/51；三端点 401/403/200/404/400 全形状覆盖
+2. ✅ `tests/eval-frontend.test.tsx`（执行期新发现，见 §1 补充）3 用例随新契约改写后 80/80（与 eval-routes 合跑）
+3. ✅ `npm run verify` 6/6 全绿（34.4s，中途一次 typecheck 红——nav 过滤谓词须用 `Permission` 联合类型而非 string，已修正；一次 test 红即上述前端测试）
+4. ✅ `check-scope`：13 路径全在声明范围内（含执行期补入的 eval-frontend.test.tsx，扩宽理由已写入任务 commit message）
 
 ## 5. 执行步骤
 

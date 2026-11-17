@@ -19,10 +19,11 @@ import {
  * turns from src/turn-observer.ts; both share eval.db with this route through
  * per-process connections.
  *
- * ACL split (user-ratified plan §1-2): the offline Runs endpoints are visible
- * to every logged-in user; the turns endpoint and both trigger endpoints
- * (cost-bearing action + golden-query log lines) require
- * manage_system_config (the Monitor page precedent).
+ * ACL (task AQ, 2026-11-17, supersedes the task AB split): every endpoint
+ * below — including the read-only offline Runs endpoints — requires
+ * manage_system_config (the Monitor page precedent). Task AB had opened the
+ * Runs endpoints to all logged-in users; the user reversed that decision,
+ * see docs/task-aq-eval-admin-only-plan.md.
  */
 
 const RUN_NAME_PATTERN = /^[\w-]{1,64}$/;
@@ -30,7 +31,7 @@ const RUN_NAME_PATTERN = /^[\w-]{1,64}$/;
 const evalRoutes = new Hono<{ Variables: Variables }>();
 
 // GET /runs — offline eval run list, newest first
-evalRoutes.get('/runs', authMiddleware, (c) => {
+evalRoutes.get('/runs', authMiddleware, systemConfigMiddleware, (c) => {
   const limitParam = Number(c.req.query('limit') ?? '100');
   const limit =
     Number.isInteger(limitParam) && limitParam >= 1
@@ -40,14 +41,14 @@ evalRoutes.get('/runs', authMiddleware, (c) => {
 });
 
 // GET /runs/:id — one run with its per-query items
-evalRoutes.get('/runs/:id', authMiddleware, (c) => {
+evalRoutes.get('/runs/:id', authMiddleware, systemConfigMiddleware, (c) => {
   const loaded = getDefaultEvalStore().getRun(c.req.param('id'));
   if (!loaded) return c.json({ error: 'run not found' }, 404);
   return c.json(loaded);
 });
 
 // GET /comparison?ids=a,b,c — side-by-side overall metrics per run
-evalRoutes.get('/comparison', authMiddleware, (c) => {
+evalRoutes.get('/comparison', authMiddleware, systemConfigMiddleware, (c) => {
   const idsRaw = c.req.query('ids');
   if (!idsRaw || !idsRaw.trim()) {
     return c.json({ error: 'ids query parameter is required' }, 400);

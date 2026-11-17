@@ -181,15 +181,17 @@ const appRoutes = createRoutesFromElements(
           </AuthGuard>
         }
       />
-      {/* Task AB evaluation center: offline runs are visible to every logged-in
-          user; the observed-turns tab gates itself on manage_system_config
-          (mirroring the /api/eval/turns 403). */}
+      {/* Task AQ (2026-11-17): the whole evaluation center is admin-only,
+          offline runs included — supersedes the task AB all-users split and
+          mirrors the systemConfigMiddleware on every /api/eval/* endpoint. */}
       <Route
         path="/eval"
         element={
-          <Suspense fallback={null}>
-            <EvalPage />
-          </Suspense>
+          <AuthGuard requiredPermission="manage_system_config">
+            <Suspense fallback={null}>
+              <EvalPage />
+            </Suspense>
+          </AuthGuard>
         }
       />
       <Route

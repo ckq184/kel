@@ -9,13 +9,9 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 
 /**
- * Native evaluation center (task AB).
- *
- * Tab 1「离线评测」— offline recall runs written by scripts/eval-auto-recall
- * into eval.db; every logged-in user can compare them.
- * Tab 2「真实对话」— observed real-conversation turns. Rows can carry
- * redacted conversation text, so the tab renders only for
- * manage_system_config (Monitor page precedent).
+ * Native evaluation center (task AB; whole page admin-only since task AQ,
+ * 2026-11-17 — /eval is wrapped in AuthGuard(manage_system_config) in
+ * App.tsx and every /api/eval/* endpoint enforces the same permission).
  */
 
 interface EvalRunSummaryStat {
@@ -2286,16 +2282,13 @@ export function EvalPage() {
   }, [reloadDatasets]);
 
   const tabs = useMemo(
-    () =>
-      canManageSystem
-        ? [
-            { key: 'runs' as const, label: '离线评测' },
-            { key: 'turns' as const, label: '真实对话' },
-            { key: 'datasets' as const, label: '评测集' },
-            { key: 'harness' as const, label: 'Harness 演化' },
-          ]
-        : [{ key: 'runs' as const, label: '离线评测' }],
-    [canManageSystem],
+    () => [
+      { key: 'runs' as const, label: '离线评测' },
+      { key: 'turns' as const, label: '真实对话' },
+      { key: 'datasets' as const, label: '评测集' },
+      { key: 'harness' as const, label: 'Harness 演化' },
+    ],
+    [],
   );
 
   return (
