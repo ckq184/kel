@@ -97,7 +97,6 @@ import {
   TaskRunLog,
   TaskRunNotificationSummary,
 } from './types.js';
-import { checkBillingAccessFresh, isBillingEnabled } from './billing.js';
 import { checkOwnerActive } from './owner-gate.js';
 import {
   canExecuteOnHost,
@@ -1075,55 +1074,6 @@ async function runTaskInner(
     }
   }
 
-  // Billing quota check before running task. Gated on the workspace's real
-  // owner so an admin-created cross-group task still charges/limits the
-  // member workspace it actually runs in and consumes resources for.
-  if (isBillingEnabled() && workspaceOwnerId) {
-    const owner = getUserById(workspaceOwnerId);
-    if (owner && owner.role !== 'admin') {
-      const accessResult = checkBillingAccessFresh(
-        workspaceOwnerId,
-        owner.role,
-      );
-      if (!accessResult.allowed) {
-        const reason = accessResult.reason || '当前账户不可用';
-        logger.info(
-          {
-            taskId: task.id,
-            userId: workspaceOwnerId,
-            reason,
-            blockType: accessResult.blockType,
-          },
-          'Billing access denied, blocking scheduled task',
-        );
-        safeUpdateTaskRunLog(task.id, runLogId, {
-          duration_ms: Date.now() - startTime,
-          status: 'error',
-          result: null,
-          error: `计费限制: ${reason}`,
-        });
-        try {
-          // Still compute next run so the task isn't stuck (but preserve for manual runs)
-          const nextRun = safeComputeNextRun(task, options?.manualRun);
-          finalizeRecurringRun(
-            task,
-            nextRun,
-            `Error: 计费限制: ${reason}`,
-            preserveDefinitionCursor,
-          );
-        } catch (err) {
-          logger.error(
-            { taskId: task.id, err },
-            'updateTaskAfterRun failed in billing-gate',
-          );
-        } finally {
-          runningTaskIds.delete(task.id);
-        }
-        return;
-      }
-    }
-  }
-
   // Update tasks snapshot for container to read (filtered by group)
   const isHome = !!workspaceGroup.is_home;
   const workspaceOwner = workspaceOwnerId
@@ -1762,56 +1712,6 @@ async function runScriptTaskInner(
           );
         }
         return;
-      }
-    }
-  }
-
-  // Billing quota check before running script task. Gated on the group's
-  // real owner so a cross-group admin-created script task still charges
-  // the target group's own quota rather than silently skipping because the
-  // task's creator happens to be an admin.
-  if (isBillingEnabled() && task.group_folder) {
-    const groups = deps.registeredGroups();
-    const group = groups[groupJid];
-    const ownerId = group?.created_by;
-    if (ownerId) {
-      const owner = getUserById(ownerId);
-      if (owner && owner.role !== 'admin') {
-        const accessResult = checkBillingAccessFresh(ownerId, owner.role);
-        if (!accessResult.allowed) {
-          const reason = accessResult.reason || '当前账户不可用';
-          logger.info(
-            {
-              taskId: task.id,
-              userId: ownerId,
-              reason,
-              blockType: accessResult.blockType,
-            },
-            'Billing access denied, blocking script task',
-          );
-          safeUpdateTaskRunLog(task.id, runLogId, {
-            duration_ms: Date.now() - startTime,
-            status: 'error',
-            result: null,
-            error: `计费限制: ${reason}`,
-          });
-          runningTaskIds.delete(task.id);
-          const nextRun = safeComputeNextRun(task, manualRun);
-          try {
-            finalizeRecurringRun(
-              task,
-              nextRun,
-              `Error: 计费限制: ${reason}`,
-              preserveDefinitionCursor,
-            );
-          } catch (err) {
-            logger.error(
-              { taskId: task.id, err },
-              'updateTaskAfterRun failed in script billing-gate',
-            );
-          }
-          return;
-        }
       }
     }
   }

@@ -6,14 +6,12 @@ import { authMiddleware } from '../middleware/auth.js';
 import {
   getUsageAnalytics,
   getUsageDateWindow,
-  getUserById,
   getUsageModelsForFilters,
   getUsageRecordsPage,
   getUsageUsers,
   type UsageQueryFilters,
 } from '../db.js';
 import type { AuthUser } from '../types.js';
-import { isBillingEnabled } from '../billing.js';
 
 const usage = new Hono<{ Variables: Variables }>();
 usage.use('*', authMiddleware);
@@ -114,23 +112,9 @@ usage.get('/stats', (c) => {
     totalMessages: data.summary.runCount,
     totalActiveDays: data.summary.activeDays,
   };
-  const billingEnabled = isBillingEnabled();
-  const billingApplicable = (() => {
-    if (!billingEnabled) return false;
-    if (user.role !== 'admin') return true;
-    if (!filters.userId) return true;
-    if (filters.userId === user.id) return false;
-    return getUserById(filters.userId)?.role === 'member';
-  })();
   return c.json({
     window,
     generatedAt: new Date().toISOString(),
-    billing: {
-      enabled: billingEnabled,
-      applicable: billingApplicable,
-      providerCostSemantics: 'kaboo-utc-30m-rounded-estimate',
-      billedCostSemantics: 'actual-charge',
-    },
     scope: {
       userId: filters.userId || null,
       model: filters.model || null,

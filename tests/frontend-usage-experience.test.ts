@@ -96,12 +96,6 @@ function enhancedResponse(days: number, inputTokens: number) {
       workspaces: [],
       sources: [],
     },
-    billing: {
-      enabled: false,
-      applicable: false,
-      providerCostSemantics: 'kaboo-utc-30m-rounded-estimate',
-      billedCostSemantics: 'actual-charge',
-    },
   };
 }
 
@@ -323,8 +317,6 @@ describe('usage page product and accessibility surface', () => {
     expect(page).toContain('min-h-11');
     expect(page).toContain('overflow-x-auto');
     expect(page).toContain('导出 CSV');
-    expect(page).toContain('账单扣费：不适用（未启用计费）');
-    expect(page).toMatch(/visibleBilling\?\.applicable \?\? billingEnabled/);
     expect(page).toMatch(/exportError\.status === 404/);
     expect(page).toMatch(/exportError\.status === 413/);
     expect(page).toMatch(

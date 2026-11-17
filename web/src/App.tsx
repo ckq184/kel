@@ -51,7 +51,6 @@ const AgentProfilesPage = lazy(() =>
     default: m.AgentProfilesPage,
   })),
 );
-const BillingPage = lazy(() => import('./pages/BillingPage'));
 const UsagePage = lazy(() =>
   import('./pages/UsagePage').then((m) => ({ default: m.UsagePage })),
 );
@@ -183,14 +182,6 @@ const appRoutes = createRoutesFromElements(
         element={
           <Suspense fallback={<UsageRouteFallback />}>
             <UsagePage />
-          </Suspense>
-        }
-      />
-      <Route
-        path="/billing"
-        element={
-          <Suspense fallback={null}>
-            <BillingPage />
           </Suspense>
         }
       />

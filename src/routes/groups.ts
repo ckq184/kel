@@ -18,7 +18,6 @@ import type {
   ExecutionMode,
   InteractionMode,
 } from '../types.js';
-import { checkGroupLimit } from '../billing.js';
 import { DATA_DIR, GROUPS_DIR, isDockerAvailable } from '../config.js';
 import {
   isHostExecutionGroup,
@@ -609,12 +608,6 @@ groupRoutes.post('/', authMiddleware, async (c) => {
     : getOrCreateDefaultAgentProfile(authUser.id);
   if (!agentProfile) {
     return c.json({ error: '智能体配置不存在' }, 404);
-  }
-
-  // Billing: check group limit
-  const groupLimit = checkGroupLimit(authUser.id, authUser.role);
-  if (!groupLimit.allowed) {
-    return c.json({ error: groupLimit.reason }, 403);
   }
 
   // Host paths are a privileged server capability. Check authorization and

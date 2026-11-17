@@ -1,6 +1,5 @@
 import {
   Coins,
-  CreditCard,
   Gauge,
   Info,
   MessageSquare,
@@ -73,11 +72,6 @@ const systemItems: NavItem[] = [
     icon: <ServerCog className="size-4" />,
   },
   {
-    key: 'billing',
-    label: '计费管理',
-    icon: <CreditCard className="size-4" />,
-  },
-  {
     key: 'pricing',
     label: '模型单价',
     icon: <Coins className="size-4" />,
@@ -104,7 +98,6 @@ interface SettingsNavProps {
   activeTab: SettingsTab;
   onTabChange: (tab: SettingsTab) => void;
   canManageSystemConfig: boolean;
-  canManageBilling: boolean;
   canManageUsers: boolean;
   isAdmin: boolean;
   mustChangePassword: boolean;
@@ -116,7 +109,6 @@ export function SettingsNav({
   activeTab,
   onTabChange,
   canManageSystemConfig,
-  canManageBilling,
   canManageUsers,
   isAdmin,
   mustChangePassword,
@@ -124,7 +116,6 @@ export function SettingsNav({
   onOpenChange,
 }: SettingsNavProps) {
   const system = systemItems.filter((item) => {
-    if (item.key === 'billing') return canManageBilling;
     if (item.key === 'main-agent' || item.key === 'host-integration') {
       return isAdmin;
     }

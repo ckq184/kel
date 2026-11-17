@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
 import { Menu } from 'lucide-react';
 import { toast } from 'sonner';
@@ -24,8 +24,6 @@ import { UsersPage } from './UsersPage';
 import { MonitorPage } from './MonitorPage';
 import type { SettingsTab } from '../components/settings/types';
 
-const BillingPage = lazy(() => import('./BillingPage'));
-
 const VALID_TABS: SettingsTab[] = [
   'claude',
   'registration',
@@ -33,7 +31,6 @@ const VALID_TABS: SettingsTab[] = [
   'system',
   'main-agent',
   'host-integration',
-  'billing',
   'pricing',
   'profile',
   'preferences',
@@ -60,7 +57,7 @@ const SYSTEM_TABS: SettingsTab[] = [
   'host-integration',
   'pricing',
 ];
-const FULLPAGE_TABS: SettingsTab[] = ['users', 'monitor', 'billing'];
+const FULLPAGE_TABS: SettingsTab[] = ['users', 'monitor'];
 
 const LEGACY_TAB_ROUTES: Partial<Record<SettingsTab, string>> = {
   groups: '/chat',
@@ -75,9 +72,6 @@ const LEGACY_TAB_ROUTES: Partial<Record<SettingsTab, string>> = {
 
 export function SettingsPage() {
   const { user: currentUser } = useAuthStore();
-  const hasBillingPermission = useAuthStore((state) =>
-    state.hasPermission('manage_billing'),
-  );
   const [searchParams, setSearchParams] = useSearchParams();
   const [navOpen, setNavOpen] = useState(false);
 
@@ -87,7 +81,6 @@ export function SettingsPage() {
   const mustChangePassword = !!currentUser?.must_change_password;
   const canManageSystemConfig =
     hasSystemConfigPermission && !mustChangePassword;
-  const canManageBilling = hasBillingPermission && !mustChangePassword;
   const canManageUsers =
     currentUser?.role === 'admin' ||
     !!currentUser?.permissions.includes('manage_users') ||
@@ -115,7 +108,6 @@ export function SettingsPage() {
         return defaultTab;
       }
       if (raw === 'monitor' && !canManageSystemConfig) return defaultTab;
-      if (raw === 'billing' && !canManageBilling) return defaultTab;
       if (raw === 'users' && !canManageUsers) return defaultTab;
       return raw;
     }
@@ -124,7 +116,6 @@ export function SettingsPage() {
     rawTab,
     canManageSystemConfig,
     canManageUsers,
-    canManageBilling,
     mustChangePassword,
     defaultTab,
     currentUser?.role,
@@ -145,7 +136,6 @@ export function SettingsPage() {
     system: '运行与容量',
     'main-agent': '主 CKQClaw',
     'host-integration': '宿主机集成',
-    billing: '计费管理',
     pricing: '模型单价',
     profile: '个人资料',
     preferences: '常规',
@@ -198,7 +188,6 @@ export function SettingsPage() {
         activeTab={activeTab}
         onTabChange={handleTabChange}
         canManageSystemConfig={canManageSystemConfig}
-        canManageBilling={canManageBilling}
         canManageUsers={!!canManageUsers}
         isAdmin={currentUser?.role === 'admin'}
         mustChangePassword={mustChangePassword}
@@ -211,11 +200,6 @@ export function SettingsPage() {
           <>
             {activeTab === 'users' && <UsersPage />}
             {activeTab === 'monitor' && <MonitorPage />}
-            {activeTab === 'billing' && (
-              <Suspense fallback={null}>
-                <BillingPage managementOnly />
-              </Suspense>
-            )}
           </>
         ) : (
           <div className="px-4 py-6 sm:px-6 lg:px-10 lg:py-8">

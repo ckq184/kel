@@ -8,11 +8,6 @@ import {
   type UsageModelRecordInput,
 } from './db.js';
 import {
-  deductUsageCost,
-  getUserEffectivePlan,
-  isBillingEnabled,
-} from './billing.js';
-import {
   estimateKabooModelCostCents,
   kabooCostCentsToUSD,
   priceKabooUsageByModel,
@@ -148,15 +143,6 @@ export function recordUsageEvent(options: RecordUsageEventOptions): {
     customPricing,
   );
   const user = getUserById(options.userId);
-  const effective = user ? getUserEffectivePlan(options.userId) : null;
-  const shouldCharge =
-    Boolean(user) &&
-    user?.role !== 'admin' &&
-    isBillingEnabled() &&
-    Boolean(effective);
-  const rateMultiplier = shouldCharge
-    ? safe(effective?.plan.rate_multiplier ?? 1)
-    : 0;
   const models: UsageModelRecordInput[] = priced.models.map((model) => {
     const previous = getUsagePricingBucketTotals({
       userId: options.userId,
@@ -197,7 +183,9 @@ export function recordUsageEvent(options: RecordUsageEventOptions): {
       cacheCreationInputTokens: model.cacheCreationInputTokens,
       reasoningTokens: model.reasoningTokens,
       providerEstimatedCostUSD: incrementalCostUSD,
-      billedCostUSD: incrementalCostUSD * rateMultiplier,
+      // Billing subscriptions were removed (thesis-lite); no plan multiplier
+      // applies, so the billed column mirrors the provider estimate.
+      billedCostUSD: incrementalCostUSD,
     };
   });
   const providerEstimatedCostUSD = models.reduce(
@@ -228,20 +216,8 @@ export function recordUsageEvent(options: RecordUsageEventOptions): {
     createdAt,
     models,
     trackBillingUsage: Boolean(user),
-    chargeBalance: shouldCharge,
+    chargeBalance: false,
   });
-
-  // The wallet mutation already committed atomically in recordUsageEventBatch.
-  // This compatibility call emits the existing billing audit/access hooks;
-  // only run it for a newly inserted event so replays cannot duplicate audits.
-  if (result.inserted && shouldCharge && billedCostUSD > 0) {
-    deductUsageCost(
-      options.userId,
-      providerEstimatedCostUSD,
-      eventId,
-      effective,
-    );
-  }
 
   return {
     eventId,

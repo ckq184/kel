@@ -8,7 +8,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { formatTokens } from '../billing/utils';
+import { formatTokens } from './format';
 
 export type UsageTrendMetric = 'tokens' | 'cost' | 'runs';
 

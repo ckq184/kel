@@ -5,7 +5,6 @@ import fs from 'fs/promises';
 import type { Variables } from '../web-context.js';
 import type { AuthUser } from '../types.js';
 import { authMiddleware } from '../middleware/auth.js';
-import { checkMcpServerLimit } from '../billing.js';
 import { getAllUsers, listAgentProfilesForUser } from '../db.js';
 import { getEffectiveExternalDir } from '../runtime-config.js';
 import { loadHostClaudeMcpServers } from '../mcp-context.js';
@@ -426,17 +425,6 @@ mcpServersRoutes.post('/', authMiddleware, async (c) => {
     throw error;
   }
 
-  // Billing: check MCP server limit
-  const existingStore = await readMcpServersFile(ownerId);
-  const currentCount = Object.keys(existingStore.definitions.servers).length;
-  if (scope === 'user' && !existingStore.definitions.servers[id]) {
-    // Only check limit for new servers, not updates
-    const limit = checkMcpServerLimit(authUser.id, authUser.role, currentCount);
-    if (!limit.allowed) {
-      return c.json({ error: limit.reason }, 403);
-    }
-  }
-
   const isHttpType = type === 'http' || type === 'sse';
 
   if (isHttpType) {
@@ -849,15 +837,6 @@ mcpServersRoutes.post('/sync-host', authMiddleware, async (c) => {
       continue;
     }
     if (store.definitions.servers[id]) {
-      stats.skipped++;
-      continue;
-    }
-    const limit = checkMcpServerLimit(
-      authUser.id,
-      authUser.role,
-      Object.keys(store.definitions.servers).length,
-    );
-    if (!limit.allowed) {
       stats.skipped++;
       continue;
     }

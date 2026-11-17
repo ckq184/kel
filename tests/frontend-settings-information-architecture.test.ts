@@ -32,7 +32,6 @@ describe('settings information architecture', () => {
   test('uses the app scroll root and keeps settings content out of shell cards', () => {
     const appLayout = read('web/src/components/layout/AppLayout.tsx');
     const settings = read('web/src/pages/SettingsPage.tsx');
-    const billing = read('web/src/pages/BillingPage.tsx');
 
     expect(appLayout).toContain('data-app-scroll-root="true"');
     expect(settings).toContain('data-settings-page="true"');
@@ -42,7 +41,6 @@ describe('settings information architecture', () => {
     expect(settings).not.toContain(
       'h-full bg-background flex flex-col lg:flex-row overflow-hidden',
     );
-    expect(billing).not.toContain('flex-1 overflow-y-auto');
   });
 
   test('moves product resources out of settings while preserving old links', () => {

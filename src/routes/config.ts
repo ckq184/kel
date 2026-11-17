@@ -136,7 +136,6 @@ import {
   restoreDefaultChannelMount,
   type NativeContextMetadata,
 } from '../channel-mount-service.js';
-import { checkImChannelLimit, isBillingEnabled } from '../billing.js';
 import { providerPool } from '../provider-pool.js';
 import { getClientIp } from '../utils.js';
 import {
@@ -159,25 +158,6 @@ import {
   restorePendingAdminHostOnlyRuntimeSafetyBlocks,
 } from '../admin-host-only-runtime.js';
 const configRoutes = new Hono<{ Variables: Variables }>();
-
-/**
- * Count how many IM channels are currently enabled for a user, excluding the given channel.
- * Used for billing limit checks when enabling a new channel.
- */
-function countOtherEnabledImChannels(
-  userId: string,
-  excludeChannel: 'feishu' | 'qq' | 'wechat' | 'dingtalk',
-): number {
-  let count = 0;
-  if (excludeChannel !== 'feishu' && getUserFeishuConfig(userId)?.enabled)
-    count++;
-  if (excludeChannel !== 'wechat' && getUserWeChatConfig(userId)?.enabled)
-    count++;
-  if (excludeChannel !== 'qq' && getUserQQConfig(userId)?.enabled) count++;
-  if (excludeChannel !== 'dingtalk' && getUserDingTalkConfig(userId)?.enabled)
-    count++;
-  return count;
-}
 
 // Inject deps at runtime
 let deps: any = null;
@@ -2549,21 +2529,6 @@ configRoutes.put('/user-im/feishu', authMiddleware, async (c) => {
     );
   }
 
-  // Billing: check IM channel limit when enabling
-  if (validation.data.enabled === true && isBillingEnabled()) {
-    const currentFeishu = getUserFeishuConfig(user.id);
-    if (!currentFeishu?.enabled) {
-      const limit = checkImChannelLimit(
-        user.id,
-        user.role,
-        countOtherEnabledImChannels(user.id, 'feishu'),
-      );
-      if (!limit.allowed) {
-        return c.json({ error: limit.reason }, 403);
-      }
-    }
-  }
-
   const current = getUserFeishuConfig(user.id);
   const next: Record<string, unknown> = {
     appId: current?.appId || '',
@@ -2743,21 +2708,6 @@ configRoutes.put('/user-im/qq', authMiddleware, async (c) => {
       { error: 'Invalid request body', details: validation.error.format() },
       400,
     );
-  }
-
-  // Billing: check IM channel limit when enabling
-  if (validation.data.enabled === true && isBillingEnabled()) {
-    const currentQQ = getUserQQConfig(user.id);
-    if (!currentQQ?.enabled) {
-      const limit = checkImChannelLimit(
-        user.id,
-        user.role,
-        countOtherEnabledImChannels(user.id, 'qq'),
-      );
-      if (!limit.allowed) {
-        return c.json({ error: limit.reason }, 403);
-      }
-    }
   }
 
   const current = getUserQQConfig(user.id);
@@ -3064,21 +3014,6 @@ configRoutes.put('/user-im/dingtalk', authMiddleware, async (c) => {
     );
   }
 
-  // Billing: check IM channel limit when enabling
-  if (validation.data.enabled === true && isBillingEnabled()) {
-    const current = getUserDingTalkConfig(user.id);
-    if (!current?.enabled) {
-      const limit = checkImChannelLimit(
-        user.id,
-        user.role,
-        countOtherEnabledImChannels(user.id, 'dingtalk'),
-      );
-      if (!limit.allowed) {
-        return c.json({ error: limit.reason }, 403);
-      }
-    }
-  }
-
   const current = getUserDingTalkConfig(user.id);
   const next = {
     clientId: current?.clientId || '',
@@ -3232,21 +3167,6 @@ configRoutes.put('/user-im/wechat', authMiddleware, async (c) => {
       { error: 'Invalid request body', details: validation.error.format() },
       400,
     );
-  }
-
-  // Billing: check IM channel limit when enabling
-  if (validation.data.enabled === true && isBillingEnabled()) {
-    const currentWc = getUserWeChatConfig(user.id);
-    if (!currentWc?.enabled) {
-      const limit = checkImChannelLimit(
-        user.id,
-        user.role,
-        countOtherEnabledImChannels(user.id, 'wechat'),
-      );
-      if (!limit.allowed) {
-        return c.json({ error: limit.reason }, 403);
-      }
-    }
   }
 
   const current = getUserWeChatConfig(user.id);

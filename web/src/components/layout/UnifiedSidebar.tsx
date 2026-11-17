@@ -3,7 +3,6 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { PanelLeftClose, Bug, LogOut, Plus, UserCog } from 'lucide-react';
 import { useChatStore } from '../../stores/chat';
 import { useAuthStore } from '../../stores/auth';
-import { useBillingStore } from '../../stores/billing';
 import { useGroupsStore } from '../../stores/groups';
 import { useClearWorkspace } from '../../hooks/useClearWorkspace';
 import { ConfirmDialog } from '@/components/common';
@@ -55,15 +54,14 @@ export function UnifiedSidebar({
   const user = useAuthStore((s) => s.user);
   const appearance = useAuthStore((s) => s.appearance);
   const hasPermission = useAuthStore((s) => s.hasPermission);
-  const billingEnabled = useBillingStore((s) => s.billingEnabled);
   const [showBugReport, setShowBugReport] = useState(false);
   const userInitial = (user?.display_name ||
     user?.username ||
     '?')[0].toUpperCase();
 
   const navItems = useMemo(
-    () => filterNavItems(billingEnabled, hasPermission),
-    [billingEnabled, hasPermission],
+    () => filterNavItems(hasPermission),
+    [hasPermission],
   );
 
   const [createOpen, setCreateOpen] = useState(false);

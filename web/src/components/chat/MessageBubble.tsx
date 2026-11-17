@@ -7,7 +7,6 @@ import {
   Ellipsis,
   ImageDown,
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
 import {
   Tooltip,
   TooltipContent,
@@ -336,80 +335,6 @@ export const MessageBubble = memo(
                 <p className="text-sm text-error/80 leading-relaxed">
                   {errorMsg}
                 </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    // Billing system message (quota exceeded / insufficient balance)
-    if (message.sender === '__billing__') {
-      const displayMsg = message.content.replace(/^⚠️\s*/, '');
-      const isBalanceBlocked = displayMsg.includes('充值余额后继续使用');
-      // Detect which quota window was exceeded
-      const windowLabels: Record<string, string> = {
-        daily: '日度',
-        weekly: '周度',
-        monthly: '月度',
-      };
-      let exceededWindow = '';
-      if (displayMsg.includes('日度')) exceededWindow = 'daily';
-      else if (displayMsg.includes('周度')) exceededWindow = 'weekly';
-      else if (displayMsg.includes('月度')) exceededWindow = 'monthly';
-      const windowTag = isBalanceBlocked
-        ? '余额'
-        : windowLabels[exceededWindow] || '配额';
-      // Extract reset hint if present (e.g. "约 3 小时后重置" or "约 1 天后重置")
-      const resetMatch = displayMsg.match(/约\s*(\d+)\s*(小时|天)后重置/);
-      return (
-        <div className="mb-6">
-          {showTime && (
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-xs text-muted-foreground">{time}</span>
-              <span className="text-xs font-medium text-warning">
-                {isBalanceBlocked ? '余额提醒' : '配额提醒'}
-              </span>
-            </div>
-          )}
-          <div className="relative bg-warning-bg/60 rounded-xl border border-warning/40 border-l-[3px] border-l-warning px-5 py-4">
-            <div className="flex items-start gap-3">
-              <div className="flex-shrink-0 w-6 h-6 bg-warning rounded-full flex items-center justify-center text-white font-bold text-sm">
-                !
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <h3 className="text-sm font-semibold text-warning">
-                    {isBalanceBlocked ? '余额不足' : `${windowTag}配额已用完`}
-                  </h3>
-                  {!isBalanceBlocked && exceededWindow && (
-                    <span
-                      className={`px-1.5 py-0.5 text-[10px] rounded-full font-medium ${
-                        exceededWindow === 'daily'
-                          ? 'bg-info-bg text-info'
-                          : exceededWindow === 'weekly'
-                            ? 'bg-warning-bg text-warning'
-                            : 'bg-error-bg text-error'
-                      }`}
-                    >
-                      {windowTag}限额
-                    </span>
-                  )}
-                </div>
-                <p className="text-sm text-warning/90 leading-relaxed">
-                  {displayMsg}
-                </p>
-                {resetMatch && (
-                  <p className="text-xs text-warning/80 mt-1">
-                    预计 {resetMatch[1]} {resetMatch[2]}后自动重置
-                  </p>
-                )}
-                <Link
-                  to="/billing"
-                  className="inline-block mt-2 text-sm text-primary hover:underline font-medium"
-                >
-                  查看账单 &rarr;
-                </Link>
               </div>
             </div>
           </div>

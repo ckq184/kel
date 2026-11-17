@@ -409,7 +409,7 @@ describe('v51 usage event accounting', () => {
     );
   });
 
-  test('custom Agent uses the same idempotent analytics and balance path', () => {
+  test('custom Agent uses the same idempotent analytics path', () => {
     const options = {
       eventId: 'custom-agent-paid-turn',
       userId: 'member-usage',
@@ -460,26 +460,6 @@ describe('v51 usage event accounting', () => {
       }).inserted,
     ).toBe(true);
 
-    const charges = probe
-      .prepare(
-        "SELECT * FROM balance_transactions WHERE idempotency_key LIKE 'usage_event_custom-agent-paid-turn%' ORDER BY id",
-      )
-      .all() as any[];
-    expect(charges).toHaveLength(2);
-    expect(charges[0].reference_type).toBe('usage_event');
-    expect(charges[0].amount_usd).toBeCloseTo(-4.5);
-    expect(charges[1].amount_usd).toBeCloseTo(-4.5);
-    expect(
-      (
-        probe
-          .prepare(
-            `SELECT COUNT(*) AS count FROM billing_audit_log
-             WHERE event_type = 'balance_deducted'
-               AND json_extract(details, '$.usageEventId') LIKE 'custom-agent-paid-turn%'`,
-          )
-          .get() as any
-      ).count,
-    ).toBe(2);
     expect(
       db.getUsageAnalytics({
         from: '2026-07-16',

@@ -63,16 +63,11 @@ import workspaceConfigRoutes from './routes/workspace-config.js';
 import agentProfileRoutes from './routes/agent-profiles.js';
 import workspaceRoutes from './routes/workspaces.js';
 import { usage as usageRoutes } from './routes/usage.js';
-import billingRoutes from './routes/billing.js';
 import pricingRoutes from './routes/pricing.js';
 import bugReportRoutes from './routes/bug-report.js';
 import channelAccountRoutes, {
   injectChannelAccountDeps,
 } from './routes/channel-accounts.js';
-import {
-  checkBillingAccess,
-  formatBillingAccessDeniedMessage,
-} from './billing.js';
 
 // Database and types (only for handleWebUserMessage and broadcast)
 import {
@@ -282,7 +277,6 @@ app.route('/api/groups', agentRoutes); // Workspace session routes; /agents path
 app.route('/api/groups', workspaceConfigRoutes); // Workspace config under /api/groups/:jid/workspace-config
 app.route('/api', monitorRoutes);
 app.route('/api/usage', usageRoutes);
-app.route('/api/billing', billingRoutes);
 app.route('/api/pricing', pricingRoutes);
 app.route('/api/bug-report', bugReportRoutes);
 app.route('/api/channel-accounts', channelAccountRoutes);
@@ -604,59 +598,6 @@ async function handleWebUserMessage(
     delivery_run_id: activeRunId,
     delivery_updated_at: activeRunId ? timestamp : null,
   });
-
-  if (group.created_by) {
-    const owner = getUserById(group.created_by);
-    if (owner && owner.role !== 'admin') {
-      const accessResult = checkBillingAccess(group.created_by, owner.role);
-      if (!accessResult.allowed) {
-        if (queueForLater) {
-          const deliveryUpdatedAt = new Date().toISOString();
-          setMessageFollowUp(chatJid, messageId, {
-            mode: effectiveFollowUpBehavior,
-            // This input received a terminal billing response, so it belongs
-            // in the transcript immediately before that response rather than
-            // behaving like a user-cancelled queued message.
-            status: 'released',
-            runId: activeRunId,
-          });
-          broadcastFollowUpUpdate(chatJid, {
-            id: messageId,
-            delivery_status: 'released',
-            delivery_run_id: activeRunId,
-            delivery_updated_at: deliveryUpdatedAt,
-          });
-        }
-        const sysMsg = formatBillingAccessDeniedMessage(accessResult);
-        const sysMsgId = `sys_quota_${Date.now()}`;
-        const sysTimestamp = new Date().toISOString();
-        storeMessageDirect(
-          sysMsgId,
-          chatJid,
-          '__billing__',
-          ASSISTANT_NAME,
-          sysMsg,
-          sysTimestamp,
-          true,
-        );
-        broadcastNewMessage(chatJid, {
-          id: sysMsgId,
-          chat_jid: chatJid,
-          sender: '__billing__',
-          sender_name: ASSISTANT_NAME,
-          content: sysMsg,
-          timestamp: sysTimestamp,
-          is_from_me: true,
-        });
-        completeWebOutOfBandMessage(deps, chatJid, {
-          timestamp,
-          id: messageId,
-        });
-        deps.advanceGlobalCursor({ timestamp, id: messageId });
-        return { ok: true, messageId, timestamp, disposition: 'started' };
-      }
-    }
-  }
 
   if (queueForLater) {
     broadcastFollowUpUpdate(chatJid);
@@ -2976,20 +2917,6 @@ export function broadcastGroupCreated(
     false,
     allowedUserIds,
   );
-}
-
-export function broadcastBillingUpdate(
-  userId: string,
-  usage: import('./types.js').BillingAccessResult,
-): void {
-  const msg: WsMessageOut = {
-    type: 'billing_update',
-    userId,
-    usage,
-  };
-  // Send only to the specific user
-  const allowedUserIds = new Set([userId]);
-  safeBroadcast(msg, false, allowedUserIds);
 }
 
 export function broadcastChannelAccountStatus(

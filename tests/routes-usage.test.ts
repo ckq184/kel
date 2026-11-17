@@ -120,7 +120,6 @@ describe('/api/usage contract and isolation', () => {
     const body = await response.json();
     expect(body.window).toMatchObject({ from: today, to: today, days: 1 });
     expect(body.scope.userId).toBe('user-a');
-    expect(body.billing).toMatchObject({ enabled: true, applicable: true });
     expect(body.summary).toMatchObject({
       runCount: 1,
       modelCallCount: 1,
@@ -208,7 +207,6 @@ describe('/api/usage contract and isolation', () => {
     const response = await usage.request(`/stats?from=${today}&to=${today}`);
     const body = await response.json();
     expect(body.summary).toMatchObject({ runCount: 3, modelCallCount: 3 });
-    expect(body.billing.applicable).toBe(true);
     expect(body.attributions.models.map((item: any) => item.key)).toEqual([
       'private-model-a',
       'private-model-b',
@@ -244,18 +242,6 @@ describe('/api/usage contract and isolation', () => {
         model: 'private-model-b',
       }),
     ]);
-  });
-
-  test('admin self scope marks billed cost as not applicable', async () => {
-    process.env.USAGE_TEST_USER = 'admin';
-    process.env.USAGE_TEST_ROLE = 'admin';
-    const response = await usage.request(
-      `/stats?from=${today}&to=${today}&userId=admin`,
-    );
-    expect((await response.json()).billing).toMatchObject({
-      enabled: true,
-      applicable: false,
-    });
   });
 
   test('records and CSV ignore a member-supplied foreign userId', async () => {

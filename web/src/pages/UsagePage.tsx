@@ -23,8 +23,7 @@ import type {
 } from '../stores/usage';
 import { buildUsageQueryParams, usageQueryKey } from '../stores/usage';
 import { useAuthStore } from '../stores/auth';
-import { useBillingStore } from '../stores/billing';
-import { formatTokens } from '../components/billing/utils';
+import { formatTokens } from '../components/usage/format';
 import {
   UsageTrendChart,
   type DailyUsagePoint,
@@ -350,7 +349,6 @@ const USAGE_POLL_INTERVAL_MS = 60_000;
 export function UsagePage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const user = useAuthStore((state) => state.user);
-  const billingEnabled = useBillingStore((state) => state.billingEnabled);
   const isAdmin = user?.role === 'admin';
   const query = useMemo(
     () => parseQuery(searchParams, isAdmin),
@@ -365,7 +363,6 @@ export function UsagePage() {
     window,
     generatedAt,
     attributions,
-    billing,
     loading,
     error,
     availableModels,
@@ -396,7 +393,6 @@ export function UsagePage() {
   const visibleDaily = ownsState ? daily : [];
   const visibleWindow = ownsState ? window : null;
   const visibleGeneratedAt = ownsState ? generatedAt : null;
-  const visibleBilling = ownsState ? billing : null;
   const visibleLoading = !ownsState || loading;
   const visibleError = ownsState ? error : null;
 
@@ -509,8 +505,6 @@ export function UsagePage() {
     visibleSummary && cacheDenominator > 0
       ? (visibleSummary.cacheReadTokens / cacheDenominator) * 100
       : 0;
-  const billingApplicable = visibleBilling?.applicable ?? billingEnabled;
-  const billingFeatureEnabled = visibleBilling?.enabled ?? billingEnabled;
 
   const handleExport = async () => {
     if (!visibleWindow || visibleBreakdown.length === 0) return;
@@ -792,13 +786,7 @@ export function UsagePage() {
                 <MetricItem
                   label="模型估算费用 (USD)"
                   value={metricValue(visibleSummary, 'cost')}
-                  note={
-                    !billingApplicable
-                      ? '账单扣费：不适用（未启用计费）'
-                      : visibleSummary.billedCostUSD === null
-                        ? '不是账单扣费'
-                        : `账单扣费 ${formatCost(visibleSummary.billedCostUSD)}`
-                  }
+                  note="按内置价格表估算，非账单扣费"
                 />
                 <MetricItem
                   label="平均每次成本"
@@ -890,11 +878,7 @@ export function UsagePage() {
                 {trendView === 'chart' ? (
                   <UsageTrendChart data={dailyData} metric={trendMetric} />
                 ) : (
-                  <UsageTrendTable
-                    data={dailyData}
-                    metric={trendMetric}
-                    billingApplicable={billingApplicable}
-                  />
+                  <UsageTrendTable data={dailyData} metric={trendMetric} />
                 )}
               </CardContent>
             </Card>
@@ -972,20 +956,8 @@ export function UsagePage() {
             <aside className="flex items-start gap-2 rounded-xl border border-border bg-muted/20 p-4 text-xs leading-5 text-muted-foreground">
               <Info className="mt-0.5 size-4 shrink-0" />
               <p>
-                模型估算费用按咖宝价格表和 UTC 30
-                分钟模型桶计算，可能与套餐倍率、赠送额度或实际账单扣费不同。
-                {billingFeatureEnabled && (
-                  <>
-                    需要核对余额和交易时，请前往{' '}
-                    <Link
-                      to="/billing"
-                      className="font-medium text-primary hover:underline"
-                    >
-                      账单
-                    </Link>
-                    。
-                  </>
-                )}
+                模型估算费用按自定义模型单价与内置价格表、UTC 30
+                分钟模型桶计算，仅供成本观测参考。
               </p>
             </aside>
           </div>
@@ -1120,11 +1092,9 @@ function SegmentedControl({
 function UsageTrendTable({
   data,
   metric,
-  billingApplicable,
 }: {
   data: DailyUsagePoint[];
   metric: UsageTrendMetric;
-  billingApplicable: boolean;
 }) {
   return (
     <div className="max-h-[28rem] max-w-full overflow-auto rounded-lg border border-border">
@@ -1193,11 +1163,9 @@ function UsageTrendTable({
                   />
                   <NumberCell
                     value={
-                      !billingApplicable
-                        ? '不适用'
-                        : row.billedCostUSD === null
-                          ? '—'
-                          : formatCost(row.billedCostUSD)
+                      row.billedCostUSD === null
+                        ? '—'
+                        : formatCost(row.billedCostUSD)
                     }
                   />
                 </>

@@ -119,13 +119,6 @@ export interface UsageAttributions {
   sources: UsageAttributionItem[];
 }
 
-export interface UsageBillingSemantics {
-  enabled: boolean;
-  applicable: boolean;
-  providerCostSemantics: string;
-  billedCostSemantics: string;
-}
-
 interface RawUsageSummary {
   inputTokens?: number;
   outputTokens?: number;
@@ -180,7 +173,6 @@ interface RawUsageResponse {
   days?: number;
   dataRange?: DataRange | null;
   attributions?: Partial<Record<keyof UsageAttributions, unknown[]>>;
-  billing?: Partial<UsageBillingSemantics>;
 }
 
 export interface NormalizedUsageResponse {
@@ -192,7 +184,6 @@ export interface NormalizedUsageResponse {
   scope: UsageScope;
   dataRange: DataRange;
   attributions: UsageAttributions;
-  billing: UsageBillingSemantics | null;
 }
 
 const DEFAULT_QUERY: UsageQuery = {
@@ -451,18 +442,6 @@ export function normalizeUsageResponse(
     groupFolder: raw.scope?.groupFolder ?? query.groupFolder,
     source: raw.scope?.source ?? query.source,
   };
-  const billing = raw.billing
-    ? {
-        enabled: raw.billing.enabled === true,
-        applicable:
-          typeof raw.billing.applicable === 'boolean'
-            ? raw.billing.applicable
-            : raw.billing.enabled === true,
-        providerCostSemantics:
-          raw.billing.providerCostSemantics || 'kaboo-utc-30m-rounded-estimate',
-        billedCostSemantics: raw.billing.billedCostSemantics || 'actual-charge',
-      }
-    : null;
 
   return {
     summary,
@@ -477,7 +456,6 @@ export function normalizeUsageResponse(
       activeDays: summary.activeDays,
     },
     attributions: normalizeAttributions(raw.attributions),
-    billing,
   };
 }
 
@@ -520,7 +498,6 @@ interface UsageState {
   dataRange: DataRange | null;
   generatedAt: string | null;
   attributions: UsageAttributions;
-  billing: UsageBillingSemantics | null;
   days: number;
   loading: boolean;
   error: string | null;
@@ -564,7 +541,6 @@ function stateValues(ownerUserId: string | null) {
     dataRange: null as DataRange | null,
     generatedAt: null as string | null,
     attributions: normalizeAttributions(),
-    billing: null as UsageBillingSemantics | null,
     days: DEFAULT_QUERY.days,
     loading: false,
     error: null as string | null,
@@ -651,7 +627,6 @@ export const useUsageStore = create<UsageState>((set, get) => ({
       dataRange: null,
       generatedAt: null,
       attributions: normalizeAttributions(),
-      billing: null,
       days: query.days,
       lastQueryKey: queryKey,
     });
@@ -672,7 +647,6 @@ export const useUsageStore = create<UsageState>((set, get) => ({
         dataRange: normalized.dataRange,
         generatedAt: normalized.generatedAt,
         attributions: normalized.attributions,
-        billing: normalized.billing,
         loading: false,
         error: null,
         availableModels: mergeStrings(state.availableModels, [
@@ -721,7 +695,6 @@ export const useUsageStore = create<UsageState>((set, get) => ({
         dataRange: null,
         generatedAt: null,
         attributions: normalizeAttributions(),
-        billing: null,
       });
     }
   },

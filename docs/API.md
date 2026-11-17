@@ -31,7 +31,6 @@
 | `/api/mcp-servers`                 | `src/routes/mcp-servers.ts`      | 用户/系统 MCP                 |
 | `/api/plugins`                     | `src/routes/plugins.ts`          | Plugin Catalog 与用户启用状态 |
 | `/api/usage`                       | `src/routes/usage.ts`            | Token 用量                    |
-| `/api/billing`                     | `src/routes/billing.ts`          | 订阅、余额和计费管理          |
 | `/api/pricing`                     | `src/routes/pricing.ts`          | 自定义模型单价规则            |
 | `/api/admin`                       | `src/routes/admin.ts`            | 用户、邀请和审计              |
 | `/api/bug-report`                  | `src/routes/bug-report.ts`       | 脱敏问题报告                  |
@@ -520,7 +519,7 @@ Web 和 Runtime 不再把它们当作第二个可写真相源。
 完整产品边界与交互约定见
 [Workspace Memory v2](workspace-memory-v2.md)。
 
-## 用量与计费
+## 用量与单价
 
 用量：
 
@@ -530,23 +529,6 @@ Web 和 Runtime 不再把它们当作第二个可写真相源。
 - `GET /api/usage/records`
 - `GET /api/usage/export.csv`
 - `GET /api/usage/users`
-
-计费用户侧：
-
-- `GET /api/billing/status`
-- `GET /api/billing/plans`
-- `GET /api/billing/my/subscription`
-- `GET /api/billing/my/balance`
-- `GET /api/billing/my/usage`
-- `GET /api/billing/my/usage/daily`
-- `GET /api/billing/my/transactions`
-- `GET /api/billing/my/quota`
-- `GET /api/billing/my/access`
-- `POST /api/billing/my/redeem`
-- `PATCH /api/billing/my/auto-renew`
-- `POST /api/billing/my/cancel-subscription`
-
-计费管理接口位于 `/api/billing/admin/*`，统一要求 `manage_billing`。
 
 自定义模型单价（全部要求 `manage_system_config`）：
 

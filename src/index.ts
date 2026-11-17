@@ -175,8 +175,6 @@ import {
   listAgentsByJid,
   getGroupsByOwner,
   getMessagesPage,
-  cleanupOldDailyUsage,
-  cleanupOldBillingAuditLog,
   getImContextBinding,
   getImContextBindingByRootMessageId,
   upsertImContextBinding,
@@ -457,14 +455,6 @@ import {
   resolveTaskExecutionModeForTarget,
   SCRIPT_TASK_HOST_REQUIRED_ERROR,
 } from './script-task-policy.js';
-import {
-  checkBillingAccessFresh,
-  formatBillingAccessDeniedMessage,
-  checkAndExpireSubscriptions,
-  isBillingEnabled,
-  getUserConcurrentContainerLimit,
-  reconcileMonthlyUsage,
-} from './billing.js';
 import { recordUsageEvent } from './usage-service.js';
 import {
   AgentStatus,
@@ -530,7 +520,6 @@ import {
   broadcastAgentRemoved,
   broadcastTitleGenerating,
   broadcastGroupCreated,
-  broadcastBillingUpdate,
   broadcastChannelAccountStatus,
   shutdownTerminals,
   shutdownWebServer,
@@ -3349,35 +3338,10 @@ function sendSystemMessage(jid: string, type: string, detail: string): void {
   });
 }
 
-function sendBillingDeniedMessage(jid: string, content: string): string {
-  const msgId = `sys_quota_${Date.now()}`;
-  const timestamp = new Date().toISOString();
-  ensureChatExists(jid);
-  storeMessageDirect(
-    msgId,
-    jid,
-    '__billing__',
-    ASSISTANT_NAME,
-    content,
-    timestamp,
-    true,
-  );
-  broadcastNewMessage(jid, {
-    id: msgId,
-    chat_jid: jid,
-    sender: '__billing__',
-    sender_name: ASSISTANT_NAME,
-    content,
-    timestamp,
-    is_from_me: true,
-  });
-  return msgId;
-}
-
 /**
  * Persist + broadcast a plugin-expander system reply (e.g. command conflict,
- * docker container offline). Mirrors `sendBillingDeniedMessage` but uses the
- * `__plugin__` synthetic sender so audits can distinguish the two paths.
+ * docker container offline). Uses the `__plugin__` synthetic sender so audits
+ * can distinguish it from other system paths.
  *
  * When `imRouteJid` is a connected IM channel, also fan the reply out to that
  * channel so users on Feishu / QQ / DingTalk see the response —
@@ -7018,53 +6982,6 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       );
       return true;
     }
-    if (owner && owner.role !== 'admin') {
-      const accessResult = checkBillingAccessFresh(
-        effectiveGroup.created_by,
-        owner.role,
-      );
-      if (!accessResult.allowed) {
-        const sysMsg = formatBillingAccessDeniedMessage(accessResult);
-        if (replySourceImJid) {
-          const route = resolveDurableChannelRoute(replySourceImJid);
-          const acknowledged = route
-            ? await deliverIndependentChannelSystemNotice({
-                logicalChatJid: chatJid,
-                scopeKey: channelTurnScope(effectiveGroup.folder),
-                targetJid: replySourceImJid,
-                originalInputTurnId: lastProcessed.id,
-                originalRunId: `billing:${lastProcessed.id}`,
-                noticeKey: 'billing-denied',
-                text: sysMsg,
-                sender: '__billing__',
-                route,
-              })
-            : false;
-          if (!acknowledged) {
-            logger.warn(
-              { chatJid, replySourceImJid, messageId: lastProcessed.id },
-              'Billing notice not acknowledged; preserving cursor for retry',
-            );
-            return false;
-          }
-        } else {
-          sendBillingDeniedMessage(chatJid, sysMsg);
-        }
-        completeOutOfBandMessages(chatJid, missedMessages);
-        cursorCommittedInputTurns.add(lastProcessed.id);
-        await clearProcessingIndicatorForInput(lastProcessed.id);
-        logger.info(
-          {
-            chatJid,
-            userId: effectiveGroup.created_by,
-            reason: accessResult.reason,
-            blockType: accessResult.blockType,
-          },
-          'Billing access denied inside processGroupMessages',
-        );
-        return true;
-      }
-    }
   }
 
   let output:
@@ -7664,25 +7581,6 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
                   },
                   'Token usage persisted',
                 );
-
-                // recordUsageEvent updates analytics, token quotas and balance
-                // for both paid and zero-cost runs. Only the realtime UI push
-                // remains here.
-                const ownerId =
-                  effectiveGroup.created_by ||
-                  registeredGroups[chatJid]?.created_by;
-                if (ownerId) {
-                  const owner = getUserById(ownerId);
-                  if (owner && owner.role !== 'admin') {
-                    const freshAccess = checkBillingAccessFresh(
-                      ownerId,
-                      owner.role,
-                    );
-                    if (freshAccess.usage) {
-                      broadcastBillingUpdate(ownerId, { ...freshAccess });
-                    }
-                  }
-                }
               } catch (err) {
                 logger.warn({ err, chatJid }, 'Failed to persist token usage');
               }
@@ -16990,10 +16888,8 @@ async function startMessageLoop(): Promise<void> {
           // to conversation agents at IM ingestion time (feishu.ts)
           if (group.target_agent_id) continue;
 
-          // Owner gate + billing share a single owner lookup. Owner status
-          // check first: drop messages from groups whose owner is
-          // disabled/deleted (see `src/owner-gate.ts`); billing quota check
-          // second.
+          // Owner gate: drop messages from groups whose owner is
+          // disabled/deleted (see `src/owner-gate.ts`).
           if (group.created_by) {
             const owner = getUserById(group.created_by);
             const ownerGate = checkOwnerActive(owner);
@@ -17012,66 +16908,6 @@ async function startMessageLoop(): Promise<void> {
                 'Dropping message: group owner is not active',
               );
               continue;
-            }
-
-            // Billing quota check before processing
-            if (owner && owner.role !== 'admin') {
-              const accessResult = checkBillingAccessFresh(
-                group.created_by,
-                owner.role,
-              );
-              if (!accessResult.allowed) {
-                logger.info(
-                  {
-                    chatJid,
-                    userId: group.created_by,
-                    reason: accessResult.reason,
-                    blockType: accessResult.blockType,
-                    exceededWindow: accessResult.exceededWindow,
-                  },
-                  'Billing access denied, blocking message processing',
-                );
-                const sysMsg = formatBillingAccessDeniedMessage(accessResult);
-
-                // Notify IM channel if the message came from an IM source
-                const lastInput = groupMessages[groupMessages.length - 1];
-                const lastSourceJid = lastInput?.source_jid;
-                const imSourceJid = lastSourceJid || chatJid;
-                if (getChannelType(imSourceJid)) {
-                  const route = resolveDurableChannelRoute(imSourceJid);
-                  const acknowledged =
-                    route && lastInput
-                      ? await deliverIndependentChannelSystemNotice({
-                          logicalChatJid: chatJid,
-                          scopeKey: channelTurnScope(group.folder),
-                          targetJid: imSourceJid,
-                          originalInputTurnId: lastInput.id,
-                          originalRunId: `billing:${lastInput.id}`,
-                          noticeKey: 'billing-denied',
-                          text: sysMsg,
-                          sender: '__billing__',
-                          route,
-                        })
-                      : false;
-                  if (!acknowledged) {
-                    logger.warn(
-                      { jid: imSourceJid, messageId: lastInput?.id },
-                      'Quota notice not acknowledged; preserving input cursor for retry',
-                    );
-                    continue;
-                  }
-                } else {
-                  sendBillingDeniedMessage(chatJid, sysMsg);
-                }
-
-                // Advance only after Web persistence or strict native ACK.
-                completeOutOfBandMessages(chatJid, groupMessages);
-                await clearStandaloneProcessingIndicatorsForMessages(
-                  chatJid,
-                  groupMessages,
-                );
-                continue;
-              }
             }
           }
 
@@ -20105,59 +19941,6 @@ async function main(): Promise<void> {
     10 * 60 * 1000,
   );
 
-  // Billing: check expired subscriptions every hour
-  setInterval(
-    () => {
-      checkAndExpireSubscriptions();
-    },
-    60 * 60 * 1000,
-  );
-
-  // Billing: reconcile monthly usage every 6 hours
-  setInterval(
-    () => {
-      if (!isBillingEnabled()) return;
-      try {
-        const month = new Date().toISOString().slice(0, 7);
-        // Reconcile all non-admin users with pagination
-        let page = 1;
-        const pageSize = 200;
-        // eslint-disable-next-line no-constant-condition
-        while (true) {
-          const batch = listUsers({ status: 'active', pageSize, page });
-          for (const u of batch.users) {
-            if (u.role === 'admin') continue;
-            reconcileMonthlyUsage(u.id, month);
-          }
-          if (batch.users.length < pageSize) break;
-          page++;
-        }
-      } catch (err) {
-        logger.error({ err }, 'Failed to run monthly usage reconciliation');
-      }
-    },
-    6 * 60 * 60 * 1000,
-  );
-
-  // Billing: cleanup old daily_usage and billing_audit_log every 24 hours
-  setInterval(
-    () => {
-      try {
-        const deletedDaily = cleanupOldDailyUsage();
-        const deletedAudit = cleanupOldBillingAuditLog();
-        if (deletedDaily > 0 || deletedAudit > 0) {
-          logger.info(
-            { deletedDaily, deletedAudit },
-            'Cleaned up old billing data',
-          );
-        }
-      } catch (err) {
-        logger.error({ err }, 'Failed to cleanup old billing data');
-      }
-    },
-    24 * 60 * 60 * 1000,
-  );
-
   // Channel reliability retention. Every Feishu message writes 8-12 rows
   // (inbox/turn/outbox/card) that carry full payload and snapshot JSON; the
   // store ships a two-stage cleanup (dehydrate payloads, then delete terminal
@@ -20278,25 +20061,6 @@ async function main(): Promise<void> {
       }
     },
   );
-  // Billing: user-level concurrent container limit
-  queue.setUserConcurrentLimitChecker((groupJid: string) => {
-    if (!isBillingEnabled()) return { allowed: true };
-    const baseJid = stripVirtualJidSuffix(groupJid);
-    const group = registeredGroups[baseJid];
-    if (!group?.created_by) return { allowed: true };
-    const owner = getUserById(group.created_by);
-    if (!owner || owner.role === 'admin') return { allowed: true };
-    const limit = getUserConcurrentContainerLimit(owner.id, owner.role);
-    if (limit == null) return { allowed: true };
-    // Count active containers for this user (including task virtual JIDs)
-    let userActive = 0;
-    for (const [jid, g] of Object.entries(registeredGroups)) {
-      if (g.created_by !== owner.id) continue;
-      if (queue.hasDirectActiveRunner(jid)) userActive++;
-      userActive += queue.countActiveTaskRunners(jid);
-    }
-    return { allowed: userActive < limit };
-  });
   // Recovery: when agent process exits with unconsumed IPC messages,
   // re-enqueue processAgentConversation to pick them up. See issue #240.
   queue.setOnUnconsumedAgentIpc((groupJid: string, agentId: string) => {
