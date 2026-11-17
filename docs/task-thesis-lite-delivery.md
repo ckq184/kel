@@ -67,5 +67,18 @@
 ## 7. 用户验收清单（建议）
 
 1. 配置 LLM Provider 后 `make dev`（先启动 Docker）验证：登录 → 聊天流式 → 浏览器操控 → 用量页 → 监控页 → 渠道页（无钉钉）→ 桌面端
-2. 决断 §4.1：browse/bug-report 是否连前端消费面一起删
+2. ~~决断 §4.1：browse/bug-report 是否连前端消费面一起删~~ → **已裁决（2026-11-17 前端清扫轮）：保留不删**
 3. 确认 §4.2 的 billed 列语义变化可接受
+
+## 8. 前端清扫轮（2026-11-17，七批之后增量）
+
+三路只读侦察确认页面/路由已全干净（无孤儿页面、无已删事件监听、导航无无用入口），本轮清掉四处非页面级残留；**browse/bug-report 经用户裁决保留不删**（DirectoryBrowser 被宿主目录挂载依赖、BugReportDialog 是演示亮点）。
+
+| 步骤 | commit    | 内容                                                                                                                                                  | 行数   |
+| ---- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| 1    | `7a48c95` | 删孤儿文件 `useEscapeKey.ts`/`BalancingSettings.tsx`（全仓零引用）                                                                                    | −141   |
+| 2    | `453c56a` | 下架 `manage_billing` 权限项（permissions/types/web auth/web users-utils 四文件；存量 DB 值由 `normalizePermissions` 静默剥离，权限模板 UI 自动收敛） | −7/+6  |
+| 3    | `4d58932` | 删 `billing_update` 死 WS 事件类型与 `BillingBlockType`/`BillingAccessResult` 死类型族 + 两处过时 billing 注释（`make sync-types` 同步）              | −32/+5 |
+| 4    | `368efcd` | 删 UsagePage 冗余「账单扣费」展示线（表格列/CSV 列/AttributionRow 死管道/三处文案；`stores/usage.ts` 解析字段保留）                                   | −30/+6 |
+
+明确不动：host 侧 billing 声明性代码（runtime-config 5 个设置字段、schemas Billing Schema、types BillingPlan 族——与 db.ts 禁改线纠缠，无前端渲染）、`db.ts` 一字不动。验证：每步 verify 六步全绿独立 commit；web e2e 9/9；check-scope 通过。CSV 导出列结构变化（少「账单扣费 USD」一列）已在本节备案。
