@@ -26,7 +26,7 @@ CKQClaw 是一个面向个人与团队的自托管 AI Agent 工作台。它不�
 - Workspace 文件、执行环境、权限和渠道绑定。
 - 持久化 Session、流式输出、取消、恢复和后台运行。
 - Workspace 级 Memory、Skills、MCP、Plugins 与 Subagents。
-- Web、Electron Desktop、飞书、QQ、钉钉、微信等入口。
+- Web、Electron Desktop、飞书、QQ、微信等入口。
 - Cron、间隔和一次性任务，以及任务运行历史、通知与恢复。
 
 CKQClaw 采用本地优先和显式集成的思路：数据库、工作区元数据、会话状态和配置由自己的服务管理；模型、消息渠道、Docker 与外部工具都作为可配置边界接入。
@@ -97,7 +97,7 @@ CKQClaw 采用本地优先和显式集成的思路：数据库、工作区元数
 ### 渠道与自动化
 
 - 支持将消息渠道绑定到指定 Workspace 或 Session，并按用户、群聊、话题和 owner 规则进行 ACL 判断。
-- 支持飞书、QQ、钉钉、微信等消息入口。
+- 支持飞书、QQ、微信等消息入口。
 - Scheduler 支持 Cron、固定间隔和一次性任务，提供立即运行、暂停、取消、运行历史和结果投递。
 - 后台任务、Subagent 和渠道回复都沿用同一套 Workspace、Session、owner 与权限上下文。
 
@@ -286,7 +286,6 @@ CKQClaw 当前处于持续开发阶段。仓库已经包含：
 - [`docs/workspace-memory-v2.md`](docs/workspace-memory-v2.md) — Workspace Memory 的数据模型、版本与交互边界
 - [`docs/runtime-migration.md`](docs/runtime-migration.md) — 从旧运行时到 Pi Agent Runtime 的迁移记录
 - [`docs/PROMPT-SKILL-RUNTIME-TEST-PLAN.md`](docs/PROMPT-SKILL-RUNTIME-TEST-PLAN.md) — Prompt、Skill、Runtime 与 Agent Builder 验证计划
-- [`docs/miniclaw-migration-cleanup.md`](docs/miniclaw-migration-cleanup.md) — 品牌和运行时命名迁移记录（happyclaw→miniclaw 历史存档）
 - [`SECURITY.md`](SECURITY.md) — 安全问题报告与处理策略
 
 ## 参与贡献

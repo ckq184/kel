@@ -22,7 +22,6 @@
 | Users    | `usersManageMiddleware`      | `manage_users`                         |
 | Invites  | `inviteManageMiddleware`     | `manage_invites`                       |
 | Audit    | `auditViewMiddleware`        | `view_audit_log`                       |
-| Billing  | Billing Middleware           | `manage_billing`                       |
 | IM Owner | `owner_im_id` 比对           | 当前渠道原生 sender 是记录的主人       |
 
 核心原则：
@@ -63,7 +62,6 @@
 | Workspace Memory v2                                 | Login + Workspace owner ACL，见 4.5           |
 | CKQClaw Owner Profile                               | Home actual owner + runtime exact-turn gate   |
 | `/api/usage/*`                                      | Login；普通用户只见本人，管理视图再按角色过滤 |
-| `/api/billing/my/*`                                 | Login，仅本人                                 |
 
 产品级 Agent 删除前必须先迁移其工作区。渠道账号删除、登出或断开时必须清理/更新
 自身连接和绑定，不能影响其他用户或其他账号。
@@ -153,28 +151,7 @@ Agent Runtime 的 Workspace Memory MCP 还叠加执行上下文策略：
 定时任务和 Sub-Agent 即使继承 Workspace owner 身份，也不能写入 Workspace Memory；
 只读限制由 MCP 暴露面与主进程 IPC broker 共同执行，不能由模型参数扩大权限。
 
-### 4.6 自动记忆（mem0）管理
-
-`/api/auto-memory/*`（status、列表、搜索、单条删除、清空、会话提炼采集）先要求
-Login，再按 URL 中的 Workspace JID 执行与 v2 相同的资源级授权：
-
-| 操作                       | 权限                                               |
-| -------------------------- | -------------------------------------------------- |
-| GET status、列表、搜索     | `canAccessGroup()`，当前用户必须是 Workspace owner |
-| DELETE 单条、DELETE 清空   | `canModifyGroup()`，当前用户必须是 Workspace owner |
-| GET capture/preview        | `canAccessGroup()`，当前用户必须是 Workspace owner |
-| POST capture（提炼入记忆） | `canModifyGroup()`，当前用户必须是 Workspace owner |
-| GET/PUT/DELETE config      | `manage_system_config`（任务 X，凭据端点族）       |
-
-不带 `workspaceJid` 的 `GET /api/auto-memory/status` 只暴露全局启用开关，任何
-登录用户可读。admin 没有跨 owner bypass；目标 Workspace 不存在或授权失败均返回
-404。清空为破坏性操作：API 幂等直通，UI 层强制危险色二次确认。
-
-`/api/auto-memory/config` 三端点（任务 X）属系统配置面：apiKey 只以掩码回显
-（永不回明文），写/清除成功即停止全部侧车促生效；`CKQCLAW_AUTO_MEMORY` 环境
-变量设置时为只读（PUT/DELETE 409 `env_override`）。
-
-### 4.7 CKQClaw Owner Profile
+### 4.6 CKQClaw Owner Profile
 
 `GET|PATCH /api/workspaces/:jid/owner-profile` 只接受当前登录用户自己的 Home
 Workspace，且目标必须绑定内置默认 CKQClaw。admin 不具有跨 owner bypass。
@@ -226,11 +203,8 @@ read-only 投影按 host-issued turn ID 精确匹配当前或已接纳的 queued
 | 用户创建、禁用、恢复、角色与权限                  | `manage_users`                                     |
 | 邀请码                                            | `manage_invites`                                   |
 | 审计日志和导出                                    | `view_audit_log`                                   |
-| `/api/billing/admin/*`                            | `manage_billing`                                   |
 | `/api/pricing/*` 自定义模型单价                   | `manage_system_config`                             |
-| `/api/auto-memory/config` 凭据端点（任务 X）      | `manage_system_config`                             |
 | `/api/docker/pull`、运行监控管理                  | `manage_system_config`                             |
-| `/api/eval/*` 评测中心（任务 AQ 起整页/全部端点） | `manage_system_config`                             |
 | `/api/status/channel-outbox/*` 人工裁决           | `manage_system_config`                             |
 | `POST /api/groups/:jid/reset-owner`               | admin break-glass，同时仍验证目标资源              |
 

@@ -20,7 +20,7 @@
 ## 2. 产品模型
 
 CKQClaw 是基于 Pi Agent Runtime 的自托管、多用户 Agent 工作台，支持 Web 与飞书、
-QQ、钉钉、微信四渠道。
+QQ、微信三渠道。
 
 当前产品层级：
 
@@ -83,7 +83,7 @@ Radix UI。路由以 `web/src/App.tsx` 为准：
 | `/agent-profiles`         | Agent 管理                            |
 | `/capabilities/:section?` | Skills、MCP、Plugins                  |
 | `/tasks`                  | 定时任务                              |
-| `/usage`、`/billing`      | 用量与计费                            |
+| `/usage`                  | Token 用量统计                        |
 | `/memory`                 | 记忆管理                              |
 | `/settings`               | 账户和系统设置                        |
 | `/monitor`                | 运行状态，需要 `manage_system_config` |
@@ -110,7 +110,7 @@ Radix UI。路由以 `web/src/App.tsx` 为准：
 | 模式      | 行为                                                          | 容量边界                                             |
 | --------- | ------------------------------------------------------------- | ---------------------------------------------------- |
 | Host      | Runner 作为宿主机 Node 进程运行，`customCwd` 直接作为工作目录 | 同一 Session 串行；不同 Session 不设置应用层并发上限 |
-| Container | Runner 在非 root Docker 容器运行，通过只读/读写挂载访问资源   | 受 `maxConcurrentContainers` 和用户计费配额限制      |
+| Container | Runner 在非 root Docker 容器运行，通过只读/读写挂载访问资源   | 受 `maxConcurrentContainers` 限制                    |
 
 共同约束：
 
@@ -218,7 +218,6 @@ Host 模式没有 `maxConcurrentHostProcesses`。旧客户端提交该字段时�
 ```text
 data/
 ├── db/messages.db
-├── db/eval.db
 ├── config/
 ├── groups/{folder}/
 ├── sessions/{folder}/.claude/
@@ -231,7 +230,6 @@ data/
 ├── mcp-servers/{userId}/
 ├── plugins/
 ├── agent-profile-runtime/
-├── harness-adapters/{sanitized-jid}/
 ├── env/
 └── extra/
 ```
@@ -250,8 +248,7 @@ data/
   `im_context_bindings`
 - 消息与调度：`chats`、`messages`、`scheduled_tasks`、`task_runs`、
   `task_run_logs`
-- 用量与计费：`usage_records`、`usage_events`、`usage_daily_summary` 及
-  `billing_*`、订阅、余额和兑换码相关表
+- 用量：`usage_records`、`usage_events`、`usage_daily_summary`
 
 Channel Reliability 的 Inbox/Turn/Outbox/Card 表由
 `src/channel-reliability-store.ts` 在同一数据库连接上创建。
@@ -262,7 +259,7 @@ Channel Reliability 的 Inbox/Turn/Outbox/Card 表由
 - `canAccessGroup`、`canModifyGroup` 和 `canDeleteGroup` 不提供 admin 全局旁路；
   工作区和渠道资源按 `created_by` 隔离。
 - Host 工作区额外要求 admin 角色。
-- 系统配置、用户、邀请、审计和计费使用独立 Permission Middleware。
+- 系统配置、用户、邀请和审计使用独立 Permission Middleware。
 - 敏感写操作必须先停止或暂停相关 Runner，并在提交失败时恢复队列。
 - API 返回资源不存在时通常使用 404 隐藏其他用户资源是否存在。
 
@@ -293,36 +290,6 @@ Web 持久设置 > 环境变量 > 代码默认值
 
 Provider 和渠道账号应优先通过 Web 配置。Legacy `/api/config/user-im/*` 只用于兼容，
 新功能统一使用 `/api/channel-accounts`。
-
-### 观测与评测（任务 AB）
-
-`data/config/observability.json` 控制真实对话观测链路（**缺文件即整链路
-no-op、零写库**）；env `CKQCLAW_OBSERVABILITY_ENABLED` /
-`_CONTENT_MODE` / `_JUDGE_ENABLED` 按字段覆盖：
-
-```json
-{
-  "enabled": true,
-  "contentMode": "full",
-  "judge": { "enabled": true }
-}
-```
-
-- `contentMode: full` 落库**脱敏后**对话全文（复用 `redactLogMessage`）；
-  `metadata` 零对话文本、仅指标列。
-- `judge.enabled` 开启 recall_utilized 判分（glm-flash 直调端点、prompt
-  hash+model 版本化落库、连续失败 5 次熔断 warn-once；复位靠重启或改本
-  配置）。judge 只评「注入过召回且已完结且存有文本」的 turn。
-- 离线评测 `npm run eval:auto-recall` 默认写入 eval.db（`--langfuse` 可选
-  导出保留）；看板为 Web 管理台「评测」页（`/eval`，**整页仅
-  `manage_system_config`**——任务 AQ 起含离线 Runs 与全部 `/api/eval/*`
-  端点，AB 时代「离线 Runs 全员可见」已推翻）。评测页另有 admin-only
-  「运行评测」按钮（任务 AC，`POST /api/eval/runs/trigger` 以子进程 spawn
-  同一脚本，WS 进度 `eval_run_log`/`eval_run_complete`，互斥 + 15 分钟超时）。
-- 评测集管理（任务 AD）：eval.db v2 `eval_datasets` 表存多套 golden set
-  （内置 `auto-recall` 由仓库 JSON 播种），「评测集」tab（admin）可视化
-  编辑/导入/导出，保存过 `validateGoldenSet`；评测按 `--dataset`/触发弹窗
-  选集（eval.db 优先，`auto-recall` 回退仓库文件），run 的 config 记集名。
 
 ## 10. 开发与验证
 
