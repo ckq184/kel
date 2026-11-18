@@ -1,21 +1,11 @@
 {
-  "task": "dead-code-sqlite-prune - 死代码与 SQLite 死表治理（旧runner集群/后端死导出/前端死字段/v76 DROP死表死列）",
-  "base": "1d9c899",
+  "task": "desktop-identity-split - 桌面端身份拆分（本仓改 CKQClaw Thesis，与主仓双开互不干扰）",
+  "base": "64d6d7b",
   "allow": [
-    "container/agent-runner/tests/**",
-    "container/agent-runner/src/**",
-    "src/**",
-    "web/src/**",
-    "tests/**",
-    "scripts/**",
-    "shared/**",
-    "package.json",
-    "package-lock.json",
-    "Makefile",
-    "docs/**",
-    "README.md",
-    "CLAUDE.md",
-    "SECURITY.md",
-    "AGENTS.md"
+    "electron/src/main/index.ts",
+    "electron/src/main/menu-template.ts",
+    "electron/electron-builder.yml",
+    "tests/electron-menu-contract.test.ts",
+    "docs/**"
   ]
 }
