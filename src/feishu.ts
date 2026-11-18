@@ -2864,8 +2864,10 @@ export function createFeishuConnection(
         'Feishu message intake failed; durable Inbox scheduled a retry',
       );
       failClaimedInbound(claim, payload, err, true);
-      // 仅实时消息提示自动重试；backfill 回填的旧消息失败不打扰用户。
-      if (source === 'ws') {
+      // 仅实时消息的首次失败提示自动重试：恢复路径沿用持久化信封里的 'ws'，
+      // 不限制 attempt 会让持续性失败每个重试周期都重发一遍提示。
+      // backfill 回填的旧消息失败不打扰用户。
+      if (source === 'ws' && claim.attempt <= 1) {
         try {
           await sendTextToChat(chatId, '⚠️ 消息处理暂时失败，系统将自动重试');
         } catch (sendErr) {

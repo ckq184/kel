@@ -380,3 +380,45 @@ describe('Feishu first P2P DM bootstrap through the real IM manager wrapper', ()
     expect(connected.onP2pSender).not.toHaveBeenCalled();
   });
 });
+
+describe('Feishu durable retry feedback', () => {
+  /** Retry notices the bot sent to one chat (text replies use message.create). */
+  function retryNoticesTo(chatId: string): number {
+    return controls.messageCreate.mock.calls.filter(([request]) => {
+      const data = (request as { data?: { receive_id?: string } }).data;
+      return (
+        data?.receive_id === chatId &&
+        JSON.stringify(request).includes('消息处理暂时失败')
+      );
+    }).length;
+  }
+
+  test('a persistently failing message is announced once, not on every durable retry', async () => {
+    const chatId = 'oc_retry_notice_once';
+    const connected = await connectAccount({
+      resolveEffectiveChatJid: () => {
+        throw new Error('resolver exploded');
+      },
+    });
+
+    vi.useFakeTimers();
+    try {
+      await connected.handler(p2pEvent(chatId, 'om_retry_notice_once', '你好'));
+      expect(inboxOf('om_retry_notice_once', chatId).attempt).toBe(1);
+      expect(retryNoticesTo(chatId)).toBe(1);
+
+      // Two further recovery passes re-run the same durable message with its
+      // original 'ws' source; the user was already told it will be retried.
+      await vi.advanceTimersByTimeAsync(6_000);
+      await vi.advanceTimersByTimeAsync(6_000);
+
+      const inbox = inboxOf('om_retry_notice_once', chatId);
+      expect(inbox.status).toBe('queued');
+      expect(inbox.attempt).toBeGreaterThanOrEqual(3);
+      expect(inbox.error).toContain('resolver exploded');
+      expect(retryNoticesTo(chatId)).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

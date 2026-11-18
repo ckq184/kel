@@ -22,7 +22,8 @@ fail-closed，返回 null”）经包装器时**永远不会返回 null，只会
 - 飞书 `src/feishu.ts` 严格路由检查之后的 `if (!admittedRoute) { …ignoreClaimedInbound(claim, payload, 'binding_rejected') }`
   **不可达**；合法拒绝落入函数末尾 catch → `failClaimedInbound(claim, payload, err, true)`。
 - `failChannelInbox` 带 `retryAt` 时只是把记录放回 `queued`（`src/channel-reliability-store.ts:966-983`）：
-  **没有尝试计数、没有上限**，固定 `FEISHU_INBOX_RETRY_DELAY_MS = 5s`，永远重试。
+  **没有重试上限**（`attempt` 列虽每次认领自增，但重试流程不据此设限；此处原稿误写为“没有尝试计数”，已更正），
+  固定 `FEISHU_INBOX_RETRY_DELAY_MS = 5s`，永远重试。
 - 恢复路径沿用原 `source`（`'ws'`），catch 里 `source === 'ws'` 会**每次失败都向该聊天发**
   「⚠️ 消息处理暂时失败，系统将自动重试」——对合法拒绝等于每 5 秒一条重复提示。
 
@@ -103,8 +104,9 @@ export function resolveAdmittedChannelRoute(…) {
 
 ## 5. 不做
 
-- 不加 `attempt` 计数 / 有界重试（`channel_inbox` 无该列，需 schema 迁移，超出本任务）。
-- 不改“消息处理暂时失败”提示的触发策略（对真正的瞬时失败仍每次提示，属独立问题，仅在报告中提出）。
+- 不做有界重试：`channel_inbox.attempt` 列存在（原稿误写“无该列，需 schema 迁移”，已更正），但设上限会让短时故障丢消息，
+  属独立语义变更，本任务不做。
+- 不改“消息处理暂时失败”提示的触发策略（该问题已由 `docs/feishu-retry-notice-once-plan.md` 单独处理）。
 - 不改 `src/feishu.ts`、`src/qq.ts`、`src/wechat.ts`；不改 CI/lint/门禁配置；不改库、不碰 `data/`；
   **不处理运行时数据库里已卡住的 `queued` 记录**。
 - 不对合法拒绝的发送者回复提示（沿用既有 `binding_rejected` 分支的静默语义）。
