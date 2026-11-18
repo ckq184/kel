@@ -20,7 +20,10 @@ import {
   summarizeToolInput,
   summarizeToolResult,
 } from '../../utils.js';
+import { createSubagentEventMapper } from './pi-subagent-events.js';
 import { toUiToolName } from './pi-tool-names.js';
+
+type SubagentEventMapper = ReturnType<typeof createSubagentEventMapper>;
 
 type PiQueryRunResult = {
   newSessionId?: string;
@@ -150,6 +153,7 @@ function toolInputFields(
 function toStreamEvent(
   event: RuntimeEvent,
   containerInput: ContainerInput,
+  mapSubagent: SubagentEventMapper,
 ): StreamEvent | undefined {
   switch (event.type) {
     case 'text_delta':
@@ -240,19 +244,7 @@ function toStreamEvent(
         sessionId: event.sessionId,
       };
     case 'subagent':
-      return {
-        eventType: 'task_progress',
-        agentScope: 'subagent',
-        displayLevel: 'detail',
-        taskId: event.agentId,
-        taskStatus: event.lifecycle,
-        taskSummary: event.result || event.error,
-        rawEvent:
-          event.details && typeof event.details === 'object'
-            ? (event.details as Record<string, unknown>)
-            : undefined,
-        sessionId: event.sessionId,
-      };
+      return mapSubagent(event);
     case 'session':
       return {
         eventType: 'status',
@@ -278,6 +270,7 @@ function emitRuntimeEvent(
   event: RuntimeEvent,
   options: PiQueryRunOptions,
   resultState: { result?: RuntimeResult; fatalError?: string },
+  mapSubagent: SubagentEventMapper,
 ): void {
   if (event.type === 'result') {
     resultState.result = event.result;
@@ -286,7 +279,7 @@ function emitRuntimeEvent(
   if (event.type === 'error') {
     if (event.fatal) resultState.fatalError = event.error;
   }
-  const streamEvent = toStreamEvent(event, options.containerInput);
+  const streamEvent = toStreamEvent(event, options.containerInput, mapSubagent);
   if (streamEvent) {
     options.emit({ status: 'stream', result: null, streamEvent });
   }
@@ -312,8 +305,11 @@ export async function runPiQueryAttempt(
   let prematureEnded = false;
   let prematureTerminal = false;
 
+  // Sub-agent task state (open tasks, background flags) lives as long as this
+  // session's event subscription.
+  const mapSubagent = createSubagentEventMapper();
   const unsubscribe = session.subscribe((event) =>
-    emitRuntimeEvent(event, options, resultState),
+    emitRuntimeEvent(event, options, resultState, mapSubagent),
   );
 
   const publishResult = (result: RuntimeResult): void => {
