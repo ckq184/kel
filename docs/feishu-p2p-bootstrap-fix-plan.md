@@ -91,7 +91,8 @@ if (chatType === 'p2p' && resolveEffectiveChatJid) {
 2. 写回归测试 `tests/feishu-p2p-first-dm-bootstrap.test.ts`：真实 `IMConnectionManager` 包装 + 真实 feishu 处理器（mock Lark SDK）
    - 未知私聊首条消息不再抛 `ChannelRouteRejectedError`，`onNewChat` 被调用、私聊被注册；
    - 同一流程 `onP2pSender` 被调用并记录 owner open id；
-   - 解析器合法拒绝（私聊已注册但绑定陈旧）时仍抛 `ChannelRouteRejectedError`、不触发 `onNewChat` 兜底吞掉；
+   - 解析器合法拒绝（私聊已注册但绑定陈旧）时仍以 `Channel binding resolver rejected route` 失败并留在重试队列，不被引导兜底吞掉（探测无法区分“未注册”与“陈旧绑定”，引导对已注册私聊是幂等 no-op，与修复前设计意图一致）；
+   - 账号被停用时不注册私聊、不学习 owner（包装器回调 no-op）；
    - 非 `ChannelRouteRejectedError` 的异常照常抛出；
    - 先确认在修复前变红。
 3. 把 `tests/feishu-route-safety.test.ts` 中耦合源码格式的 pin 改为只断言“引导先于路由检查”的顺序。

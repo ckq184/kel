@@ -37,7 +37,10 @@ import {
   stripLeadingBotMention,
   type MentionGateMention,
 } from './feishu-mention-gate.js';
-import { resolveAdmittedChannelRoute } from './channel-admission.js';
+import {
+  ChannelRouteRejectedError,
+  resolveAdmittedChannelRoute,
+} from './channel-admission.js';
 import {
   extractProviderTarget,
   parseChannelAddress,
@@ -2334,14 +2337,26 @@ export function createFeishuConnection(
       // onNewChat/onP2pSender are idempotent no-ops once already
       // registered, so calling them again in their normal position below
       // is safe and keeps this bootstrap narrowly scoped to P2P.
-      if (
-        chatType === 'p2p' &&
-        resolveEffectiveChatJid &&
-        !resolveEffectiveChatJid(chatJid)
-      ) {
-        onNewChat?.(chatJid, resolvedChatName);
-        if (senderOpenId && onP2pSender) {
-          onP2pSender(senderOpenId);
+      //
+      // The resolver wired in by IMConnectionManager (scopeConnectOpts) does
+      // not return null for an unresolved route: it throws
+      // ChannelRouteRejectedError, which for this probe means exactly "not
+      // registered yet". Treat only that error as the bootstrap signal; any
+      // other failure must still surface. The strict route check below keeps
+      // rejecting legitimately rejected routes.
+      if (chatType === 'p2p' && resolveEffectiveChatJid) {
+        let routeResolved = true;
+        try {
+          routeResolved = !!resolveEffectiveChatJid(chatJid);
+        } catch (err) {
+          if (!(err instanceof ChannelRouteRejectedError)) throw err;
+          routeResolved = false;
+        }
+        if (!routeResolved) {
+          onNewChat?.(chatJid, resolvedChatName);
+          if (senderOpenId && onP2pSender) {
+            onP2pSender(senderOpenId);
+          }
         }
       }
 

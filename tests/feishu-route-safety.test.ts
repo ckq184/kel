@@ -29,8 +29,14 @@ describe('Feishu route safety integration', () => {
     // that must precede its own registration, dropping every message
     // forever. See channel-admission.ts's "pairing establishes ownership
     // before routing" contract.
+    //
+    // Only the ORDER is pinned here (the first onNewChat call precedes the
+    // strict route check); the behavior itself — including that the
+    // im-manager wrapper throws ChannelRouteRejectedError instead of
+    // returning null — is covered end to end by
+    // feishu-p2p-first-dm-bootstrap.test.ts.
     const bootstrapIdx = source.indexOf(
-      "chatType === 'p2p' &&\n        resolveEffectiveChatJid &&\n        !resolveEffectiveChatJid(chatJid)",
+      'onNewChat?.(chatJid, resolvedChatName)',
     );
     const routeCheckIdx = source.indexOf(
       'resolveAdmittedChannelRoute<FeishuMessageMeta>',
