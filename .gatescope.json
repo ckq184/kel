@@ -1,10 +1,12 @@
 {
-  "task": "feishu-p2p-bootstrap-fix - 修复飞书首次私聊注册失败（P2P 引导探测对 ChannelRouteRejectedError 窄 try/catch）",
-  "base": "4379013",
+  "task": "feishu-route-rejection-terminal - 修复飞书合法拒绝路由被 channel_inbox 无限重试（错误带 reason，admission 助手把 binding_unresolved 转 null）",
+  "base": "56c36c0",
   "allow": [
-    "src/feishu.ts",
-    "tests/feishu-route-safety.test.ts",
+    "src/channel-admission.ts",
+    "src/im-manager.ts",
+    "tests/channel-admission.test.ts",
+    "tests/im-manager-channel-accounts.test.ts",
     "tests/feishu-p2p-first-dm-bootstrap.test.ts",
-    "docs/feishu-p2p-bootstrap-fix-plan.md"
+    "docs/feishu-route-rejection-terminal-plan.md"
   ]
 }
