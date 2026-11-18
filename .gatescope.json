@@ -2,6 +2,9 @@
   "task": "dead-code-tier2-prune - 死代码第二档清理（A 旧 runner 遗留 + B 钉钉/billing 裁剪孤儿，连带删对应测试；不含 C 组与测试接缝）",
   "base": "a04aa28",
   "allow": [
+    "package.json",
+    ".github/workflows/ci.yml",
+    "container/agent-runner/src/types.ts",
     "container/agent-runner/src/utils.ts",
     "container/agent-runner/src/ipc-delivery.ts",
     "container/agent-runner/src/context-window.ts",

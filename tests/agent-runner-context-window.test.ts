@@ -2,9 +2,7 @@ import { describe, expect, test } from 'vitest';
 
 import {
   isExtendedContextModel,
-  resolveAutoCompactWindow,
   resolveDeclaredContextWindow,
-  resolveLegacyAutoCompactWindow,
   stripOneMillionSuffix,
 } from '../container/agent-runner/src/context-window.js';
 
@@ -46,32 +44,5 @@ describe('Claude model-aware context compression', () => {
     expect(stripOneMillionSuffix('model[1m] trailing')).toBe(
       'model[1m] trailing',
     );
-  });
-
-  test('clamps legacy fixed thresholds to the effective context window', () => {
-    expect(resolveLegacyAutoCompactWindow(200_000, 800_000)).toBe(180_000);
-    expect(resolveLegacyAutoCompactWindow(200_000, 120_000)).toBe(120_000);
-    expect(resolveLegacyAutoCompactWindow(1_000_000, 950_000)).toBe(900_000);
-    expect(resolveLegacyAutoCompactWindow(1_000_000, 800_000)).toBe(800_000);
-    expect(resolveLegacyAutoCompactWindow(512_000, 950_000)).toBe(460_800);
-    expect(resolveLegacyAutoCompactWindow(200_000, 0)).toBeUndefined();
-    // 无效窗口值（NaN/非正数）不产出阈值
-    expect(resolveLegacyAutoCompactWindow(Number.NaN, 800_000)).toBeUndefined();
-    expect(resolveLegacyAutoCompactWindow(0, 800_000)).toBeUndefined();
-  });
-
-  test('converts the same percentage relative to the effective context window', () => {
-    expect(resolveAutoCompactWindow(200_000, 80)).toBe(160_000);
-    expect(resolveAutoCompactWindow(1_000_000, 80)).toBe(800_000);
-    expect(resolveAutoCompactWindow(256_000, 50)).toBe(128_000);
-  });
-
-  test('rejects percentages outside the supported safety range', () => {
-    expect(resolveAutoCompactWindow(200_000, 49)).toBeUndefined();
-    expect(resolveAutoCompactWindow(200_000, 91)).toBeUndefined();
-    expect(resolveAutoCompactWindow(200_000, 80.5)).toBeUndefined();
-    // 无效窗口值（NaN/非正数）不产出阈值
-    expect(resolveAutoCompactWindow(Number.NaN, 80)).toBeUndefined();
-    expect(resolveAutoCompactWindow(0, 80)).toBeUndefined();
   });
 });

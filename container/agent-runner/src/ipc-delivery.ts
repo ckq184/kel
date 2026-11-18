@@ -1,7 +1,3 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { randomUUID } from 'node:crypto';
-
 import type { ChannelTurnContext, ContainerOutput } from './types.js';
 
 export type IpcDeliveryReceipt = NonNullable<
@@ -110,13 +106,6 @@ export function parseIpcReceipt(
   };
 }
 
-export function isHealthyInputTurnCompletion(
-  pendingBackgroundTasks: number,
-  suspectTruncated: boolean,
-): boolean {
-  return pendingBackgroundTasks === 0 && !suspectTruncated;
-}
-
 /** Select the delivery id for the greatest durable DB cursor in a drained IPC
  * batch. Files written in the same millisecond contain random suffixes, so
  * readdir/filename order is not a reliable definition of the newest turn. */
@@ -222,81 +211,6 @@ export class IpcTurnDeliveryTracker {
   }
 }
 
-/**
- * Snapshots the durable input identity onto emitted frames.
- *
- * The tracker may accept future turns while the SDK is still producing output
- * for the current one, so callers explicitly sync only when the current turn
- * starts or after it is completed. This makes attribution independent from
- * mutable presentation turn IDs and arrival timing.
- */
-export class IpcTurnOutputCorrelation {
-  private inputTurnIdValue: string;
-
-  constructor(
-    private readonly tracker: IpcTurnDeliveryTracker,
-    coldHostTurnId: string,
-    private readonly forcedLogicalInputTurnId?: string,
-  ) {
-    this.inputTurnIdValue =
-      forcedLogicalInputTurnId ||
-      tracker.currentTurnDeliveryId ||
-      coldHostTurnId;
-  }
-
-  get currentInputTurnId(): string {
-    return this.inputTurnIdValue;
-  }
-
-  syncCurrentTurn(fallbackInputTurnId = this.inputTurnIdValue): string {
-    this.inputTurnIdValue =
-      this.forcedLogicalInputTurnId ||
-      this.tracker.currentTurnDeliveryId ||
-      fallbackInputTurnId;
-    return this.inputTurnIdValue;
-  }
-
-  correlate(output: ContainerOutput): ContainerOutput {
-    return { ...output, inputTurnId: this.inputTurnIdValue };
-  }
-}
-
-/** Internal continuation queries may rotate their presentation turn id, but
- * every emitted frame must retain the immutable user-input identity. */
-export function resolveLogicalQueryInputTurnId(
-  presentationTurnId: string | undefined,
-  logicalInputTurnIdOverride?: string,
-): string | undefined {
-  return logicalInputTurnIdOverride ?? presentationTurnId;
-}
-
-export function partitionIpcMessagesForLogicalTurn(
-  messages: IpcInputMessage[],
-  logicalInputTurnId: string | undefined,
-): {
-  owned: IpcInputMessage[];
-  deferred: IpcInputMessage[];
-} {
-  if (!logicalInputTurnId) return { owned: [...messages], deferred: [] };
-  const owned: IpcInputMessage[] = [];
-  const deferred: IpcInputMessage[] = [];
-  for (const message of messages) {
-    if (!message.receipt || message.receipt.deliveryId === logicalInputTurnId) {
-      owned.push(message);
-    } else {
-      deferred.push(message);
-    }
-  }
-  return { owned, deferred };
-}
-
-export function shouldAcceptIpcMessagesDuringQuery(
-  emitOutput: boolean,
-  acceptIpcMessagesDuringQuery: boolean,
-): boolean {
-  return emitOutput && acceptIpcMessagesDuringQuery;
-}
-
 export function serializeIpcInputMessage(message: IpcInputMessage): object {
   return {
     type: 'message',
@@ -308,38 +222,4 @@ export function serializeIpcInputMessage(message: IpcInputMessage): object {
     channelContext: message.channelContext,
     receipt: message.receipt,
   };
-}
-
-/** Put messages consumed by a query that did not complete back into the IPC
- * queue. Filenames preserve the original array order, and each write is
- * atomic so crash recovery never observes a partial receipt payload. */
-export function requeueIpcInputMessages(
-  inputDir: string,
-  messages: IpcInputMessage[],
-): string[] {
-  if (messages.length === 0) return [];
-  fs.mkdirSync(inputDir, { recursive: true });
-  const batchId = `${Date.now()}-${randomUUID()}`;
-  const written: string[] = [];
-  for (let index = 0; index < messages.length; index += 1) {
-    const filename = `${batchId}-requeue-${String(index).padStart(6, '0')}.json`;
-    const filepath = path.join(inputDir, filename);
-    const tempPath = `${filepath}.tmp`;
-    try {
-      fs.writeFileSync(
-        tempPath,
-        JSON.stringify(serializeIpcInputMessage(messages[index])),
-      );
-      fs.renameSync(tempPath, filepath);
-      written.push(filepath);
-    } catch (err) {
-      try {
-        fs.unlinkSync(tempPath);
-      } catch {
-        /* ignore missing partial temp file */
-      }
-      throw err;
-    }
-  }
-  return written;
 }

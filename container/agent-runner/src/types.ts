@@ -354,16 +354,3 @@ export interface ContainerOutput {
     cursor: { timestamp: string; id: string; sourceJid?: string };
   }>;
 }
-
-export interface SessionEntry {
-  sessionId: string;
-  fullPath: string;
-  summary: string;
-  firstPrompt: string;
-}
-
-export type ImageMediaType =
-  | 'image/jpeg'
-  | 'image/png'
-  | 'image/gif'
-  | 'image/webp';

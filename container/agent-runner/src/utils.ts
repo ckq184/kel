@@ -5,14 +5,6 @@
  */
 
 /**
- * Shorten a string to maxLen, appending "..." if truncated.
- */
-export function shorten(input: string, maxLen = 180): string {
-  if (input.length <= maxLen) return input;
-  return `${input.slice(0, maxLen)}...`;
-}
-
-/**
  * Recursively redact sensitive fields (tokens, passwords, API keys, etc.)
  * from an object. Limits recursion depth to 3 levels.
  */
@@ -110,69 +102,6 @@ export function redactInlineSecrets(value: string): string {
   );
 }
 
-/**
- * Summarize tool input for display in stream events.
- * Extracts key fields (command, query, path, etc.) or serializes the object.
- */
-export function summarizeToolInput(input: unknown): string | undefined {
-  if (input == null) return undefined;
-
-  if (typeof input === 'string') {
-    return shorten(redactInlineSecrets(input.trim()));
-  }
-
-  if (typeof input === 'object') {
-    const obj = input as Record<string, unknown>;
-    const keyCandidates = [
-      'command',
-      'query',
-      'path',
-      'pattern',
-      'prompt',
-      'url',
-      'name',
-    ];
-    for (const key of keyCandidates) {
-      const value = obj[key];
-      if (typeof value === 'string' && value.trim()) {
-        return `${key}: ${shorten(redactInlineSecrets(value.trim()))}`;
-      }
-    }
-    try {
-      const json = JSON.stringify(redactSensitive(obj));
-      // Skip empty or trivial objects (e.g. {} at content_block_start)
-      if (!json || json === '{}' || json === '[]') return undefined;
-      return shorten(redactInlineSecrets(json));
-    } catch {
-      return undefined;
-    }
-  }
-
-  return undefined;
-}
-
-/**
- * 判定一个 subtype=success 的 SDK result 是否为「上游断流截断」的合成结果。
- *
- * 指纹来源（实测事故）：第三方网关在长文本生成中途断流时，SDK 收不到终结帧
- * （message_delta/message_stop + usage），只能把已缓冲的 partial 文本按
- * subtype=success 收口，此时 result.usage 的 input/output tokens 均为 0——
- * 而健康 turn 的 result.usage 恒为正（query 级累计值，且真实 turn 必产生
- * output tokens）。正文非空 + usage 双零 = 截断合成结果的确定性指纹。
- *
- * 保守起见 usage 缺失不判定为截断（避免误伤未知的 SDK 变体）；误报的代价是
- * 多发一次"请继续"的续写 turn（有次数上限），漏报的代价是半截回复被当成
- * 完整回复交付。
- */
-export function isSuspectTruncatedStreamResult(
-  usage: { input_tokens?: number; output_tokens?: number } | null | undefined,
-  resultTextLength: number,
-): boolean {
-  if (resultTextLength <= 0) return false;
-  if (!usage) return false;
-  return (usage.input_tokens ?? 0) === 0 && (usage.output_tokens ?? 0) === 0;
-}
-
 const STALE_BACKGROUND_WAIT_PATTERNS = [
   /等待其余\s*\d+\s*个\s*(?:Agent|agent|任务|后台任务)/u,
   /\d+\s*\/\s*\d+\s*完成[\s\S]{0,80}等待/u,
@@ -196,89 +125,6 @@ export function isStaleBackgroundWaitReply(
   return STALE_BACKGROUND_WAIT_PATTERNS.some((pattern) =>
     pattern.test(trimmed),
   );
-}
-
-export function shouldForceBackgroundTaskSummary(params: {
-  emitOutput: boolean;
-  sawPendingBackgroundTasks: boolean;
-  pendingBgTasks: number;
-  finalText: string | null | undefined;
-  attempts: number;
-  maxAttempts: number;
-}): boolean {
-  if (!params.emitOutput) return false;
-  if (!params.sawPendingBackgroundTasks) return false;
-  if (params.pendingBgTasks !== 0) return false;
-  if (params.attempts >= params.maxAttempts) return false;
-  return isStaleBackgroundWaitReply(params.finalText);
-}
-
-export function buildBackgroundTaskSummaryPrompt(): string {
-  return [
-    '<system-reminder>',
-    'All background Task agents for the previous user request have now completed.',
-    'Your previous draft still said you were waiting for remaining agents, so it was stale.',
-    'Do not send another progress update. Use the task-notification results already present in this conversation and produce the final user-facing synthesis now.',
-    'If you wrote scratch files for any cluster, read them only if needed. Otherwise summarize directly from the completed task notifications.',
-    '</system-reminder>',
-  ].join('\n');
-}
-
-/** AssistantTextTracker 处理的 content block 最小形状（SDK assistant 消息的 content 数组元素）。 */
-export interface AssistantContentBlock {
-  type: string;
-  text?: string;
-}
-
-/**
- * Turn 内 assistant 文本按 AssistantMessage 边界分类。
- *
- * 只要一整条 top-level AssistantMessage 含 tool_use，该消息里的所有 text
- * 都是过程旁白——无论 block 顺序是 [text, tool_use]、[tool_use, text]，
- * 或 text/tool 交错。只有整条消息完全不含 top-level tool_use 时，它的完整
- * text 才能成为 SDK Result 缺失时的候选答案。
- */
-export class AssistantTextTracker {
-  private answerCandidate = '';
-
-  /**
-   * 原子处理一整条 top-level AssistantMessage 的 content blocks。
-   * 返回该消息是否含文本（调用方据此更新 canonical uuid）。
-   */
-  addContentBlocks(blocks: AssistantContentBlock[]): boolean {
-    let messageText = '';
-    let hasTopLevelTool = false;
-    for (const block of blocks) {
-      if (
-        block.type === 'text' &&
-        typeof block.text === 'string' &&
-        block.text
-      ) {
-        messageText += block.text;
-      } else if (block.type === 'tool_use') {
-        hasTopLevelTool = true;
-      }
-    }
-    if (!hasTopLevelTool && messageText.trim()) {
-      this.answerCandidate = messageText;
-    }
-    return messageText.length > 0;
-  }
-
-  /**
-   * 非空 SDK Result 是唯一权威。只有 SDK Result 缺失时，才回退到最近一条
-   * 完全不含 top-level tool_use 的 AssistantMessage；过程旁白绝不兜底成
-   * 最终答复。
-   */
-  pickFinalText(sdkResult: string | null | undefined): string | null {
-    if (sdkResult && sdkResult.trim()) return sdkResult;
-    return this.answerCandidate.trim() ? this.answerCandidate : null;
-  }
-
-  /** mid-query follow-up 产生第二条 result 时与 turnId 一起重置。 */
-  reset(): void {
-    this.answerCandidate = '';
-  }
 }
 
 /**

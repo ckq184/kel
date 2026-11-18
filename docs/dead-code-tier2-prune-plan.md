@@ -57,4 +57,15 @@
 1. 每个实现提交前 `npm run verify` 六步全绿；`node scripts/check-scope.mjs` 通过。
 2. 分析器重跑：A、B 组符号在代码与测试中零残留；第二档严格清单只剩 C、D 两组。
 3. `tsc --noUnusedLocals --noUnusedParameters` 仅剩登记的保留项。
-4. `self-test:agent-runner` 仍能运行。
+4. ~~`self-test:agent-runner` 仍能运行~~——已被第 7 节第 1 条取代（脚本随用户批准删除）；`npm run self-test` 仍可用。
+
+## 7. 执行期登记（A 组）
+
+1. **自测脚本与 CI（用户单独批准）**：`scripts/self-test-agent-runner.ts` 整个脚本只回放"后台任务摘要守卫"，只调用被删的 `shouldForceBackgroundTaskSummary` / `buildBackgroundTaskSummaryPrompt`，故整文件删除。这牵涉 `package.json`（移除 `self-test:agent-runner`，`self-test` 改为 `build:all` + 测试）与 `.github/workflows/ci.yml`（移除 "Agent runner self-test" 步骤）。按 `AGENTS.md`，CI 配置变更须用户单独批准——用户已于执行期明确批准。`.gatescope.json` 的 `allow` 因此扩宽 3 项：`package.json`、`.github/workflows/ci.yml`、`container/agent-runner/src/types.ts`。
+2. **连带孤儿已清理（零引用，代码与测试均无人使用）**：`ClaudeQueryModelRuntime`、`SessionEntry`、`ImageMediaType`、`shorten`、`AssistantContentBlock`，及随之失效的导入。
+3. **连带孤儿暂不处理，待用户判断（仍被测试保活，且可能是"掉线的逻辑"而非死代码）**：
+   - `redactSensitive` + `redactInlineSecrets`：密钥脱敏工具对。唯一调用方（旧 `summarizeToolInput`）已删；runner 内无其他脱敏实现。
+   - `resolveDeclaredContextWindow`（`context-window.ts`）：唯一调用方（旧 `resolveClaudeQueryModelRuntime`）已删；`provider-runtime.ts` 仍读取 `CKQCLAW_CONTEXT_WINDOW`，`CLAUDE.md` 仍描述 runner 认定声明窗口——需核对 pi runner 是否另有消费方。
+   - `isStaleBackgroundWaitReply`、`serializeIpcInputMessage`：仅被测试使用。
+   - `image-detector.ts` 的 `detectImageMimeType`：是 `shared/` 的同步副本，runner 内无使用，但删除会破坏同步源结构，保持不动。
+4. **A 组被删测试清单**：整文件删 `tests/assistant-text-tracker.test.ts`（11 例）、`tests/truncated-stream-detect.test.ts`（7 例）；删部分用例——`agent-runner-ipc-delivery.test.ts` 7 例、`agent-runner-provider-runtime.test.ts` 7 例、`agent-runner-utils-redact.test.ts` 5 例（整个 `summarizeToolInput` describe）、`background-task-summary-guard.test.ts` 3 例、`agent-runner-context-window.test.ts` 3 例；并清理 `agent-runner-ipc-delivery.test.ts` 中随之无用的 `afterEach` / `tempDirs` / `fs` / `os` / `path`。
