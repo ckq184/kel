@@ -1,12 +1,10 @@
 {
-  "task": "feishu-route-rejection-terminal - 修复飞书合法拒绝路由被 channel_inbox 无限重试（错误带 reason，admission 助手把 binding_unresolved 转 null）",
-  "base": "56c36c0",
+  "task": "feishu-retry-notice-once - 飞书“消息处理暂时失败”重试提示每条消息只发一次（按 channel_inbox.attempt 限制，重试语义不变）",
+  "base": "a8077df",
   "allow": [
-    "src/channel-admission.ts",
-    "src/im-manager.ts",
-    "tests/channel-admission.test.ts",
-    "tests/im-manager-channel-accounts.test.ts",
+    "src/feishu.ts",
     "tests/feishu-p2p-first-dm-bootstrap.test.ts",
+    "docs/feishu-retry-notice-once-plan.md",
     "docs/feishu-route-rejection-terminal-plan.md"
   ]
 }
