@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from 'vitest';
 import {
+  ChannelRouteRejectedError,
   evaluateChannelAdmission,
   matchesChannelAccountAuthorization,
   matchesChannelPairTarget,
@@ -76,6 +77,47 @@ describe('channel admission', () => {
         agentId: 'session',
       },
     });
+  });
+
+  test('a resolver that rejects with binding_unresolved is normalised to a null route', () => {
+    // im-manager's scopeConnectOpts wrapper reports "resolver returned null"
+    // by throwing; the helper must restore its documented fail-closed null so
+    // the caller's dropped branch (not the retry catch) handles the message.
+    expect(
+      resolveAdmittedChannelRoute('feishu:chat', () => {
+        throw new ChannelRouteRejectedError(
+          'feishu:chat',
+          'binding_unresolved',
+        );
+      }),
+    ).toBeNull();
+  });
+
+  test('every other rejection or failure still propagates so the caller can retry', () => {
+    const inactive = new ChannelRouteRejectedError(
+      'feishu:chat',
+      'connection_inactive',
+    );
+    expect(() =>
+      resolveAdmittedChannelRoute('feishu:chat', () => {
+        throw inactive;
+      }),
+    ).toThrow(inactive);
+
+    // An unmarked rejection (e.g. streaming-card account mismatch) is not a
+    // routing verdict and must never be swallowed.
+    const unmarked = new ChannelRouteRejectedError('feishu:chat');
+    expect(() =>
+      resolveAdmittedChannelRoute('feishu:chat', () => {
+        throw unmarked;
+      }),
+    ).toThrow(unmarked);
+
+    expect(() =>
+      resolveAdmittedChannelRoute('feishu:chat', () => {
+        throw new Error('resolver exploded');
+      }),
+    ).toThrow('resolver exploded');
   });
 
   test('passes native context metadata to an authoritative resolver', () => {

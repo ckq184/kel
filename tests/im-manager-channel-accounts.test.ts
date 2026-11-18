@@ -590,6 +590,68 @@ describe('IM manager account lifecycle', () => {
     await manager.disconnectAll();
   });
 
+  test('route rejections say why: a null resolver is binding_unresolved, a paused or disabled connection is connection_inactive', async () => {
+    const manager = new IMConnectionManager();
+    const feishu = fakeChannel('feishu');
+    let resolved: { effectiveJid: string; agentId: string | null } | null =
+      null;
+    await manager.connectChannel(
+      'reason-owner',
+      'feishu',
+      feishu.channel,
+      {
+        ...callbacks(),
+        resolveEffectiveChatJid: () => resolved,
+        resolveFeishuConversationPlan: () => ({
+          disabled: false,
+          allowWithoutMention: true,
+          independentContext: false,
+          reason: 'direct',
+        }),
+      },
+      'reason-account',
+    );
+    const wrapped = feishu.getOpts()!;
+    const thrownBy = (fn: () => unknown): unknown => {
+      try {
+        fn();
+      } catch (error) {
+        return error;
+      }
+      return undefined;
+    };
+
+    // Resolver answered "no route": a configuration verdict, not retryable.
+    expect(
+      thrownBy(() => wrapped.resolveEffectiveChatJid!('feishu:chat')),
+    ).toMatchObject({
+      name: 'ChannelRouteRejectedError',
+      reason: 'binding_unresolved',
+    });
+
+    // Paused connection: a lifecycle state, must stay retryable.
+    manager.pauseInbound();
+    expect(
+      thrownBy(() => wrapped.resolveEffectiveChatJid!('feishu:chat')),
+    ).toMatchObject({
+      name: 'ChannelRouteRejectedError',
+      reason: 'connection_inactive',
+    });
+    expect(
+      thrownBy(() =>
+        wrapped.resolveFeishuConversationPlan!('feishu:chat', {
+          provider: 'feishu',
+          mentionedBot: false,
+        }),
+      ),
+    ).toMatchObject({
+      name: 'ChannelRouteRejectedError',
+      reason: 'connection_inactive',
+    });
+    manager.resumeInbound();
+    await manager.disconnectAll();
+  });
+
   test('scopes explicit source routes without replacing connector-native fallbacks', async () => {
     const manager = new IMConnectionManager();
     const channel = fakeChannel('feishu');

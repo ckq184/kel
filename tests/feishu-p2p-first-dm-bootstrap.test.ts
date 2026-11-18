@@ -281,7 +281,7 @@ describe('Feishu first P2P DM bootstrap through the real IM manager wrapper', ()
     expect(inboxOf('om_first_dm_owner', chatId).status).toBe('processed');
   });
 
-  test('a legitimately rejected route still fails closed and is not swallowed by the bootstrap', async () => {
+  test('a legitimately rejected route is terminated as binding_rejected instead of being retried forever, and the bootstrap does not swallow it', async () => {
     const chatId = 'oc_stale_binding';
     const scopedJid = `feishu:${chatId}#account:${ACCOUNT_ID}`;
     // Registered private chat whose binding points at a workspace that no
@@ -298,13 +298,50 @@ describe('Feishu first P2P DM bootstrap through the real IM manager wrapper', ()
 
     await connected.handler(p2pEvent(chatId, 'om_stale_binding', '你好'));
 
+    // Terminal: the durable Inbox must not keep a configuration-level
+    // rejection queued, and the chat must not be told "will retry" every 5s.
     const inbox = inboxOf('om_stale_binding', chatId);
-    expect(inbox.status).toBe('queued');
-    expect(inbox.error).toContain('Channel binding resolver rejected route');
+    expect(inbox.status).toBe('ignored');
+    expect(inbox.error).toBe('binding_rejected');
     expect(connected.onFollowUpMessage).not.toHaveBeenCalled();
+    expect(controls.messageCreate).not.toHaveBeenCalled();
+    expect(controls.messageReply).not.toHaveBeenCalled();
     expect(db.getRegisteredGroup(scopedJid)?.target_main_jid).toBe(
       'web:vanished-workspace',
     );
+
+    // A redelivery of the same message hits the terminal row and is a no-op.
+    await connected.handler(p2pEvent(chatId, 'om_stale_binding', '你好'));
+    expect(inboxOf('om_stale_binding', chatId).status).toBe('ignored');
+    expect(connected.onFollowUpMessage).not.toHaveBeenCalled();
+    expect(controls.messageCreate).not.toHaveBeenCalled();
+  });
+
+  test('a rejection that is not the resolver verdict (paused or disabled connection) is still retried, never terminated', async () => {
+    const chatId = 'oc_inactive_not_terminal';
+    db.setRegisteredGroup(`feishu:${chatId}#account:${ACCOUNT_ID}`, {
+      name: 'Bound private chat',
+      folder: 'p2p-inactive-not-terminal',
+      added_at: new Date().toISOString(),
+      created_by: OWNER_ID,
+      channel_account_id: ACCOUNT_ID,
+      target_main_jid: WORKSPACE_JID,
+    });
+    const connected = await connectAccount();
+    db.updateChannelAccount(ACCOUNT_ID, OWNER_ID, { enabled: false });
+    try {
+      await connected.handler(
+        p2pEvent(chatId, 'om_inactive_not_terminal', '你好'),
+      );
+    } finally {
+      db.updateChannelAccount(ACCOUNT_ID, OWNER_ID, { enabled: true });
+    }
+
+    // The route itself is perfectly valid; only the connection is inactive.
+    const inbox = inboxOf('om_inactive_not_terminal', chatId);
+    expect(inbox.status).toBe('queued');
+    expect(inbox.error).toContain('Channel binding resolver rejected route');
+    expect(connected.onFollowUpMessage).not.toHaveBeenCalled();
   });
 
   test('a disabled account neither registers the chat nor learns the owner', async () => {

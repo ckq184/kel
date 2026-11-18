@@ -345,11 +345,17 @@ export class IMConnectionManager {
               meta?: ChannelMessageMeta,
             ) => {
               if (!inboundAllowed()) {
-                throw new ChannelRouteRejectedError(scope(jid));
+                throw new ChannelRouteRejectedError(
+                  scope(jid),
+                  'connection_inactive',
+                );
               }
               const resolved = opts.resolveEffectiveChatJid!(scope(jid), meta);
               if (!resolved) {
-                throw new ChannelRouteRejectedError(scope(jid));
+                throw new ChannelRouteRejectedError(
+                  scope(jid),
+                  'binding_unresolved',
+                );
               }
               return {
                 ...resolved,
@@ -426,7 +432,10 @@ export class IMConnectionManager {
               meta: ChannelMessageMeta,
             ) => {
               if (!inboundAllowed()) {
-                throw new ChannelRouteRejectedError(scope(jid));
+                throw new ChannelRouteRejectedError(
+                  scope(jid),
+                  'connection_inactive',
+                );
               }
               return opts.resolveFeishuConversationPlan!(scope(jid), meta);
             },

@@ -77,13 +77,28 @@ export function matchesChannelPairTarget(input: {
   );
 }
 
+/**
+ * Why an inbound route was rejected. The distinction decides retry policy:
+ * - `binding_unresolved`: the resolver judged there is no legitimate route
+ *   (stale/missing binding). A configuration verdict; waiting never heals it,
+ *   so the message is terminated, not retried.
+ * - `connection_inactive`: the connection is paused/disabled/sealed. A
+ *   lifecycle state that can recover, so the message must stay retryable.
+ * An unmarked rejection carries no routing verdict and is never swallowed.
+ */
+export type ChannelRouteRejectionReason =
+  | 'binding_unresolved'
+  | 'connection_inactive';
+
 export class ChannelRouteRejectedError extends Error {
   readonly sourceJid: string;
+  readonly reason?: ChannelRouteRejectionReason;
 
-  constructor(sourceJid: string) {
+  constructor(sourceJid: string, reason?: ChannelRouteRejectionReason) {
     super(`Channel binding resolver rejected route for ${sourceJid}`);
     this.name = 'ChannelRouteRejectedError';
     this.sourceJid = sourceJid;
+    this.reason = reason;
   }
 }
 
@@ -119,6 +134,12 @@ export async function evaluateChannelAdmission(
  * A configured resolver owns routing authority. Its null means stale/invalid
  * binding and therefore fail-closed; only standalone connectors without a
  * resolver may persist directly under the source JID.
+ *
+ * The resolver IMConnectionManager hands to account-backed connectors reports
+ * "no route" by throwing `binding_unresolved` instead of returning null. That
+ * is the same verdict, so it is normalised back to null here and each caller's
+ * dropped branch handles it. Every other failure — including
+ * `connection_inactive` — propagates untouched so the caller can retry.
  */
 export function resolveAdmittedChannelRoute<TContext = undefined>(
   sourceJid: string,
@@ -126,6 +147,17 @@ export function resolveAdmittedChannelRoute<TContext = undefined>(
   context?: TContext,
 ): { targetJid: string; routing: ChannelRouteTarget | null } | null {
   if (!resolver) return { targetJid: sourceJid, routing: null };
-  const routing = resolver(sourceJid, context);
+  let routing: ChannelRouteTarget | null;
+  try {
+    routing = resolver(sourceJid, context);
+  } catch (err) {
+    if (
+      err instanceof ChannelRouteRejectedError &&
+      err.reason === 'binding_unresolved'
+    ) {
+      return null;
+    }
+    throw err;
+  }
   return routing ? { targetJid: routing.effectiveJid, routing } : null;
 }
