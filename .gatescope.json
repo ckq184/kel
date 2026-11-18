@@ -1,28 +1,13 @@
 {
-  "task": "dead-code-tier2-prune - 死代码第二档清理（A 旧 runner 遗留 + B 钉钉/billing 裁剪孤儿，连带删对应测试；不含 C 组与测试接缝）",
-  "base": "a04aa28",
+  "task": "context-window-pi-fix - 修复 pi runner 下第三方端点\"上下文窗口\"设置失效（把宿主注入的声明值接入 pi-provider 自定义模型窗口）",
+  "base": "64dbec3",
   "allow": [
-    "package.json",
-    ".github/workflows/ci.yml",
-    "container/agent-runner/src/types.ts",
-    "container/agent-runner/src/utils.ts",
-    "container/agent-runner/src/ipc-delivery.ts",
-    "container/agent-runner/src/context-window.ts",
-    "container/agent-runner/src/provider-runtime.ts",
-    "scripts/self-test-agent-runner.ts",
-    "tests/assistant-text-tracker.test.ts",
-    "tests/truncated-stream-detect.test.ts",
-    "tests/agent-runner-ipc-delivery.test.ts",
-    "tests/agent-runner-context-window.test.ts",
-    "tests/agent-runner-provider-runtime.test.ts",
-    "tests/background-task-summary-guard.test.ts",
-    "tests/agent-runner-utils-redact.test.ts",
-    "src/file-text-extractor.ts",
-    "tests/file-text-extractor.test.ts",
-    "src/channel-admission.ts",
-    "tests/channel-admission.test.ts",
-    "src/feishu-cards/sections.ts",
-    "tests/feishu-card.test.ts",
-    "docs/dead-code-tier2-prune-plan.md"
+    "container/agent-runner/src/runtime/pi/pi-provider.ts",
+    "container/agent-runner/src/runtime/pi/pi-runtime.ts",
+    "container/agent-runner/src/runtime/types.ts",
+    "container/agent-runner/src/pi-index.ts",
+    "tests/pi-provider-context-window.test.ts",
+    "CLAUDE.md",
+    "docs/context-window-pi-fix-plan.md"
   ]
 }
