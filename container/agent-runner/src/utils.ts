@@ -216,31 +216,6 @@ export function extractSkillName(
   return path.match(/\/([^/]+)\/SKILL\.md$/)?.[1];
 }
 
-const STALE_BACKGROUND_WAIT_PATTERNS = [
-  /等待其余\s*\d+\s*个\s*(?:Agent|agent|任务|后台任务)/u,
-  /\d+\s*\/\s*\d+\s*完成[\s\S]{0,80}等待/u,
-  /后台\s*(?:Agent|agent|任务)[\s\S]{0,80}(?:完成后|结束后)[\s\S]{0,80}(?:继续汇总|自动唤醒|继续)/u,
-  /(?:任务|Agent|agent)[\s\S]{0,80}(?:运行中|还在跑|尚未完成)[\s\S]{0,80}(?:继续汇总|等待)/u,
-  /(?:I'll|I will)\s+wait\s+for\s+the\s+(?:other|remaining)\s+\d+\s+(?:agents|tasks)/iu,
-  /(?:waiting|wait)\s+for\s+(?:the\s+)?(?:other|remaining)\s+\d+\s+(?:agents|tasks)/iu,
-];
-
-/**
- * Background task completion can race with model text generation. The SDK may
- * deliver all task notifications, but the model can still finish with a stale
- * progress update ("1/6 done, waiting for the rest"). Only use this predicate
- * after this query has already emitted a result with pending background tasks.
- */
-export function isStaleBackgroundWaitReply(
-  text: string | null | undefined,
-): boolean {
-  const trimmed = text?.trim();
-  if (!trimmed) return false;
-  return STALE_BACKGROUND_WAIT_PATTERNS.some((pattern) =>
-    pattern.test(trimmed),
-  );
-}
-
 /**
  * 解析当前时区名（IANA）。与主服务 src/config.ts 的 TIMEZONE 同一条 fallback 链
  * （agent-runner 是独立项目，无法 import src/，故在此复刻）。容器模式下 entrypoint

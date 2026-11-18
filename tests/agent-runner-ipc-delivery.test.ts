@@ -6,8 +6,6 @@ import {
   latestIpcInputMessage,
   orderIpcInputMessages,
   parseIpcReceipt,
-  serializeIpcInputMessage,
-  type IpcDeliveryReceipt,
   type IpcInputMessage,
 } from '../container/agent-runner/src/ipc-delivery.js';
 
@@ -106,30 +104,6 @@ describe('agent-runner IPC delivery turn tracker', () => {
     expect(tracker.completeNextTurn().map((r) => r.cursor.id)).toEqual(['2']);
     expect(tracker.pendingTurnCount).toBe(0);
     expect(tracker.hasPendingTurns).toBe(false);
-  });
-
-  test('interrupt requeue serialization preserves the exact receipt', () => {
-    const original: IpcInputMessage = {
-      ...message('1'),
-      sourceJid: 'feishu:oc_test#account:account-1',
-      channelContext: {
-        schemaVersion: 1,
-        provider: 'feishu',
-        sourceJid: 'feishu:oc_test#account:account-1',
-        channelAccountId: 'account-1',
-        message: { id: 'om_test' },
-      },
-    };
-    const serialized = serializeIpcInputMessage(original) as {
-      receipt: IpcDeliveryReceipt;
-    };
-    expect(parseIpcReceipt(serialized.receipt)).toEqual(original.receipt);
-    expect(serialized).toMatchObject({
-      type: 'message',
-      text: '1',
-      channelContext: original.channelContext,
-      receipt: original.receipt,
-    });
   });
 
   test('intentional interrupt cancels the current warm-runner turn but preserves later turns', () => {

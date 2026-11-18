@@ -210,16 +210,3 @@ export class IpcTurnDeliveryTracker {
       .filter((receipt): receipt is IpcDeliveryReceipt => !!receipt);
   }
 }
-
-export function serializeIpcInputMessage(message: IpcInputMessage): object {
-  return {
-    type: 'message',
-    text: message.text,
-    images: message.images,
-    queryRunId: message.queryRunId,
-    taskId: message.taskId,
-    sourceJid: message.sourceJid,
-    channelContext: message.channelContext,
-    receipt: message.receipt,
-  };
-}
