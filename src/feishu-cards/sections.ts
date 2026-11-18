@@ -94,11 +94,6 @@ export function formatDuration(ms: number | undefined): string {
   return restSec === 0 ? `${min}m` : `${min}m ${restSec}s`;
 }
 
-export function formatTokens(n: number | undefined): string {
-  if (n === undefined || !Number.isFinite(n) || n < 0) return '-';
-  return n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n);
-}
-
 export function shortModel(model: string): string {
   // "claude-opus-4-7" → "opus-4.7", "claude-sonnet-4-6" → "sonnet-4.6"
   const m = model.match(/(opus|sonnet|haiku)-(\d+)-(\d+)/i);

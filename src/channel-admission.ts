@@ -6,24 +6,6 @@
  * must never be consulted for an unpaired chat.
  */
 
-export type ChannelAdmissionDecision =
-  | { kind: 'allow' }
-  | { kind: 'paired' }
-  | { kind: 'pair_rejected' }
-  | { kind: 'deny' };
-
-export interface ChannelAdmissionInput {
-  jid: string;
-  chatName: string;
-  text: string;
-  isChatAuthorized?: (jid: string) => boolean;
-  onPairAttempt?: (
-    jid: string,
-    chatName: string,
-    code: string,
-  ) => Promise<boolean>;
-}
-
 export interface ChannelRouteTarget {
   effectiveJid: string;
   agentId: string | null;
@@ -91,28 +73,6 @@ export class ChannelRouteRejectedError extends Error {
 export function parseChannelPairingCode(text: string): string | null {
   const match = text.trim().match(/^\/pair\s+(\S+)\s*$/i);
   return match?.[1] ?? null;
-}
-
-/**
- * Decide whether an inbound message may enter the persistence/download/routing
- * pipeline. A pairing command is consumed here and never reaches the Agent.
- *
- * Channels without an authorization callback retain their legacy open behavior;
- * account-backed connectors always provide one.
- */
-export async function evaluateChannelAdmission(
-  input: ChannelAdmissionInput,
-): Promise<ChannelAdmissionDecision> {
-  const code = parseChannelPairingCode(input.text);
-  if (code && input.onPairAttempt) {
-    const paired = await input.onPairAttempt(input.jid, input.chatName, code);
-    return { kind: paired ? 'paired' : 'pair_rejected' };
-  }
-
-  if (input.isChatAuthorized && !input.isChatAuthorized(input.jid)) {
-    return { kind: 'deny' };
-  }
-  return { kind: 'allow' };
 }
 
 /**

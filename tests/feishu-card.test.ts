@@ -16,7 +16,6 @@ import {
   CARD_ELEMENT_IDS,
   extractTitle,
   formatDuration,
-  formatTokens,
   shortModel,
   buildStatusBannerText,
   buildProgressListText,
@@ -231,13 +230,6 @@ describe('formatters', () => {
     expect(formatDuration(1500)).toBe('1.5s');
     expect(formatDuration(62_000)).toBe('1m 2s');
     expect(formatDuration(120_000)).toBe('2m');
-  });
-
-  test('formatTokens', () => {
-    expect(formatTokens(undefined)).toBe('-');
-    expect(formatTokens(42)).toBe('42');
-    expect(formatTokens(1_500)).toBe('1.5K');
-    expect(formatTokens(100_000)).toBe('100.0K');
   });
 
   test('shortModel', () => {

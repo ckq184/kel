@@ -69,3 +69,12 @@
    - `isStaleBackgroundWaitReply`、`serializeIpcInputMessage`：仅被测试使用。
    - `image-detector.ts` 的 `detectImageMimeType`：是 `shared/` 的同步副本，runner 内无使用，但删除会破坏同步源结构，保持不动。
 4. **A 组被删测试清单**：整文件删 `tests/assistant-text-tracker.test.ts`（11 例）、`tests/truncated-stream-detect.test.ts`（7 例）；删部分用例——`agent-runner-ipc-delivery.test.ts` 7 例、`agent-runner-provider-runtime.test.ts` 7 例、`agent-runner-utils-redact.test.ts` 5 例（整个 `summarizeToolInput` describe）、`background-task-summary-guard.test.ts` 3 例、`agent-runner-context-window.test.ts` 3 例；并清理 `agent-runner-ipc-delivery.test.ts` 中随之无用的 `afterEach` / `tempDirs` / `fs` / `os` / `path`。
+
+## 8. 执行期登记（B 组）
+
+1. **已删除**：`src/file-text-extractor.ts` 整模块（`extractFileText`，唯一调用方是已删的 `src/dingtalk.ts`）与 `tests/file-text-extractor.test.ts`（8 例，整文件）；`evaluateChannelAdmission`（同样仅被 `dingtalk.ts` 调用）；`formatTokens`（`src/feishu-cards/sections.ts`，billing 残留）。
+2. **连带零引用孤儿已清理**：`ChannelAdmissionDecision`、`ChannelAdmissionInput`，及随之失效的导入。
+3. **B 组被删测试清单**：`tests/channel-admission.test.ts` 3 例（`evaluateChannelAdmission` 相关）、`tests/feishu-card.test.ts` 1 例（`formatTokens`）。
+4. **连带孤儿暂不处理，待用户判断**：`parseChannelPairingCode`（`channel-admission.ts`）。其唯一生产调用方 `evaluateChannelAdmission` 已删，现仅剩 1 个测试用例使用。核实结论：配对功能**未断线**——QQ（`qq.ts`）与微信（`wechat.ts`）在各自代码里内联解析 `/pair <code>` 并调用 `onPairAttempt`，该函数是被它们重复实现的共享辅助。是否删除、或改为让 QQ/微信复用它，属另案判断。
+5. **同名不同物，未受影响**：`web/src/components/usage/format.ts` 的 `formatTokens` 是 web 用量页自己的实现，与已删的飞书卡片格式化函数无关。
+6. **`container/Dockerfile` 保留**：`poppler-utils`（`file-text-extractor` 的 `pdftotext` 依赖）与 `unzip` 本任务不动，留作后续另案。

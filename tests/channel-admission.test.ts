@@ -1,6 +1,5 @@
 import { describe, expect, test, vi } from 'vitest';
 import {
-  evaluateChannelAdmission,
   matchesChannelAccountAuthorization,
   matchesChannelPairTarget,
   parseChannelPairingCode,
@@ -14,48 +13,6 @@ describe('channel admission', () => {
     expect(parseChannelPairingCode('/pair')).toBeNull();
     expect(parseChannelPairingCode('/pair one extra')).toBeNull();
     expect(parseChannelPairingCode('hello /pair abc123')).toBeNull();
-  });
-
-  test('denies an unpaired chat without calling registration', async () => {
-    const onPairAttempt = vi.fn();
-    await expect(
-      evaluateChannelAdmission({
-        jid: 'wechat:user#account:bot',
-        chatName: 'User',
-        text: 'hello',
-        isChatAuthorized: () => false,
-        onPairAttempt,
-      }),
-    ).resolves.toEqual({ kind: 'deny' });
-    expect(onPairAttempt).not.toHaveBeenCalled();
-  });
-
-  test('consumes pairing before normal authorization', async () => {
-    const onPairAttempt = vi.fn(async () => true);
-    await expect(
-      evaluateChannelAdmission({
-        jid: 'wechat:1#account:bot',
-        chatName: 'User',
-        text: '/pair a1b2c3',
-        isChatAuthorized: () => false,
-        onPairAttempt,
-      }),
-    ).resolves.toEqual({ kind: 'paired' });
-    expect(onPairAttempt).toHaveBeenCalledWith(
-      'wechat:1#account:bot',
-      'User',
-      'a1b2c3',
-    );
-  });
-
-  test('keeps legacy channels open only when no authorization callback exists', async () => {
-    await expect(
-      evaluateChannelAdmission({
-        jid: 'legacy:chat',
-        chatName: 'Legacy',
-        text: 'hello',
-      }),
-    ).resolves.toEqual({ kind: 'allow' });
   });
 
   test('configured route resolver is authoritative and fails closed', () => {
