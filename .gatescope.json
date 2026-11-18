@@ -1,10 +1,11 @@
 {
-  "task": "pi-subagent-events - 把子代理生命周期接回界面的 Task 契约（agent id 作任务 id、created/started→task_start、completed/failed→task_notification、后台完成标记、不再下发 rawEvent）",
-  "base": "df3b174",
+  "task": "dead-code-orphans - 删除两个仅被测试引用的孤儿符号（isStaleBackgroundWaitReply 及其正则常量、serializeIpcInputMessage）与对应 4 个测试用例",
+  "base": "b6357c4",
   "allow": [
-    "container/agent-runner/src/runtime/pi/pi-subagent-events.ts",
-    "container/agent-runner/src/runtime/pi/pi-runner.ts",
-    "tests/pi-subagent-events.test.ts",
-    "docs/pi-subagent-events-plan.md"
+    "container/agent-runner/src/utils.ts",
+    "container/agent-runner/src/ipc-delivery.ts",
+    "tests/background-task-summary-guard.test.ts",
+    "tests/agent-runner-ipc-delivery.test.ts",
+    "docs/dead-code-orphans-prune-plan.md"
   ]
 }
