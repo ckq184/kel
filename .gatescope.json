@@ -1,16 +1,10 @@
 {
-  "task": "dual-desktop-port-isolation - 真双开端口隔离（本仓后端3001/Vite5174，主仓同步属主校验）",
-  "base": "40846fa",
+  "task": "feishu-p2p-bootstrap-fix - 修复飞书首次私聊注册失败（P2P 引导探测对 ChannelRouteRejectedError 窄 try/catch）",
+  "base": "4379013",
   "allow": [
-    "src/config.ts",
-    "web/vite.config.ts",
-    "web/playwright.config.ts",
-    "electron/src/main/index.ts",
-    "start-desktop.command",
-    "start-desktop.bat",
-    "restart-dev.command",
-    "README.md",
-    "Makefile",
-    "docs/**"
+    "src/feishu.ts",
+    "tests/feishu-route-safety.test.ts",
+    "tests/feishu-p2p-first-dm-bootstrap.test.ts",
+    "docs/feishu-p2p-bootstrap-fix-plan.md"
   ]
 }
