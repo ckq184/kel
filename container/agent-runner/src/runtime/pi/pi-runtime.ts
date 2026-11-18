@@ -18,6 +18,7 @@ import type {
 import { resolvePiProvider } from './pi-provider.js';
 import { createCkqclawMcpExtension } from './pi-mcp.js';
 import { PiRuntimeSession } from './pi-session.js';
+import { CLAUDE_TO_PI_TOOL_ALIASES } from './pi-tool-names.js';
 
 const require = createRequire(import.meta.url);
 
@@ -137,17 +138,7 @@ export class PiRuntimeAdapter implements AgentRuntime {
           ...(options.sessionId ? { id: options.sessionId } : {}),
         });
     const customTools = (options.customTools ?? []) as ToolDefinition[];
-    const toolAliases: Record<string, string> = {
-      Bash: 'bash',
-      Read: 'read',
-      Write: 'write',
-      Edit: 'edit',
-      Glob: 'find',
-      Grep: 'grep',
-      Task: 'Agent',
-      TaskOutput: 'get_subagent_result',
-      TaskStop: 'steer_subagent',
-    };
+    const toolAliases = CLAUDE_TO_PI_TOOL_ALIASES;
     const allowedNames = options.allowedTools ?? [];
     const selectedTools = options.allowedTools
       ? [

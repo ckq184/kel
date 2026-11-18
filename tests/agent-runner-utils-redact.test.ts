@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'vitest';
-import { redactInlineSecrets } from '../container/agent-runner/src/utils.js';
+import {
+  redactInlineSecrets,
+  summarizeToolInput,
+} from '../container/agent-runner/src/utils.js';
 
 describe('redactInlineSecrets', () => {
   describe('OAuth bearer tokens', () => {
@@ -171,5 +174,40 @@ describe('redactInlineSecrets', () => {
         'password documentation',
       );
     });
+  });
+});
+
+describe('summarizeToolInput (integrates redactInlineSecrets)', () => {
+  test('redacts in command field', () => {
+    const out = summarizeToolInput({
+      command:
+        'curl -H "Authorization: Bearer eyJhbGc.eyJzdWI.SflKxw" https://api',
+    });
+    expect(out).toMatch(/\[REDACTED\]/);
+    expect(out).not.toMatch(/eyJ.+SflKxw/);
+  });
+
+  test('redacts in url field', () => {
+    const out = summarizeToolInput({
+      url: 'https://api.example.com/?api_key=mysecret123abc',
+    });
+    expect(out).toMatch(/\[REDACTED\]/);
+    expect(out).not.toContain('mysecret123abc');
+  });
+
+  test('redacts string-form input', () => {
+    const out = summarizeToolInput('Bearer eyJhbGc.eyJzdWI.SflKxw and more');
+    expect(out).toMatch(/\[REDACTED\]/);
+  });
+
+  test('does not crash on null / undefined / number', () => {
+    expect(summarizeToolInput(null)).toBeUndefined();
+    expect(summarizeToolInput(undefined)).toBeUndefined();
+    expect(summarizeToolInput(42)).toBeUndefined();
+  });
+
+  test('hits LARGE INPUT short-circuit on huge command', () => {
+    const out = summarizeToolInput({ command: 'a'.repeat(40 * 1024) });
+    expect(out).toContain('[REDACTED LARGE INPUT]');
   });
 });

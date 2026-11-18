@@ -15,6 +15,12 @@ import type {
   RuntimeInput,
   RuntimeResult,
 } from '../types.js';
+import {
+  extractSkillName,
+  summarizeToolInput,
+  summarizeToolResult,
+} from '../../utils.js';
+import { toUiToolName } from './pi-tool-names.js';
 
 type PiQueryRunResult = {
   newSessionId?: string;
@@ -86,15 +92,6 @@ type PiQueryRunOptions = {
   sourceKindOverride?: ContainerOutput['sourceKind'];
 };
 
-function stringify(value: unknown): string {
-  if (typeof value === 'string') return value;
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
-  }
-}
-
 function toRuntimeInput(
   text: string,
   images?: Array<{ data: string; mimeType?: string }>,
@@ -105,6 +102,48 @@ function toRuntimeInput(
       data: image.data,
       ...(image.mimeType ? { mimeType: image.mimeType } : {}),
     })),
+  };
+}
+
+type PiToolEvent = Extract<
+  RuntimeEvent,
+  { type: 'tool_start' | 'tool_update' | 'tool_end' }
+>;
+
+/**
+ * UI-facing identity of a tool call: the name the Web/Feishu UIs understand,
+ * the call id, and — since Pi has no Skill tool — the skill when the model
+ * reads a `SKILL.md`. Skill detection needs the full path, so a still-streaming
+ * partial path keeps the plain tool name until a later event completes it.
+ */
+function toolIdentity(
+  event: PiToolEvent,
+): Pick<StreamEvent, 'toolName' | 'toolUseId' | 'skillName'> {
+  const skillName = extractSkillName(event.toolName, event.input);
+  return {
+    toolName: skillName ? 'Skill' : toUiToolName(event.toolName),
+    toolUseId: event.toolCallId,
+    ...(skillName ? { skillName } : {}),
+  };
+}
+
+/**
+ * Tool input leaves the runner as a redacted one-line summary. Raw arguments
+ * are sent only for AskUserQuestion, whose panel renders the structured input.
+ */
+function toolInputFields(
+  event: PiToolEvent,
+): Pick<StreamEvent, 'toolInputSummary' | 'toolInput'> {
+  const toolInputSummary = summarizeToolInput(event.input);
+  const toolInput =
+    event.toolName === 'AskUserQuestion' &&
+    event.input &&
+    typeof event.input === 'object'
+      ? (event.input as Record<string, unknown>)
+      : undefined;
+  return {
+    ...(toolInputSummary ? { toolInputSummary } : {}),
+    ...(toolInput ? { toolInput } : {}),
   };
 }
 
@@ -134,12 +173,8 @@ function toStreamEvent(
         eventType: 'tool_use_start',
         agentScope: event.toolName.startsWith('mcp__') ? 'main' : 'main',
         displayLevel: 'detail',
-        toolName: event.toolName,
-        toolUseId: event.toolCallId,
-        toolInput:
-          event.input && typeof event.input === 'object'
-            ? (event.input as Record<string, unknown>)
-            : undefined,
+        ...toolIdentity(event),
+        ...toolInputFields(event),
         sessionId: event.sessionId,
       };
     case 'tool_update':
@@ -147,10 +182,9 @@ function toStreamEvent(
         eventType: 'tool_progress',
         agentScope: 'main',
         displayLevel: 'detail',
-        toolName: event.toolName,
-        toolUseId: event.toolCallId,
-        detail:
-          event.result === undefined ? undefined : stringify(event.result),
+        ...toolIdentity(event),
+        ...toolInputFields(event),
+        detail: summarizeToolResult(event.result),
         sessionId: event.sessionId,
       };
     case 'tool_end':
@@ -158,10 +192,8 @@ function toStreamEvent(
         eventType: 'tool_use_end',
         agentScope: 'main',
         displayLevel: 'detail',
-        toolName: event.toolName,
-        toolUseId: event.toolCallId,
-        toolResult:
-          event.result === undefined ? undefined : stringify(event.result),
+        ...toolIdentity(event),
+        toolResult: summarizeToolResult(event.result),
         sessionId: event.sessionId,
       };
     case 'usage':

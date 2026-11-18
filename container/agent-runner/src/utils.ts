@@ -5,6 +5,14 @@
  */
 
 /**
+ * Shorten a string to maxLen, appending "..." if truncated.
+ */
+export function shorten(input: string, maxLen = 180): string {
+  if (input.length <= maxLen) return input;
+  return `${input.slice(0, maxLen)}...`;
+}
+
+/**
  * Recursively redact sensitive fields (tokens, passwords, API keys, etc.)
  * from an object. Limits recursion depth to 3 levels.
  */
@@ -100,6 +108,112 @@ export function redactInlineSecrets(value: string): string {
         '[REDACTED PRIVATE KEY]',
       )
   );
+}
+
+/**
+ * One-line, redacted description of a tool call's input for the UI timeline
+ * (`toolInputSummary`). Prefers a single well-known field; falls back to the
+ * key-redacted JSON. Returns undefined while streamed arguments are still empty.
+ */
+export function summarizeToolInput(input: unknown): string | undefined {
+  if (input == null) return undefined;
+
+  if (typeof input === 'string') {
+    return shorten(redactInlineSecrets(input.trim()));
+  }
+
+  if (typeof input === 'object') {
+    const obj = input as Record<string, unknown>;
+    const keyCandidates = [
+      'command',
+      'query',
+      'path',
+      'pattern',
+      'prompt',
+      'url',
+      'name',
+    ];
+    for (const key of keyCandidates) {
+      const value = obj[key];
+      if (typeof value === 'string' && value.trim()) {
+        return `${key}: ${shorten(redactInlineSecrets(value.trim()))}`;
+      }
+    }
+    try {
+      const json = JSON.stringify(redactSensitive(obj));
+      // Skip empty or trivial objects (e.g. {} at content_block_start)
+      if (!json || json === '{}' || json === '[]') return undefined;
+      return shorten(redactInlineSecrets(json));
+    } catch {
+      return undefined;
+    }
+  }
+
+  return undefined;
+}
+
+/** Extract the text of a tool result: a string, content blocks, or Pi's `{ content: [...] }`. */
+function toolResultText(content: unknown): string | undefined {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((b) => {
+        if (typeof b === 'string') return b;
+        if (b && typeof b === 'object') {
+          const block = b as { type?: string; text?: string };
+          if (block.type === 'text') return block.text ?? '';
+          if (block.type === 'image') return '[image]';
+        }
+        return '';
+      })
+      .filter(Boolean)
+      .join('\n');
+  }
+  if (content && typeof content === 'object') {
+    // Pi's AgentToolResult: { content: (TextContent | ImageContent)[], details }
+    const inner = (content as { content?: unknown }).content;
+    if (Array.isArray(inner)) return toolResultText(inner);
+  }
+  return undefined;
+}
+
+/** Only the head of a result is ever shown, so only the head is scanned for secrets. */
+const RESULT_PREVIEW_CHARS = 8 * 1024;
+
+/**
+ * Bounded, redacted preview of a tool result for the stream (`toolResult` /
+ * `detail`). The head is redacted before truncating so a secret near the cut
+ * is never shown half-masked; scanning a bounded head (rather than the whole
+ * result) keeps redactInlineSecrets' 32KB short-circuit from replacing a large
+ * but harmless result with a placeholder.
+ */
+export function summarizeToolResult(
+  content: unknown,
+  maxLen = 400,
+): string | undefined {
+  const trimmed = toolResultText(content)?.trim();
+  if (!trimmed) return undefined;
+  const head =
+    trimmed.length > RESULT_PREVIEW_CHARS
+      ? trimmed.slice(0, RESULT_PREVIEW_CHARS)
+      : trimmed;
+  return shorten(redactInlineSecrets(head), maxLen);
+}
+
+/**
+ * Pi has no Skill tool: a skill is activated when the model reads its
+ * `SKILL.md`. Returns the skill (directory) name for a `read` of
+ * `.../<skill>/SKILL.md`, else undefined. `toolName` is the Pi tool name.
+ */
+export function extractSkillName(
+  toolName: unknown,
+  input: unknown,
+): string | undefined {
+  if (toolName !== 'read') return undefined;
+  if (!input || typeof input !== 'object') return undefined;
+  const path = (input as Record<string, unknown>).path;
+  if (typeof path !== 'string') return undefined;
+  return path.match(/\/([^/]+)\/SKILL\.md$/)?.[1];
 }
 
 const STALE_BACKGROUND_WAIT_PATTERNS = [
