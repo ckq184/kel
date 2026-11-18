@@ -1,5 +1,33 @@
 {
-  "task": "thesis-lite - 毕设精简裁剪（评测/RSI、auto-memory、billing、钉钉、边缘API、过程文档）",
-  "base": "bf0eba1",
-  "allow": ["**"]
+  "task": "plugin-prune - 裁剪 pi 内核下不可用的 Claude 遗留 plugins 功能（含 expander/catalog/数据与类型字面量）",
+  "base": "19ccd1d",
+  "allow": [
+    "shared/stream-event.ts",
+    "container/agent-runner/src/types.ts",
+    "src/plugin-*.ts",
+    "src/routes/plugins.ts",
+    "config/plugin-deps-override.json",
+    "src/web.ts",
+    "src/index.ts",
+    "src/container-runner.ts",
+    "src/db.ts",
+    "src/schemas.ts",
+    "src/runtime-config.ts",
+    "src/effective-mcp-manifest.ts",
+    "src/effective-skill-resolver.ts",
+    "src/claude-context-resolver.ts",
+    "src/agent-capability-preview.ts",
+    "src/group-queue.ts",
+    "src/web-context.ts",
+    "web/src/**",
+    "tests/**",
+    "Makefile",
+    "scripts/backup-manifest.mjs",
+    "scripts/restore-backup.mjs",
+    "docs/**",
+    "README.md",
+    "CLAUDE.md",
+    "SECURITY.md",
+    "AGENTS.md"
+  ]
 }
