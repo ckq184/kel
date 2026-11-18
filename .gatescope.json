@@ -1,11 +1,16 @@
 {
-  "task": "desktop-identity-split - 桌面端身份拆分（本仓改 CKQClaw Thesis，与主仓双开互不干扰）",
-  "base": "64d6d7b",
+  "task": "dual-desktop-port-isolation - 真双开端口隔离（本仓后端3001/Vite5174，主仓同步属主校验）",
+  "base": "40846fa",
   "allow": [
+    "src/config.ts",
+    "web/vite.config.ts",
+    "web/playwright.config.ts",
     "electron/src/main/index.ts",
-    "electron/src/main/menu-template.ts",
-    "electron/electron-builder.yml",
-    "tests/electron-menu-contract.test.ts",
+    "start-desktop.command",
+    "start-desktop.bat",
+    "restart-dev.command",
+    "README.md",
+    "Makefile",
     "docs/**"
   ]
 }
