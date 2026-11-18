@@ -39,6 +39,7 @@ function baseOptions(
   return {
     platform: 'darwin',
     isPackaged: false,
+    appName: 'CKQClaw Thesis',
     showAbout: () => {},
     openExternalUrl: () => {},
     ...overrides,
@@ -65,7 +66,7 @@ describe('Electron Desktop menu template contract', () => {
   it('keeps appMenu darwin-only and removes the duplicate brand menu on darwin (§4.3)', () => {
     const darwin = buildMenuTemplate(baseOptions({ platform: 'darwin' }));
     expect(rolesOf(darwin)).toContain('appMenu');
-    expect(findByLabel(darwin, 'CKQClaw')).toBeUndefined();
+    expect(findByLabel(darwin, 'CKQClaw Thesis')).toBeUndefined();
 
     for (const platform of ['win32', 'linux'] as const) {
       const template = buildMenuTemplate(baseOptions({ platform }));
@@ -73,7 +74,7 @@ describe('Electron Desktop menu template contract', () => {
         'appMenu',
       );
       // 非 darwin 无 appMenu，品牌菜单保留 About/Quit 入口
-      const brand = findByLabel(template, 'CKQClaw');
+      const brand = findByLabel(template, 'CKQClaw Thesis');
       expect(brand, `platform=${platform} keeps brand menu`).toBeDefined();
       expect(submenuRoles(brand), `platform=${platform}`).toContain('quit');
     }
@@ -110,8 +111,8 @@ describe('Electron Desktop menu template contract', () => {
       }),
     );
 
-    const about = submenuItems(findByLabel(template, 'CKQClaw')).find(
-      (item) => item.label === 'About CKQClaw',
+    const about = submenuItems(findByLabel(template, 'CKQClaw Thesis')).find(
+      (item) => item.label === 'About CKQClaw Thesis',
     );
     invokeClick(about);
     expect(aboutCalls).toBe(1);

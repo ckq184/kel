@@ -3,7 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { buildMenuTemplate } from './menu-template';
 
-const APP_NAME = 'CKQClaw';
+// 桌面端身份（desktop-identity-split）：与 Personnal-agent-main 的 CKQClaw 区分，
+// 使 userData 路径与 requestSingleInstanceLock 锁键分离，两仓桌面端可双开。
+const APP_NAME = 'CKQClaw Thesis';
 const DEFAULT_SERVER_URL = 'http://127.0.0.1:3000';
 const WINDOW_DEFAULTS = {
   width: 1440,
@@ -172,8 +174,8 @@ async function openExternalUrl(rawUrl: string): Promise<void> {
 function showAbout(): Promise<Electron.MessageBoxReturnValue> {
   const options = {
     type: 'info',
-    title: 'About CKQClaw',
-    message: 'CKQClaw',
+    title: `About ${APP_NAME}`,
+    message: APP_NAME,
     detail: `Pi Agent Runtime workspace\nVersion ${app.getVersion()}`,
   } as const;
   return mainWindow && !mainWindow.isDestroyed()
@@ -184,9 +186,9 @@ function showAbout(): Promise<Electron.MessageBoxReturnValue> {
 function errorPageHtml(failedUrl: string): string {
   const safeUrl = JSON.stringify(failedUrl).replace(/</g, '\\u003c');
   return `<!doctype html>
-<html><head><meta charset="utf-8"><title>CKQClaw is unavailable</title>
+<html><head><meta charset="utf-8"><title>${APP_NAME} is unavailable</title>
 <style>body{font:16px system-ui,sans-serif;background:#101114;color:#f4f4f5;display:grid;place-items:center;min-height:100vh;margin:0}main{max-width:620px;padding:32px;border:1px solid #34363d;border-radius:16px;background:#181a1f}h1{font-size:22px}p{color:#b7bbc5;line-height:1.5}code{word-break:break-all;color:#d8b4fe}button{border:0;border-radius:8px;background:#a78bfa;color:#17131f;padding:10px 16px;font-weight:600;cursor:pointer}</style>
-</head><body><main><h1>CKQClaw Backend 未连接</h1><p>请先启动 CKQClaw Backend，或检查桌面应用配置的服务地址：</p><p><code>${safeUrl}</code></p><button id="retry">重试连接</button><script>document.getElementById('retry').addEventListener('click',()=>window.ckqclawDesktop?.retry())</script></main></body></html>`;
+</head><body><main><h1>${APP_NAME} Backend 未连接</h1><p>请先启动 ${APP_NAME} Backend，或检查桌面应用配置的服务地址：</p><p><code>${safeUrl}</code></p><button id="retry">重试连接</button><script>document.getElementById('retry').addEventListener('click',()=>window.ckqclawDesktop?.retry())</script></main></body></html>`;
 }
 
 async function loadRenderer(): Promise<void> {
@@ -286,6 +288,7 @@ function createApplicationMenu(): void {
       buildMenuTemplate({
         platform: process.platform,
         isPackaged: app.isPackaged,
+        appName: APP_NAME,
         showAbout: () => void showAbout(),
         openExternalUrl: (url) => void openExternalUrl(url),
       }),

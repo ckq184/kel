@@ -1,5 +1,7 @@
-appId: cc.ckqclaw.desktop
-productName: CKQClaw
+# desktop-identity-split：与本机 Personnal-agent-main 的 cc.ckqclaw.desktop /
+# CKQClaw 区分，避免打包产物互顶与 userData/单例锁共享。
+appId: cc.ckqclaw.thesis.desktop
+productName: CKQClaw Thesis
 copyright: Copyright © 2026 CKQClaw contributors
 electronVersion: 39.8.10
 icon: assets/ckqclaw-icon.png

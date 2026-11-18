@@ -6,6 +6,8 @@ import type { MenuItemConstructorOptions } from 'electron';
 export type MenuTemplateOptions = {
   platform: NodeJS.Platform;
   isPackaged: boolean;
+  /** 品牌菜单与 About 入口的显示名（desktop-identity-split 后随仓注入）。 */
+  appName: string;
   showAbout: () => void;
   openExternalUrl: (url: string) => void;
 };
@@ -13,7 +15,7 @@ export type MenuTemplateOptions = {
 export function buildMenuTemplate(
   options: MenuTemplateOptions,
 ): MenuItemConstructorOptions[] {
-  const { platform, isPackaged, showAbout, openExternalUrl } = options;
+  const { platform, isPackaged, appName, showAbout, openExternalUrl } = options;
 
   const viewMenu: MenuItemConstructorOptions = {
     label: 'View',
@@ -27,9 +29,9 @@ export function buildMenuTemplate(
   // darwin 由 appMenu 提供 About/Quit/Services/Hide，不再叠自定义品牌菜单
   //（任务P §4.3 清理）；非 darwin 无 appMenu，保留品牌菜单保住入口。
   const brandMenu: MenuItemConstructorOptions = {
-    label: 'CKQClaw',
+    label: appName,
     submenu: [
-      { label: 'About CKQClaw', click: () => showAbout() },
+      { label: `About ${appName}`, click: () => showAbout() },
       { type: 'separator' },
       { role: 'quit' },
     ],
