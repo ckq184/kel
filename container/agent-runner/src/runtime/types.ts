@@ -147,6 +147,12 @@ export type RuntimeSessionOptions = {
     endpointKind?: 'official' | 'custom';
     baseUrl?: string;
     apiKey?: string;
+    /**
+     * Host-declared context window in tokens (CKQCLAW_CONTEXT_WINDOW). Applied
+     * to custom endpoints, whose models Pi cannot look up in its own catalog;
+     * undefined means "no declaration" and the [1m]/200K defaults apply.
+     */
+    contextWindow?: number;
   };
   /**
    * Product auto-compact toggle (default true). Maps to the runtime-native

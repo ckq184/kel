@@ -1,6 +1,7 @@
 import type { Model } from '@earendil-works/pi-ai';
 import { getModel } from '@earendil-works/pi-ai/compat';
 import type { ModelRuntime } from '@earendil-works/pi-coding-agent';
+import { resolveDeclaredContextWindow } from '../../context-window.js';
 
 export type PiProviderResolution = {
   providerId: string;
@@ -31,6 +32,8 @@ export async function resolvePiProvider(
     endpointKind?: 'official' | 'custom';
     baseUrl?: string;
     apiKey?: string;
+    /** Host-declared context window (tokens); custom endpoints only. */
+    contextWindow?: number;
   },
 ): Promise<PiProviderResolution> {
   const rawModel = input.model?.trim() || '';
@@ -74,7 +77,12 @@ export async function resolvePiProvider(
           reasoning: true,
           input: ['text', 'image'],
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-          contextWindow: 200_000,
+          // Pi compacts at contextWindow - reserveTokens, so this must be the
+          // model's real window: declared > [1m] heuristic > 200K (任务AL).
+          contextWindow: resolveDeclaredContextWindow(
+            rawModel,
+            input.contextWindow,
+          ),
           maxTokens: 32_000,
         },
       ],

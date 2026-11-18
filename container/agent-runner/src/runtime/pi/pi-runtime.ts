@@ -79,6 +79,7 @@ export class PiRuntimeAdapter implements AgentRuntime {
       endpointKind: options.provider?.endpointKind,
       baseUrl: options.provider?.baseUrl,
       apiKey: options.provider?.apiKey,
+      contextWindow: options.provider?.contextWindow,
     });
 
     const eventBus = createEventBus();
