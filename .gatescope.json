@@ -1,13 +1,10 @@
 {
-  "task": "pi-tool-event-format - 把工具摘要、脱敏与技能标签接回 pi 链路（工具名映射、摘要、结果截断脱敏、原始参数仅限提问工具、技能启发式）",
-  "base": "335bdfc",
+  "task": "pi-subagent-events - 把子代理生命周期接回界面的 Task 契约（agent id 作任务 id、created/started→task_start、completed/failed→task_notification、后台完成标记、不再下发 rawEvent）",
+  "base": "df3b174",
   "allow": [
-    "container/agent-runner/src/utils.ts",
-    "container/agent-runner/src/runtime/pi/pi-tool-names.ts",
-    "container/agent-runner/src/runtime/pi/pi-runtime.ts",
+    "container/agent-runner/src/runtime/pi/pi-subagent-events.ts",
     "container/agent-runner/src/runtime/pi/pi-runner.ts",
-    "tests/agent-runner-utils-redact.test.ts",
-    "tests/pi-tool-event-format.test.ts",
-    "docs/pi-tool-event-format-plan.md"
+    "tests/pi-subagent-events.test.ts",
+    "docs/pi-subagent-events-plan.md"
   ]
 }
