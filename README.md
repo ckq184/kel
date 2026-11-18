@@ -159,7 +159,7 @@ npm run build:all
 npm start
 ```
 
-默认地址：<http://127.0.0.1:3000>
+默认地址：<http://127.0.0.1:3001>
 
 开发模式可以直接启动 Backend 和 Vite Web Client：
 
@@ -182,7 +182,7 @@ npm run dev:all
 再在另一个终端启动桌面端：
 
 ```bash
-CKQCLAW_RENDERER_URL=http://127.0.0.1:5173 npm run desktop:dev
+CKQCLAW_RENDERER_URL=http://127.0.0.1:5174 npm run desktop:dev
 ```
 
 如果直接使用 Backend 提供的构建后页面，可以省略 `CKQCLAW_RENDERER_URL`：
@@ -231,7 +231,7 @@ npm run desktop:package
 
 | 环境变量                  | 用途                                                | 默认值                        |
 | ------------------------- | --------------------------------------------------- | ----------------------------- |
-| `CKQCLAW_SERVER_URL`      | Electron 要连接的 Backend 地址                      | `http://127.0.0.1:3000`       |
+| `CKQCLAW_SERVER_URL`      | Electron 要连接的 Backend 地址                      | `http://127.0.0.1:3001`       |
 | `CKQCLAW_RENDERER_URL`    | Electron 要加载的 Renderer 地址，适合本地 Vite 开发 | 与 Server URL 相同            |
 | `CKQCLAW_CONTAINER_IMAGE` | Agent Runner 使用的容器镜像                         | `ckq184/ckqclaw-agent:latest` |
 | `CONTAINER_IMAGE`         | 容器镜像的兼容覆盖项                                | 同上                          |

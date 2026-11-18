@@ -9,7 +9,7 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: 'line',
   use: {
-    baseURL: 'http://127.0.0.1:5173',
+    baseURL: 'http://127.0.0.1:5174',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
@@ -31,7 +31,7 @@ export default defineConfig({
   ],
   webServer: {
     command: 'npm run dev -- --host 127.0.0.1',
-    url: 'http://127.0.0.1:5173/tests/e2e/mobile-chat-harness.html',
+    url: 'http://127.0.0.1:5174/tests/e2e/mobile-chat-harness.html',
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
   },

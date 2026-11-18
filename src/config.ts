@@ -57,7 +57,8 @@ export const TIMEZONE =
   'Asia/Shanghai';
 
 // Web server configuration
-export const WEB_PORT = parseInt(process.env.WEB_PORT || '3000', 10);
+// 端口隔离（dual-desktop-port-isolation）：默认 3001 与主仓 3000 并存双开。
+export const WEB_PORT = parseInt(process.env.WEB_PORT || '3001', 10);
 
 // Cookie configuration
 // When accessed over HTTPS: use __Host- prefix (requires Secure; Path=/; no Domain)

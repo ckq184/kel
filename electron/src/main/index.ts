@@ -6,7 +6,8 @@ import { buildMenuTemplate } from './menu-template';
 // 桌面端身份（desktop-identity-split）：与 Personnal-agent-main 的 CKQClaw 区分，
 // 使 userData 路径与 requestSingleInstanceLock 锁键分离，两仓桌面端可双开。
 const APP_NAME = 'CKQClaw Thesis';
-const DEFAULT_SERVER_URL = 'http://127.0.0.1:3000';
+// 端口隔离（dual-desktop-port-isolation）：本仓后端默认 3001。
+const DEFAULT_SERVER_URL = 'http://127.0.0.1:3001';
 const WINDOW_DEFAULTS = {
   width: 1440,
   height: 920,

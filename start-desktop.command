@@ -1,11 +1,13 @@
 #!/bin/bash
 # start-desktop.command — macOS 版一键拉起脚本（等价 start-desktop.bat）
 # 双击运行（Finder）或 `open start-desktop.command`：
-#   1. 探测前后端服务（5173 Vite / 3000 后端），已就绪且属于本仓则跳过启动；
-#      被其他仓库（如 Personnal-agent-main）占用则明确报错退出，不静默连错页面
+#   1. 探测前后端服务（5174 Vite / 3001 后端），已就绪且属于本仓则跳过启动；
+#      被其他仓库/进程占用则明确报错退出，不静默连错页面
 #   2. 未就绪则后台拉起 `npm run dev:all`，日志追加到 /tmp/ckqclaw-dev.log
-#   3. 服务就绪后启动 Electron 桌面端，连接 Vite 热更新（5173）
-# 停止：桌面端 Cmd+Q；后端 `make stop` + `lsof -ti:5173 -sTCP:LISTEN | xargs kill`
+#   3. 服务就绪后启动 Electron 桌面端，连接 Vite 热更新（5174）
+# 端口隔离（dual-desktop-port-isolation）：本仓 3001/5174，与主仓
+# Personnal-agent-main 的 3000/5173 并存，两仓桌面端可同时运行。
+# 停止：桌面端 Cmd+Q；后端 `make stop` + `lsof -ti:5174 -sTCP:LISTEN | xargs kill`
 
 set -u
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -14,8 +16,8 @@ cd "$REPO_DIR" || exit 1
 DEV_LOG=/tmp/ckqclaw-dev.log
 
 services_up() {
-  curl -s -o /dev/null -m 2 http://127.0.0.1:5173 &&
-    curl -s -o /dev/null -m 2 http://127.0.0.1:3000
+  curl -s -o /dev/null -m 2 http://127.0.0.1:5174 &&
+    curl -s -o /dev/null -m 2 http://127.0.0.1:3001
 }
 
 # 端口监听进程是否属于本仓（命令行含本仓绝对路径）
@@ -27,12 +29,12 @@ port_owned_by_repo() {
 }
 
 if services_up; then
-  if port_owned_by_repo 3000 && port_owned_by_repo 5173; then
+  if port_owned_by_repo 3001 && port_owned_by_repo 5174; then
     echo "[ckqclaw] services already running (this repo), skip backend start"
   else
-    echo "[ckqclaw] ERROR: 3000/5173 已被其他仓库/进程占用（例如 Personnal-agent-main），" >&2
+    echo "[ckqclaw] ERROR: 3001/5174 已被其他仓库/进程占用，" >&2
     echo "  桌面端若继续会加载到错误页面。请先停掉占用端口的服务后重试：" >&2
-    echo "  lsof -ti:3000 -sTCP:LISTEN | xargs kill; lsof -ti:5173 -sTCP:LISTEN | xargs kill" >&2
+    echo "  lsof -ti:3001 -sTCP:LISTEN | xargs kill; lsof -ti:5174 -sTCP:LISTEN | xargs kill" >&2
     exit 1
   fi
 else
@@ -52,5 +54,5 @@ until services_up; do
 done
 
 echo "[ckqclaw] services ready, launching desktop..."
-export CKQCLAW_RENDERER_URL=http://127.0.0.1:5173
+export CKQCLAW_RENDERER_URL=http://127.0.0.1:5174
 exec npm run desktop:dev
