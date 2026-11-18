@@ -3,7 +3,7 @@ import Database from './sqlite-compat.js';
 import fs from 'fs';
 import path from 'path';
 
-import { STORE_DIR, GROUPS_DIR } from './config.js';
+import { STORE_DIR } from './config.js';
 import { normalizeAgentEffort } from './agent-effort.js';
 import { logger } from './logger.js';
 import {
@@ -46,7 +46,6 @@ import {
   TaskRunTrigger,
   TaskRunLog,
   User,
-  UserBalance,
   UserPublic,
   UserStatus,
   UserRole,
@@ -12238,10 +12237,6 @@ export function queryAuthAuditLogs(
   return { logs, total, limit, offset };
 }
 
-export function getAuthAuditLogs(limit = 100, offset = 0): AuthAuditLog[] {
-  return queryAuthAuditLogs({ limit, offset }).logs;
-}
-
 // ===================== Sub-Agent CRUD =====================
 
 export function createAgent(agent: SubAgent): void {
@@ -12595,16 +12590,6 @@ export function deleteMessage(chatJid: string, messageId: string): boolean {
 
 // --- Billing CRUD functions ---
 
-function safeParseJsonArray(val: unknown): string[] {
-  if (typeof val !== 'string') return [];
-  try {
-    const parsed = JSON.parse(val);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
 // --- Custom model pricing CRUD (task V) ---
 
 /**
@@ -12810,15 +12795,6 @@ export function deleteCustomModelPricingRule(id: string): boolean {
 // --- Billing Audit Log ---
 
 // --- Billing summary helpers ---
-
-export function getUserGroupCount(userId: string): number {
-  const row = db
-    .prepare(
-      "SELECT COUNT(DISTINCT rg.folder) as cnt FROM registered_groups rg WHERE rg.created_by = ? AND rg.jid LIKE 'web:%'",
-    )
-    .get(userId) as { cnt: number };
-  return row.cnt;
-}
 
 // --- Daily Usage ---
 

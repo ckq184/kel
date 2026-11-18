@@ -7,7 +7,6 @@ import { ASSISTANT_NAME, DATA_DIR } from './config.js';
 import { logger } from './logger.js';
 
 const MAX_FIELD_LENGTH = 2000;
-const CURRENT_CONFIG_VERSION = 3;
 const DEFAULT_THIRD_PARTY_PROFILE_ID = 'default';
 const DEFAULT_THIRD_PARTY_PROFILE_NAME = '默认第三方';
 const OFFICIAL_CLAUDE_PROFILE_ID = '__official__';
@@ -230,8 +229,6 @@ function isDangerousEnvKey(key: string): boolean {
 const MAX_CUSTOM_ENV_ENTRIES = 50;
 const MAX_THIRD_PARTY_PROFILES = 20;
 
-type ClaudeProviderMode = 'official' | 'third_party';
-
 // Fallback scopes for .credentials.json when stored credentials lack scopes.
 // Differs from OAUTH_SCOPES in routes/config.ts (the authorize-flow request):
 // authorize requests org:create_api_key; credential files need user:sessions:claude_code.
@@ -309,17 +306,6 @@ export interface ClaudeThirdPartyProfile {
   anthropicAuthToken: string;
   anthropicModel: string;
   updatedAt: string | null;
-  customEnv: Record<string, string>;
-}
-
-export interface ClaudeThirdPartyProfilePublic {
-  id: string;
-  name: string;
-  anthropicBaseUrl: string;
-  anthropicModel: string;
-  updatedAt: string | null;
-  hasAnthropicAuthToken: boolean;
-  anthropicAuthTokenMasked: string | null;
   customEnv: Record<string, string>;
 }
 
@@ -410,13 +396,6 @@ interface ClaudeStoredStateV3Resolved {
   officialSecrets: SecretPayload;
   officialUpdatedAt: string | null;
   officialCustomEnv: Record<string, string>;
-}
-
-interface ClaudeStoredProfileResolved {
-  mode: ClaudeProviderMode;
-  profile: ClaudeThirdPartyProfile | null;
-  officialSecrets: SecretPayload;
-  officialUpdatedAt: string | null;
 }
 
 // ─── V5 模型配置（每项都是一套完整 Provider 运行环境）──────────
@@ -895,23 +874,6 @@ function isOfficialClaudeMode(activeProfileId: string): boolean {
   return activeProfileId === OFFICIAL_CLAUDE_PROFILE_ID;
 }
 
-function buildOfficialClaudeProviderConfig(
-  officialSecrets: SecretPayload,
-  officialUpdatedAt: string | null,
-): ClaudeProviderConfig {
-  return buildConfig(
-    {
-      anthropicBaseUrl: '',
-      anthropicAuthToken: '',
-      anthropicApiKey: officialSecrets.anthropicApiKey,
-      claudeCodeOauthToken: officialSecrets.claudeCodeOauthToken,
-      claudeOAuthCredentials: officialSecrets.claudeOAuthCredentials ?? null,
-      anthropicModel: '',
-    },
-    officialUpdatedAt,
-  );
-}
-
 function normalizeStoredState(
   state: ClaudeStoredStateV3Resolved,
 ): ClaudeStoredStateV3Resolved {
@@ -1096,31 +1058,6 @@ function readStoredState(): ClaudeStoredStateV3Resolved | null {
     );
     return null;
   }
-}
-
-function writeStoredState(state: ClaudeStoredStateV3Resolved): void {
-  const normalized = normalizeStoredState(state);
-  const payload: StoredClaudeProviderConfigV3 = {
-    version: CURRENT_CONFIG_VERSION,
-    activeProfileId: normalized.activeProfileId,
-    profiles: normalized.profiles,
-    official: {
-      updatedAt: normalized.officialUpdatedAt || new Date().toISOString(),
-      secrets: encryptSecrets({
-        anthropicAuthToken: '',
-        anthropicApiKey: normalized.officialSecrets.anthropicApiKey,
-        claudeCodeOauthToken: normalized.officialSecrets.claudeCodeOauthToken,
-        claudeOAuthCredentials:
-          normalized.officialSecrets.claudeOAuthCredentials,
-      }),
-      ...(Object.keys(normalized.officialCustomEnv || {}).length > 0
-        ? { customEnv: normalized.officialCustomEnv }
-        : {}),
-    },
-  };
-
-  fs.mkdirSync(CLAUDE_CONFIG_DIR, { recursive: true });
-  writeSecretFile(CLAUDE_CONFIG_FILE, JSON.stringify(payload, null, 2) + '\n');
 }
 
 // ─── V5 模型配置 Read / Write / CRUD ───────────────────────────
@@ -1760,39 +1697,6 @@ export function resolveProviderById(providerId: string): {
 
 // ─── V3 compat layer (used by remaining V3 code paths) ───────────
 
-function resolveActiveProfile(
-  state: ClaudeStoredStateV3Resolved,
-): ClaudeStoredProfileResolved {
-  if (isOfficialClaudeMode(state.activeProfileId)) {
-    return {
-      mode: 'official',
-      profile: null,
-      officialSecrets: state.officialSecrets,
-      officialUpdatedAt: state.officialUpdatedAt,
-    };
-  }
-
-  const active =
-    state.profiles.find((item) => item.id === state.activeProfileId) ||
-    state.profiles[0];
-  if (!active) {
-    return {
-      mode: 'official',
-      profile: null,
-      officialSecrets: state.officialSecrets,
-      officialUpdatedAt: state.officialUpdatedAt,
-    };
-  }
-
-  const profile = fromStoredProfile(active);
-  return {
-    mode: 'third_party',
-    profile,
-    officialSecrets: state.officialSecrets,
-    officialUpdatedAt: state.officialUpdatedAt,
-  };
-}
-
 function defaultsFromEnv(): ClaudeProviderConfig {
   const raw = {
     anthropicBaseUrl: process.env.ANTHROPIC_BASE_URL || '',
@@ -1941,29 +1845,6 @@ export function toPublicClaudeProviderConfig(
   };
 }
 
-export function validateClaudeProviderConfig(
-  config: ClaudeProviderConfig,
-): string[] {
-  const errors: string[] = [];
-
-  if (config.anthropicAuthToken && !config.anthropicBaseUrl) {
-    errors.push('使用 ANTHROPIC_AUTH_TOKEN 时必须配置 ANTHROPIC_BASE_URL');
-  }
-
-  if (config.anthropicBaseUrl) {
-    try {
-      const parsed = new URL(config.anthropicBaseUrl);
-      if (!['http:', 'https:'].includes(parsed.protocol)) {
-        errors.push('ANTHROPIC_BASE_URL 必须是 http 或 https 地址');
-      }
-    } catch {
-      errors.push('ANTHROPIC_BASE_URL 格式不正确');
-    }
-  }
-
-  return errors;
-}
-
 export function getClaudeProviderConfig(): ClaudeProviderConfig {
   try {
     const state = readStoredStateV4();
@@ -1978,10 +1859,6 @@ export function getClaudeProviderConfig(): ClaudeProviderConfig {
     // ignore corrupted file and use env fallback
   }
   return defaultsFromEnv();
-}
-
-function randomProfileId(): string {
-  return crypto.randomBytes(8).toString('hex');
 }
 
 /** Strip control characters from a value before writing to env file (defense-in-depth) */
@@ -2128,79 +2005,6 @@ export function getActiveProfileCustomEnv(): Record<string, string> {
   if (!selected) return {};
 
   return sanitizeCustomEnvMap(selected.customEnv || {}, {
-    skipReservedClaudeKeys: true,
-  });
-}
-
-/**
- * Resolve any profileId to a full ClaudeProviderConfig.
- * Used by ProviderPool to build env for a non-active profile.
- */
-export function resolveProfileToConfig(
-  profileId: string,
-): ClaudeProviderConfig {
-  const state = readStoredState();
-  if (!state) return defaultsFromEnv();
-
-  if (isOfficialClaudeMode(profileId)) {
-    return buildOfficialClaudeProviderConfig(
-      state.officialSecrets,
-      state.officialUpdatedAt,
-    );
-  }
-
-  const stored = state.profiles.find((p) => p.id === profileId);
-  if (!stored) {
-    // Profile not found — fallback to current active config
-    logger.warn(
-      { profileId },
-      'resolveProfileToConfig: profile not found, falling back to active',
-    );
-    return getClaudeProviderConfig();
-  }
-
-  const profile = fromStoredProfile(stored);
-  return buildConfig(
-    {
-      anthropicBaseUrl: profile.anthropicBaseUrl,
-      anthropicAuthToken: profile.anthropicAuthToken,
-      anthropicApiKey: state.officialSecrets.anthropicApiKey,
-      claudeCodeOauthToken: state.officialSecrets.claudeCodeOauthToken,
-      claudeOAuthCredentials:
-        state.officialSecrets.claudeOAuthCredentials ?? null,
-      anthropicModel: profile.anthropicModel,
-    },
-    profile.updatedAt || state.officialUpdatedAt,
-  );
-}
-
-/**
- * Get customEnv for a specific profileId (not necessarily the active one).
- */
-export function getCustomEnvForProfile(
-  profileId: string,
-): Record<string, string> {
-  const state = readStoredState();
-  if (!state) return {};
-
-  if (isOfficialClaudeMode(profileId)) {
-    return sanitizeCustomEnvMap(state.officialCustomEnv || {}, {
-      skipReservedClaudeKeys: true,
-    });
-  }
-
-  const exact = state.profiles.find((p) => p.id === profileId);
-  if (!exact) {
-    logger.warn(
-      { profileId },
-      'getCustomEnvForProfile: profile not found, falling back to active',
-    );
-  }
-  const profile = exact || state.profiles[0];
-  if (!profile) return {};
-
-  const resolved = fromStoredProfile(profile);
-  return sanitizeCustomEnvMap(resolved.customEnv || {}, {
     skipReservedClaudeKeys: true,
   });
 }
@@ -2656,53 +2460,6 @@ export function updateAllSessionCredentials(
 }
 
 // ─── Local Claude Code detection ──────────────────────────────────
-
-export interface LocalClaudeCodeStatus {
-  detected: boolean;
-  hasCredentials: boolean;
-  expiresAt: number | null;
-  accessTokenMasked: string | null;
-}
-
-/**
- * Read and parse OAuth credentials from ~/.claude/.credentials.json.
- * Returns the raw oauth object with accessToken, refreshToken, expiresAt, scopes,
- * or null if the file is missing / invalid / incomplete.
- */
-function readLocalOAuthCredentials(): {
-  accessToken: string;
-  refreshToken: string;
-  expiresAt?: number;
-  scopes?: string[];
-  subscriptionType?: string;
-} | null {
-  const homeDir = process.env.HOME || '/root';
-  const credFile = path.join(homeDir, '.claude', '.credentials.json');
-
-  try {
-    if (!fs.existsSync(credFile)) return null;
-
-    const content = JSON.parse(fs.readFileSync(credFile, 'utf-8'));
-    const oauth = content?.claudeAiOauth;
-
-    if (oauth?.accessToken && oauth?.refreshToken) {
-      return {
-        accessToken: oauth.accessToken,
-        refreshToken: oauth.refreshToken,
-        expiresAt:
-          typeof oauth.expiresAt === 'number' ? oauth.expiresAt : undefined,
-        scopes: Array.isArray(oauth.scopes) ? oauth.scopes : undefined,
-        subscriptionType:
-          typeof oauth.subscriptionType === 'string'
-            ? oauth.subscriptionType
-            : undefined,
-      };
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
 
 // ─── Appearance config (plain JSON, no encryption) ────────────────
 

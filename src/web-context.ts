@@ -277,23 +277,6 @@ const sessionCacheCleanupTimer = setInterval(
 );
 sessionCacheCleanupTimer.unref?.();
 
-// Cookie parser - used by middleware and WebSocket
-export function parseCookie(
-  cookieHeader: string | undefined,
-): Record<string, string> {
-  if (!cookieHeader) return {};
-  const cookies: Record<string, string> = {};
-  for (const cookie of cookieHeader.split(';')) {
-    const pair = cookie.trim();
-    const eqIndex = pair.indexOf('=');
-    if (eqIndex === -1) continue;
-    const key = pair.slice(0, eqIndex).trim();
-    const value = pair.slice(eqIndex + 1).trim();
-    if (key) cookies[key] = value;
-  }
-  return cookies;
-}
-
 // Host execution helpers
 export function isHostExecutionGroup(group: RegisteredGroup): boolean {
   return (group.executionMode || 'container') === 'host';

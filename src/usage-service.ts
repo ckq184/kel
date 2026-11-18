@@ -3,7 +3,6 @@ import crypto from 'node:crypto';
 import {
   getRecordedUsageEventCost,
   getUsagePricingBucketTotals,
-  getUserById,
   recordUsageEventBatch,
   type UsageModelRecordInput,
 } from './db.js';
@@ -142,7 +141,6 @@ export function recordUsageEvent(options: RecordUsageEventOptions): {
     usage.modelUsage,
     customPricing,
   );
-  const user = getUserById(options.userId);
   const models: UsageModelRecordInput[] = priced.models.map((model) => {
     const previous = getUsagePricingBucketTotals({
       userId: options.userId,

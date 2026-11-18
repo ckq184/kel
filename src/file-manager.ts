@@ -2,12 +2,9 @@ import path from 'path';
 import fs from 'fs';
 import { DATA_DIR, GROUPS_DIR, MAX_FILE_SIZE } from './config.js';
 import { deleteContainerEnvConfig } from './runtime-config.js';
-import { logger } from './logger.js';
 
 // --- Storage usage cache (5 minute TTL) ---
 const _storageCache = new Map<string, { bytes: number; expires: number }>();
-const STORAGE_CACHE_TTL = 5 * 60 * 1000;
-
 function getStorageCacheKey(folder: string, rootOverride?: string): string {
   return getFileRoot(folder, rootOverride);
 }
@@ -294,33 +291,6 @@ export function invalidateGroupStorageUsage(
   rootOverride?: string,
 ): void {
   _storageCache.delete(getStorageCacheKey(folder, rootOverride));
-}
-
-const MAX_DIR_DEPTH = 20;
-
-function calculateDirSize(dirPath: string, depth = 0): number {
-  if (depth > MAX_DIR_DEPTH) return 0;
-  let total = 0;
-  let entries;
-  try {
-    entries = fs.readdirSync(dirPath, { withFileTypes: true });
-  } catch {
-    return 0;
-  }
-  for (const entry of entries) {
-    const fullPath = path.join(dirPath, entry.name);
-    if (entry.isSymbolicLink()) continue; // skip symlinks to avoid loops
-    if (entry.isDirectory()) {
-      total += calculateDirSize(fullPath, depth + 1);
-    } else if (entry.isFile()) {
-      try {
-        total += fs.statSync(fullPath).size;
-      } catch {
-        /* skip unreadable files */
-      }
-    }
-  }
-  return total;
 }
 
 /** Remove all runtime artifacts for a group folder (workspace, sessions, ipc, env, memory). */

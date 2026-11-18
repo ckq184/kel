@@ -42,14 +42,3 @@ export async function loadWorkspaceMemoryTurnContext(
     block: renderWorkspaceMemorySnapshotBlock(snapshot),
   };
 }
-
-/** Serialize watcher-triggered async drains without dropping a trigger. */
-export function createSerializedAsyncTrigger(
-  task: () => Promise<void>,
-  onError: (error: unknown) => void,
-): () => void {
-  let chain = Promise.resolve();
-  return () => {
-    chain = chain.then(task).catch(onError);
-  };
-}

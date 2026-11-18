@@ -21,11 +21,9 @@ import { validateSafeHttpsUrl } from '../url-safety.js';
 import { canAccessGroup, canModifyGroup } from '../web-context.js';
 import { getRegisteredGroup } from '../db.js';
 import {
-  parseFrontmatter,
   validateSkillId,
   validateSkillPath,
   scanSkillDirectory,
-  listFiles,
 } from '../skill-utils.js';
 
 const execFileAsync = promisify(execFile);

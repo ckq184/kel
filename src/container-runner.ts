@@ -1083,7 +1083,6 @@ export function buildVolumeMounts(
   const mounts: VolumeMount[] = [];
   let feishuCliBinding: FeishuCliRuntimeBinding | null = null;
   const projectRoot = process.cwd();
-  const groupDir = path.join(GROUPS_DIR, group.folder);
   const ownerId = group.created_by;
 
   if (isAdminHome) {

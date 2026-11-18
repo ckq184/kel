@@ -5,7 +5,6 @@ import {
   LAST_ACTIVE_DEBOUNCE_MS,
   getCachedSessionWithUser,
   invalidateSessionCache,
-  type Variables,
 } from '../web-context.js';
 import { updateSessionLastActive, deleteUserSession } from '../db.js';
 import {
@@ -26,8 +25,9 @@ import { logger } from '../logger.js';
 /**
  * Extract ALL values for a given cookie name from the raw Cookie header.
  * Browsers may send duplicate cookies (same name, different attributes)
- * when old and new cookies coexist. parseCookie() only keeps one value,
- * but we need to try all of them to handle migration scenarios.
+ * when old and new cookies coexist. A single-value cookie parser would only
+ * keep one of them, but we need to try all of them to handle migration
+ * scenarios.
  */
 export function getAllCookieValues(
   cookieHeader: string | undefined,
@@ -154,21 +154,6 @@ export const requirePermission =
     const user = c.get('user') as AuthUser;
     if (!hasPermission(user, permission)) {
       return c.json({ error: `Forbidden: ${permission} required` }, 403);
-    }
-    await next();
-  };
-
-export const requireAnyPermission =
-  (permissions: Permission[]) => async (c: any, next: any) => {
-    const user = c.get('user') as AuthUser;
-    const ok = permissions.some((permission) =>
-      hasPermission(user, permission),
-    );
-    if (!ok) {
-      return c.json(
-        { error: `Forbidden: one of [${permissions.join(', ')}] required` },
-        403,
-      );
     }
     await next();
   };

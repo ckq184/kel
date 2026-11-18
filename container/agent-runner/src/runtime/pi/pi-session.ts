@@ -3,7 +3,6 @@ import type {
   AgentSessionEvent,
 } from '@earendil-works/pi-coding-agent';
 import type {
-  AgentRuntime,
   RuntimeEvent,
   RuntimeEventListener,
   RuntimeInput,

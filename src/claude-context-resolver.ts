@@ -7,7 +7,6 @@ import {
   reconcileSessionSkills,
   resolveEffectiveSkills,
   type EffectiveSkillManifest,
-  type EffectiveSkillLayer,
   type ManagedSkillPolicy,
 } from './effective-skill-resolver.js';
 

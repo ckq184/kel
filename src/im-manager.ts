@@ -14,13 +14,8 @@ import {
   createQQChannel,
   createWeChatChannel,
 } from './im-channel.js';
-import { type FeishuConnectionConfig } from './feishu.js';
 import type { FeishuConversationPlan } from './feishu-conversation-policy.js';
-import type { QQConnectionConfig } from './qq.js';
-import type {
-  WeChatConnectionConfig,
-  WeChatConnectionState,
-} from './wechat.js';
+import type { WeChatConnectionState } from './wechat.js';
 import crypto from 'node:crypto';
 import type { StreamingSession } from './im-channel.js';
 import type { StreamingCardLifecycle } from './feishu-streaming-card.js';

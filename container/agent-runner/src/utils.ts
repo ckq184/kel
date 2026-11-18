@@ -152,83 +152,6 @@ export function summarizeToolInput(input: unknown): string | undefined {
 }
 
 /**
- * Summarize a tool_result block's content for streaming display.
- *
- * The SDK delivers tool results as either a plain string or an array of content
- * blocks ({type:'text'|'image'|...}). We flatten the text, redact inline secrets,
- * and clamp the length so the trace stays readable without dumping a 10K-line
- * bash output into the card. Returns undefined for empty / non-textual results.
- */
-export function summarizeToolResult(
-  content: unknown,
-  maxLen = 400,
-): string | undefined {
-  let text: string | undefined;
-  if (typeof content === 'string') {
-    text = content;
-  } else if (Array.isArray(content)) {
-    text = content
-      .map((b) => {
-        if (typeof b === 'string') return b;
-        if (b && typeof b === 'object') {
-          const block = b as { type?: string; text?: string };
-          if (block.type === 'text') return block.text ?? '';
-          if (block.type === 'image') return '[image]';
-        }
-        return '';
-      })
-      .filter(Boolean)
-      .join('\n');
-  }
-  const trimmed = text?.trim();
-  if (!trimmed) return undefined;
-  return shorten(redactInlineSecrets(trimmed), maxLen);
-}
-
-/**
- * Extract a skill name from Skill tool input.
- * Tries skillName, skill, name, command fields, then regex-matches leading slashes.
- */
-export function extractSkillName(
-  toolName: unknown,
-  input: unknown,
-): string | undefined {
-  if (toolName !== 'Skill') return undefined;
-  if (!input || typeof input !== 'object') return undefined;
-  const obj = input as Record<string, unknown>;
-  const raw =
-    (typeof obj.skillName === 'string' && obj.skillName) ||
-    (typeof obj.skill === 'string' && obj.skill) ||
-    (typeof obj.name === 'string' && obj.name) ||
-    (typeof obj.command === 'string' && obj.command) ||
-    '';
-  if (!raw) return undefined;
-  const matched = raw.match(/\/([A-Za-z0-9._-]+)/);
-  if (matched && matched[1]) return matched[1];
-  return raw.replace(/^\/+/, '').trim() || undefined;
-}
-
-/**
- * Sanitize a string for use as a filename.
- * Lowercases, replaces non-alphanumeric characters with hyphens, trims, and limits length.
- */
-export function sanitizeFilename(summary: string): string {
-  return summary
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 50);
-}
-
-/**
- * Generate a fallback conversation archive filename based on current time.
- */
-export function generateFallbackName(): string {
-  const time = new Date();
-  return `conversation-${time.getHours().toString().padStart(2, '0')}${time.getMinutes().toString().padStart(2, '0')}`;
-}
-
-/**
  * 判定一个 subtype=success 的 SDK result 是否为「上游断流截断」的合成结果。
  *
  * 指纹来源（实测事故）：第三方网关在长文本生成中途断流时，SDK 收不到终结帧
@@ -408,16 +331,6 @@ function localDateTimeParts(d: Date, tz: string): LocalParts {
     time: `${hour}:${get('minute')}:${get('second')}`,
     offset,
   };
-}
-
-/**
- * 当前时刻的本地 ISO-8601-with-offset 串 + 时区名，供注入 agent 上下文做相对时间推理。
- * 形如：2026-06-12T10:50:00+08:00 (Asia/Shanghai)
- */
-export function formatLocalNow(d: Date = new Date()): string {
-  const tz = currentTimeZone();
-  const { date, time, offset } = localDateTimeParts(d, tz);
-  return `${date}T${time}${offset} (${tz})`;
 }
 
 /**

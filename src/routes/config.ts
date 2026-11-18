@@ -16,7 +16,6 @@ import { extractChatId, getChannelType } from '../im-channel.js';
 import {
   deleteRegisteredGroup,
   deleteChatHistory,
-  deleteAgent,
   getRegisteredGroup,
   getAllRegisteredGroups,
   forceActiveAdminRuntimesToHost,
@@ -35,7 +34,6 @@ import {
   deleteRouterState,
   isDatabaseInitialized,
   VALID_ACTIVATION_MODES,
-  getDefaultChannelAccount,
   getLegacyChannelAccount,
   getChannelAccount,
   getGroupsByTargetAgent,
@@ -114,11 +112,9 @@ import type {
   ClaudeOAuthCredentials,
   CachedOAuthUsage,
   OAuthUsageResponse,
-  OAuthUsageBucket,
 } from '../runtime-config.js';
 import { parseOAuthUsageBucket } from '../runtime-config.js';
 import type { AudienceMode, AuthUser, RegisteredGroup } from '../types.js';
-import { hasPermission } from '../permissions.js';
 import { logger } from '../logger.js';
 import { testFeishuCredentials } from '../feishu-connectivity.js';
 import {
@@ -2955,11 +2951,6 @@ configRoutes.delete('/user-im/qq/paired-chats/:jid', authMiddleware, (c) => {
 
 const WECHAT_API_BASE = 'https://ilinkai.weixin.qq.com';
 const WECHAT_QR_BOT_TYPE = '3';
-
-function randomWechatUin(): string {
-  const uint32 = randomBytes(4).readUInt32BE(0);
-  return Buffer.from(String(uint32), 'utf-8').toString('base64');
-}
 
 function maskBotToken(token: string | undefined): string | null {
   if (!token) return null;

@@ -33,8 +33,6 @@ export const MOUNT_ALLOWLIST_PATH = path.resolve(
 export const DATA_DIR = path.resolve(PROJECT_ROOT, 'data');
 export const STORE_DIR = path.join(DATA_DIR, 'db');
 export const GROUPS_DIR = path.join(DATA_DIR, 'groups');
-export const MAIN_GROUP_FOLDER = 'main';
-
 // 文件大小上限（MB）。Web 文件面板上传与 IM 渠道收文件（feishu/qq/
 // wechat inbound）共用此上限。注意：Web 下载是流式返回已存在
 // 的文件，不受此上限约束。通过 MAX_FILE_SIZE_MB 环境变量调整（默认 50MB）；

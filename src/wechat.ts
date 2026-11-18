@@ -1457,7 +1457,7 @@ export function createWeChatConnection(
       }
 
       // Single readFile + size check, then pass buffer to uploadMediaBuffer —
-      // avoids stat + readFile double-I/O that uploadMediaFile would incur.
+      // avoids a separate stat + readFile double-I/O.
       const buf = await fs.promises.readFile(filePath);
       if (buf.length > MAX_FILE_SIZE) {
         throw new Error(

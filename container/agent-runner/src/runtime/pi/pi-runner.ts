@@ -1,10 +1,8 @@
 import type {
   ContainerInput,
   ContainerOutput,
-  ImageMediaType,
   StreamEvent,
 } from '../../types.js';
-import type { McpContext } from '../../mcp-tools.js';
 import {
   IpcTurnDeliveryTracker,
   latestIpcDeliveryId,
@@ -16,7 +14,6 @@ import type {
   RuntimeEvent,
   RuntimeInput,
   RuntimeResult,
-  RuntimeSession,
 } from '../types.js';
 
 type PiQueryRunResult = {

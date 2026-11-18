@@ -1,6 +1,4 @@
 import crypto from 'crypto';
-import fs from 'fs';
-import path from 'path';
 import { fetch as undiciFetch, type Dispatcher } from 'undici';
 
 import { logger } from './logger.js';
@@ -283,27 +281,4 @@ export async function uploadMediaBuffer(params: {
     fileSize: rawsize,
     fileSizeCiphertext: filesize,
   };
-}
-
-/** 完整的媒体上传流程：读文件 → 哈希 → 加密 → 获取URL → 上传 */
-export async function uploadMediaFile(params: {
-  filePath: string;
-  toUserId: string;
-  baseUrl: string;
-  token: string;
-  cdnBaseUrl?: string;
-  mediaType: number;
-  dispatcher?: Dispatcher;
-}): Promise<UploadMediaResult> {
-  const buf = await fs.promises.readFile(params.filePath);
-  return uploadMediaBuffer({
-    buf,
-    fileName: path.basename(params.filePath),
-    toUserId: params.toUserId,
-    baseUrl: params.baseUrl,
-    token: params.token,
-    cdnBaseUrl: params.cdnBaseUrl,
-    mediaType: params.mediaType,
-    dispatcher: params.dispatcher,
-  });
 }
