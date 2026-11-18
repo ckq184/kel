@@ -600,47 +600,6 @@ export const CkqclawOwnerProfileMutationSchema = z.discriminatedUnion(
   ],
 );
 
-export const ClaudeConfigSchema = z.object({
-  anthropicBaseUrl: z.string(),
-  anthropicModel: z.string().max(128).optional(),
-});
-
-export const ClaudeThirdPartyProfileCreateSchema = z.object({
-  name: z.string().min(1).max(64),
-  anthropicBaseUrl: z.string().max(2000),
-  anthropicAuthToken: z.string().max(2000),
-  anthropicModel: z.string().max(128).optional(),
-  customEnv: z.record(z.string().max(256), z.string().max(4096)).optional(),
-});
-
-export const ClaudeThirdPartyProfilePatchSchema = z
-  .object({
-    name: z.string().min(1).max(64).optional(),
-    anthropicBaseUrl: z.string().max(2000).optional(),
-    anthropicModel: z.string().max(128).optional(),
-    customEnv: z.record(z.string().max(256), z.string().max(4096)).optional(),
-  })
-  .refine(
-    (data) =>
-      typeof data.name === 'string' ||
-      typeof data.anthropicBaseUrl === 'string' ||
-      typeof data.anthropicModel === 'string' ||
-      data.customEnv !== undefined,
-    { message: 'At least one profile field must be provided' },
-  );
-
-export const ClaudeThirdPartyProfileSecretsSchema = z
-  .object({
-    anthropicAuthToken: z.string().max(2000).optional(),
-    clearAnthropicAuthToken: z.boolean().optional(),
-  })
-  .refine(
-    (data) =>
-      typeof data.anthropicAuthToken === 'string' ||
-      data.clearAnthropicAuthToken === true,
-    { message: 'At least one secret field must be provided' },
-  );
-
 export const GroupPatchSchema = z.object({
   name: z.string().min(1).max(MAX_GROUP_NAME_LEN).optional(),
   is_pinned: z.boolean().optional(),
@@ -718,15 +677,6 @@ export const HostIntegrationSettingsSchema = z
         'mainAgentAutoCompactPercentage must be 0 or between 50 and 90',
       )
       .optional(),
-  })
-  .strict();
-
-export const BillingSettingsSchema = z
-  .object({
-    enabled: z.boolean().optional(),
-    minStartBalanceUsd: z.number().min(0).max(1000000).optional(),
-    currency: z.string().trim().min(1).max(10).optional(),
-    currencyRate: z.number().min(0.0001).max(1000000).optional(),
   })
   .strict();
 
@@ -839,41 +789,6 @@ export const ClaudeOAuthCredentialsSchema = z.object({
   scopes: z.array(z.string()).default([]),
   subscriptionType: z.string().optional(),
 });
-
-export const ClaudeSecretsSchema = z
-  .object({
-    anthropicAuthToken: z.string().optional(),
-    clearAnthropicAuthToken: z.boolean().optional(),
-    anthropicApiKey: z.string().optional(),
-    clearAnthropicApiKey: z.boolean().optional(),
-    claudeCodeOauthToken: z.string().optional(),
-    clearClaudeCodeOauthToken: z.boolean().optional(),
-    claudeOAuthCredentials: ClaudeOAuthCredentialsSchema.optional(),
-    clearClaudeOAuthCredentials: z.boolean().optional(),
-  })
-  .refine(
-    (data) => {
-      const hasAnthropicAuthToken =
-        typeof data.anthropicAuthToken === 'string' ||
-        data.clearAnthropicAuthToken === true;
-      const hasAnthropicApiKey =
-        typeof data.anthropicApiKey === 'string' ||
-        data.clearAnthropicApiKey === true;
-      const hasClaudeCodeOauthToken =
-        typeof data.claudeCodeOauthToken === 'string' ||
-        data.clearClaudeCodeOauthToken === true;
-      const hasClaudeOAuthCredentials =
-        data.claudeOAuthCredentials !== undefined ||
-        data.clearClaudeOAuthCredentials === true;
-      return (
-        hasAnthropicAuthToken ||
-        hasAnthropicApiKey ||
-        hasClaudeCodeOauthToken ||
-        hasClaudeOAuthCredentials
-      );
-    },
-    { message: 'At least one secret field must be provided' },
-  );
 
 // 飞书/Lark 官方 appId 形如 `cli_xxxxxxxxxxxxxxxx`(cli_ 前缀 + 小写字母数字)。
 // 历史上有用户把用户名 / 手机号 / 邮箱前缀填进去,后端不校验直接存,飞书 SDK 拿这串
@@ -1002,74 +917,6 @@ export const BillingPlanCreateSchema = z.object({
   features: z.array(z.string().max(64)).max(50).optional(),
   is_default: z.boolean().optional(),
   is_active: z.boolean().optional(),
-});
-
-export const BillingPlanPatchSchema = BillingPlanCreateSchema.omit({
-  id: true,
-}).partial();
-
-export const AssignPlanSchema = z.object({
-  plan_id: z.string().min(1),
-  duration_days: z.number().int().min(1).max(3650).optional(),
-});
-
-export const AdjustBalanceSchema = z.object({
-  amount_usd: z.number().refine((v) => v !== 0, 'Amount cannot be zero'),
-  description: z.string().min(1).max(500),
-  idempotency_key: z.string().min(1).max(64).optional(),
-});
-
-export const BatchAssignPlanSchema = z.object({
-  user_ids: z.array(z.string().min(1)).min(1).max(100),
-  plan_id: z.string().min(1),
-  duration_days: z.number().int().min(1).max(3650).optional(),
-});
-
-export const RedeemCodeCreateSchema = z
-  .object({
-    type: z.enum(['balance', 'subscription', 'trial']),
-    value_usd: z.number().min(0.01).optional(),
-    plan_id: z.string().min(1).optional(),
-    duration_days: z.number().int().min(1).max(3650).optional(),
-    max_uses: z.number().int().min(1).max(10000).optional(),
-    count: z.number().int().min(1).max(100).optional(), // 批量生成数量
-    prefix: z
-      .string()
-      .max(16)
-      .regex(/^[\w-]*$/)
-      .optional(), // 兑换码前缀
-    expires_in_hours: z.number().int().min(1).max(87600).optional(),
-    notes: z.string().max(500).optional(),
-  })
-  .superRefine((data, ctx) => {
-    if (data.type === 'balance' && (!data.value_usd || data.value_usd <= 0)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['value_usd'],
-        message: 'Balance type requires a positive value_usd',
-      });
-    }
-    if (data.type === 'subscription' && !data.plan_id) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['plan_id'],
-        message: 'Subscription type requires a plan_id',
-      });
-    }
-    if (
-      data.type === 'trial' &&
-      (!data.duration_days || data.duration_days <= 0)
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['duration_days'],
-        message: 'Trial type requires a positive duration_days',
-      });
-    }
-  });
-
-export const RedeemCodeSchema = z.object({
-  code: z.string().min(1).max(64),
 });
 
 // --- Bug Report schemas ---

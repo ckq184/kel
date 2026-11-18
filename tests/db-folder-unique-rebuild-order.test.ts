@@ -179,7 +179,6 @@ describe('unique-folder rebuild migration ordering', () => {
         'feishu_chat_mode',
         'sender_allowlist',
         'channel_account_id',
-        'auto_memory_recall',
       ]) {
         expect(columns, `column ${column} missing after first init`).toContain(
           column,

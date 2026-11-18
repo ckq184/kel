@@ -17,12 +17,8 @@ function section(source: string, start: string, end: string): string {
 
 describe('internal context audit visibility contract', () => {
   test('keeps context diagnostics internal to the service', () => {
-    const runner = read('container/agent-runner/src/index.ts');
     const im = read('src/index.ts');
     const web = read('src/web.ts');
-
-    // The diagnostic remains available to operators.
-    expect(runner).toMatch(/eventType: 'context_audit'/);
 
     // IM cards log warnings instead of turning them into conversation events.
     const imContextCase = section(

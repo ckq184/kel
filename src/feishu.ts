@@ -3784,32 +3784,6 @@ export interface ConnectFeishuOptions {
 }
 
 /**
- * @deprecated Use createFeishuConnection() factory instead. Will be replaced by imManager.
- * Connect to Feishu via WebSocket and start receiving messages.
- */
-export async function connectFeishu(
-  opts: ConnectFeishuOptions,
-): Promise<boolean> {
-  const { getFeishuProviderConfigWithSource } =
-    await import('./runtime-config.js');
-  const { config, source } = getFeishuProviderConfigWithSource();
-  if (!config.appId || !config.appSecret) {
-    logger.warn(
-      { source },
-      'Feishu config is empty, running in Web-only mode (set it in Settings -> Feishu config)',
-    );
-    return false;
-  }
-
-  _defaultInstance = createFeishuConnection({
-    appId: config.appId,
-    appSecret: config.appSecret,
-  });
-
-  return _defaultInstance.connect(opts);
-}
-
-/**
  * @deprecated Use FeishuConnection.sendMessage() instead.
  */
 export async function sendFeishuMessage(
@@ -3843,14 +3817,4 @@ export async function syncFeishuGroups(): Promise<void> {
  */
 export function isFeishuConnected(): boolean {
   return _defaultInstance?.isConnected() ?? false;
-}
-
-/**
- * @deprecated Use FeishuConnection.stop() instead.
- */
-export async function stopFeishu(): Promise<void> {
-  if (_defaultInstance) {
-    await _defaultInstance.stop();
-    _defaultInstance = null;
-  }
 }

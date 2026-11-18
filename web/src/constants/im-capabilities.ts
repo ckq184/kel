@@ -60,21 +60,3 @@ export function getImChannelCapabilities(
     ? IM_CHANNEL_CAPABILITIES[channelType as ImChannelType]
     : undefined;
 }
-
-export function isThreadMapCapableChat(info?: {
-  channel_type?: string | null;
-  chat_mode?: string | null;
-  group_message_type?: string | null;
-  native_context_type?: string | null;
-  thread_capable?: boolean | null;
-}): boolean {
-  if (!info?.channel_type) return false;
-  const caps = getImChannelCapabilities(info.channel_type);
-  if (!caps?.supports_thread_map) return false;
-  return (
-    info.thread_capable === true ||
-    info.native_context_type === 'thread' ||
-    info.chat_mode === 'topic' ||
-    info.group_message_type === 'thread'
-  );
-}

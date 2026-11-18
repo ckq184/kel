@@ -505,16 +505,5 @@ describe('Assistant primary projection boundary', () => {
     expect(source).not.toContain(
       'outputAlreadySent && effectiveTurnId === lastSavedTurnId',
     );
-
-    const runnerSource = fs.readFileSync(
-      path.join(process.cwd(), 'container/agent-runner/src/index.ts'),
-      'utf8',
-    );
-    expect(runnerSource).toMatch(
-      /result: `\\u26a0\\ufe0f \$\{reason\}`,[\s\S]{0,120}sourceKind: 'input_rejection_warning'/,
-    );
-    expect(runnerSource).toMatch(
-      /const truncationLogicalInputTurnId = activeOutputInputTurnId;[\s\S]{0,3500}'truncation_continue',\s+truncationIpcMessages,\s+mcpToolsConfig,\s+truncationLogicalInputTurnId,\s+false,/,
-    );
   });
 });

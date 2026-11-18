@@ -3,24 +3,6 @@ import fs from 'node:fs';
 import { describe, expect, test } from 'vitest';
 
 describe('dynamic Workflow product contract', () => {
-  test('uses official SDK task metadata and output files', () => {
-    const processor = fs.readFileSync(
-      'container/agent-runner/src/stream-processor.ts',
-      'utf8',
-    );
-    const projection = fs.readFileSync(
-      'container/agent-runner/src/workflow-run.ts',
-      'utf8',
-    );
-
-    expect(processor).toContain('task_started');
-    expect(processor).toContain('task_type');
-    expect(processor).toContain('workflow_name');
-    expect(processor).toContain('workflowRunFromOutputFile');
-    expect(projection).toContain('raw.workflowProgress');
-    expect(projection).toContain('input.usage?.total_tokens');
-  });
-
   test('renders workflow and normal answer as separate presentation regions', () => {
     const bubble = fs.readFileSync(
       'web/src/components/chat/MessageBubble.tsx',
@@ -52,16 +34,10 @@ describe('dynamic Workflow product contract', () => {
       'web/src/components/chat/StreamingDisplay.tsx',
       'utf8',
     );
-    const projection = fs.readFileSync(
-      'container/agent-runner/src/workflow-run.ts',
-      'utf8',
-    );
 
     expect(list).toContain('isHeldBackgroundAcknowledgement');
     expect(streaming).toContain('hasWorkflowCards');
     expect(streaming).not.toContain('调用轨迹');
-    expect(projection).toContain("label.includes('${')");
-    expect(projection).toContain('workflowRunFromTaskProgress');
   });
 
   test('uses the same final-only presentation in conversation previews', () => {

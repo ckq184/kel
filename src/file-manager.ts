@@ -289,36 +289,6 @@ export function createDirectory(
   }
 }
 
-/**
- * 递归计算目录总大小（字节），带 5 分钟缓存
- */
-export function getGroupStorageUsage(
-  folder: string,
-  rootOverride?: string,
-): number {
-  const cacheKey = getStorageCacheKey(folder, rootOverride);
-  const cached = _storageCache.get(cacheKey);
-  if (cached && cached.expires > Date.now()) {
-    return cached.bytes;
-  }
-
-  const root = getFileRoot(folder, rootOverride);
-  if (!fs.existsSync(root)) return 0;
-
-  let totalBytes = 0;
-  try {
-    totalBytes = calculateDirSize(root);
-  } catch (err) {
-    logger.warn({ err, folder }, 'Failed to calculate storage usage');
-  }
-
-  _storageCache.set(cacheKey, {
-    bytes: totalBytes,
-    expires: Date.now() + STORAGE_CACHE_TTL,
-  });
-  return totalBytes;
-}
-
 export function invalidateGroupStorageUsage(
   folder: string,
   rootOverride?: string,

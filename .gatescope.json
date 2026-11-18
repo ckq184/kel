@@ -2,6 +2,7 @@
   "task": "dead-code-sqlite-prune - 死代码与 SQLite 死表治理（旧runner集群/后端死导出/前端死字段/v76 DROP死表死列）",
   "base": "1d9c899",
   "allow": [
+    "container/agent-runner/tests/**",
     "container/agent-runner/src/**",
     "src/**",
     "web/src/**",

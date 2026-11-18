@@ -17,9 +17,10 @@ host process only saw the framed `ContainerOutput` protocol.
 The runner now has a runtime-neutral contract in
 `container/agent-runner/src/runtime/types.ts`. Pi is the product runtime and
 the compiled/container entry point is `container/agent-runner/src/pi-index.ts`.
-The old Claude runner is retained only as an uncompiled rollback reference;
-the production entry point fails fast if `AGENT_RUNTIME=claude` is requested.
-The Pi path is composed of:
+The old Claude runner cluster (`src/index.ts`, `runtime/claude/`, and its
+exclusive helper modules) was deleted in 2026-11 (see
+`docs/dead-code-sqlite-prune-plan.md`); it remains recoverable from git
+history. The Pi path is composed of:
 
 - `PiRuntimeAdapter`: Pi `ModelRuntime`, `SessionManager`, `DefaultResourceLoader`,
   skills, extensions, and `AgentSession` construction.
@@ -37,22 +38,22 @@ consume the existing framed output and delivery receipts.
 
 ## Capability matrix
 
-| Existing capability  | Pi implementation                                                                                          | Status                                        |
-| -------------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| Prompt and streaming | `AgentSession.prompt()` + runtime event adapter                                                            | Implemented                                   |
-| Tool calling         | Pi custom tools; Miniclaw handlers are reused                                                             | Implemented                                   |
-| Session persistence  | Pi `SessionManager` in the per-group Pi session directory                                                  | Implemented                                   |
-| Resume               | Open the Pi JSONL session by session id                                                                    | Implemented for Pi-created sessions           |
-| Abort                | `AgentSession.abort()` and IPC interrupt sentinel                                                          | Implemented                                   |
-| Steer / follow-up    | `AgentSession.followUp()` for queued IPC turns                                                             | Implemented in Pi bridge                      |
-| Compaction           | Pi native session compaction; product toggle maps to `SettingsManager.setCompactionEnabled` via `autoCompactEnabled`; legacy percentage/window knobs advisory | Implemented; live-model validation pending |
-| Skills               | Pi `DefaultResourceLoader` skill paths                                                                     | Implemented                                   |
-| Workspace memory     | Existing Miniclaw MCP handlers, adapted as Pi tools                                                       | Implemented in Pi path                        |
-| MCP/capabilities     | In-process capability handlers, namespaced as Pi tools                                                     | Implemented                                   |
-| Subagents            | `@tintinweb/pi-subagents` extension plus adapter                                                           | Implemented; result/steer are extension tools |
-| Background subagents | `run_in_background` is passed through the extension tool contract                                          | Validation pending                            |
-| Providers            | Pi `ModelRuntime`, including Anthropic-compatible custom endpoints                                         | Implemented                                   |
-| Web search/fetch     | No silent Pi substitute; these Claude-only built-ins are omitted until a Pi capability adapter is selected | Explicit limitation                           |
+| Existing capability  | Pi implementation                                                                                                                                             | Status                                        |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| Prompt and streaming | `AgentSession.prompt()` + runtime event adapter                                                                                                               | Implemented                                   |
+| Tool calling         | Pi custom tools; Miniclaw handlers are reused                                                                                                                 | Implemented                                   |
+| Session persistence  | Pi `SessionManager` in the per-group Pi session directory                                                                                                     | Implemented                                   |
+| Resume               | Open the Pi JSONL session by session id                                                                                                                       | Implemented for Pi-created sessions           |
+| Abort                | `AgentSession.abort()` and IPC interrupt sentinel                                                                                                             | Implemented                                   |
+| Steer / follow-up    | `AgentSession.followUp()` for queued IPC turns                                                                                                                | Implemented in Pi bridge                      |
+| Compaction           | Pi native session compaction; product toggle maps to `SettingsManager.setCompactionEnabled` via `autoCompactEnabled`; legacy percentage/window knobs advisory | Implemented; live-model validation pending    |
+| Skills               | Pi `DefaultResourceLoader` skill paths                                                                                                                        | Implemented                                   |
+| Workspace memory     | Existing Miniclaw MCP handlers, adapted as Pi tools                                                                                                           | Implemented in Pi path                        |
+| MCP/capabilities     | In-process capability handlers, namespaced as Pi tools                                                                                                        | Implemented                                   |
+| Subagents            | `@tintinweb/pi-subagents` extension plus adapter                                                                                                              | Implemented; result/steer are extension tools |
+| Background subagents | `run_in_background` is passed through the extension tool contract                                                                                             | Validation pending                            |
+| Providers            | Pi `ModelRuntime`, including Anthropic-compatible custom endpoints                                                                                            | Implemented                                   |
+| Web search/fetch     | No silent Pi substitute; these Claude-only built-ins are omitted until a Pi capability adapter is selected                                                    | Explicit limitation                           |
 
 ## Packages
 
@@ -161,7 +162,8 @@ and unit/integration coverage for each are in place.
   stored `Miniclaw`/`Default Agent` default-profile names until the next
   read, which lazily migrates them (one-time version bump and identity-hash
   recompute, so the main agent's sessions restart once).
-- `src/index.ts` (host entry) and `container/agent-runner/src/index.ts` plus
-  `runtime/claude/` remain as a rollback reference. They are not reachable
-  from the package main, Docker entrypoint, or host-mode runner path and
-  should be deleted after the transcript rollback window closes.
+- The Claude rollback reference was removed in 2026-11 (dead-code prune,
+  `docs/dead-code-sqlite-prune-plan.md`): `container/agent-runner/src/index.ts`,
+  `runtime/claude/`, and the helper modules only reachable from the old runner
+  no longer exist in the tree. `AGENT_RUNTIME=claude` now fails fast because
+  the fallback path is gone entirely, not merely uncompiled.

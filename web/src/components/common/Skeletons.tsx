@@ -57,33 +57,3 @@ export function SkeletonCardList({
     </div>
   );
 }
-
-/**
- * MonitorPage - table skeleton (header + 5 rows x 4 cols)
- */
-export function SkeletonTable() {
-  return (
-    <Card className="overflow-hidden">
-      {/* header */}
-      <div className="grid grid-cols-4 gap-4 px-4 py-3 border-b border-border bg-muted">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-4 w-3/4 rounded" />
-        ))}
-      </div>
-      {/* rows */}
-      {Array.from({ length: 5 }).map((_, row) => (
-        <div
-          key={row}
-          className="grid grid-cols-4 gap-4 px-4 py-3 border-b border-border last:border-b-0"
-        >
-          {Array.from({ length: 4 }).map((_, col) => (
-            <Skeleton
-              key={col}
-              className={`h-4 rounded ${col === 0 ? 'w-5/6' : 'w-2/3'}`}
-            />
-          ))}
-        </div>
-      ))}
-    </Card>
-  );
-}

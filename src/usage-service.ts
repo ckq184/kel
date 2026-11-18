@@ -215,8 +215,6 @@ export function recordUsageEvent(options: RecordUsageEventOptions): {
     source,
     createdAt,
     models,
-    trackBillingUsage: Boolean(user),
-    chargeBalance: false,
   });
 
   return {

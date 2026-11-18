@@ -142,29 +142,6 @@ describe('channel_mounts compatibility model', () => {
 
     expect(after).toEqual({ rowid: before.rowid, name: 'After' });
   });
-
-  test('startup preserves orphaned user balances for operator review', () => {
-    const row = probeDb
-      .prepare('SELECT COUNT(*) as cnt FROM user_balances WHERE user_id = ?')
-      .get('deleted-user') as { cnt: number };
-    expect(row.cnt).toBe(1);
-
-    const violations = probeDb
-      .prepare('PRAGMA foreign_key_check')
-      .all() as Array<{
-      table: string;
-      parent: string;
-    }>;
-    expect(violations).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          table: 'user_balances',
-          parent: 'users',
-        }),
-      ]),
-    );
-  });
-
   test('session binding written to registered_groups is mirrored to channel_mounts', () => {
     const now = new Date().toISOString();
     setRegisteredGroup('web:workspace-a', {

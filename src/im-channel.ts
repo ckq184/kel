@@ -194,15 +194,6 @@ export interface ChannelMessageDeliveryOptions {
 
 // ─── Channel Registry ───────────────────────────────────────────
 
-/** Backward-compatible registry derived from the shared CHANNEL_PREFIXES. */
-export const CHANNEL_REGISTRY: Record<string, { prefix: string }> =
-  Object.fromEntries(
-    Object.entries(CHANNEL_PREFIXES).map(([type, prefix]) => [
-      type,
-      { prefix },
-    ]),
-  );
-
 /**
  * Determine the channel type from a JID string.
  * Returns the matching channelType key or null if no prefix matches.

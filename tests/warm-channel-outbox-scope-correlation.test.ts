@@ -212,16 +212,10 @@ describe('warm channel outbox scope wiring contract', () => {
     expect(host).toContain('externalMessageId: lastProcessed.id,');
   });
 
-  test('the runner correlates warm output with its IPC deliveryId', () => {
-    const runner = read('container/agent-runner/src/index.ts');
+  test('the runtime correlates warm output with its IPC deliveryId', () => {
     const tools = read('container/agent-runner/src/mcp-tools.ts');
     // Counterpart of the host-side fix. If this ever changes back to the plain
     // turn id, the host must be revisited in the same commit.
-    expect(
-      runner.match(
-        /mcpToolsConfig\.currentInputTurnId =\s*\n?\s*latestIpcDeliveryId\(/g,
-      )?.length,
-    ).toBeGreaterThanOrEqual(2);
     expect(tools).toMatch(/data\.inputTurnId = ctx\.currentInputTurnId;/);
   });
 

@@ -28,9 +28,4 @@ describe('Agent effort runtime contracts', () => {
     );
     expect(calls).toHaveLength(2);
   });
-
-  test('runner passes the resolved value through the supported SDK option', () => {
-    const runner = read('container/agent-runner/src/index.ts');
-    expect(runner).toContain('...(agentEffort ? { effort: agentEffort } : {})');
-  });
 });

@@ -18,19 +18,10 @@ import {
   AgentStatus,
   AuthAuditLog,
   AuthEventType,
-  BalanceOperatorType,
-  BalanceReferenceType,
-  BalanceTransaction,
-  BalanceTransactionSource,
-  BalanceTransactionType,
-  BillingAuditEventType,
-  BillingAuditLog,
-  BillingPlan,
   ChannelMount,
   ChannelTurnContext,
   ChannelAccount,
   ChannelProvider,
-  DailyUsage,
   ExecutionMode,
   InviteCode,
   InviteCodeWithCreator,
@@ -39,12 +30,10 @@ import {
   FollowUpMode,
   FollowUpStatus,
   QueuedFollowUp,
-  MonthlyUsage,
   NewMessage,
   MessageCursor,
   MessageSourceKind,
   ImContextBinding,
-  RedeemCode,
   RegisteredGroup,
   ScheduledTask,
   SubAgent,
@@ -61,7 +50,6 @@ import {
   UserPublic,
   UserStatus,
   UserRole,
-  UserSubscription,
   UserSession,
   UserSessionWithUser,
   WorkspaceAgentProfileBinding,
@@ -103,7 +91,7 @@ let db: InstanceType<typeof Database>;
  * restating the number. Hardcoding it meant every schema bump edited a dozen
  * unrelated test files, which is churn that hides real assertion changes.
  */
-export const CURRENT_SCHEMA_VERSION = 75;
+export const CURRENT_SCHEMA_VERSION = 76;
 
 export function isDatabaseInitialized(): boolean {
   return Boolean(db?.open);
@@ -115,11 +103,11 @@ let _stmts: {
   storeMessageInsert: any;
   insertUsageInsert: any;
   insertUsageUpsert: any;
+  updateTokenUsageById: any;
+  updateTokenUsageLatest: any;
   getSessionWithUser: any;
   deleteSession: any;
   updateSessionLastActive: any;
-  updateTokenUsageById: any;
-  updateTokenUsageLatest: any;
   getMessagesSince: any;
   getExpiredSessionIds: any;
 } | null = null;
@@ -172,21 +160,21 @@ function stmts() {
          JOIN users u ON s.user_id = u.id
          WHERE s.id = ?`,
       ),
-      deleteSession: db.prepare('DELETE FROM user_sessions WHERE id = ?'),
-      updateSessionLastActive: db.prepare(
-        'UPDATE user_sessions SET last_active_at = ? WHERE id = ?',
-      ),
       updateTokenUsageById: db.prepare(
-        `UPDATE messages SET token_usage = ?, cost_usd = ? WHERE id = ? AND chat_jid = ?`,
+        `UPDATE messages SET token_usage = ? WHERE id = ? AND chat_jid = ?`,
       ),
       updateTokenUsageLatest: db.prepare(
-        `UPDATE messages SET token_usage = ?, cost_usd = ?
+        `UPDATE messages SET token_usage = ?
          WHERE rowid = (
            SELECT rowid FROM messages
            WHERE chat_jid = ? AND is_from_me = 1 AND token_usage IS NULL
              AND COALESCE(source_kind, 'legacy') != 'sdk_send_message'
            ORDER BY timestamp DESC LIMIT 1
          )`,
+      ),
+      deleteSession: db.prepare('DELETE FROM user_sessions WHERE id = ?'),
+      updateSessionLastActive: db.prepare(
+        'UPDATE user_sessions SET last_active_at = ? WHERE id = ?',
       ),
       getMessagesSince: db.prepare(
         `SELECT id, chat_jid, source_jid, sender, sender_name, content, timestamp, attachments, channel_context, source_kind, task_id,
@@ -245,12 +233,12 @@ interface StoredMessageMeta {
   sdkMessageUuid?: string | null;
   sourceKind?: MessageSourceKind | null;
   finalizationReason?: MessageFinalizationReason | null;
-  taskId?: string | null;
   deliveryMode?: FollowUpMode | null;
   deliveryStatus?: FollowUpStatus | null;
   deliveryRunId?: string | null;
   deliveryPriority?: number | null;
   deliveryUpdatedAt?: string | null;
+  taskId?: string | null;
 }
 
 function hasColumn(tableName: string, columnName: string): boolean {
@@ -1000,142 +988,6 @@ export function initDatabase(): void {
       ON workspace_agent_profiles(agent_profile_id);
   `);
 
-  // Billing tables
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS billing_plans (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      description TEXT,
-      tier INTEGER NOT NULL DEFAULT 0,
-      monthly_cost_usd REAL NOT NULL DEFAULT 0,
-      monthly_token_quota INTEGER,
-      monthly_cost_quota REAL,
-      daily_cost_quota REAL,
-      weekly_cost_quota REAL,
-      daily_token_quota INTEGER,
-      weekly_token_quota INTEGER,
-      rate_multiplier REAL NOT NULL DEFAULT 1.0,
-      trial_days INTEGER,
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      display_price TEXT,
-      highlight INTEGER NOT NULL DEFAULT 0,
-      max_groups INTEGER,
-      max_concurrent_containers INTEGER,
-      max_im_channels INTEGER,
-      max_mcp_servers INTEGER,
-      max_storage_mb INTEGER,
-      allow_overage INTEGER NOT NULL DEFAULT 0,
-      features TEXT NOT NULL DEFAULT '[]',
-      is_default INTEGER NOT NULL DEFAULT 0,
-      is_active INTEGER NOT NULL DEFAULT 1,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS user_subscriptions (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      plan_id TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'active',
-      started_at TEXT NOT NULL,
-      expires_at TEXT,
-      cancelled_at TEXT,
-      trial_ends_at TEXT,
-      notes TEXT,
-      auto_renew INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL,
-      FOREIGN KEY (user_id) REFERENCES users(id),
-      FOREIGN KEY (plan_id) REFERENCES billing_plans(id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_user_sub_user ON user_subscriptions(user_id);
-    CREATE INDEX IF NOT EXISTS idx_user_sub_status ON user_subscriptions(status);
-
-    CREATE TABLE IF NOT EXISTS user_balances (
-      user_id TEXT PRIMARY KEY,
-      balance_usd REAL NOT NULL DEFAULT 0,
-      total_deposited_usd REAL NOT NULL DEFAULT 0,
-      total_consumed_usd REAL NOT NULL DEFAULT 0,
-      updated_at TEXT NOT NULL,
-      FOREIGN KEY (user_id) REFERENCES users(id)
-    );
-
-    CREATE TABLE IF NOT EXISTS balance_transactions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id TEXT NOT NULL,
-      type TEXT NOT NULL,
-      amount_usd REAL NOT NULL,
-      balance_after REAL NOT NULL,
-      description TEXT,
-      reference_type TEXT,
-      reference_id TEXT,
-      actor_id TEXT,
-      source TEXT NOT NULL DEFAULT 'system_adjustment',
-      operator_type TEXT NOT NULL DEFAULT 'system',
-      notes TEXT,
-      idempotency_key TEXT,
-      created_at TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_bal_tx_user ON balance_transactions(user_id);
-    CREATE INDEX IF NOT EXISTS idx_bal_tx_created ON balance_transactions(created_at);
-
-    CREATE TABLE IF NOT EXISTS monthly_usage (
-      user_id TEXT NOT NULL,
-      month TEXT NOT NULL,
-      total_input_tokens INTEGER NOT NULL DEFAULT 0,
-      total_output_tokens INTEGER NOT NULL DEFAULT 0,
-      total_cost_usd REAL NOT NULL DEFAULT 0,
-      message_count INTEGER NOT NULL DEFAULT 0,
-      updated_at TEXT NOT NULL,
-      PRIMARY KEY (user_id, month)
-    );
-
-    CREATE TABLE IF NOT EXISTS redeem_codes (
-      code TEXT PRIMARY KEY,
-      type TEXT NOT NULL,
-      value_usd REAL,
-      plan_id TEXT,
-      duration_days INTEGER,
-      max_uses INTEGER NOT NULL DEFAULT 1,
-      used_count INTEGER NOT NULL DEFAULT 0,
-      expires_at TEXT,
-      created_by TEXT NOT NULL,
-      notes TEXT,
-      batch_id TEXT,
-      created_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS redeem_code_usage (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      code TEXT NOT NULL,
-      user_id TEXT NOT NULL,
-      redeemed_at TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_redeem_usage_user ON redeem_code_usage(user_id);
-
-    CREATE TABLE IF NOT EXISTS billing_audit_log (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      event_type TEXT NOT NULL,
-      user_id TEXT NOT NULL,
-      actor_id TEXT,
-      details TEXT,
-      created_at TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_bill_audit_user ON billing_audit_log(user_id);
-    CREATE INDEX IF NOT EXISTS idx_bill_audit_created ON billing_audit_log(created_at);
-
-    CREATE TABLE IF NOT EXISTS daily_usage (
-      user_id TEXT NOT NULL,
-      date TEXT NOT NULL,
-      total_input_tokens INTEGER NOT NULL DEFAULT 0,
-      total_output_tokens INTEGER NOT NULL DEFAULT 0,
-      total_cost_usd REAL NOT NULL DEFAULT 0,
-      message_count INTEGER NOT NULL DEFAULT 0,
-      PRIMARY KEY (user_id, date)
-    );
-    CREATE INDEX IF NOT EXISTS idx_daily_usage_date ON daily_usage(date);
-    CREATE INDEX IF NOT EXISTS idx_daily_usage_user_date ON daily_usage(user_id, date);
-  `);
-
   // Custom model pricing (task V): admin-managed per-model unit prices.
   // Prices are USD per million tokens and are resolved by the pure pricing
   // module before any usage event is recorded; history rows are immutable.
@@ -1230,19 +1082,6 @@ export function initDatabase(): void {
       UNIQUE(user_id, model, date)
     );
     CREATE INDEX IF NOT EXISTS idx_daily_user_date ON usage_daily_summary(user_id, date);
-
-    CREATE TABLE IF NOT EXISTS user_quotas (
-      user_id TEXT PRIMARY KEY,
-      monthly_cost_limit_usd REAL NOT NULL DEFAULT -1,
-      monthly_token_limit INTEGER NOT NULL DEFAULT -1,
-      daily_cost_limit_usd REAL NOT NULL DEFAULT -1,
-      daily_request_limit INTEGER NOT NULL DEFAULT -1,
-      billing_cycle_start TEXT,
-      subscription_tier TEXT,
-      subscription_expires_at TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
   `);
 
   // v51 usage event ledger columns. These must be added before creating the
@@ -1366,7 +1205,7 @@ export function initDatabase(): void {
   // ORDERING CONTRACT (task Z follow-up fix): this rebuild DROPs and
   // recreates registered_groups, so it must run BEFORE every additive
   // registered_groups ensureColumn below (selected_skills … sender_allowlist,
-  // channel_account_id, auto_memory_recall) — formerly it sat below them, and
+  // channel_account_id) — formerly it sat below them, and
   // an ancient DB's first boot both wiped those columns and then hard-failed
   // the assertSchema('registered_groups', …) pin, only converging after a
   // second boot. Its SELECT depends only on columns guaranteed above:
@@ -1531,11 +1370,11 @@ export function initDatabase(): void {
   ensureColumn('messages', 'token_usage', 'TEXT');
   ensureColumn('messages', 'channel_context', 'TEXT');
   ensureColumn('messages', 'turn_id', 'TEXT');
+  ensureColumn('messages', 'task_id', 'TEXT');
   ensureColumn('messages', 'session_id', 'TEXT');
   ensureColumn('messages', 'sdk_message_uuid', 'TEXT');
   ensureColumn('messages', 'source_kind', 'TEXT');
   ensureColumn('messages', 'finalization_reason', 'TEXT');
-  ensureColumn('messages', 'task_id', 'TEXT');
   ensureColumn('messages', 'delivery_mode', 'TEXT');
   ensureColumn('messages', 'delivery_status', 'TEXT');
   ensureColumn('messages', 'delivery_run_id', 'TEXT');
@@ -1781,136 +1620,6 @@ export function initDatabase(): void {
         ).run(candidates[0].jid, row.jid);
       }
     }
-  }
-
-  // v23→v24 migration: billing system initialization
-  ensureColumn('users', 'subscription_plan_id', 'TEXT');
-  const v24Ver = getRouterStateInternal('schema_version');
-  if (!v24Ver || parseInt(v24Ver, 10) < 24) {
-    db.transaction(() => {
-      // Ensure a default free plan exists
-      const existingDefault = db
-        .prepare('SELECT id FROM billing_plans WHERE is_default = 1')
-        .get();
-      if (!existingDefault) {
-        const now = new Date().toISOString();
-        db.prepare(
-          `INSERT OR IGNORE INTO billing_plans (id, name, description, tier, monthly_cost_usd, allow_overage, features, is_default, is_active, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        ).run('free', '免费版', '基础免费套餐', 0, 0, 0, '[]', 1, 1, now, now);
-      }
-
-      // Initialize balances for all existing users
-      const users = db
-        .prepare("SELECT id FROM users WHERE status != 'deleted'")
-        .all() as Array<{ id: string }>;
-      const now = new Date().toISOString();
-      for (const u of users) {
-        db.prepare(
-          'INSERT OR IGNORE INTO user_balances (user_id, balance_usd, total_deposited_usd, total_consumed_usd, updated_at) VALUES (?, 0, 0, 0, ?)',
-        ).run(u.id, now);
-      }
-
-      // Create active subscriptions for existing users → free plan
-      const freePlan = db
-        .prepare('SELECT id FROM billing_plans WHERE is_default = 1')
-        .get() as { id: string } | undefined;
-      if (freePlan) {
-        for (const u of users) {
-          const existing = db
-            .prepare(
-              "SELECT id FROM user_subscriptions WHERE user_id = ? AND status = 'active'",
-            )
-            .get(u.id);
-          if (!existing) {
-            const subId = `sub_${u.id}_${Date.now()}`;
-            db.prepare(
-              `INSERT INTO user_subscriptions (id, user_id, plan_id, status, started_at, created_at)
-               VALUES (?, ?, ?, 'active', ?, ?)`,
-            ).run(subId, u.id, freePlan.id, now, now);
-          }
-        }
-      }
-    })();
-  }
-
-  // v24→v25 migration: billing system enhancement (daily/weekly quotas, rate_multiplier, trial)
-  ensureColumn('billing_plans', 'daily_cost_quota', 'REAL');
-  ensureColumn('billing_plans', 'weekly_cost_quota', 'REAL');
-  ensureColumn('billing_plans', 'daily_token_quota', 'INTEGER');
-  ensureColumn('billing_plans', 'weekly_token_quota', 'INTEGER');
-  ensureColumn('billing_plans', 'rate_multiplier', 'REAL NOT NULL DEFAULT 1.0');
-  ensureColumn('billing_plans', 'trial_days', 'INTEGER');
-  ensureColumn('billing_plans', 'sort_order', 'INTEGER NOT NULL DEFAULT 0');
-  ensureColumn('billing_plans', 'display_price', 'TEXT');
-  ensureColumn('billing_plans', 'highlight', 'INTEGER NOT NULL DEFAULT 0');
-  ensureColumn('user_subscriptions', 'trial_ends_at', 'TEXT');
-  ensureColumn('user_subscriptions', 'notes', 'TEXT');
-  ensureColumn('redeem_codes', 'batch_id', 'TEXT');
-
-  // v25→v26 migration: cost_usd on messages + idempotency key for balance transactions
-  ensureColumn('messages', 'cost_usd', 'REAL');
-
-  // idempotency key for balance transactions
-  ensureColumn('balance_transactions', 'idempotency_key', 'TEXT');
-  ensureColumn(
-    'balance_transactions',
-    'source',
-    "TEXT NOT NULL DEFAULT 'system_adjustment'",
-  );
-  ensureColumn(
-    'balance_transactions',
-    'operator_type',
-    "TEXT NOT NULL DEFAULT 'system'",
-  );
-  ensureColumn('balance_transactions', 'notes', 'TEXT');
-  // Create unique index only if it doesn't exist
-  db.exec(
-    `CREATE UNIQUE INDEX IF NOT EXISTS idx_bal_tx_idempotency ON balance_transactions(idempotency_key) WHERE idempotency_key IS NOT NULL`,
-  );
-
-  // v26→v27 migration: wallet-first commercialization baseline
-  const v27Ver = getRouterStateInternal('schema_version');
-  if (!v27Ver || parseInt(v27Ver, 10) < 27) {
-    db.transaction(() => {
-      const now = new Date().toISOString();
-      const users = db
-        .prepare(
-          "SELECT id, role FROM users WHERE status != 'deleted' AND role != 'admin'",
-        )
-        .all() as Array<{ id: string; role: UserRole }>;
-      for (const user of users) {
-        db.prepare(
-          `INSERT OR IGNORE INTO user_balances (
-            user_id, balance_usd, total_deposited_usd, total_consumed_usd, updated_at
-          ) VALUES (?, 0, 0, 0, ?)`,
-        ).run(user.id, now);
-        db.prepare(
-          `UPDATE user_balances
-           SET balance_usd = 0, total_deposited_usd = 0, total_consumed_usd = 0, updated_at = ?
-           WHERE user_id = ?`,
-        ).run(now, user.id);
-
-        const hasOpening = db
-          .prepare(
-            "SELECT 1 FROM balance_transactions WHERE user_id = ? AND source = 'migration_opening' LIMIT 1",
-          )
-          .get(user.id);
-        if (!hasOpening) {
-          db.prepare(
-            `INSERT INTO balance_transactions (
-              user_id, type, amount_usd, balance_after, description, reference_type,
-              reference_id, actor_id, source, operator_type, notes, idempotency_key, created_at
-            ) VALUES (?, 'adjustment', 0, 0, ?, NULL, NULL, NULL, 'migration_opening', 'system', ?, NULL, ?)`,
-          ).run(
-            user.id,
-            '商业化计费上线初始化',
-            '上线迁移：普通用户默认余额归零，需充值后使用',
-            now,
-          );
-        }
-      }
-    })();
   }
 
   // v27→v28: Token usage tables + history migration
@@ -2187,7 +1896,6 @@ export function initDatabase(): void {
   // Placed after the unique-folder table rebuild above: that migration drops
   // and recreates registered_groups, wiping ensureColumns registered before
   // it on an ancient DB's first boot.
-  ensureColumn('registered_groups', 'auto_memory_recall', 'INTEGER DEFAULT 0');
   ensureColumn('channel_mounts', 'channel_account_id', 'TEXT');
   ensureColumn('agent_channel_mounts', 'channel_account_id', 'TEXT');
   ensureColumn(
@@ -2795,6 +2503,54 @@ export function initDatabase(): void {
     trimRetiredChannels();
   }
 
+  // v75→v76 trim: drop the retired billing/redeem/quota clusters (code paths
+  // were removed in the same change; data survives in the pre-migration backup
+  // that the enforcePreMigrationBackup gate writes for v<76 databases) and
+  // drop dead columns left behind by the auto-memory/billing/plugins prunes.
+  const v76Check = getRouterStateInternal('schema_version');
+  if (!v76Check || parseInt(v76Check, 10) < 76) {
+    const dropRetiredTables = db.transaction(() => {
+      // Zero-row dead tables (billing/redeem/quota prune leftovers) plus the
+      // billing compatibility tables with operator-review rows (documented as
+      // deliberately preserved at the time; the whole commercialization
+      // cluster is retired now). Children are dropped before their parents so
+      // FK enforcement never blocks the trim.
+      for (const table of [
+        'redeem_code_usage',
+        'user_subscriptions',
+        'balance_transactions',
+        'user_balances',
+        'billing_plans',
+        'monthly_usage',
+        'daily_usage',
+        'user_quotas',
+        'redeem_codes',
+        'billing_audit_log',
+      ]) {
+        db.exec(`DROP TABLE IF EXISTS ${table}`);
+      }
+
+      // Dead columns (additive-era leftovers; SQLite 3.35+ DROP COLUMN).
+      const dropColumns: Array<[string, string]> = [
+        ['registered_groups', 'auto_memory_recall'],
+        ['users', 'subscription_plan_id'],
+        ['messages', 'cost_usd'],
+      ];
+      for (const [table, column] of dropColumns) {
+        const cols = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{
+          name: string;
+        }>;
+        if (cols.some((c) => c.name === column)) {
+          db.exec(`ALTER TABLE ${table} DROP COLUMN ${column}`);
+        }
+      }
+    });
+    dropRetiredTables();
+    logger.info(
+      'v76 prune trim: retired billing/redeem/quota tables and dead columns dropped',
+    );
+  }
+
   db.prepare(
     'INSERT OR REPLACE INTO router_state (key, value) VALUES (?, ?)',
   ).run('schema_version', String(CURRENT_SCHEMA_VERSION));
@@ -3363,13 +3119,6 @@ export function releaseQueuedFollowUp(
   );
 }
 
-export function beginPromotingFollowUp(
-  chatJid: string,
-  messageId: string,
-): QueuedFollowUp | null {
-  return transitionFollowUp(chatJid, messageId, ['queued'], 'promoting');
-}
-
 export function restorePromotingFollowUp(
   chatJid: string,
   messageId: string,
@@ -3392,23 +3141,6 @@ export function cancelQueuedFollowUp(
 }
 
 /**
- * Read the `attachments` JSON column for a single message row, or null
- * if the row is missing (caller treats null as "no persisted state").
- */
-export function getMessageAttachments(
-  chatJid: string,
-  msgId: string,
-): string | null {
-  const row = db
-    .prepare(
-      `SELECT attachments FROM messages WHERE id = ? AND chat_jid = ? LIMIT 1`,
-    )
-    .get(msgId, chatJid) as { attachments: string | null } | undefined;
-  if (!row) return null;
-  return row.attachments ?? null;
-}
-
-/**
  * Update the token_usage field on a specific agent message, or fall back to
  * the most recent agent message without token_usage for the given chat.
  * When msgId is provided, uses precise `WHERE id = ? AND chat_jid = ?` match
@@ -3418,17 +3150,11 @@ export function updateLatestMessageTokenUsage(
   chatJid: string,
   tokenUsage: string,
   msgId?: string,
-  costUsd?: number,
 ): void {
   if (msgId) {
-    stmts().updateTokenUsageById.run(
-      tokenUsage,
-      costUsd ?? null,
-      msgId,
-      chatJid,
-    );
+    stmts().updateTokenUsageById.run(tokenUsage, msgId, chatJid);
   } else {
-    stmts().updateTokenUsageLatest.run(tokenUsage, costUsd ?? null, chatJid);
+    stmts().updateTokenUsageLatest.run(tokenUsage, chatJid);
   }
 }
 
@@ -3491,242 +3217,7 @@ export function rebuildMessageTokenUsageFromLedger(
     numTurns: Number(total.numTurns) || 0,
     modelUsage,
   };
-  updateLatestMessageTokenUsage(
-    chatJid,
-    JSON.stringify(tokenUsage),
-    messageId,
-    tokenUsage.costUSD,
-  );
-}
-
-/**
- * Get token usage statistics aggregated by date.
- */
-export function getTokenUsageStats(
-  days: number,
-  chatJids?: string[],
-): Array<{
-  date: string;
-  model: string;
-  input_tokens: number;
-  output_tokens: number;
-  cache_read_tokens: number;
-  cache_creation_tokens: number;
-  reasoning_tokens: number;
-  cost_usd: number;
-  message_count: number;
-}> {
-  const since = new Date();
-  since.setDate(since.getDate() - days);
-  const sinceStr = since.toISOString();
-
-  const jidFilter =
-    chatJids && chatJids.length > 0
-      ? `AND m.chat_jid IN (${chatJids.map(() => '?').join(',')})`
-      : '';
-  const params: unknown[] = [sinceStr, ...(chatJids || [])];
-
-  const baseQuery = `
-    SELECT
-      date(m.timestamp) as date,
-      json_extract(m.token_usage, '$.modelUsage') as model_usage_json,
-      json_extract(m.token_usage, '$.inputTokens') as input_tokens,
-      json_extract(m.token_usage, '$.outputTokens') as output_tokens,
-      json_extract(m.token_usage, '$.cacheReadInputTokens') as cache_read_tokens,
-      json_extract(m.token_usage, '$.cacheCreationInputTokens') as cache_creation_tokens,
-      json_extract(m.token_usage, '$.reasoningTokens') as reasoning_tokens,
-      json_extract(m.token_usage, '$.costUSD') as cost_usd
-    FROM messages m
-    WHERE m.token_usage IS NOT NULL
-      AND m.timestamp >= ?
-      ${jidFilter}
-    ORDER BY m.timestamp ASC
-  `;
-
-  const rows = db.prepare(baseQuery).all(...params) as Array<{
-    date: string;
-    model_usage_json: string | null;
-    input_tokens: number;
-    output_tokens: number;
-    cache_read_tokens: number;
-    cache_creation_tokens: number;
-    reasoning_tokens: number;
-    cost_usd: number;
-  }>;
-
-  // Aggregate by date + model
-  type AggregatedEntry = {
-    date: string;
-    model: string;
-    input_tokens: number;
-    output_tokens: number;
-    cache_read_tokens: number;
-    cache_creation_tokens: number;
-    reasoning_tokens: number;
-    cost_usd: number;
-    message_count: number;
-  };
-  const aggregated = new Map<string, AggregatedEntry>();
-
-  function addToAggregated(
-    date: string,
-    model: string,
-    inputTokens: number,
-    outputTokens: number,
-    cacheReadTokens: number,
-    cacheCreationTokens: number,
-    reasoningTokens: number,
-    costUsd: number,
-  ): void {
-    const key = `${date}|${model}`;
-    const existing = aggregated.get(key);
-    if (existing) {
-      existing.input_tokens += inputTokens;
-      existing.output_tokens += outputTokens;
-      existing.cache_read_tokens += cacheReadTokens;
-      existing.cache_creation_tokens += cacheCreationTokens;
-      existing.reasoning_tokens += reasoningTokens;
-      existing.cost_usd += costUsd;
-      existing.message_count += 1;
-    } else {
-      aggregated.set(key, {
-        date,
-        model,
-        input_tokens: inputTokens,
-        output_tokens: outputTokens,
-        cache_read_tokens: cacheReadTokens,
-        cache_creation_tokens: cacheCreationTokens,
-        reasoning_tokens: reasoningTokens,
-        cost_usd: costUsd,
-        message_count: 1,
-      });
-    }
-  }
-
-  for (const row of rows) {
-    if (row.model_usage_json) {
-      try {
-        const modelUsage = JSON.parse(row.model_usage_json) as Record<
-          string,
-          {
-            inputTokens: number;
-            outputTokens: number;
-            cacheReadInputTokens?: number;
-            cacheCreationInputTokens?: number;
-            reasoningTokens?: number;
-            costUSD: number;
-          }
-        >;
-        for (const [model, usage] of Object.entries(modelUsage)) {
-          addToAggregated(
-            row.date,
-            model,
-            usage.inputTokens || 0,
-            usage.outputTokens || 0,
-            usage.cacheReadInputTokens || 0,
-            usage.cacheCreationInputTokens || 0,
-            usage.reasoningTokens || 0,
-            usage.costUSD || 0,
-          );
-        }
-      } catch (e) {
-        logger.warn(
-          { date: row.date, error: e },
-          'Failed to parse model_usage_json',
-        );
-        // fallback: use aggregate fields
-        addToAggregated(
-          row.date,
-          'unknown',
-          row.input_tokens || 0,
-          row.output_tokens || 0,
-          row.cache_read_tokens || 0,
-          row.cache_creation_tokens || 0,
-          row.reasoning_tokens || 0,
-          row.cost_usd || 0,
-        );
-      }
-    } else {
-      addToAggregated(
-        row.date,
-        'unknown',
-        row.input_tokens || 0,
-        row.output_tokens || 0,
-        row.cache_read_tokens || 0,
-        row.cache_creation_tokens || 0,
-        row.reasoning_tokens || 0,
-        row.cost_usd || 0,
-      );
-    }
-  }
-
-  return Array.from(aggregated.values());
-}
-
-/**
- * Get token usage summary totals.
- */
-export function getTokenUsageSummary(
-  days: number,
-  chatJids?: string[],
-): {
-  totalInputTokens: number;
-  totalOutputTokens: number;
-  totalCacheReadTokens: number;
-  totalCacheCreationTokens: number;
-  totalReasoningTokens: number;
-  totalCostUSD: number;
-  totalMessages: number;
-  totalActiveDays: number;
-} {
-  const since = new Date();
-  since.setDate(since.getDate() - days);
-  const sinceStr = since.toISOString();
-
-  const jidFilter =
-    chatJids && chatJids.length > 0
-      ? `AND chat_jid IN (${chatJids.map(() => '?').join(',')})`
-      : '';
-  const params: unknown[] = [sinceStr, ...(chatJids || [])];
-
-  const row = db
-    .prepare(
-      `
-    SELECT
-      COALESCE(SUM(json_extract(token_usage, '$.inputTokens')), 0) as total_input,
-      COALESCE(SUM(json_extract(token_usage, '$.outputTokens')), 0) as total_output,
-      COALESCE(SUM(json_extract(token_usage, '$.cacheReadInputTokens')), 0) as total_cache_read,
-      COALESCE(SUM(json_extract(token_usage, '$.cacheCreationInputTokens')), 0) as total_cache_creation,
-      COALESCE(SUM(json_extract(token_usage, '$.reasoningTokens')), 0) as total_reasoning,
-      COALESCE(SUM(json_extract(token_usage, '$.costUSD')), 0) as total_cost,
-      COUNT(*) as total_messages,
-      COUNT(DISTINCT date(timestamp)) as total_active_days
-    FROM messages
-    WHERE token_usage IS NOT NULL AND timestamp >= ?
-      ${jidFilter}
-  `,
-    )
-    .get(...params) as {
-    total_input: number;
-    total_output: number;
-    total_cache_read: number;
-    total_cache_creation: number;
-    total_reasoning: number;
-    total_cost: number;
-    total_messages: number;
-    total_active_days: number;
-  };
-
-  return {
-    totalInputTokens: row.total_input,
-    totalOutputTokens: row.total_output,
-    totalCacheReadTokens: row.total_cache_read,
-    totalCacheCreationTokens: row.total_cache_creation,
-    totalReasoningTokens: row.total_reasoning,
-    totalCostUSD: row.total_cost,
-    totalMessages: row.total_messages,
-    totalActiveDays: row.total_active_days,
-  };
+  updateLatestMessageTokenUsage(chatJid, JSON.stringify(tokenUsage), messageId);
 }
 
 /**
@@ -3755,57 +3246,6 @@ export function getUsageDateWindow(
     days: normalizedDays,
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
   };
-}
-
-/**
- * Insert a usage record and update daily summary.
- */
-export function insertUsageRecord(record: {
-  userId: string;
-  groupFolder: string;
-  agentId?: string | null;
-  messageId?: string;
-  model: string;
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadInputTokens: number;
-  cacheCreationInputTokens: number;
-  reasoningTokens?: number;
-  costUSD: number;
-  durationMs?: number;
-  numTurns?: number;
-  source?: string;
-}): void {
-  recordUsageEventBatch({
-    eventId: crypto.randomUUID(),
-    userId: record.userId,
-    groupFolder: record.groupFolder,
-    agentId: record.agentId,
-    messageId: record.messageId,
-    inputTokens: record.inputTokens,
-    outputTokens: record.outputTokens,
-    cacheReadInputTokens: record.cacheReadInputTokens,
-    cacheCreationInputTokens: record.cacheCreationInputTokens,
-    reasoningTokens: record.reasoningTokens || 0,
-    providerEstimatedCostUSD: record.costUSD,
-    billedCostUSD: 0,
-    durationMs: record.durationMs,
-    numTurns: record.numTurns,
-    source: record.source,
-    models: [
-      {
-        model: record.model,
-        inputTokens: record.inputTokens,
-        outputTokens: record.outputTokens,
-        cacheReadInputTokens: record.cacheReadInputTokens,
-        cacheCreationInputTokens: record.cacheCreationInputTokens,
-        reasoningTokens: record.reasoningTokens || 0,
-        providerEstimatedCostUSD: record.costUSD,
-        billedCostUSD: 0,
-      },
-    ],
-    trackBillingUsage: false,
-  });
 }
 
 export interface UsageModelRecordInput {
@@ -3916,10 +3356,6 @@ export interface UsageEventRecordInput {
   source?: string;
   createdAt?: string;
   models: UsageModelRecordInput[];
-  /** Update the quota/billing period ledgers in the same transaction. */
-  trackBillingUsage?: boolean;
-  /** Atomically deduct the already-rated billedCostUSD from the user wallet. */
-  chargeBalance?: boolean;
 }
 
 /**
@@ -4027,189 +3463,8 @@ export function recordUsageEventBatch(input: UsageEventRecordInput): {
       );
     }
 
-    if (input.trackBillingUsage) {
-      const d = new Date(createdAt);
-      const month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      const billableInput =
-        nonNegative(input.inputTokens) +
-        nonNegative(input.cacheReadInputTokens) +
-        nonNegative(input.cacheCreationInputTokens);
-      const billableOutput =
-        nonNegative(input.outputTokens) + nonNegative(input.reasoningTokens);
-      incrementUsageBoth(
-        input.userId,
-        month,
-        localDate,
-        billableInput,
-        billableOutput,
-        nonNegative(input.billedCostUSD),
-      );
-    }
-
-    if (input.chargeBalance && nonNegative(input.billedCostUSD) > 0) {
-      adjustUserBalance(
-        input.userId,
-        -nonNegative(input.billedCostUSD),
-        'deduction',
-        'AI 调用消费扣费',
-        'usage_event',
-        input.eventId,
-        null,
-        `usage_event_${input.eventId}`,
-        {
-          source: 'usage_charge',
-          operatorType: 'system',
-          notes: `用量事件消费扣费: ${input.eventId}`,
-          allowNegative: true,
-        },
-      );
-    }
-
     return { inserted: true };
   })();
-}
-
-/**
- * Get usage stats from daily summary table (fixes timezone + token KPI issues).
- */
-export function getUsageDailyStats(
-  days: number,
-  userId?: string,
-  modelFilter?: string,
-): Array<{
-  date: string;
-  model: string;
-  user_id: string;
-  input_tokens: number;
-  output_tokens: number;
-  cache_read_tokens: number;
-  cache_creation_tokens: number;
-  reasoning_tokens: number;
-  cost_usd: number;
-  request_count: number;
-}> {
-  const window = getUsageDateWindow(days);
-  const conditions: string[] = ['date >= ?', 'date <= ?'];
-  const params: unknown[] = [window.from, window.to];
-
-  if (userId) {
-    conditions.push('user_id = ?');
-    params.push(userId);
-  }
-  if (modelFilter) {
-    conditions.push('model = ?');
-    params.push(modelFilter);
-  }
-
-  const whereClause = conditions.join(' AND ');
-  return db
-    .prepare(
-      `
-    SELECT date, model, user_id,
-      total_input_tokens as input_tokens,
-      total_output_tokens as output_tokens,
-      total_cache_read_tokens as cache_read_tokens,
-      total_cache_creation_tokens as cache_creation_tokens,
-      total_reasoning_tokens as reasoning_tokens,
-      total_cost_usd as cost_usd,
-      request_count
-    FROM usage_daily_summary
-    WHERE ${whereClause}
-    ORDER BY date ASC
-  `,
-    )
-    .all(...params) as Array<{
-    date: string;
-    model: string;
-    user_id: string;
-    input_tokens: number;
-    output_tokens: number;
-    cache_read_tokens: number;
-    cache_creation_tokens: number;
-    reasoning_tokens: number;
-    cost_usd: number;
-    request_count: number;
-  }>;
-}
-
-/**
- * Get usage summary from daily summary table.
- */
-export function getUsageDailySummary(
-  days: number,
-  userId?: string,
-  modelFilter?: string,
-): {
-  totalInputTokens: number;
-  totalOutputTokens: number;
-  totalCacheReadTokens: number;
-  totalCacheCreationTokens: number;
-  totalReasoningTokens: number;
-  totalCostUSD: number;
-  totalMessages: number;
-  totalActiveDays: number;
-} {
-  const window = getUsageDateWindow(days);
-  const conditions: string[] = ['date >= ?', 'date <= ?'];
-  const params: unknown[] = [window.from, window.to];
-
-  if (userId) {
-    conditions.push('user_id = ?');
-    params.push(userId);
-  }
-  if (modelFilter) {
-    conditions.push('model = ?');
-    params.push(modelFilter);
-  }
-
-  const whereClause = conditions.join(' AND ');
-  const row = db
-    .prepare(
-      `
-    SELECT
-      COALESCE(SUM(total_input_tokens), 0) as total_input,
-      COALESCE(SUM(total_output_tokens), 0) as total_output,
-      COALESCE(SUM(total_cache_read_tokens), 0) as total_cache_read,
-      COALESCE(SUM(total_cache_creation_tokens), 0) as total_cache_creation,
-      COALESCE(SUM(total_reasoning_tokens), 0) as total_reasoning,
-      COALESCE(SUM(total_cost_usd), 0) as total_cost,
-      COALESCE(SUM(request_count), 0) as total_messages,
-      COUNT(DISTINCT date) as total_active_days
-    FROM usage_daily_summary
-    WHERE ${whereClause}
-  `,
-    )
-    .get(...params) as {
-    total_input: number;
-    total_output: number;
-    total_cache_read: number;
-    total_cache_creation: number;
-    total_reasoning: number;
-    total_cost: number;
-    total_messages: number;
-    total_active_days: number;
-  };
-
-  return {
-    totalInputTokens: row.total_input,
-    totalOutputTokens: row.total_output,
-    totalCacheReadTokens: row.total_cache_read,
-    totalCacheCreationTokens: row.total_cache_creation,
-    totalReasoningTokens: row.total_reasoning,
-    totalCostUSD: row.total_cost,
-    totalMessages: row.total_messages,
-    totalActiveDays: row.total_active_days,
-  };
-}
-
-/**
- * Get list of all models that have usage data.
- */
-export function getUsageModels(): string[] {
-  const rows = db
-    .prepare('SELECT DISTINCT model FROM usage_daily_summary ORDER BY model')
-    .all() as Array<{ model: string }>;
-  return rows.map((r) => r.model);
 }
 
 export interface UsageQueryFilters {
@@ -4649,15 +3904,6 @@ function mapTaskRow(row: unknown): ScheduledTask {
 export function getTaskById(id: string): ScheduledTask | undefined {
   const row = db.prepare('SELECT * FROM scheduled_tasks WHERE id = ?').get(id);
   return row ? mapTaskRow(row) : undefined;
-}
-
-export function getTasksForGroup(groupFolder: string): ScheduledTask[] {
-  return db
-    .prepare(
-      'SELECT * FROM scheduled_tasks WHERE group_folder = ? AND deleted_at IS NULL ORDER BY created_at DESC',
-    )
-    .all(groupFolder)
-    .map(mapTaskRow);
 }
 
 export function getAllTasks(): ScheduledTask[] {
@@ -5128,27 +4374,6 @@ export function deleteTask(id: string): void {
   db.prepare('DELETE FROM task_runs WHERE task_id = ?').run(id);
   db.prepare('DELETE FROM task_run_logs WHERE task_id = ?').run(id);
   db.prepare('DELETE FROM scheduled_tasks WHERE id = ?').run(id);
-}
-
-export function deleteTasksForGroup(groupFolder: string): void {
-  const tx = db.transaction((folder: string) => {
-    db.prepare(
-      `DELETE FROM task_runs
-       WHERE task_id IN (SELECT id FROM scheduled_tasks WHERE group_folder = ?)`,
-    ).run(folder);
-    db.prepare(
-      `
-      DELETE FROM task_run_logs
-      WHERE task_id IN (
-        SELECT id FROM scheduled_tasks WHERE group_folder = ?
-      )
-      `,
-    ).run(folder);
-    db.prepare('DELETE FROM scheduled_tasks WHERE group_folder = ?').run(
-      folder,
-    );
-  });
-  tx(groupFolder);
 }
 
 export function getDueTasks(): ScheduledTask[] {
@@ -8125,26 +7350,6 @@ export function cleanupOldTaskRunLogs(retentionDays = 30): number {
   return result.changes + durable.changes;
 }
 
-export function cleanupOldDailyUsage(retentionDays = 90): number {
-  const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000)
-    .toISOString()
-    .slice(0, 10);
-  const result = db
-    .prepare('DELETE FROM daily_usage WHERE date < ?')
-    .run(cutoff);
-  return result.changes;
-}
-
-export function cleanupOldBillingAuditLog(retentionDays = 365): number {
-  const cutoff = new Date(
-    Date.now() - retentionDays * 24 * 60 * 60 * 1000,
-  ).toISOString();
-  const result = db
-    .prepare('DELETE FROM billing_audit_log WHERE created_at < ?')
-    .run(cutoff);
-  return result.changes;
-}
-
 // --- Router state accessors ---
 
 export function getRouterState(key: string): string | undefined {
@@ -9899,7 +9104,6 @@ type RegisteredGroupRow = {
   feishu_chat_mode: string | null;
   feishu_group_message_type: string | null;
   sender_allowlist: string | null;
-  auto_memory_recall: number | null;
 };
 
 function parsePersistedContainerConfig(
@@ -10011,7 +9215,6 @@ function parseGroupRow(
     feishu_chat_mode: row.feishu_chat_mode ?? undefined,
     feishu_group_message_type: row.feishu_group_message_type ?? undefined,
     sender_allowlist: senderAllowlist,
-    autoMemoryRecall: row.auto_memory_recall === 1,
   };
 }
 
@@ -10815,8 +10018,8 @@ export function setRegisteredGroup(jid: string, group: RegisteredGroup): void {
   db.transaction(() => {
     const existing = getRegisteredGroup(jid);
     db.prepare(
-      `INSERT INTO registered_groups (jid, name, folder, added_at, avatar_url, container_config, execution_mode, custom_cwd, init_source_path, init_git_url, created_by, channel_account_id, is_home, selected_skills, target_agent_id, target_main_jid, reply_policy, require_mention, activation_mode, audience_mode, owner_im_id, owner_claim_source, mcp_mode, selected_mcps, conversation_source, conversation_nav_mode, binding_mode, native_context_type, feishu_chat_mode, feishu_group_message_type, sender_allowlist, auto_memory_recall)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO registered_groups (jid, name, folder, added_at, avatar_url, container_config, execution_mode, custom_cwd, init_source_path, init_git_url, created_by, channel_account_id, is_home, selected_skills, target_agent_id, target_main_jid, reply_policy, require_mention, activation_mode, audience_mode, owner_im_id, owner_claim_source, mcp_mode, selected_mcps, conversation_source, conversation_nav_mode, binding_mode, native_context_type, feishu_chat_mode, feishu_group_message_type, sender_allowlist)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(jid) DO UPDATE SET
          name = excluded.name,
          folder = excluded.folder,
@@ -10847,8 +10050,7 @@ export function setRegisteredGroup(jid: string, group: RegisteredGroup): void {
          native_context_type = excluded.native_context_type,
          feishu_chat_mode = excluded.feishu_chat_mode,
          feishu_group_message_type = excluded.feishu_group_message_type,
-         sender_allowlist = excluded.sender_allowlist,
-         auto_memory_recall = excluded.auto_memory_recall`,
+         sender_allowlist = excluded.sender_allowlist`,
     ).run(
       jid,
       group.name,
@@ -10885,7 +10087,6 @@ export function setRegisteredGroup(jid: string, group: RegisteredGroup): void {
       group.sender_allowlist != null
         ? JSON.stringify(group.sender_allowlist)
         : null,
-      group.autoMemoryRecall === true ? 1 : 0,
     );
     syncWorkspaceFromRegisteredGroup(jid, group);
     syncChannelMountFromRegisteredGroup(jid, group);
@@ -11335,13 +10536,6 @@ export function getChannelMount(channelJid: string): ChannelMount | undefined {
   return row ? parseChannelMountRow(row) : undefined;
 }
 
-export function listChannelMounts(): ChannelMount[] {
-  const rows = db
-    .prepare('SELECT * FROM channel_mounts ORDER BY updated_at DESC')
-    .all() as ChannelMountRow[];
-  return rows.map(parseChannelMountRow);
-}
-
 export function listChannelMountsByWorkspace(
   workspaceJid: string,
 ): ChannelMount[] {
@@ -11494,12 +10688,6 @@ export function listImContextBindingsByAgent(
   return rows.map(mapImContextBindingRow);
 }
 
-export function deleteImContextBindingsByWorkspace(workspaceJid: string): void {
-  db.prepare('DELETE FROM im_context_bindings WHERE workspace_jid = ?').run(
-    workspaceJid,
-  );
-}
-
 export function deleteImContextBindingsByAgent(agentId: string): void {
   db.prepare('DELETE FROM im_context_bindings WHERE agent_id = ?').run(agentId);
 }
@@ -11514,16 +10702,6 @@ export function touchImContextBindingActivity(
   db.prepare(
     'UPDATE im_context_bindings SET last_active_at = ?, updated_at = ? WHERE source_jid = ? AND context_type = ? AND context_id = ?',
   ).run(lastActiveAt, lastActiveAt, sourceJid, contextType, contextId);
-}
-
-/** List native-thread agent IDs for a workspace JID (legacy Feishu included). */
-export function listFeishuThreadAgentIds(workspaceJid: string): string[] {
-  const rows = db
-    .prepare(
-      "SELECT id FROM agents WHERE chat_jid = ? AND source_kind IN ('native_thread', 'feishu_thread')",
-    )
-    .all(workspaceJid) as { id: string }[];
-  return rows.map((r) => r.id);
 }
 
 /**
@@ -12026,31 +11204,6 @@ export function getMessagesPage(
 }
 
 /**
- * Fetch specific messages of ONE chat by id (task Y3 message-pick capture).
- * The (id, chat_jid) composite primary key binds the lookup to a single
- * conversation — ids belonging to other chats simply miss. Returns in
- * ascending timestamp order. Callers cap `ids` (SQL variable budget).
- */
-export function getMessagesByIds(
-  chatJid: string,
-  ids: string[],
-): Array<NewMessage & { is_from_me: boolean }> {
-  if (ids.length === 0) return [];
-  const placeholders = ids.map(() => '?').join(', ');
-  const rows = db
-    .prepare(
-      `SELECT id, chat_jid, source_jid, sender, sender_name, content, timestamp, is_from_me, attachments, token_usage, channel_context,
-              turn_id, session_id, sdk_message_uuid, source_kind, finalization_reason,
-              delivery_mode, delivery_status, delivery_run_id, delivery_priority, delivery_updated_at
-       FROM messages
-       WHERE chat_jid = ? AND id IN (${placeholders})
-       ORDER BY timestamp ASC`,
-    )
-    .all(chatJid, ...ids) as Array<NewMessage & { is_from_me: number }>;
-  return rows.map((row) => normalizeMessageRow(row));
-}
-
-/**
  * Get messages after a given timestamp (for polling new messages).
  * Returns in ASC order (oldest first).
  */
@@ -12198,33 +11351,6 @@ export function getTaskRunLogs(taskId: string, limit = 20): TaskRunLog[] {
 // ===================== Daily Summary Queries =====================
 
 /**
- * Get messages for a chat within a time range, ordered by timestamp ASC.
- */
-export function getMessagesByTimeRange(
-  chatJid: string,
-  startTs: number,
-  endTs: number,
-  limit = 500,
-): Array<NewMessage & { is_from_me: boolean }> {
-  const startIso = new Date(startTs).toISOString();
-  const endIso = new Date(endTs).toISOString();
-  const rows = db
-    .prepare(
-      `SELECT id, chat_jid, source_jid, sender, sender_name, content, timestamp, is_from_me, attachments, channel_context,
-              turn_id, session_id, sdk_message_uuid, source_kind, finalization_reason
-       FROM messages
-       WHERE chat_jid = ? AND timestamp >= ? AND timestamp < ?
-       ORDER BY timestamp ASC
-       LIMIT ?`,
-    )
-    .all(chatJid, startIso, endIso, limit) as Array<
-    NewMessage & { is_from_me: number }
-  >;
-
-  return rows.map((row) => normalizeMessageRow(row));
-}
-
-/**
  * Get all registered groups owned by a specific user.
  */
 export function getGroupsByOwner(
@@ -12354,58 +11480,6 @@ export interface CreateUserInput {
   deleted_at?: string | null;
 }
 
-function initializeBillingForUser(
-  userId: string,
-  role: UserRole,
-  createdAt: string,
-): void {
-  const now = createdAt || new Date().toISOString();
-  db.prepare(
-    'INSERT OR IGNORE INTO user_balances (user_id, balance_usd, total_deposited_usd, total_consumed_usd, updated_at) VALUES (?, 0, 0, 0, ?)',
-  ).run(userId, now);
-
-  if (role === 'admin') return;
-
-  const defaultPlan = getDefaultBillingPlan();
-  if (!defaultPlan) return;
-
-  const activeSubscription = db
-    .prepare(
-      "SELECT id FROM user_subscriptions WHERE user_id = ? AND status = 'active'",
-    )
-    .get(userId) as { id: string } | undefined;
-  if (activeSubscription) return;
-
-  const subId = `sub_${userId}_${Date.now()}`;
-  db.prepare(
-    `INSERT INTO user_subscriptions (id, user_id, plan_id, status, started_at, created_at)
-     VALUES (?, ?, ?, 'active', ?, ?)`,
-  ).run(subId, userId, defaultPlan.id, now, now);
-  db.prepare('UPDATE users SET subscription_plan_id = ? WHERE id = ?').run(
-    defaultPlan.id,
-    userId,
-  );
-
-  const hasOpening = db
-    .prepare(
-      "SELECT 1 FROM balance_transactions WHERE user_id = ? AND source = 'migration_opening' LIMIT 1",
-    )
-    .get(userId);
-  if (!hasOpening) {
-    db.prepare(
-      `INSERT INTO balance_transactions (
-        user_id, type, amount_usd, balance_after, description, reference_type,
-        reference_id, actor_id, source, operator_type, notes, idempotency_key, created_at
-      ) VALUES (?, 'adjustment', 0, 0, ?, NULL, NULL, NULL, 'migration_opening', 'system', ?, NULL, ?)`,
-    ).run(
-      userId,
-      '用户钱包初始化',
-      '新用户默认余额为 0，需管理员充值或兑换后方可消费',
-      now,
-    );
-  }
-}
-
 export function createUser(user: CreateUserInput): void {
   const permissions = normalizePermissions(
     user.permissions ?? getDefaultPermissions(user.role),
@@ -12431,7 +11505,6 @@ export function createUser(user: CreateUserInput): void {
     user.last_login_at ?? null,
     user.deleted_at ?? null,
   );
-  initializeBillingForUser(user.id, user.role, user.created_at);
   getOrCreateDefaultAgentProfile(user.id);
 }
 
@@ -12962,7 +12035,6 @@ export function registerUserWithInvite(input: {
         null,
         null,
       );
-      initializeBillingForUser(params.id, inviteRole, params.created_at);
       getOrCreateDefaultAgentProfile(params.id);
 
       return { ok: true, role: inviteRole, permissions };
@@ -13019,7 +12091,6 @@ export function registerUserWithoutInvite(input: {
       null,
       null,
     );
-    initializeBillingForUser(input.id, role, input.created_at);
     getOrCreateDefaultAgentProfile(input.id);
     return { ok: true, role, permissions };
   } catch (err) {
@@ -13171,44 +12242,6 @@ export function getAuthAuditLogs(limit = 100, offset = 0): AuthAuditLog[] {
   return queryAuthAuditLogs({ limit, offset }).logs;
 }
 
-export function checkLoginRateLimitFromAudit(
-  username: string,
-  ip: string,
-  maxAttempts: number,
-  lockoutMinutes: number,
-): { allowed: boolean; retryAfterSeconds?: number; attempts: number } {
-  if (maxAttempts <= 0) return { allowed: true, attempts: 0 };
-  const windowStart = new Date(
-    Date.now() - lockoutMinutes * 60 * 1000,
-  ).toISOString();
-  const rows = db
-    .prepare(
-      `
-      SELECT created_at
-      FROM auth_audit_log
-      WHERE event_type = 'login_failed'
-        AND username = ?
-        AND ip_address = ?
-        AND created_at >= ?
-        AND (details IS NULL OR details NOT LIKE '%"reason":"rate_limited"%')
-      ORDER BY created_at ASC
-      `,
-    )
-    .all(username, ip, windowStart) as Array<{ created_at: string }>;
-
-  const attempts = rows.length;
-  if (attempts < maxAttempts) return { allowed: true, attempts };
-
-  const oldest = rows[0]?.created_at;
-  const oldestTs = oldest ? Date.parse(oldest) : Date.now();
-  const retryAt = oldestTs + lockoutMinutes * 60 * 1000;
-  const retryAfterSeconds = Math.max(
-    1,
-    Math.ceil((retryAt - Date.now()) / 1000),
-  );
-  return { allowed: false, retryAfterSeconds, attempts };
-}
-
 // ===================== Sub-Agent CRUD =====================
 
 export function createAgent(agent: SubAgent): void {
@@ -13243,15 +12276,6 @@ export function getAgent(id: string): SubAgent | undefined {
     | undefined;
   if (!row) return undefined;
   return mapAgentRow(row);
-}
-
-export function listAgentsByFolder(folder: string): SubAgent[] {
-  const rows = db
-    .prepare(
-      'SELECT * FROM agents WHERE group_folder = ? ORDER BY created_at DESC',
-    )
-    .all(folder) as Array<Record<string, unknown>>;
-  return rows.map(mapAgentRow);
 }
 
 export function listAgentsByJid(chatJid: string): SubAgent[] {
@@ -13571,266 +12595,6 @@ export function deleteMessage(chatJid: string, messageId: string): boolean {
 
 // --- Billing CRUD functions ---
 
-export function getBillingPlan(id: string): BillingPlan | undefined {
-  const row = db.prepare('SELECT * FROM billing_plans WHERE id = ?').get(id) as
-    | Record<string, unknown>
-    | undefined;
-  return row ? mapBillingPlanRow(row) : undefined;
-}
-
-export function getActiveBillingPlans(): BillingPlan[] {
-  return (
-    db
-      .prepare(
-        'SELECT * FROM billing_plans WHERE is_active = 1 ORDER BY tier ASC, name ASC',
-      )
-      .all() as Record<string, unknown>[]
-  ).map(mapBillingPlanRow);
-}
-
-export function getAllBillingPlans(): BillingPlan[] {
-  return (
-    db
-      .prepare('SELECT * FROM billing_plans ORDER BY tier ASC, name ASC')
-      .all() as Record<string, unknown>[]
-  ).map(mapBillingPlanRow);
-}
-
-export function getDefaultBillingPlan(): BillingPlan | undefined {
-  const row = db
-    .prepare('SELECT * FROM billing_plans WHERE is_default = 1')
-    .get() as Record<string, unknown> | undefined;
-  return row ? mapBillingPlanRow(row) : undefined;
-}
-
-export function createBillingPlan(plan: BillingPlan): void {
-  db.transaction(() => {
-    // Clear old default BEFORE inserting the new plan to avoid brief dual-default
-    if (plan.is_default) {
-      db.prepare(
-        'UPDATE billing_plans SET is_default = 0 WHERE is_default = 1',
-      ).run();
-    }
-    db.prepare(
-      `INSERT INTO billing_plans (id, name, description, tier, monthly_cost_usd, monthly_token_quota, monthly_cost_quota,
-       daily_cost_quota, weekly_cost_quota, daily_token_quota, weekly_token_quota,
-       rate_multiplier, trial_days, sort_order, display_price, highlight,
-       max_groups, max_concurrent_containers, max_im_channels, max_mcp_servers, max_storage_mb,
-       allow_overage, features, is_default, is_active, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      plan.id,
-      plan.name,
-      plan.description,
-      plan.tier,
-      plan.monthly_cost_usd,
-      plan.monthly_token_quota,
-      plan.monthly_cost_quota,
-      plan.daily_cost_quota,
-      plan.weekly_cost_quota,
-      plan.daily_token_quota,
-      plan.weekly_token_quota,
-      plan.rate_multiplier,
-      plan.trial_days,
-      plan.sort_order,
-      plan.display_price,
-      plan.highlight ? 1 : 0,
-      plan.max_groups,
-      plan.max_concurrent_containers,
-      plan.max_im_channels,
-      plan.max_mcp_servers,
-      plan.max_storage_mb,
-      plan.allow_overage ? 1 : 0,
-      JSON.stringify(plan.features),
-      plan.is_default ? 1 : 0,
-      plan.is_active ? 1 : 0,
-      plan.created_at,
-      plan.updated_at,
-    );
-  })();
-}
-
-export function updateBillingPlan(
-  id: string,
-  updates: Partial<Omit<BillingPlan, 'id' | 'created_at'>>,
-): void {
-  const fields: string[] = [];
-  const values: unknown[] = [];
-
-  if (updates.name !== undefined) {
-    fields.push('name = ?');
-    values.push(updates.name);
-  }
-  if (updates.description !== undefined) {
-    fields.push('description = ?');
-    values.push(updates.description);
-  }
-  if (updates.tier !== undefined) {
-    fields.push('tier = ?');
-    values.push(updates.tier);
-  }
-  if (updates.monthly_cost_usd !== undefined) {
-    fields.push('monthly_cost_usd = ?');
-    values.push(updates.monthly_cost_usd);
-  }
-  if (updates.monthly_token_quota !== undefined) {
-    fields.push('monthly_token_quota = ?');
-    values.push(updates.monthly_token_quota);
-  }
-  if (updates.monthly_cost_quota !== undefined) {
-    fields.push('monthly_cost_quota = ?');
-    values.push(updates.monthly_cost_quota);
-  }
-  if (updates.daily_cost_quota !== undefined) {
-    fields.push('daily_cost_quota = ?');
-    values.push(updates.daily_cost_quota);
-  }
-  if (updates.weekly_cost_quota !== undefined) {
-    fields.push('weekly_cost_quota = ?');
-    values.push(updates.weekly_cost_quota);
-  }
-  if (updates.daily_token_quota !== undefined) {
-    fields.push('daily_token_quota = ?');
-    values.push(updates.daily_token_quota);
-  }
-  if (updates.weekly_token_quota !== undefined) {
-    fields.push('weekly_token_quota = ?');
-    values.push(updates.weekly_token_quota);
-  }
-  if (updates.rate_multiplier !== undefined) {
-    fields.push('rate_multiplier = ?');
-    values.push(updates.rate_multiplier);
-  }
-  if (updates.trial_days !== undefined) {
-    fields.push('trial_days = ?');
-    values.push(updates.trial_days);
-  }
-  if (updates.sort_order !== undefined) {
-    fields.push('sort_order = ?');
-    values.push(updates.sort_order);
-  }
-  if (updates.display_price !== undefined) {
-    fields.push('display_price = ?');
-    values.push(updates.display_price);
-  }
-  if (updates.highlight !== undefined) {
-    fields.push('highlight = ?');
-    values.push(updates.highlight ? 1 : 0);
-  }
-  if (updates.max_groups !== undefined) {
-    fields.push('max_groups = ?');
-    values.push(updates.max_groups);
-  }
-  if (updates.max_concurrent_containers !== undefined) {
-    fields.push('max_concurrent_containers = ?');
-    values.push(updates.max_concurrent_containers);
-  }
-  if (updates.max_im_channels !== undefined) {
-    fields.push('max_im_channels = ?');
-    values.push(updates.max_im_channels);
-  }
-  if (updates.max_mcp_servers !== undefined) {
-    fields.push('max_mcp_servers = ?');
-    values.push(updates.max_mcp_servers);
-  }
-  if (updates.max_storage_mb !== undefined) {
-    fields.push('max_storage_mb = ?');
-    values.push(updates.max_storage_mb);
-  }
-  if (updates.allow_overage !== undefined) {
-    fields.push('allow_overage = ?');
-    values.push(updates.allow_overage ? 1 : 0);
-  }
-  if (updates.features !== undefined) {
-    fields.push('features = ?');
-    values.push(JSON.stringify(updates.features));
-  }
-  if (updates.is_default !== undefined) {
-    fields.push('is_default = ?');
-    values.push(updates.is_default ? 1 : 0);
-  }
-  if (updates.is_active !== undefined) {
-    fields.push('is_active = ?');
-    values.push(updates.is_active ? 1 : 0);
-  }
-
-  if (fields.length === 0) return;
-
-  fields.push('updated_at = ?');
-  values.push(new Date().toISOString());
-  values.push(id);
-
-  db.transaction(() => {
-    // Clear old default BEFORE setting new one to avoid brief dual-default state
-    if (updates.is_default) {
-      db.prepare('UPDATE billing_plans SET is_default = 0 WHERE id != ?').run(
-        id,
-      );
-    }
-    db.prepare(
-      `UPDATE billing_plans SET ${fields.join(', ')} WHERE id = ?`,
-    ).run(...values);
-  })();
-}
-
-export function deleteBillingPlan(id: string): boolean {
-  // Don't delete if any subscription (any status) references this plan.
-  // PRAGMA foreign_keys=ON 会因 cancelled/expired 残留行让 DELETE 抛
-  // SQLITE_CONSTRAINT_FOREIGNKEY 把请求 500；先在应用层校验给 caller 一个
-  // 干净的 false 返回，运维需要手动迁移残留订阅再删 plan。
-  const hasReferences = db
-    .prepare('SELECT COUNT(*) as cnt FROM user_subscriptions WHERE plan_id = ?')
-    .get(id) as { cnt: number };
-  if (hasReferences.cnt > 0) return false;
-  const result = db.prepare('DELETE FROM billing_plans WHERE id = ?').run(id);
-  return result.changes > 0;
-}
-
-function mapBillingPlanRow(row: Record<string, unknown>): BillingPlan {
-  return {
-    id: String(row.id),
-    name: String(row.name),
-    description: typeof row.description === 'string' ? row.description : null,
-    tier: Number(row.tier) || 0,
-    monthly_cost_usd: Number(row.monthly_cost_usd) || 0,
-    monthly_token_quota:
-      row.monthly_token_quota != null ? Number(row.monthly_token_quota) : null,
-    monthly_cost_quota:
-      row.monthly_cost_quota != null ? Number(row.monthly_cost_quota) : null,
-    daily_cost_quota:
-      row.daily_cost_quota != null ? Number(row.daily_cost_quota) : null,
-    weekly_cost_quota:
-      row.weekly_cost_quota != null ? Number(row.weekly_cost_quota) : null,
-    daily_token_quota:
-      row.daily_token_quota != null ? Number(row.daily_token_quota) : null,
-    weekly_token_quota:
-      row.weekly_token_quota != null ? Number(row.weekly_token_quota) : null,
-    rate_multiplier: Number(row.rate_multiplier) || 1.0,
-    trial_days: row.trial_days != null ? Number(row.trial_days) : null,
-    sort_order: Number(row.sort_order) || 0,
-    display_price:
-      typeof row.display_price === 'string' ? row.display_price : null,
-    highlight: !!(row.highlight as number),
-    max_groups: row.max_groups != null ? Number(row.max_groups) : null,
-    max_concurrent_containers:
-      row.max_concurrent_containers != null
-        ? Number(row.max_concurrent_containers)
-        : null,
-    max_im_channels:
-      row.max_im_channels != null ? Number(row.max_im_channels) : null,
-    max_mcp_servers:
-      row.max_mcp_servers != null ? Number(row.max_mcp_servers) : null,
-    max_storage_mb:
-      row.max_storage_mb != null ? Number(row.max_storage_mb) : null,
-    allow_overage: !!(row.allow_overage as number),
-    features: safeParseJsonArray(row.features),
-    is_default: !!(row.is_default as number),
-    is_active: !!(row.is_active as number),
-    created_at: String(row.created_at),
-    updated_at: String(row.updated_at),
-  };
-}
-
 function safeParseJsonArray(val: unknown): string[] {
   if (typeof val !== 'string') return [];
   try {
@@ -14037,690 +12801,13 @@ export function deleteCustomModelPricingRule(id: string): boolean {
 
 // --- User Subscriptions ---
 
-export function getUserActiveSubscription(
-  userId: string,
-): (UserSubscription & { plan: BillingPlan }) | undefined {
-  const row = db
-    .prepare(
-      `SELECT s.*, p.name as plan_name FROM user_subscriptions s
-       JOIN billing_plans p ON s.plan_id = p.id
-       WHERE s.user_id = ? AND s.status = 'active'
-       ORDER BY s.created_at DESC LIMIT 1`,
-    )
-    .get(userId) as Record<string, unknown> | undefined;
-  if (!row) return undefined;
-  const plan = getBillingPlan(String(row.plan_id));
-  if (!plan) return undefined;
-  return { ...mapSubscriptionRow(row), plan };
-}
-
-export function createUserSubscription(sub: UserSubscription): void {
-  // Wrap in a transaction so partial failure can't leave the user without an
-  // active subscription (cancel succeeded, insert/update failed). Same shape
-  // as expireSubscriptions / batchAssignPlan elsewhere in this file.
-  const txn = db.transaction(() => {
-    // Cancel existing active subscriptions
-    db.prepare(
-      "UPDATE user_subscriptions SET status = 'cancelled', cancelled_at = ? WHERE user_id = ? AND status = 'active'",
-    ).run(new Date().toISOString(), sub.user_id);
-
-    db.prepare(
-      `INSERT INTO user_subscriptions (id, user_id, plan_id, status, started_at, expires_at, cancelled_at, trial_ends_at, notes, auto_renew, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      sub.id,
-      sub.user_id,
-      sub.plan_id,
-      sub.status,
-      sub.started_at,
-      sub.expires_at,
-      sub.cancelled_at,
-      sub.trial_ends_at,
-      sub.notes,
-      sub.auto_renew ? 1 : 0,
-      sub.created_at,
-    );
-
-    // Update user's subscription_plan_id
-    db.prepare('UPDATE users SET subscription_plan_id = ? WHERE id = ?').run(
-      sub.plan_id,
-      sub.user_id,
-    );
-  });
-  txn();
-}
-
-export function cancelUserSubscription(userId: string): void {
-  const now = new Date().toISOString();
-  db.prepare(
-    "UPDATE user_subscriptions SET status = 'cancelled', cancelled_at = ? WHERE user_id = ? AND status = 'active'",
-  ).run(now, userId);
-  db.prepare('UPDATE users SET subscription_plan_id = NULL WHERE id = ?').run(
-    userId,
-  );
-}
-
-export function expireSubscriptions(): number {
-  const now = new Date().toISOString();
-
-  // Phase 1: Handle auto_renew=1 subscriptions — renew them instead of expiring
-  const renewableRows = db
-    .prepare(
-      "SELECT * FROM user_subscriptions WHERE status = 'active' AND auto_renew = 1 AND expires_at IS NOT NULL AND expires_at <= ?",
-    )
-    .all(now) as Record<string, unknown>[];
-
-  let renewed = 0;
-  for (const row of renewableRows) {
-    const userId = String(row.user_id);
-    const planId = String(row.plan_id);
-    const oldId = String(row.id);
-    const oldStarted = String(row.started_at);
-    const oldExpires = String(row.expires_at);
-
-    // Calculate same duration as original subscription
-    const startMs = new Date(oldStarted).getTime();
-    const expiresMs = new Date(oldExpires).getTime();
-    const durationMs = expiresMs - startMs;
-    if (durationMs <= 0) continue;
-
-    const plan = getBillingPlan(planId);
-    if (!plan || !plan.is_active) {
-      // Plan no longer active, expire instead
-      continue;
-    }
-
-    // Check if user has sufficient balance for paid plans
-    if (plan.monthly_cost_usd > 0) {
-      const balance = getUserBalance(userId);
-      if (balance.balance_usd < plan.monthly_cost_usd) {
-        // Insufficient balance, expire instead
-        logBillingAudit('subscription_expired', userId, null, {
-          planId,
-          planName: plan.name,
-          reason: 'insufficient_balance_for_renewal',
-          balance: balance.balance_usd,
-          required: plan.monthly_cost_usd,
-        });
-        continue;
-      }
-    }
-
-    // Wrap the entire renewal in a transaction for atomicity
-    const renewTx = db.transaction(() => {
-      // Deduct subscription cost (if paid plan)
-      if (plan.monthly_cost_usd > 0) {
-        adjustUserBalance(
-          userId,
-          -plan.monthly_cost_usd,
-          'deduction',
-          `自动续费: ${plan.name}`,
-          'subscription',
-          oldId,
-          null,
-          null,
-          {
-            source: 'subscription_renewal',
-            operatorType: 'system',
-            notes: `自动续费扣款: ${plan.name}`,
-          },
-        );
-      }
-
-      // Expire old subscription
-      db.prepare(
-        "UPDATE user_subscriptions SET status = 'expired' WHERE id = ?",
-      ).run(oldId);
-
-      // Create new subscription with same duration
-      const newNow = new Date();
-      const newExpires = new Date(newNow.getTime() + durationMs).toISOString();
-      const newSub = {
-        id: `sub_${userId}_${Date.now()}_renew`,
-        user_id: userId,
-        plan_id: planId,
-        status: 'active',
-        started_at: newNow.toISOString(),
-        expires_at: newExpires,
-        cancelled_at: null,
-        trial_ends_at: null,
-        notes: '自动续费',
-        auto_renew: 1,
-        created_at: newNow.toISOString(),
-      };
-
-      db.prepare(
-        `INSERT INTO user_subscriptions (id, user_id, plan_id, status, started_at, expires_at, cancelled_at, trial_ends_at, notes, auto_renew, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).run(
-        newSub.id,
-        newSub.user_id,
-        newSub.plan_id,
-        newSub.status,
-        newSub.started_at,
-        newSub.expires_at,
-        newSub.cancelled_at,
-        newSub.trial_ends_at,
-        newSub.notes,
-        newSub.auto_renew,
-        newSub.created_at,
-      );
-
-      logBillingAudit('subscription_assigned', userId, null, {
-        planId,
-        planName: plan.name,
-        autoRenew: true,
-        renewedFrom: oldId,
-      });
-    });
-
-    try {
-      renewTx();
-      renewed++;
-    } catch (err) {
-      logBillingAudit('subscription_expired', userId, null, {
-        planId,
-        planName: plan.name,
-        reason: 'renewal_transaction_failed',
-        error: String(err),
-      });
-    }
-  }
-
-  // Phase 2: Expire remaining (non-auto-renew or failed renewal)
-  const result = db
-    .prepare(
-      "UPDATE user_subscriptions SET status = 'expired' WHERE status = 'active' AND expires_at IS NOT NULL AND expires_at <= ?",
-    )
-    .run(now);
-  return result.changes + renewed;
-}
-
-export function updateSubscriptionAutoRenew(
-  userId: string,
-  autoRenew: boolean,
-): boolean {
-  const result = db
-    .prepare(
-      "UPDATE user_subscriptions SET auto_renew = ? WHERE user_id = ? AND status = 'active'",
-    )
-    .run(autoRenew ? 1 : 0, userId);
-  return result.changes > 0;
-}
-
-function mapSubscriptionRow(row: Record<string, unknown>): UserSubscription {
-  return {
-    id: String(row.id),
-    user_id: String(row.user_id),
-    plan_id: String(row.plan_id),
-    status: String(row.status) as UserSubscription['status'],
-    started_at: String(row.started_at),
-    expires_at: typeof row.expires_at === 'string' ? row.expires_at : null,
-    cancelled_at:
-      typeof row.cancelled_at === 'string' ? row.cancelled_at : null,
-    trial_ends_at:
-      typeof row.trial_ends_at === 'string' ? row.trial_ends_at : null,
-    notes: typeof row.notes === 'string' ? row.notes : null,
-    auto_renew: !!(row.auto_renew as number),
-    created_at: String(row.created_at),
-  };
-}
-
 // --- User Balances ---
-
-export function getUserBalance(userId: string): UserBalance {
-  const row = db
-    .prepare('SELECT * FROM user_balances WHERE user_id = ?')
-    .get(userId) as Record<string, unknown> | undefined;
-  if (!row) {
-    // Auto-init balance
-    const now = new Date().toISOString();
-    db.prepare(
-      'INSERT OR IGNORE INTO user_balances (user_id, balance_usd, total_deposited_usd, total_consumed_usd, updated_at) VALUES (?, 0, 0, 0, ?)',
-    ).run(userId, now);
-    return {
-      user_id: userId,
-      balance_usd: 0,
-      total_deposited_usd: 0,
-      total_consumed_usd: 0,
-      updated_at: now,
-    };
-  }
-  return {
-    user_id: String(row.user_id),
-    balance_usd: Number(row.balance_usd) || 0,
-    total_deposited_usd: Number(row.total_deposited_usd) || 0,
-    total_consumed_usd: Number(row.total_consumed_usd) || 0,
-    updated_at: String(row.updated_at),
-  };
-}
-
-export function adjustUserBalance(
-  userId: string,
-  amount: number,
-  type: BalanceTransactionType,
-  description: string | null,
-  referenceType: BalanceReferenceType | null,
-  referenceId: string | null,
-  actorId: string | null,
-  idempotencyKey?: string | null,
-  options?: {
-    source?: BalanceTransactionSource;
-    operatorType?: BalanceOperatorType;
-    notes?: string | null;
-    allowNegative?: boolean;
-  },
-): BalanceTransaction {
-  const source = options?.source ?? 'system_adjustment';
-  const operatorType = options?.operatorType ?? 'system';
-  const notes = options?.notes ?? description ?? null;
-  const allowNegative = options?.allowNegative ?? false;
-
-  // Idempotency check: if key already used, return the existing transaction
-  if (idempotencyKey) {
-    const existing = db
-      .prepare('SELECT * FROM balance_transactions WHERE idempotency_key = ?')
-      .get(idempotencyKey) as Record<string, unknown> | undefined;
-    if (existing) {
-      return {
-        id: Number(existing.id),
-        user_id: String(existing.user_id),
-        type: String(existing.type) as BalanceTransactionType,
-        amount_usd: Number(existing.amount_usd),
-        balance_after: Number(existing.balance_after),
-        description:
-          typeof existing.description === 'string'
-            ? existing.description
-            : null,
-        reference_type:
-          typeof existing.reference_type === 'string'
-            ? (existing.reference_type as BalanceReferenceType)
-            : null,
-        reference_id:
-          typeof existing.reference_id === 'string'
-            ? existing.reference_id
-            : null,
-        actor_id:
-          typeof existing.actor_id === 'string' ? existing.actor_id : null,
-        source:
-          typeof existing.source === 'string'
-            ? (existing.source as BalanceTransactionSource)
-            : 'system_adjustment',
-        operator_type:
-          typeof existing.operator_type === 'string'
-            ? (existing.operator_type as BalanceOperatorType)
-            : 'system',
-        notes: typeof existing.notes === 'string' ? existing.notes : null,
-        idempotency_key:
-          typeof existing.idempotency_key === 'string'
-            ? existing.idempotency_key
-            : null,
-        created_at: String(existing.created_at),
-      };
-    }
-  }
-
-  const now = new Date().toISOString();
-
-  // Wrap read-check-update-record in a transaction for atomicity
-  const txFn = db.transaction(() => {
-    // Ensure balance row exists
-    db.prepare(
-      'INSERT OR IGNORE INTO user_balances (user_id, balance_usd, total_deposited_usd, total_consumed_usd, updated_at) VALUES (?, 0, 0, 0, ?)',
-    ).run(userId, now);
-
-    const currentRow = db
-      .prepare('SELECT balance_usd FROM user_balances WHERE user_id = ?')
-      .get(userId) as { balance_usd: number };
-    const currentBalance = Number(currentRow.balance_usd);
-    const nextBalance = currentBalance + amount;
-    if (!allowNegative && nextBalance < 0) {
-      throw new Error(
-        `Balance cannot be negative: current=${currentBalance.toFixed(2)} next=${nextBalance.toFixed(2)}`,
-      );
-    }
-
-    // Update balance
-    if (amount > 0) {
-      db.prepare(
-        'UPDATE user_balances SET balance_usd = balance_usd + ?, total_deposited_usd = total_deposited_usd + ?, updated_at = ? WHERE user_id = ?',
-      ).run(amount, amount, now, userId);
-    } else {
-      db.prepare(
-        'UPDATE user_balances SET balance_usd = balance_usd + ?, total_consumed_usd = total_consumed_usd + ?, updated_at = ? WHERE user_id = ?',
-      ).run(amount, Math.abs(amount), now, userId);
-    }
-
-    // Read new balance within the same transaction
-    const newRow = db
-      .prepare('SELECT balance_usd FROM user_balances WHERE user_id = ?')
-      .get(userId) as { balance_usd: number };
-    const balanceAfter = Number(newRow.balance_usd);
-
-    // Record transaction
-    const result = db
-      .prepare(
-        `INSERT INTO balance_transactions (
-        user_id, type, amount_usd, balance_after, description, reference_type,
-        reference_id, actor_id, source, operator_type, notes, created_at, idempotency_key
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        userId,
-        type,
-        amount,
-        balanceAfter,
-        description,
-        referenceType,
-        referenceId,
-        actorId,
-        source,
-        operatorType,
-        notes,
-        now,
-        idempotencyKey ?? null,
-      );
-
-    return {
-      id: Number(result.lastInsertRowid),
-      balanceAfter,
-    };
-  });
-
-  const { id: txId, balanceAfter } = txFn();
-
-  return {
-    id: txId,
-    user_id: userId,
-    type,
-    amount_usd: amount,
-    balance_after: balanceAfter,
-    description,
-    reference_type: referenceType,
-    reference_id: referenceId,
-    actor_id: actorId,
-    source,
-    operator_type: operatorType,
-    notes,
-    idempotency_key: idempotencyKey ?? null,
-    created_at: now,
-  };
-}
-
-export function getBalanceTransactions(
-  userId: string,
-  limit = 50,
-  offset = 0,
-): { transactions: BalanceTransaction[]; total: number } {
-  const total = (
-    db
-      .prepare(
-        'SELECT COUNT(*) as cnt FROM balance_transactions WHERE user_id = ?',
-      )
-      .get(userId) as { cnt: number }
-  ).cnt;
-
-  const rows = db
-    .prepare(
-      'SELECT * FROM balance_transactions WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?',
-    )
-    .all(userId, limit, offset) as Record<string, unknown>[];
-
-  return {
-    transactions: rows.map((r) => ({
-      id: Number(r.id),
-      user_id: String(r.user_id),
-      type: String(r.type) as BalanceTransactionType,
-      amount_usd: Number(r.amount_usd),
-      balance_after: Number(r.balance_after),
-      description: typeof r.description === 'string' ? r.description : null,
-      reference_type:
-        typeof r.reference_type === 'string'
-          ? (r.reference_type as BalanceReferenceType)
-          : null,
-      reference_id: typeof r.reference_id === 'string' ? r.reference_id : null,
-      actor_id: typeof r.actor_id === 'string' ? r.actor_id : null,
-      source:
-        typeof r.source === 'string'
-          ? (r.source as BalanceTransactionSource)
-          : 'system_adjustment',
-      operator_type:
-        typeof r.operator_type === 'string'
-          ? (r.operator_type as BalanceOperatorType)
-          : 'system',
-      notes: typeof r.notes === 'string' ? r.notes : null,
-      idempotency_key:
-        typeof r.idempotency_key === 'string' ? r.idempotency_key : null,
-      created_at: String(r.created_at),
-    })),
-    total,
-  };
-}
 
 // --- Monthly Usage ---
 
-function mapMonthlyUsageRow(row: Record<string, unknown>): MonthlyUsage {
-  return {
-    user_id: String(row.user_id),
-    month: String(row.month),
-    total_input_tokens: Number(row.total_input_tokens) || 0,
-    total_output_tokens: Number(row.total_output_tokens) || 0,
-    total_cost_usd: Number(row.total_cost_usd) || 0,
-    message_count: Number(row.message_count) || 0,
-    updated_at: String(row.updated_at),
-  };
-}
-
-export function getMonthlyUsage(
-  userId: string,
-  month: string,
-): MonthlyUsage | undefined {
-  const row = db
-    .prepare('SELECT * FROM monthly_usage WHERE user_id = ? AND month = ?')
-    .get(userId, month) as Record<string, unknown> | undefined;
-  if (!row) return undefined;
-  return mapMonthlyUsageRow(row);
-}
-
-export function incrementMonthlyUsage(
-  userId: string,
-  month: string,
-  inputTokens: number,
-  outputTokens: number,
-  costUsd: number,
-): void {
-  const now = new Date().toISOString();
-  db.prepare(
-    `INSERT INTO monthly_usage (user_id, month, total_input_tokens, total_output_tokens, total_cost_usd, message_count, updated_at)
-     VALUES (?, ?, ?, ?, ?, 1, ?)
-     ON CONFLICT(user_id, month) DO UPDATE SET
-       total_input_tokens = total_input_tokens + excluded.total_input_tokens,
-       total_output_tokens = total_output_tokens + excluded.total_output_tokens,
-       total_cost_usd = total_cost_usd + excluded.total_cost_usd,
-       message_count = message_count + 1,
-       updated_at = excluded.updated_at`,
-  ).run(userId, month, inputTokens, outputTokens, costUsd, now);
-}
-
-/**
- * Atomic monthly+daily usage increment. Wraps the two UPSERTs in a single
- * SQLite transaction so a crash between them can't leave the two tables
- * divergent for that turn (silent drift over time). billing.ts uses this
- * instead of calling the two helpers in sequence.
- */
-export function incrementUsageBoth(
-  userId: string,
-  month: string,
-  date: string,
-  inputTokens: number,
-  outputTokens: number,
-  costUsd: number,
-): void {
-  const txn = db.transaction(() => {
-    incrementMonthlyUsage(userId, month, inputTokens, outputTokens, costUsd);
-    incrementDailyUsage(userId, date, inputTokens, outputTokens, costUsd);
-  });
-  txn();
-}
-
-export function getUserMonthlyUsageHistory(
-  userId: string,
-  months = 6,
-): MonthlyUsage[] {
-  return (
-    db
-      .prepare(
-        'SELECT * FROM monthly_usage WHERE user_id = ? ORDER BY month DESC LIMIT ?',
-      )
-      .all(userId, months) as Record<string, unknown>[]
-  ).map(mapMonthlyUsageRow);
-}
-
 // --- Redeem Codes ---
 
-export function getRedeemCode(code: string): RedeemCode | undefined {
-  const row = db
-    .prepare('SELECT * FROM redeem_codes WHERE code = ?')
-    .get(code) as Record<string, unknown> | undefined;
-  if (!row) return undefined;
-  return mapRedeemCodeRow(row);
-}
-
-export function getAllRedeemCodes(): RedeemCode[] {
-  return (
-    db
-      .prepare('SELECT * FROM redeem_codes ORDER BY created_at DESC')
-      .all() as Record<string, unknown>[]
-  ).map(mapRedeemCodeRow);
-}
-
-export function createRedeemCode(code: RedeemCode): void {
-  db.prepare(
-    `INSERT INTO redeem_codes (code, type, value_usd, plan_id, duration_days, max_uses, used_count, expires_at, created_by, notes, batch_id, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    code.code,
-    code.type,
-    code.value_usd,
-    code.plan_id,
-    code.duration_days,
-    code.max_uses,
-    code.used_count,
-    code.expires_at,
-    code.created_by,
-    code.notes,
-    code.batch_id,
-    code.created_at,
-  );
-}
-
-export function incrementRedeemCodeUsage(code: string, userId: string): void {
-  const now = new Date().toISOString();
-  db.prepare(
-    'UPDATE redeem_codes SET used_count = used_count + 1 WHERE code = ?',
-  ).run(code);
-  db.prepare(
-    'INSERT INTO redeem_code_usage (code, user_id, redeemed_at) VALUES (?, ?, ?)',
-  ).run(code, userId, now);
-}
-
-export function deleteRedeemCode(code: string): boolean {
-  const result = db
-    .prepare('DELETE FROM redeem_codes WHERE code = ?')
-    .run(code);
-  return result.changes > 0;
-}
-
-export function hasUserRedeemedCode(userId: string, code: string): boolean {
-  const row = db
-    .prepare(
-      'SELECT COUNT(*) as cnt FROM redeem_code_usage WHERE user_id = ? AND code = ?',
-    )
-    .get(userId, code) as { cnt: number };
-  return row.cnt > 0;
-}
-
-function mapRedeemCodeRow(row: Record<string, unknown>): RedeemCode {
-  return {
-    code: String(row.code),
-    type: String(row.type) as RedeemCode['type'],
-    value_usd: row.value_usd != null ? Number(row.value_usd) : null,
-    plan_id: typeof row.plan_id === 'string' ? row.plan_id : null,
-    duration_days: row.duration_days != null ? Number(row.duration_days) : null,
-    max_uses: Number(row.max_uses) || 1,
-    used_count: Number(row.used_count) || 0,
-    expires_at: typeof row.expires_at === 'string' ? row.expires_at : null,
-    created_by: String(row.created_by),
-    notes: typeof row.notes === 'string' ? row.notes : null,
-    batch_id: typeof row.batch_id === 'string' ? row.batch_id : null,
-    created_at: String(row.created_at),
-  };
-}
-
 // --- Billing Audit Log ---
-
-export function logBillingAudit(
-  eventType: BillingAuditEventType,
-  userId: string,
-  actorId: string | null,
-  details: Record<string, unknown> | null,
-): void {
-  db.prepare(
-    'INSERT INTO billing_audit_log (event_type, user_id, actor_id, details, created_at) VALUES (?, ?, ?, ?, ?)',
-  ).run(
-    eventType,
-    userId,
-    actorId,
-    details ? JSON.stringify(details) : null,
-    new Date().toISOString(),
-  );
-}
-
-export function getBillingAuditLog(
-  limit = 50,
-  offset = 0,
-  userId?: string,
-  eventType?: string,
-): { logs: BillingAuditLog[]; total: number } {
-  const conditions: string[] = [];
-  const params: unknown[] = [];
-  if (userId) {
-    conditions.push('user_id = ?');
-    params.push(userId);
-  }
-  if (eventType) {
-    conditions.push('event_type = ?');
-    params.push(eventType);
-  }
-  const where =
-    conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-
-  const total = (
-    db
-      .prepare(`SELECT COUNT(*) as cnt FROM billing_audit_log ${where}`)
-      .get(...params) as { cnt: number }
-  ).cnt;
-
-  const rows = db
-    .prepare(
-      `SELECT * FROM billing_audit_log ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
-    )
-    .all(...params, limit, offset) as Record<string, unknown>[];
-
-  return {
-    logs: rows.map((r) => ({
-      id: Number(r.id),
-      event_type: String(r.event_type) as BillingAuditEventType,
-      user_id: String(r.user_id),
-      actor_id: typeof r.actor_id === 'string' ? r.actor_id : null,
-      // 防御性 parse：单行损坏不应让整个审计 API 500（事故排查的关键时刻
-      // 不能因一行坏数据看不到日志）。parseJsonDetails 出错时返回 null。
-      details: parseJsonDetails(r.details),
-      created_at: String(r.created_at),
-    })),
-    total,
-  };
-}
 
 // --- Billing summary helpers ---
 
@@ -14733,435 +12820,7 @@ export function getUserGroupCount(userId: string): number {
   return row.cnt;
 }
 
-export function getAllUserBillingOverview(): Array<{
-  user_id: string;
-  username: string;
-  display_name: string;
-  role: string;
-  plan_id: string | null;
-  plan_name: string | null;
-  balance_usd: number;
-  current_month_cost: number;
-}> {
-  const month = new Date().toISOString().slice(0, 7);
-  return db
-    .prepare(
-      `SELECT u.id as user_id, u.username, u.display_name, u.role,
-              s.plan_id, p.name as plan_name,
-              COALESCE(b.balance_usd, 0) as balance_usd,
-              COALESCE(mu.total_cost_usd, 0) as current_month_cost
-       FROM users u
-       LEFT JOIN user_subscriptions s ON s.user_id = u.id AND s.status = 'active'
-       LEFT JOIN billing_plans p ON p.id = s.plan_id
-       LEFT JOIN user_balances b ON b.user_id = u.id
-       LEFT JOIN monthly_usage mu ON mu.user_id = u.id AND mu.month = ?
-       WHERE u.status != 'deleted'
-       ORDER BY u.created_at ASC`,
-    )
-    .all(month) as Array<{
-    user_id: string;
-    username: string;
-    display_name: string;
-    role: string;
-    plan_id: string | null;
-    plan_name: string | null;
-    balance_usd: number;
-    current_month_cost: number;
-  }>;
-}
-
-export function getRevenueStats(): {
-  totalDeposited: number;
-  totalConsumed: number;
-  activeSubscriptions: number;
-  currentMonthRevenue: number;
-} {
-  const month = new Date().toISOString().slice(0, 7);
-  const deposited = (
-    db
-      .prepare(
-        'SELECT COALESCE(SUM(total_deposited_usd), 0) as total FROM user_balances',
-      )
-      .get() as { total: number }
-  ).total;
-  const consumed = (
-    db
-      .prepare(
-        'SELECT COALESCE(SUM(total_consumed_usd), 0) as total FROM user_balances',
-      )
-      .get() as { total: number }
-  ).total;
-  const activeSubs = (
-    db
-      .prepare(
-        "SELECT COUNT(*) as cnt FROM user_subscriptions WHERE status = 'active'",
-      )
-      .get() as { cnt: number }
-  ).cnt;
-  const monthRevenue = (
-    db
-      .prepare(
-        'SELECT COALESCE(SUM(total_cost_usd), 0) as total FROM monthly_usage WHERE month = ?',
-      )
-      .get(month) as { total: number }
-  ).total;
-  return {
-    totalDeposited: deposited,
-    totalConsumed: consumed,
-    activeSubscriptions: activeSubs,
-    currentMonthRevenue: monthRevenue,
-  };
-}
-
 // --- Daily Usage ---
-
-function mapDailyUsageRow(row: Record<string, unknown>): DailyUsage {
-  return {
-    user_id: String(row.user_id),
-    date: String(row.date),
-    total_input_tokens: Number(row.total_input_tokens) || 0,
-    total_output_tokens: Number(row.total_output_tokens) || 0,
-    total_cost_usd: Number(row.total_cost_usd) || 0,
-    message_count: Number(row.message_count) || 0,
-  };
-}
-
-export function incrementDailyUsage(
-  userId: string,
-  date: string,
-  inputTokens: number,
-  outputTokens: number,
-  costUsd: number,
-): void {
-  db.prepare(
-    `INSERT INTO daily_usage (user_id, date, total_input_tokens, total_output_tokens, total_cost_usd, message_count)
-     VALUES (?, ?, ?, ?, ?, 1)
-     ON CONFLICT(user_id, date) DO UPDATE SET
-       total_input_tokens = total_input_tokens + excluded.total_input_tokens,
-       total_output_tokens = total_output_tokens + excluded.total_output_tokens,
-       total_cost_usd = total_cost_usd + excluded.total_cost_usd,
-       message_count = message_count + 1`,
-  ).run(userId, date, inputTokens, outputTokens, costUsd);
-}
-
-export function getDailyUsage(
-  userId: string,
-  date: string,
-): DailyUsage | undefined {
-  const row = db
-    .prepare('SELECT * FROM daily_usage WHERE user_id = ? AND date = ?')
-    .get(userId, date) as Record<string, unknown> | undefined;
-  if (!row) return undefined;
-  return mapDailyUsageRow(row);
-}
-
-export function getWeeklyUsageSummary(userId: string): {
-  totalCost: number;
-  totalTokens: number;
-} {
-  // Align to calendar week (Monday–Sunday) to match checkQuota() reset logic
-  const now = new Date();
-  const dayOfWeek = now.getDay(); // 0=Sun, 1=Mon, ...
-  const daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-  const monday = new Date(now);
-  monday.setDate(now.getDate() - daysSinceMonday);
-  const startDate = monday.toISOString().slice(0, 10);
-
-  const row = db
-    .prepare(
-      `SELECT COALESCE(SUM(total_cost_usd), 0) as totalCost,
-              COALESCE(SUM(total_input_tokens + total_output_tokens), 0) as totalTokens
-       FROM daily_usage WHERE user_id = ? AND date >= ?`,
-    )
-    .get(userId, startDate) as { totalCost: number; totalTokens: number };
-  return { totalCost: row.totalCost, totalTokens: row.totalTokens };
-}
-
-export function getUserDailyUsageHistory(
-  userId: string,
-  days = 14,
-): DailyUsage[] {
-  return (
-    db
-      .prepare(
-        'SELECT * FROM daily_usage WHERE user_id = ? ORDER BY date DESC LIMIT ?',
-      )
-      .all(userId, days) as Record<string, unknown>[]
-  ).map(mapDailyUsageRow);
-}
-
-export function getDailyUsageSumForMonth(
-  userId: string,
-  month: string,
-): {
-  totalInputTokens: number;
-  totalOutputTokens: number;
-  totalCost: number;
-  messageCount: number;
-} {
-  const startDate = `${month}-01`;
-  // End date: first day of next month
-  const [y, m] = month.split('-').map(Number);
-  const nextMonth =
-    m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
-  const endDate = `${nextMonth}-01`;
-
-  const row = db
-    .prepare(
-      `SELECT COALESCE(SUM(total_input_tokens), 0) as totalInputTokens,
-              COALESCE(SUM(total_output_tokens), 0) as totalOutputTokens,
-              COALESCE(SUM(total_cost_usd), 0) as totalCost,
-              COALESCE(SUM(message_count), 0) as messageCount
-       FROM daily_usage WHERE user_id = ? AND date >= ? AND date < ?`,
-    )
-    .get(userId, startDate, endDate) as {
-    totalInputTokens: number;
-    totalOutputTokens: number;
-    totalCost: number;
-    messageCount: number;
-  };
-  return row;
-}
-
-export function correctMonthlyUsage(
-  userId: string,
-  month: string,
-  inputTokens: number,
-  outputTokens: number,
-  costUsd: number,
-  messageCount: number,
-): void {
-  const now = new Date().toISOString();
-  db.prepare(
-    `INSERT INTO monthly_usage (user_id, month, total_input_tokens, total_output_tokens, total_cost_usd, message_count, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(user_id, month) DO UPDATE SET
-       total_input_tokens = excluded.total_input_tokens,
-       total_output_tokens = excluded.total_output_tokens,
-       total_cost_usd = excluded.total_cost_usd,
-       message_count = excluded.message_count,
-       updated_at = excluded.updated_at`,
-  ).run(userId, month, inputTokens, outputTokens, costUsd, messageCount, now);
-}
-
-export function getSubscriptionHistory(
-  userId: string,
-): (UserSubscription & { plan_name: string })[] {
-  return (
-    db
-      .prepare(
-        `SELECT s.*, p.name as plan_name FROM user_subscriptions s
-         JOIN billing_plans p ON s.plan_id = p.id
-         WHERE s.user_id = ?
-         ORDER BY s.created_at DESC`,
-      )
-      .all(userId) as Record<string, unknown>[]
-  ).map((row) => ({
-    ...mapSubscriptionRow(row),
-    plan_name: String(row.plan_name),
-  }));
-}
-
-export function getRedeemCodeUsageDetails(
-  code: string,
-): Array<{ user_id: string; username: string; redeemed_at: string }> {
-  return db
-    .prepare(
-      `SELECT rcu.user_id, u.username, rcu.redeemed_at
-       FROM redeem_code_usage rcu
-       LEFT JOIN users u ON u.id = rcu.user_id
-       WHERE rcu.code = ?
-       ORDER BY rcu.redeemed_at DESC`,
-    )
-    .all(code) as Array<{
-    user_id: string;
-    username: string;
-    redeemed_at: string;
-  }>;
-}
-
-export function getDashboardStats(): {
-  activeUsers: number;
-  totalUsers: number;
-  planDistribution: Array<{ plan_name: string; count: number }>;
-  todayCost: number;
-  monthCost: number;
-  activeSubscriptions: number;
-} {
-  const today = new Date().toISOString().slice(0, 10);
-  const month = new Date().toISOString().slice(0, 7);
-
-  const totalUsers = (
-    db
-      .prepare("SELECT COUNT(*) as cnt FROM users WHERE status != 'deleted'")
-      .get() as { cnt: number }
-  ).cnt;
-
-  const activeUsers = (
-    db
-      .prepare(
-        'SELECT COUNT(DISTINCT user_id) as cnt FROM daily_usage WHERE date = ?',
-      )
-      .get(today) as { cnt: number }
-  ).cnt;
-
-  const planDistribution = db
-    .prepare(
-      `SELECT COALESCE(p.name, '无套餐') as plan_name, COUNT(*) as count
-       FROM users u
-       LEFT JOIN user_subscriptions s ON s.user_id = u.id AND s.status = 'active'
-       LEFT JOIN billing_plans p ON p.id = s.plan_id
-       WHERE u.status != 'deleted'
-       GROUP BY p.name
-       ORDER BY count DESC`,
-    )
-    .all() as Array<{ plan_name: string; count: number }>;
-
-  const todayCost = (
-    db
-      .prepare(
-        'SELECT COALESCE(SUM(total_cost_usd), 0) as total FROM daily_usage WHERE date = ?',
-      )
-      .get(today) as { total: number }
-  ).total;
-
-  const monthCost = (
-    db
-      .prepare(
-        'SELECT COALESCE(SUM(total_cost_usd), 0) as total FROM monthly_usage WHERE month = ?',
-      )
-      .get(month) as { total: number }
-  ).total;
-
-  const activeSubscriptions = (
-    db
-      .prepare(
-        "SELECT COUNT(*) as cnt FROM user_subscriptions WHERE status = 'active'",
-      )
-      .get() as { cnt: number }
-  ).cnt;
-
-  return {
-    activeUsers,
-    totalUsers,
-    planDistribution,
-    todayCost,
-    monthCost,
-    activeSubscriptions,
-  };
-}
-
-export function getRevenueTrend(
-  months = 6,
-): Array<{ month: string; revenue: number; users: number }> {
-  return db
-    .prepare(
-      `SELECT month, SUM(total_cost_usd) as revenue, COUNT(DISTINCT user_id) as users
-       FROM monthly_usage
-       GROUP BY month
-       ORDER BY month DESC
-       LIMIT ?`,
-    )
-    .all(months) as Array<{ month: string; revenue: number; users: number }>;
-}
-
-export function batchAssignPlan(
-  userIds: string[],
-  planId: string,
-  actorId: string,
-  durationDays?: number,
-): number {
-  const plan = getBillingPlan(planId);
-  if (!plan) throw new Error(`Plan not found: ${planId}`);
-
-  const now = new Date();
-  const expiresAt = durationDays
-    ? new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000).toISOString()
-    : null;
-
-  let count = 0;
-  const txn = db.transaction(() => {
-    for (const userId of userIds) {
-      // Cancel existing
-      db.prepare(
-        "UPDATE user_subscriptions SET status = 'cancelled', cancelled_at = ? WHERE user_id = ? AND status = 'active'",
-      ).run(now.toISOString(), userId);
-
-      const subId = `sub_${userId}_${Date.now()}_${count}`;
-      db.prepare(
-        `INSERT INTO user_subscriptions (id, user_id, plan_id, status, started_at, expires_at, auto_renew, created_at)
-         VALUES (?, ?, ?, 'active', ?, ?, 0, ?)`,
-      ).run(
-        subId,
-        userId,
-        planId,
-        now.toISOString(),
-        expiresAt,
-        now.toISOString(),
-      );
-
-      db.prepare('UPDATE users SET subscription_plan_id = ? WHERE id = ?').run(
-        planId,
-        userId,
-      );
-
-      logBillingAudit('subscription_assigned', userId, actorId, {
-        planId,
-        planName: plan.name,
-        durationDays: durationDays ?? null,
-        batch: true,
-      });
-      count++;
-    }
-  });
-  txn();
-  return count;
-}
-
-export function getPlanSubscriberCount(planId: string): number {
-  const row = db
-    .prepare(
-      "SELECT COUNT(*) as cnt FROM user_subscriptions WHERE plan_id = ? AND status = 'active'",
-    )
-    .get(planId) as { cnt: number };
-  return row.cnt;
-}
-
-export function getAllPlanSubscriberCounts(): Record<string, number> {
-  const rows = db
-    .prepare(
-      "SELECT plan_id, COUNT(*) as cnt FROM user_subscriptions WHERE status = 'active' GROUP BY plan_id",
-    )
-    .all() as Array<{ plan_id: string; cnt: number }>;
-  const result: Record<string, number> = {};
-  for (const row of rows) {
-    result[row.plan_id] = row.cnt;
-  }
-  return result;
-}
-
-/**
- * Atomically increment redeem code usage with optimistic locking.
- * Returns true if the increment succeeded (used_count < max_uses).
- */
-export function tryIncrementRedeemCodeUsage(
-  code: string,
-  userId: string,
-): boolean {
-  const now = new Date().toISOString();
-  return db.transaction(() => {
-    const result = db
-      .prepare(
-        'UPDATE redeem_codes SET used_count = used_count + 1 WHERE code = ? AND used_count < max_uses',
-      )
-      .run(code);
-    if (result.changes === 0) return false;
-    db.prepare(
-      'INSERT INTO redeem_code_usage (code, user_id, redeemed_at) VALUES (?, ?, ?)',
-    ).run(code, userId, now);
-    return true;
-  })();
-}
 
 /**
  * Close the database connection.

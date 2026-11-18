@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
-import { LONE_SURROGATE_RE } from '../container/agent-runner/src/session-history.js';
+
+// Lone-surrogate matcher (was exported by the retired Claude runner's
+// session-history.ts; prompts must not contain split surrogate pairs).
+const LONE_SURROGATE_RE =
+  /(?:[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF])/g;
 
 const PROMPTS_DIR = path.join(
   __dirname,

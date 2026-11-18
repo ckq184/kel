@@ -1601,16 +1601,6 @@ function logDeprecationOnce(endpoint: string, replacement: string): void {
   _deprecationLogged.add(endpoint);
 }
 
-function resolveProxyInfo(
-  userProxy: string,
-  sysProxy: string,
-): { effectiveProxyUrl: string; proxySource: 'user' | 'system' | 'none' } {
-  return {
-    effectiveProxyUrl: userProxy || sysProxy,
-    proxySource: userProxy ? 'user' : sysProxy ? 'system' : 'none',
-  };
-}
-
 /** Persist a RegisteredGroup update and sync to the in-memory cache. */
 function applyBindingUpdate(imJid: string, updated: RegisteredGroup): void {
   commitChannelMountUpdate(imJid, updated);

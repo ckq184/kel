@@ -9,7 +9,6 @@ export interface UsageSummary {
   reasoningTokens: number;
   totalTokens: number;
   providerEstimatedCostUSD: number;
-  billedCostUSD: number | null;
   runCount: number;
   modelCallCount: number;
   activeDays: number;
@@ -21,8 +20,6 @@ export interface UsageSummary {
   totalCacheCreationTokens: number;
   totalReasoningTokens: number;
   totalCostUSD: number;
-  totalMessages: number;
-  totalActiveDays: number;
 }
 
 export interface UsageBreakdown {
@@ -40,7 +37,6 @@ export interface UsageBreakdown {
   cache_creation_tokens: number;
   reasoning_tokens: number;
   provider_estimated_cost_usd: number;
-  billed_cost_usd: number | null;
   run_count: number;
   model_call_count: number;
   // Legacy aliases from usage_daily_summary.
@@ -57,7 +53,6 @@ export interface UsageDailyBucket {
   reasoningTokens: number;
   totalTokens: number;
   providerEstimatedCostUSD: number;
-  billedCostUSD: number | null;
   runCount: number;
   modelCallCount: number;
 }
@@ -107,7 +102,6 @@ export interface UsageAttributionItem {
   reasoningTokens: number;
   totalTokens: number;
   providerEstimatedCostUSD: number;
-  billedCostUSD: number | null;
   runCount: number;
   modelCallCount: number;
 }
@@ -127,7 +121,6 @@ interface RawUsageSummary {
   reasoningTokens?: number;
   totalTokens?: number;
   providerEstimatedCostUSD?: number;
-  billedCostUSD?: number | null;
   runCount?: number;
   modelCallCount?: number;
   activeDays?: number;
@@ -137,8 +130,6 @@ interface RawUsageSummary {
   totalCacheCreationTokens?: number;
   totalReasoningTokens?: number;
   totalCostUSD?: number;
-  totalMessages?: number;
-  totalActiveDays?: number;
 }
 
 interface RawUsageBreakdown {
@@ -156,7 +147,6 @@ interface RawUsageBreakdown {
   cache_creation_tokens?: number;
   reasoning_tokens?: number;
   provider_estimated_cost_usd?: number;
-  billed_cost_usd?: number | null;
   run_count?: number;
   model_call_count?: number;
   cost_usd?: number;
@@ -240,8 +230,6 @@ function normalizeBreakdown(row: RawUsageBreakdown): UsageBreakdown {
     cache_creation_tokens: finiteNumber(row.cache_creation_tokens),
     reasoning_tokens: finiteNumber(row.reasoning_tokens),
     provider_estimated_cost_usd: estimatedCost,
-    billed_cost_usd:
-      typeof row.billed_cost_usd === 'number' ? row.billed_cost_usd : null,
     run_count: runCount,
     model_call_count: finiteNumber(row.model_call_count ?? row.request_count),
     cost_usd: estimatedCost,
@@ -271,8 +259,6 @@ function normalizeDailyBucket(row: RawUsageBreakdown): UsageDailyBucket {
     providerEstimatedCostUSD: finiteNumber(
       row.provider_estimated_cost_usd ?? row.cost_usd,
     ),
-    billedCostUSD:
-      typeof row.billed_cost_usd === 'number' ? row.billed_cost_usd : null,
     runCount: finiteNumber(row.run_count ?? row.request_count),
     modelCallCount: finiteNumber(row.model_call_count ?? row.request_count),
   };
@@ -290,7 +276,6 @@ function normalizeAttributionItem(item: unknown): UsageAttributionItem | null {
       reasoningTokens: 0,
       totalTokens: 0,
       providerEstimatedCostUSD: 0,
-      billedCostUSD: null,
       runCount: 0,
       modelCallCount: 0,
     };
@@ -309,8 +294,6 @@ function normalizeAttributionItem(item: unknown): UsageAttributionItem | null {
     reasoningTokens: finiteNumber(record.reasoningTokens),
     totalTokens: finiteNumber(record.totalTokens),
     providerEstimatedCostUSD: finiteNumber(record.providerEstimatedCostUSD),
-    billedCostUSD:
-      typeof record.billedCostUSD === 'number' ? record.billedCostUSD : null,
     runCount: finiteNumber(record.runCount),
     modelCallCount: finiteNumber(record.modelCallCount),
   };
@@ -344,10 +327,6 @@ function aggregateSummary(
       acc.cacheCreation += row.cache_creation_tokens;
       acc.reasoning += row.reasoning_tokens;
       acc.estimatedCost += row.provider_estimated_cost_usd;
-      if (row.billed_cost_usd !== null) {
-        acc.hasBilledCost = true;
-        acc.billedCost += row.billed_cost_usd;
-      }
       acc.runCount += row.run_count;
       acc.modelCallCount += row.model_call_count;
       acc.dates.add(row.date);
@@ -360,8 +339,6 @@ function aggregateSummary(
       cacheCreation: 0,
       reasoning: 0,
       estimatedCost: 0,
-      billedCost: 0,
-      hasBilledCost: false,
       runCount: 0,
       modelCallCount: 0,
       dates: new Set<string>(),
@@ -379,12 +356,6 @@ function aggregateSummary(
     hasExplicitWindow && typeof rawSummary.modelCallCount === 'number'
       ? rawSummary.modelCallCount
       : totals.modelCallCount;
-  const billedCost =
-    hasExplicitWindow && typeof rawSummary.billedCostUSD === 'number'
-      ? rawSummary.billedCostUSD
-      : totals.hasBilledCost
-        ? totals.billedCost
-        : null;
   const totalTokens =
     totals.input +
     totals.output +
@@ -400,7 +371,6 @@ function aggregateSummary(
     reasoningTokens: totals.reasoning,
     totalTokens,
     providerEstimatedCostUSD: totals.estimatedCost,
-    billedCostUSD: billedCost,
     runCount,
     modelCallCount,
     activeDays: totals.dates.size,
@@ -411,8 +381,6 @@ function aggregateSummary(
     totalCacheCreationTokens: totals.cacheCreation,
     totalReasoningTokens: totals.reasoning,
     totalCostUSD: totals.estimatedCost,
-    totalMessages: runCount,
-    totalActiveDays: totals.dates.size,
   };
 }
 

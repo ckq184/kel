@@ -88,6 +88,12 @@ grep -HnE "^[[:space:]]*['\"][a-zA-Z0-9_.-]+\.md['\"],?[[:space:]]*$" "${TS_FILE
   | sed -nE "s/^([^:]+):([0-9]+):[[:space:]]*['\"]([a-zA-Z0-9_.-]+\.md)['\"],?[[:space:]]*$/\1:\2:\3/p" \
   >> "$HITS_FILE" || true
 
+# Pattern 5: ternary branch literal — `? 'foo.md'` / `: 'foo.md'` at line end,
+#            the other prettier product for conditional prompt selection.
+grep -HnE "[?:][[:space:]]*['\"][a-zA-Z0-9_.-]+\.md['\"],?[[:space:]]*$" "${TS_FILES[@]}" 2>/dev/null \
+  | sed -nE "s/^([^:]+):([0-9]+):.*[?:][[:space:]]*['\"]([a-zA-Z0-9_.-]+\.md)['\"],?[[:space:]]*$/\1:\2:\3/p" \
+  >> "$HITS_FILE" || true
+
 # Sort + uniq by (file, line, filename) tuple.
 sort -u -o "$HITS_FILE" "$HITS_FILE"
 

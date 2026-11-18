@@ -58,6 +58,22 @@ describe('database upgrade safety gate', () => {
         'audit-workspace', 'legacy-member', 'member',
         '2026-07-16T00:00:00.000Z', 'operator'
       );
+      CREATE TABLE balance_transactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        amount_usd REAL NOT NULL,
+        balance_after REAL NOT NULL,
+        description TEXT,
+        reference_type TEXT,
+        reference_id TEXT,
+        actor_id TEXT,
+        source TEXT NOT NULL DEFAULT 'system_adjustment',
+        operator_type TEXT NOT NULL DEFAULT 'system',
+        notes TEXT,
+        idempotency_key TEXT,
+        created_at TEXT NOT NULL
+      );
       INSERT INTO balance_transactions (
         user_id, type, amount_usd, balance_after, description,
         source, operator_type, created_at
@@ -104,15 +120,9 @@ describe('database upgrade safety gate', () => {
 
     const migrated = new Database(dbPath);
     expect(tableExists(migrated, 'group_members')).toBe(false);
-    expect(
-      (
-        migrated
-          .prepare(
-            "SELECT COUNT(*) AS count FROM balance_transactions WHERE user_id = 'deleted-user'",
-          )
-          .get() as { count: number }
-      ).count,
-    ).toBe(1);
+    // v76 prune: the retired billing tables are dropped outright — the
+    // retained audit evidence lives in the pre-migration backup above.
+    expect(tableExists(migrated, 'balance_transactions')).toBe(false);
     migrated.exec(`
       CREATE TABLE group_members (
         group_folder TEXT NOT NULL,
@@ -232,6 +242,6 @@ describe('schema version head', () => {
     // no data migration).
     // v75: retired Telegram/Discord/WhatsApp channel trim (task AJ; destructive
     // data cleanup gated by the pre-migration backup).
-    expect(db.CURRENT_SCHEMA_VERSION).toBe(75);
+    expect(db.CURRENT_SCHEMA_VERSION).toBe(76);
   });
 });

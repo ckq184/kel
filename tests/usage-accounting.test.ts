@@ -216,16 +216,6 @@ describe('v51 usage event accounting', () => {
       runCount: 1,
       modelCallCount: 2,
     });
-
-    // Cost=0 must still count all input/cache categories toward token quota.
-    const monthly = probe
-      .prepare(
-        "SELECT * FROM monthly_usage WHERE user_id = ? AND month = '2026-07'",
-      )
-      .get('member-usage') as any;
-    expect(monthly.total_input_tokens).toBe(150);
-    expect(monthly.total_output_tokens).toBe(5);
-    expect(monthly.message_count).toBe(1);
   });
 
   test('counts sub-cent tokens while applying Kaboo bucket rounding', () => {
@@ -246,23 +236,6 @@ describe('v51 usage event accounting', () => {
         numTurns: 1,
       },
     });
-    const monthly = probe
-      .prepare(
-        "SELECT * FROM monthly_usage WHERE user_id = 'zero-cost-user' AND month = '2026-07'",
-      )
-      .get() as any;
-    expect(monthly.total_input_tokens).toBe(45);
-    expect(monthly.total_output_tokens).toBe(2);
-    expect(monthly.total_cost_usd).toBe(0);
-    expect(
-      (
-        probe
-          .prepare(
-            "SELECT COUNT(*) AS count FROM balance_transactions WHERE idempotency_key = 'usage_event_zero-cost-service-event'",
-          )
-          .get() as any
-      ).count,
-    ).toBe(0);
   });
 
   test('persists Kaboo reasoning separately while conserving totals, quota and cost', () => {
@@ -318,12 +291,6 @@ describe('v51 usage event accounting', () => {
       reasoningTokens: 750,
       totalTokens: 1_000,
     });
-    const monthly = probe
-      .prepare(
-        "SELECT total_output_tokens FROM monthly_usage WHERE user_id = 'reasoning-user' AND month = '2026-07'",
-      )
-      .get() as any;
-    expect(monthly.total_output_tokens).toBe(1_000);
   });
 
   test('carries sub-cent usage inside one UTC half-hour model bucket', () => {
@@ -605,19 +572,6 @@ describe('v51 usage event accounting', () => {
           .get() as any
       ).count,
     ).toBe(0);
-    const monthly = probe
-      .prepare(
-        `SELECT total_input_tokens, total_output_tokens, total_cost_usd
-         FROM monthly_usage
-         WHERE user_id = 'model-mismatch-user' AND month = '2026-07'`,
-      )
-      .get() as any;
-    expect(monthly).toMatchObject({
-      // Quota input includes uncached input plus cache read and creation.
-      total_input_tokens: 1_075_000,
-      total_output_tokens: 100_000,
-      total_cost_usd: 5.29,
-    });
   });
 
   test('rebuilds a message snapshot from all incremental events', () => {
@@ -666,7 +620,7 @@ describe('v51 usage event accounting', () => {
     );
     const row = probe
       .prepare(
-        "SELECT token_usage, cost_usd FROM messages WHERE id = 'snapshot-message' AND chat_jid = 'web:snapshot'",
+        "SELECT token_usage FROM messages WHERE id = 'snapshot-message' AND chat_jid = 'web:snapshot'",
       )
       .get() as any;
     expect(JSON.parse(row.token_usage)).toMatchObject({
@@ -685,6 +639,5 @@ describe('v51 usage event accounting', () => {
         },
       },
     });
-    expect(row.cost_usd).toBeCloseTo(1);
   });
 });

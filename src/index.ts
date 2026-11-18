@@ -7232,8 +7232,6 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
                   updateLatestMessageTokenUsage(
                     chatJid,
                     JSON.stringify(se.usage),
-                    undefined,
-                    se.usage.costUSD,
                   );
                 }
 
@@ -15005,8 +15003,6 @@ async function processAgentConversation(
             updateLatestMessageTokenUsage(
               virtualChatJid,
               JSON.stringify(output.streamEvent.usage),
-              undefined,
-              output.streamEvent.usage.costUSD,
             );
           }
         } catch (err) {

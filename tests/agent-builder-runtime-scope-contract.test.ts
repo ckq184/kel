@@ -17,18 +17,7 @@ function section(source: string, start: string, end: string): string {
 
 describe('Agent Builder runtime scope contract', () => {
   test('injects guidance and MCP tools by main-Agent identity instead of Home workspace', () => {
-    const runner = read('container/agent-runner/src/index.ts');
     const tools = read('container/agent-runner/src/mcp-tools.ts');
-
-    const promptAssembly = section(
-      runner,
-      'const promptPlan = buildCkqclawPromptPlan({',
-      'const systemPromptAppend = promptPlan.text;',
-    );
-    expect(promptAssembly).toMatch(/agentBuilderEnabled/);
-    expect(promptAssembly).not.toMatch(/\.\.\.\(isHome &&/);
-    expect(promptAssembly).toMatch(/!containerInput\.isScheduledTask/);
-    expect(promptAssembly).toMatch(/!containerInput\.messageTaskId/);
 
     const toolRegistration = section(
       tools,

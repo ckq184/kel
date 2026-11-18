@@ -69,13 +69,13 @@ describe('custom_model_pricing migration (v73)', () => {
   test('creates the idempotent table and partial unique indexes at v73', () => {
     db.initDatabase();
 
-    expect(db.CURRENT_SCHEMA_VERSION).toBe(75);
+    expect(db.CURRENT_SCHEMA_VERSION).toBe(76);
     const probe = openProbe();
     try {
       const version = probe
         .prepare('SELECT value FROM router_state WHERE key = ?')
         .get('schema_version') as { value: string } | undefined;
-      expect(version?.value).toBe('75');
+      expect(version?.value).toBe('76');
 
       const objects = probe
         .prepare(
@@ -107,7 +107,7 @@ describe('custom_model_pricing migration (v73)', () => {
       const version = probe
         .prepare('SELECT value FROM router_state WHERE key = ?')
         .get('schema_version') as { value: string } | undefined;
-      expect(version?.value).toBe('75');
+      expect(version?.value).toBe('76');
     } finally {
       probe.close();
     }

@@ -220,7 +220,7 @@ describe('schema v71 continuation columns', () => {
     // v71 columns survive at head (72 = approval-gate rollback, 73 = custom
     // model pricing table, 74 = auto_memory_recall column; all unrelated to
     // task_runs).
-    expect(db.CURRENT_SCHEMA_VERSION).toBe(75);
+    expect(db.CURRENT_SCHEMA_VERSION).toBe(76);
     const task = createDefinition('schema-defaults-task');
     const run = runToSuccess(task);
     // New columns exist on every row (legacy rows migrate to these defaults).

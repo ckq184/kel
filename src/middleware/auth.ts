@@ -181,10 +181,6 @@ export const adminRoleMiddleware = async (c: any, next: any) => {
   }
   await next();
 };
-export const groupEnvMiddleware = requireAnyPermission([
-  'manage_group_env',
-  'manage_system_config',
-]);
 export const usersManageMiddleware = requirePermission('manage_users');
 export const inviteManageMiddleware = requirePermission('manage_invites');
 export const auditViewMiddleware = requirePermission('view_audit_log');

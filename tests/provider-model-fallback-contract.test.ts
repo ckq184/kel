@@ -7,52 +7,11 @@ const root = process.cwd();
 // with core.autocrlf=true materialize CRLF on disk.
 const readSource = (rel: string): string =>
   fs.readFileSync(path.join(root, rel), 'utf8').replace(/\r\n/g, '\n');
-const agentRunner = readSource('container/agent-runner/src/index.ts');
 const hostRunner = readSource('src/container-runner.ts');
 const main = readSource('src/index.ts');
 const taskScheduler = readSource('src/task-scheduler.ts');
 
 describe('provider fallback source contracts', () => {
-  test('cold/warm retry uses the failed turn payload rather than startup input', () => {
-    expect(agentRunner).toMatch(
-      /return runQueryAttempt\(\s*failed\.prompt,\s*failed\.sessionIdBeforeTurn,[\s\S]*?failed\.resumeAt,[\s\S]*?failed\.images,[\s\S]*?failed\.ipcMessages,/,
-    );
-    expect(agentRunner).toContain(
-      'laterIpcMessages: ipcDeliveryTracker.laterTurnMessages',
-    );
-    expect(agentRunner).toContain(
-      'requeueIpcInputMessages(IPC_INPUT_DIR, failed.laterIpcMessages)',
-    );
-    expect(agentRunner).toContain('containerInput.turnId = failed.turnId');
-  });
-
-  test('SDK teardown after a limit result cannot erase the retry handoff', () => {
-    expect(agentRunner).toMatch(
-      /catch \(err\) \{[\s\S]*?if \(providerFailureTurn\) \{[\s\S]*?providerFailureTurn,[\s\S]*?\};[\s\S]*?Context overflow/,
-    );
-  });
-
-  test('structured model limits report usage and activate fallback for later warm turns', () => {
-    expect(agentRunner).toContain(
-      'const info: SDKRateLimitInfo = message.rate_limit_info',
-    );
-    expect(agentRunner).toContain(
-      'structuredRejection: { rateLimitType: info.rateLimitType }',
-    );
-    expect(agentRunner).toContain(
-      "limitDecision.action === 'provider_failure'",
-    );
-    expect(agentRunner).toContain(
-      'PROVIDER_FALLBACK_MODELS.activateForScope(limitDecision.scope)',
-    );
-    expect(agentRunner).toContain(
-      'PROVIDER_FALLBACK_MODELS.activeModelOverride',
-    );
-    expect(agentRunner).toContain('providerFailureRetrying: true');
-    expect(agentRunner).toContain('terminalModelLimitFailure: true');
-    expect(agentRunner).not.toContain('pendingRejectedRateLimit');
-  });
-
   test('host consumes the hidden model retry marker without quarantining provider', () => {
     expect(
       hostRunner.match(/if \(output\.providerFailureRetrying\)/g),
@@ -60,28 +19,6 @@ describe('provider fallback source contracts', () => {
     expect(hostRunner).toContain('!providerFailureReported &&');
     expect(hostRunner).toContain('!hostProviderFailureReported &&');
     expect(hostRunner).not.toContain('ownerHomeFolder,\n    fallbackModel');
-    expect(agentRunner).not.toMatch(
-      /providerFailure:\s*true,\s*providerFailureRetrying:\s*true/,
-    );
-  });
-
-  test('a synthetic assistant provider error cannot park the SDK stream', () => {
-    expect(agentRunner).toContain(
-      'isAccountProviderAssistantError(assistantError)',
-    );
-    expect(agentRunner).toContain(
-      'publishProviderAccountFailure(assistantError)',
-    );
-    expect(agentRunner).toContain(
-      'const ipcReceipts = ipcDeliveryTracker.completeNextTurn()',
-    );
-    expect(agentRunner).toContain(
-      'writeOutput(outputCorrelation.correlate(output))',
-    );
-    expect(agentRunner).toContain(
-      "runSdkControlWithTimeout(\n              'getContextUsage'",
-    );
-    expect(agentRunner).toContain('new SdkFirstResponseWatchdog(');
   });
 
   test('host quarantines before projection and chooses retry vs terminal', () => {
@@ -100,11 +37,6 @@ describe('provider fallback source contracts', () => {
   });
 
   test('maintenance provider failures cannot project or replay a completed input', () => {
-    expect(agentRunner).toContain('providerFailureMaintenance: true');
-    // Workspace Memory no longer launches a post-compaction model side-query;
-    // compaction persistence and provider retry are independent.
-    expect(agentRunner).not.toContain('Running memory flush query');
-    expect(agentRunner).not.toContain('needsMemoryFlush');
     expect(
       hostRunner.match(/output\.providerFailureMaintenance &&/g),
     ).toHaveLength(2);

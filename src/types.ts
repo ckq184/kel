@@ -166,10 +166,6 @@ export interface RegisteredGroup {
   containerConfig?: ContainerConfig;
   /** Invalid persisted JSON is retained as a runtime safety block, never ignored. */
   containerConfigError?: string;
-  /** Workspace-level opt-in for per-turn automatic memory recall injection
-   * (task Z). Absent/false = off; the host folds this into the runner stdin
-   * bootstrap as `autoMemory.recall.enabled`. */
-  autoMemoryRecall?: boolean;
   executionMode?: ExecutionMode; // 默认 'container'
   customCwd?: string; // 宿主机模式的自定义工作目录（绝对路径）
   initSourcePath?: string; // 容器模式下复制来源的宿主机绝对路径
@@ -1058,50 +1054,6 @@ export type { StreamEvent };
 
 // --- Billing types ---
 
-export interface BillingPlan {
-  id: string;
-  name: string;
-  description: string | null;
-  tier: number; // 0=免费, 10=基础, 20=专业, 30=企业
-  monthly_cost_usd: number;
-  monthly_token_quota: number | null; // null=无限
-  monthly_cost_quota: number | null; // null=无限
-  daily_cost_quota: number | null; // null=无限
-  weekly_cost_quota: number | null; // null=无限
-  daily_token_quota: number | null; // null=无限
-  weekly_token_quota: number | null; // null=无限
-  rate_multiplier: number; // 费用倍率，默认 1.0
-  trial_days: number | null; // 试用天数
-  sort_order: number; // 排序权重
-  display_price: string | null; // 展示价格文本（如 "¥99/月"）
-  highlight: boolean; // 推荐标记
-  max_groups: number | null;
-  max_concurrent_containers: number | null;
-  max_im_channels: number | null;
-  max_mcp_servers: number | null;
-  max_storage_mb: number | null;
-  allow_overage: boolean;
-  features: string[]; // JSON 特性标签
-  is_default: boolean;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface UserSubscription {
-  id: string;
-  user_id: string;
-  plan_id: string;
-  status: 'active' | 'expired' | 'cancelled';
-  started_at: string;
-  expires_at: string | null;
-  cancelled_at: string | null;
-  trial_ends_at: string | null;
-  notes: string | null;
-  auto_renew: boolean;
-  created_at: string;
-}
-
 export interface UserBalance {
   user_id: string;
   balance_usd: number;
@@ -1125,7 +1077,6 @@ export type BalanceTransactionSource =
   | 'refund'
   | 'subscription_renewal'
   | 'system_adjustment';
-export type BalanceOperatorType = 'system' | 'admin' | 'user';
 export type BalanceReferenceType =
   | 'message'
   | 'usage_event'
@@ -1134,56 +1085,7 @@ export type BalanceReferenceType =
   | 'redeem_code'
   | 'admin_adjust';
 
-export interface BalanceTransaction {
-  id: number;
-  user_id: string;
-  type: BalanceTransactionType;
-  amount_usd: number; // 正=入账, 负=扣除
-  balance_after: number;
-  description: string | null;
-  reference_type: BalanceReferenceType | null;
-  reference_id: string | null;
-  actor_id: string | null;
-  source: BalanceTransactionSource;
-  operator_type: BalanceOperatorType;
-  notes: string | null;
-  idempotency_key: string | null;
-  created_at: string;
-}
-
-export interface MonthlyUsage {
-  user_id: string;
-  month: string; // YYYY-MM
-  total_input_tokens: number;
-  total_output_tokens: number;
-  total_cost_usd: number;
-  message_count: number;
-  updated_at: string;
-}
-
 export type RedeemCodeType = 'balance' | 'subscription' | 'trial';
-
-export interface RedeemCode {
-  code: string;
-  type: RedeemCodeType;
-  value_usd: number | null;
-  plan_id: string | null;
-  duration_days: number | null;
-  max_uses: number;
-  used_count: number;
-  expires_at: string | null;
-  created_by: string;
-  notes: string | null;
-  batch_id: string | null;
-  created_at: string;
-}
-
-export interface RedeemCodeUsage {
-  id: number;
-  code: string;
-  user_id: string;
-  redeemed_at: string;
-}
 
 export type BillingAuditEventType =
   | 'plan_created'
@@ -1204,15 +1106,6 @@ export type BillingAuditEventType =
   | 'quota_exceeded'
   | 'billing_settings_updated';
 
-export interface BillingAuditLog {
-  id: number;
-  event_type: BillingAuditEventType;
-  user_id: string;
-  actor_id: string | null;
-  details: Record<string, unknown> | null;
-  created_at: string;
-}
-
 export interface DailyUsage {
   user_id: string;
   date: string; // YYYY-MM-DD
@@ -1220,23 +1113,4 @@ export interface DailyUsage {
   total_output_tokens: number;
   total_cost_usd: number;
   message_count: number;
-}
-
-export interface QuotaWindowUsage {
-  costUsed: number;
-  costQuota: number | null;
-  tokenUsed: number;
-  tokenQuota: number | null;
-}
-
-export interface QuotaCheckResult {
-  allowed: boolean;
-  reason?: string;
-  exceededWindow?: 'daily' | 'weekly' | 'monthly'; // 哪个窗口超限
-  resetAt?: string; // 下次重置时间 ISO
-  warningPercent?: number; // 当前用量百分比 (0-100+)
-  usage?: QuotaWindowUsage & {
-    daily?: QuotaWindowUsage;
-    weekly?: QuotaWindowUsage;
-  };
 }
