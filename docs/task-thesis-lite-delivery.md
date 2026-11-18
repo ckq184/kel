@@ -82,3 +82,19 @@
 | 4    | `368efcd` | 删 UsagePage 冗余「账单扣费」展示线（表格列/CSV 列/AttributionRow 死管道/三处文案；`stores/usage.ts` 解析字段保留）                                   | −30/+6 |
 
 明确不动：host 侧 billing 声明性代码（runtime-config 5 个设置字段、schemas Billing Schema、types BillingPlan 族——与 db.ts 禁改线纠缠，无前端渲染）、`db.ts` 一字不动。验证：每步 verify 六步全绿独立 commit；web e2e 9/9；check-scope 通过。CSV 导出列结构变化（少「账单扣费 USD」一列）已在本节备案。
+
+## 9. 桌面端登录循环暂态问题（2026-11-17 排查，2026-11-18 归档；零代码修复）
+
+**现象**：桌面端（Electron）输入账号密码后不进入应用，静默回到登录页要求重新输入，admin 与 member（ckq）两账号均复现；Web 端（浏览器）从未复现；次日自行消失。
+
+**根因（环境暂态，非代码 bug）**：Electron 的 cookie jar 在 host `127.0.0.1` 上短暂处于脏状态——主仓与副本使用**相同的会话 cookie 名、不同的签名密钥**，当天桌面端曾静默连到主仓页面（启动脚本占用探测的缺口，已在 `68861e1` 修复为仓库感知），切换本仓后 jar 里新旧 cookie 多轮交替；叠加两账号均处于 `must_change_password` 强制改密期（登录成功 → 跳改密页 → 改密后 `sessions_revoked` 撤销会话并清 cookie → 回登录页重新输入），观感即「登录不上，一直要求重新输入」。多轮写删后 jar 收敛为单一有效 cookie（查证 `~/Library/Application Support/CKQClaw/Cookies` 仅剩一条 `ckqclaw_session`），**自愈**。
+
+**排查证据链**（全部只读）：`auth_audit_log` 五次 `login_success`（后端侧登录从未失败、会话行全部落库）；`user_sessions` 会话 30 天有效、密钥文件稳定、3000 单进程；WS 握手实验矩阵 4/4（直连/经 vite 代理 × Origin 变体，伪造 cookie 全部正确 401）证明后端与代理链路正常；弹回由 [web/src/api/client.ts](../web/src/api/client.ts) 的 401 拦截（静默 `replaceInApp('/login')`）与 [web/src/api/ws.ts](../web/src/api/ws.ts) 的 1008 处理两条通路触发，WS 握手失败不写审计——解释「审计全成功但人被弹回」。
+
+**手动处置（再遇到时，任选其一）**：
+
+1. 退出桌面端，删除 `~/Library/Application Support/CKQClaw/Cookies` 后重开，重新登录；
+2. 确认处于强制改密流程（`must_change_password=true` 的账号首次登录会跳「安全与设备」改密页，改完需用新密码重新登录）——完成改密即恢复；
+3. 主仓/副本切换运行时，先停掉对方的 3000/5173 服务再登录（避免 cookie 跨仓残留）。
+
+**明确不改代码**：登录/会话/WS 后端链路、代理、审计经全量验证无缺陷；强制改密流程为既定安全设计。可选的观感改进（401 弹回前的一次性 toast 提示）留待用户后续裁决。
