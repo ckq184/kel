@@ -25,7 +25,7 @@ CKQClaw 是一个面向个人与团队的自托管 AI Agent 工作台。它不�
 - Agent 身份、模型策略与能力配置。
 - Workspace 文件、执行环境、权限和渠道绑定。
 - 持久化 Session、流式输出、取消、恢复和后台运行。
-- Workspace 级 Memory、Skills、MCP、Plugins 与 Subagents。
+- Workspace 级 Memory、Skills、MCP 与 Subagents。
 - Web、Electron Desktop、飞书、QQ、微信等入口。
 - Cron、间隔和一次性任务，以及任务运行历史、通知与恢复。
 
@@ -51,7 +51,7 @@ CKQClaw 采用本地优先和显式集成的思路：数据库、工作区元数
 </p>
 
 <p align="center">
-  <em>能力库与模型配置：把 Skills、MCP、Plugins 和 Provider 配置放在清晰的管理边界内。</em>
+  <em>能力库与模型配置：把 Skills、MCP 和 Provider 配置放在清晰的管理边界内。</em>
 </p>
 
 新的 CKQClaw 图标同时用于 Web/PWA、Electron 窗口和安装包资源：
@@ -85,11 +85,10 @@ CKQClaw 采用本地优先和显式集成的思路：数据库、工作区元数
 - 每条 Memory 可记录来源 Session、来源类型、观察时间和变更历史，便于回溯 provenance。
 - Runtime 只注入当前 Workspace 允许使用的记忆，不把平台身份约束当作普通用户记忆。
 
-### Skills、MCP 与 Plugins
+### Skills 与 MCP
 
-- 内置、宿主机、项目、用户、Workspace 和 Plugin 层级的 Skills 统一解析。
-- 能力库集中展示 Skills、MCP 与 Plugins 的可用状态、依赖和能力预览。
-- Plugin Catalog 支持扫描、导入、版本快照和用户启用配置。
+- 内置、宿主机、项目、用户、Workspace 层级的 Skills 统一解析。
+- 能力库集中展示 Skills 与 MCP 的可用状态、依赖和能力预览。
 - Agent 运行前会计算有效能力 Manifest，并把 Skills、MCP、Memory、Workspace 与渠道上下文按策略注入。
 - 路径穿越、符号链接逃逸、越权 Workspace 与未授权 capability 会在边界层拒绝。
 - 外部 MCP 服务器可经 `/mcp-servers` 自行配置。
@@ -248,7 +247,7 @@ npm run desktop:package
 - Renderer 不直接读取文件、数据库或凭据；需要本机能力时只通过受限 Preload IPC 调用。
 - 外部链接由 Main Process 校验协议后打开；Renderer 导航限制在允许的 Backend/Renderer origin 内。
 - Workspace ACL、owner、用户角色、系统权限和 Host 执行策略在服务端共同判定，不能因为拥有某一层权限就自动越过其他边界。
-- Memory、Skills、MCP、Plugins 和 Scheduler 任务都继承用户、Agent、Workspace 与 Session 上下文。
+- Memory、Skills、MCP 和 Scheduler 任务都继承用户、Agent、Workspace 与 Session 上下文。
 
 更多权限约束见 [`docs/ACL-MATRIX.md`](docs/ACL-MATRIX.md)，安全问题请参考 [`SECURITY.md`](SECURITY.md)。
 
@@ -258,7 +257,7 @@ CKQClaw 当前处于持续开发阶段。仓库已经包含：
 
 - Pi Agent Runtime 生产执行路径与 runtime-neutral contract。
 - Web Client 与 Electron Desktop Shell。
-- Agent Profile、Workspace、Session、Memory、Skills、MCP、Plugins 和 Subagents。
+- Agent Profile、Workspace、Session、Memory、Skills、MCP 和 Subagents。
 - 多用户认证、ACL、owner 生命周期、调度任务、用量和渠道接入。
 - Host/Docker 双执行边界，以及 macOS arm64 的 Electron 打包配置。
 
@@ -275,7 +274,7 @@ CKQClaw 当前处于持续开发阶段。仓库已经包含：
 ### 长期
 
 - 更完整的跨平台桌面构建。
-- 更丰富的 Agent/Plugin/Provider 扩展模型。
+- 更丰富的 Agent/Provider 扩展模型。
 - 可视化的运行轨迹、证据链与成本分析。
 - 面向贡献者的能力注册、Skill 开发和渠道适配指南。
 

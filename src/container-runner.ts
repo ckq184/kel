@@ -21,10 +21,7 @@ import {
   unregisterHostRunner,
 } from './host-runner-registry.js';
 import { logger } from './logger.js';
-import {
-  buildEffectiveMcpManifest,
-  loadPluginMcpDefinitions,
-} from './effective-mcp-manifest.js';
+import { buildEffectiveMcpManifest } from './effective-mcp-manifest.js';
 import { resolveHostNodeBinary } from './node-resolver.js';
 import {
   AdditionalMountValidationError,
@@ -75,14 +72,6 @@ import {
   mergeMcpServerLayers,
 } from './mcp-context.js';
 import {
-  getUserRuntimeRoot,
-  loadUserPlugins,
-  CONTAINER_PLUGINS_PATH,
-  type SdkPluginConfig,
-} from './plugin-utils.js';
-import { materializeUserRuntime } from './plugin-materializer.js';
-import { invalidateUserCommandIndex } from './plugin-command-index.js';
-import {
   checkHostCapabilities,
   logCapabilityPreflight,
 } from './agent-capabilities.js';
@@ -91,7 +80,6 @@ import {
   loadHostClaudeSettings,
   syncHostClaudeContext,
 } from './claude-context-resolver.js';
-import { pluginSkillLayers } from './effective-skill-resolver.js';
 import { MessageSourceKind, RegisteredGroup, StreamEvent } from './types.js';
 import type {
   AgentProfileRuntimePolicy,
@@ -425,12 +413,6 @@ export interface ContainerInput {
   agentBuilderEnabled?: boolean;
   agentId?: string;
   agentName?: string;
-  /**
-   * Claude Code plugins to inject into the SDK query (via `options.plugins`).
-   * Populated just-in-time by runContainerAgent/runHostAgent from the owner's
-   * plugins.json; never set by the caller.
-   */
-  plugins?: Array<{ type: 'local'; path: string }>;
   /** Runtime context audit bootstrap; agent-runner enriches it with SDK usage. */
   contextAudit?: ClaudeContextAudit;
   /** Canonical effective Skill set for SDK selection and run provenance. */
@@ -740,16 +722,10 @@ function resolveRuntimeMcpServers(
 function buildRuntimeMcpManifest(
   group: RegisteredGroup,
   agentProfile: RunnerAgentProfile | undefined,
-  plugins: SdkPluginConfig[],
 ) {
-  const pluginServers =
-    getAgentProfileMcpPolicyMode(agentProfile) === 'inherit'
-      ? loadPluginMcpDefinitions(plugins)
-      : {};
-  return buildEffectiveMcpManifest({
-    ...resolveRuntimeMcpServers(group, agentProfile),
-    ...pluginServers,
-  });
+  return buildEffectiveMcpManifest(
+    resolveRuntimeMcpServers(group, agentProfile),
+  );
 }
 
 function getAgentProfileMcpPolicyMode(
@@ -961,35 +937,6 @@ export function trySelectPoolProvider(
   }
 }
 
-/**
- * Best-effort pre-spawn materialize for host-mode plugins. Mirrors the docker
- * path's behaviour in `buildVolumeMounts`: v2 config can exist before the
- * runtime/ tree is built (first enable, or after orphan GC), and
- * `loadUserPlugins({runtime:'host'})` only emits paths whose manifests exist
- * on disk. Without this call host agents would silently start with 0 plugins
- * even when the user has plugins enabled. Failure is logged, never thrown —
- * the agent simply starts with whatever subset is already materialized.
- */
-export function prepareHostPlugins(
-  ownerId: string | null | undefined,
-): SdkPluginConfig[] {
-  if (!ownerId) return [];
-  try {
-    materializeUserRuntime(ownerId);
-  } catch (err) {
-    logger.warn(
-      { ownerId, err },
-      'prepareHostPlugins: materializeUserRuntime failed; host agent will see no plugins',
-    );
-  }
-  // Drop the user's command index cache so a stale empty entry (e.g. a prior
-  // /commands hit before runtime existed, see plugin-command-index.ts:235) is
-  // rebuilt against the now-materialized tree. Invalidate on both success and
-  // failure paths: a partial materialize still wants the cache rebuilt.
-  invalidateUserCommandIndex(ownerId);
-  return loadUserPlugins(ownerId, { runtime: 'host' });
-}
-
 /** Inject the globally configured same-turn fallback into the agent runner. */
 export function applyFallbackModelToEnvLines(
   envLines: string[],
@@ -1179,7 +1126,6 @@ export function buildVolumeMounts(
     ownerId,
     agentProfile,
   );
-  const pluginSkills = ownerId ? prepareHostPlugins(ownerId) : [];
   const claudeContextPlan = buildClaudeContextPlan({
     executionMode: 'container',
     group,
@@ -1193,7 +1139,6 @@ export function buildVolumeMounts(
     mountUserSkills: mountUserSkills && userSkillsPolicy.mountUserSkills,
     userSkillsDirOverride: userSkillsPolicy.userSkillsDirOverride,
     managedSkillPolicy: agentProfile?.runtimePolicy?.skills,
-    pluginSkillLayers: pluginSkillLayers(pluginSkills),
   });
   syncHostClaudeContext(claudeContextPlan, groupSessionsDir, {
     materializeLinks: false,
@@ -1252,7 +1197,6 @@ export function buildVolumeMounts(
   // /home/node/.claude/skills exclusively from this directory, so a real
   // directory persisted by an earlier container can never survive a restart.
   for (const skill of claudeContextPlan.effectiveSkills.selected) {
-    if (skill.source === 'plugin') continue;
     let hostPath = skill.path;
     try {
       hostPath = fs.realpathSync(hostPath);
@@ -1296,42 +1240,6 @@ export function buildVolumeMounts(
       ownerUserId: ownerId,
       channelContext,
       workspaceChannelAccountId: group.channel_account_id,
-    });
-  }
-
-  // Claude Code plugins (per-user runtime): read-only mount so the CLI inside
-  // the container can load the same plugin directories referenced by
-  // ContainerInput.plugins.
-  //
-  // Admin home runs in `host` mode and bypasses container mounts entirely,
-  // so plugin materialization for that path happens inside runHostAgent's
-  // host-runtime loadUserPlugins. Here we only handle docker-mode containers.
-  //
-  // Materialize is synchronous so the runtime tree is on disk before the mount
-  // source is picked — loadUserPlugins(docker) returns paths shaped like
-  // /workspace/plugins/snapshots/{snap}/{mp}/{plugin}, which only resolve when
-  // runtime/{userId}/ is mounted at /workspace/plugins. The runtime root is
-  // mkdir'd unconditionally so the bind mount target exists even for users
-  // with no enabled plugins yet (an empty mount surfaces nothing to the CLI,
-  // matching their config).
-  if (ownerId) {
-    const runtimeRoot = getUserRuntimeRoot(ownerId);
-    fs.mkdirSync(runtimeRoot, { recursive: true });
-    try {
-      materializeUserRuntime(ownerId);
-    } catch (err) {
-      logger.warn(
-        { ownerId, err },
-        'buildVolumeMounts: materializeUserRuntime failed; container will see no plugins',
-      );
-    }
-    // Mirror prepareHostPlugins: drop a stale empty command index that may
-    // have been cached before this runtime tree existed (plugin-command-index.ts:235).
-    invalidateUserCommandIndex(ownerId);
-    mounts.push({
-      hostPath: runtimeRoot,
-      containerPath: CONTAINER_PLUGINS_PATH,
-      readonly: true,
     });
   }
 
@@ -1820,15 +1728,12 @@ export async function runContainerAgent(
         );
         container.kill();
       });
-      // Derive a new input with docker-runtime plugins injected; never mutate
-      // the caller's `input` object (queue/log/retry paths reuse the same ref).
+      // Derive a new input; never mutate the caller's `input` object
+      // (queue/log/retry paths reuse the same ref).
       const dockerInput: ContainerInput = {
         ...input,
         workspaceMemoryMutationSigningSecret,
         workspaceMemoryRunnerInstanceId,
-        plugins: group.created_by
-          ? loadUserPlugins(group.created_by, { runtime: 'docker' })
-          : [],
         contextAudit: (() => {
           const skillsPolicy = resolveAgentProfileUserSkillsPolicy(
             group.created_by,
@@ -1861,18 +1766,10 @@ export async function runContainerAgent(
               shouldMountUserSkills && skillsPolicy.mountUserSkills,
             userSkillsDirOverride: skillsPolicy.userSkillsDirOverride,
             managedSkillPolicy: input.agentProfile?.runtimePolicy?.skills,
-            pluginSkillLayers: pluginSkillLayers(
-              group.created_by
-                ? loadUserPlugins(group.created_by, { runtime: 'host' })
-                : [],
-            ),
           }).audit;
           const mcpManifest = buildRuntimeMcpManifest(
             group,
             input.agentProfile,
-            group.created_by
-              ? loadUserPlugins(group.created_by, { runtime: 'host' })
-              : [],
           );
           audit.mcp = {
             manifestHash: mcpManifest.hash,
@@ -1912,11 +1809,6 @@ export async function runContainerAgent(
               shouldMountUserSkills && skillsPolicy.mountUserSkills,
             userSkillsDirOverride: skillsPolicy.userSkillsDirOverride,
             managedSkillPolicy: input.agentProfile?.runtimePolicy?.skills,
-            pluginSkillLayers: pluginSkillLayers(
-              group.created_by
-                ? loadUserPlugins(group.created_by, { runtime: 'host' })
-                : [],
-            ),
           }).effectiveSkills;
           return {
             hash: manifest.hash,
@@ -2466,7 +2358,6 @@ export async function runHostAgent(
     group.created_by,
     input.agentProfile,
   );
-  const preparedHostPlugins = prepareHostPlugins(group.created_by);
   const hostClaudeContextPlan = buildClaudeContextPlan({
     executionMode: 'host',
     group,
@@ -2482,7 +2373,6 @@ export async function runHostAgent(
     mountUserSkills: hostUserSkillsPolicy.mountUserSkills,
     userSkillsDirOverride: hostUserSkillsPolicy.userSkillsDirOverride,
     managedSkillPolicy: input.agentProfile?.runtimePolicy?.skills,
-    pluginSkillLayers: pluginSkillLayers(preparedHostPlugins),
   });
   const hostClaudeContextSync = syncHostClaudeContext(
     hostClaudeContextPlan,
@@ -2500,11 +2390,7 @@ export async function runHostAgent(
       baseSettings: loadHostClaudeSettings(hostClaudeContextPlan),
     },
   );
-  const hostMcpManifest = buildRuntimeMcpManifest(
-    group,
-    input.agentProfile,
-    preparedHostPlugins,
-  );
+  const hostMcpManifest = buildRuntimeMcpManifest(group, input.agentProfile);
   hostClaudeContextPlan.audit.mcp = {
     manifestHash: hostMcpManifest.hash,
     serverIds: hostMcpManifest.serverIds,
@@ -2852,16 +2738,12 @@ export async function runHostAgent(
         );
         killProcessTree(proc);
       });
-      // Derive a new input with host-runtime plugins injected; never mutate
-      // the caller's `input` object (queue/log/retry paths reuse the same ref).
-      // prepareHostPlugins mirrors the docker path's pre-spawn materialize so
-      // a freshly-enabled v2 user (no runtime/ on disk yet) doesn't see 0
-      // plugins.
+      // Derive a new input; never mutate the caller's `input` object
+      // (queue/log/retry paths reuse the same ref).
       const hostInput: ContainerInput = {
         ...input,
         workspaceMemoryMutationSigningSecret,
         workspaceMemoryRunnerInstanceId,
-        plugins: preparedHostPlugins,
         contextAudit: hostClaudeContextPlan.audit,
         skillManifest: {
           hash: hostClaudeContextPlan.effectiveSkills.hash,

@@ -9,8 +9,7 @@ export type EffectiveSkillSource =
   | 'host'
   | 'project'
   | 'managed'
-  | 'workspace'
-  | 'plugin';
+  | 'workspace';
 
 export type ManagedSkillPolicy =
   | { mode: 'inherit'; ids?: string[] }
@@ -20,8 +19,6 @@ export type ManagedSkillPolicy =
 export interface EffectiveSkillLayer {
   source: EffectiveSkillSource;
   root?: string;
-  /** Plugin Skills use the SDK's stable `plugin:skill` qualified name. */
-  idPrefix?: string;
 }
 
 export interface EffectiveSkillCandidate {
@@ -53,16 +50,6 @@ export interface EffectiveSkillManifest {
   conflicts: string[];
   missingManagedSkillIds: string[];
   missingHostSkillIds: string[];
-}
-
-export function pluginSkillLayers(
-  plugins: Array<{ type: 'local'; path: string }>,
-): EffectiveSkillLayer[] {
-  return plugins.map((plugin) => ({
-    source: 'plugin',
-    root: path.join(plugin.path, 'skills'),
-    idPrefix: path.basename(plugin.path),
-  }));
 }
 
 const SKILL_HASH_IGNORED_ENTRIES = new Set([
@@ -145,9 +132,7 @@ export function resolveEffectiveSkills(options: {
   options.layers.forEach((layer, precedence) => {
     if (!layer.root) return;
     for (const skill of scanSkillDirectory(layer.root, layer.source)) {
-      const candidateId = layer.idPrefix
-        ? `${layer.idPrefix}:${skill.id}`
-        : skill.id;
+      const candidateId = skill.id;
       const filteredByProfile =
         (layer.source === 'managed' &&
           (policy.mode === 'disabled' ||
@@ -319,9 +304,6 @@ export function reconcileSessionSkills(
   try {
     if (options.materializeLinks) {
       for (const skill of manifest.selected) {
-        // Plugin definitions are loaded by options.plugins and only contribute
-        // their qualified id to the SDK skills selector.
-        if (skill.source === 'plugin') continue;
         fs.symlinkSync(skill.path, path.join(staging, skill.id));
       }
     }

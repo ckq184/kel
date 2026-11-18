@@ -19,53 +19,6 @@ function sliceBetween(start: string, end: string, from = 0): string {
 }
 
 describe('strict physical acknowledgement contract', () => {
-  test('plugin-expander reply owns an auxiliary durable Turn and awaits its exact Outbox ACK', () => {
-    const helper = sliceBetween(
-      'async function sendPluginExpanderReply(',
-      '\nfunction getSessionClaudeDir(',
-    );
-
-    expect(helper).toContain(
-      'externalMessageId: `${options.originalMessageId}:plugin-expander-reply`',
-    );
-    expect(helper).toContain('correlationId: options.originalMessageId');
-    expect(helper).toContain('const scope = bindChannelOutboxScope(');
-    expect(helper).toContain('acknowledged = await sendImWithRetry(');
-    expect(helper).toContain('runtime.markFinalizing()');
-    expect(helper).toContain('runtime.complete({');
-    expect(helper).toContain("if (disposition === 'manual_reconciliation')");
-    expect(helper).toContain(
-      'await deliverChannelManualReconciliationNotice({',
-    );
-    expect(helper).not.toContain('void sendImWith');
-  });
-
-  test('cold main, cold agent, warm runner and follow-up all await plugin delivery before cursor/release', () => {
-    expect(source.match(/await sendPluginExpanderReply\(/g)).toHaveLength(4);
-    expect(source).not.toMatch(/void\s+sendPluginExpanderReply\(/);
-
-    const followUp = sliceBetween(
-      'async function completeFollowUpReply(',
-      '\nfunction enqueueReleasedFollowUp(',
-    );
-    expect(
-      followUp.indexOf('if (!delivery.acknowledged) return false;'),
-    ).toBeLessThan(followUp.indexOf('releaseQueuedFollowUp('));
-
-    const callIndexes = [
-      ...source.matchAll(/await sendPluginExpanderReply\(/g),
-    ].map((match) => match.index);
-    // The first call is follow-up (asserted above). Cold main, cold Agent, and
-    // warm IPC are the remaining three and must gate their cursor locally.
-    for (const callIndex of callIndexes.slice(1)) {
-      const callSite = source.slice(callIndex, callIndex + 2_000);
-      const ackGate = callSite.indexOf('if (!delivery.acknowledged)');
-      const cursorAdvance = callSite.indexOf('advanceReplyCursor(');
-      expect(ackGate).toBeGreaterThanOrEqual(0);
-      expect(cursorAdvance).toBeGreaterThan(ackGate);
-    }
-  });
-
   test('main and agent mirror paths await exact-target durable Outboxes and join primary ACK', () => {
     const mainMirror = sliceBetween(
       '// Optional mirror mode for explicitly bound IM channels',

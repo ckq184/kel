@@ -1714,7 +1714,7 @@ export function AgentProfilesPage() {
                             <div className="mt-1 text-xs leading-5 text-muted-foreground">
                               将 ~/.claude 作为用户配置层叠加，包含提示词、
                               Rules、Agents、Commands、Hooks、Workflows、 Output
-                              Styles、Plugins 与设置（含宿主机 MCP）。工作区仍是
+                              Styles 与设置（含宿主机 MCP）。工作区仍是
                               运行目录；CKQClaw MCP 与宿主机 Skills
                               继续由“能力配置”独立控制。
                             </div>
@@ -1776,8 +1776,8 @@ export function AgentProfilesPage() {
                           </span>
                           <span className="mt-1 block text-xs leading-5 text-muted-foreground">
                             加载设置、提示词、Rules、Agents、Commands、Hooks、
-                            Workflows、Output Styles、Plugins 与宿主机 MCP；
-                            CKQClaw MCP 和宿主机 Skills 仍由下一步单独控制。
+                            Workflows、Output Styles 与宿主机 MCP； CKQClaw MCP
+                            和宿主机 Skills 仍由下一步单独控制。
                           </span>
                         </button>
                       </div>

@@ -1,10 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { DATA_DIR, GROUPS_DIR } from './config.js';
-import {
-  buildEffectiveMcpManifest,
-  loadPluginMcpDefinitions,
-} from './effective-mcp-manifest.js';
+import { buildEffectiveMcpManifest } from './effective-mcp-manifest.js';
 import { getEffectiveExternalDir } from './runtime-config.js';
 import {
   loadManagedMcpLayers,
@@ -19,8 +16,6 @@ import {
   readMcpServersFile,
 } from './mcp-context.js';
 import { resolveEffectiveSkills } from './effective-skill-resolver.js';
-import { pluginSkillLayers } from './effective-skill-resolver.js';
-import { loadUserPlugins } from './plugin-utils.js';
 import { resolveHostSkillPolicy } from './agent-profile-policy.js';
 import {
   HOST_CLAUDE_NATIVE_DIRECTORIES,
@@ -35,7 +30,6 @@ export type CapabilityLayerSource =
   | 'project'
   | 'workspace'
   | 'managed'
-  | 'plugin'
   | 'system'
   | 'user';
 
@@ -145,9 +139,6 @@ export function buildAgentCapabilityPreview(options: {
     : undefined;
   const hostContext = policy.context.source === 'host_claude';
   const hostSkillPolicy = resolveHostSkillPolicy(policy);
-  const enabledPlugins = loadUserPlugins(profile.owner_user_id, {
-    runtime: 'host',
-  });
 
   const skillManifest = resolveEffectiveSkills({
     layers: [
@@ -176,7 +167,6 @@ export function buildAgentCapabilityPreview(options: {
             },
           ]
         : []),
-      ...pluginSkillLayers(enabledPlugins),
     ],
     managedPolicy: policy.skills,
     hostPolicy: hostSkillPolicy,
@@ -252,11 +242,6 @@ export function buildAgentCapabilityPreview(options: {
     unavailableReason: 'system_admin_only',
   });
   mcpLayers.push({ source: 'user', ids: selectedUserMcpIds });
-  const pluginMcpDefinitions =
-    policy.mcp.mode === 'inherit'
-      ? loadPluginMcpDefinitions(enabledPlugins)
-      : {};
-  mcpLayers.push({ source: 'plugin', ids: Object.keys(pluginMcpDefinitions) });
   const mcp = mergeLayers(mcpLayers);
   const runtimeManagedLayers = allowAdminOnlySystemMcp
     ? managedMcpLayers
@@ -281,10 +266,9 @@ export function buildAgentCapabilityPreview(options: {
     : hostContext
       ? loadHostClaudeMcpServers(externalClaudeDir)
       : {};
-  const mcpManifest = buildEffectiveMcpManifest({
-    ...mergeMcpServerLayers(contextMcpServers, runtimeManagedServers),
-    ...pluginMcpDefinitions,
-  });
+  const mcpManifest = buildEffectiveMcpManifest(
+    mergeMcpServerLayers(contextMcpServers, runtimeManagedServers),
+  );
 
   const notes = [
     '系统附加能力与宿主机、项目上下文是叠加关系，不会因继承宿主机配置而被替换。',
@@ -293,7 +277,7 @@ export function buildAgentCapabilityPreview(options: {
     notes.push('选择一个工作区后可检查该工作区的项目级 Skills 与 MCP。');
   if (skills.conflicts.length > 0) {
     notes.push(
-      '同名 Skill 按内置 → 宿主机 → CKQClaw 项目 → 系统附加 → 工作区项目 → 插件的顺序解析；插件 Skill 使用 plugin:skill 限定名。',
+      '同名 Skill 按内置 → 宿主机 → CKQClaw 项目 → 系统附加 → 工作区项目的顺序解析。',
     );
   }
   notes.push(

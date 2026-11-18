@@ -2106,7 +2106,6 @@ function toHostIntegrationResponse(
 ) {
   return {
     externalClaudeDir: settings.externalClaudeDir,
-    pluginAutoScan: settings.pluginAutoScan,
     adminHostOnlyMode: settings.adminHostOnlyMode,
     mainAgentContextSource: settings.mainAgentContextSource,
     mainAgentAutoCompactWindow: settings.mainAgentAutoCompactWindow,

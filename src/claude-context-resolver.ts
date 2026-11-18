@@ -22,7 +22,6 @@ export const HOST_CLAUDE_NATIVE_DIRECTORIES = [
   'hooks',
   'workflows',
   'output-styles',
-  'plugins',
 ] as const;
 
 export const HOST_CLAUDE_NATIVE_FILES = ['keybindings.json'] as const;
@@ -57,7 +56,6 @@ export interface ClaudeContextPlanArgs {
   userSkillsDirOverride?: string;
   managedSkillPolicy?: ManagedSkillPolicy;
   workspaceSkillsDirOverride?: string;
-  pluginSkillLayers?: EffectiveSkillLayer[];
 }
 
 export interface ClaudeContextPlan {
@@ -293,7 +291,6 @@ export function buildClaudeContextPlan(
         ? [{ source: 'managed' as const, root: userSkillsDir }]
         : []),
       { source: 'workspace', root: workspaceSkillsDir },
-      ...(args.pluginSkillLayers ?? []),
     ],
     managedPolicy: args.managedSkillPolicy,
     hostPolicy: hostSkillPolicy,
@@ -304,7 +301,6 @@ export function buildClaudeContextPlan(
     project: 'project',
     managed: 'managed',
     workspace: 'workspace',
-    plugin: 'plugin',
   } as const;
   const skillSourceRoots = new Map<keyof typeof skillAuditNames, Set<string>>();
   for (const candidate of effectiveSkills.candidates) {
@@ -320,13 +316,6 @@ export function buildClaudeContextPlan(
     project: [projectSkillsDir],
     ...(userSkillsDir ? { managed: [userSkillsDir] } : {}),
     workspace: [workspaceSkillsDir],
-    ...(args.pluginSkillLayers?.length
-      ? {
-          plugin: args.pluginSkillLayers.flatMap((layer) =>
-            layer.root ? [layer.root] : [],
-          ),
-        }
-      : {}),
   };
   const skillAuditSources = (
     Object.keys(configuredSkillRoots) as Array<keyof typeof skillAuditNames>
@@ -340,9 +329,7 @@ export function buildClaudeContextPlan(
       ...(roots.length === 1 ? { sourcePath: roots[0] } : {}),
       runtimePath:
         args.executionMode === 'container'
-          ? source === 'plugin'
-            ? 'options.plugins'
-            : '/workspace/effective-skills'
+          ? '/workspace/effective-skills'
           : hostSkillsRuntime,
       count: effectiveSkills.selected.filter((skill) => skill.source === source)
         .length,

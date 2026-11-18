@@ -17,7 +17,7 @@
  *                                   (queue.stopGroup called, context_reset row written)
  *
  * The normal (non-/clear) message happy-path is intentionally out of scope: it
- * funnels into `handleWebUserMessage` (plugin expansion, attachment handling,
+ * funnels into `handleWebUserMessage` (attachment handling,
  * processGroupMessages) which needs far more wiring than the destructive-
  * command ACL this test guards. We import the REAL web.js (not a mock) so the
  * route wiring under test is the production one.

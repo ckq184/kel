@@ -5,7 +5,6 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 
 import {
-  pluginSkillLayers,
   reconcileSessionSkills,
   resolveEffectiveSkills,
 } from '../src/effective-skill-resolver.js';
@@ -132,22 +131,6 @@ describe('EffectiveSkillResolver', () => {
     ).toBe(true);
   });
 
-  test('plugin Skills use qualified ids and remain plugin-owned', () => {
-    const pluginRoot = path.join(root, 'plugins', 'review-kit');
-    skill(path.relative(root, path.join(pluginRoot, 'skills')), 'review');
-    const manifest = resolveEffectiveSkills({
-      layers: pluginSkillLayers([{ type: 'local', path: pluginRoot }]),
-    });
-    const session = path.join(root, 'session-plugin', '.claude');
-
-    reconcileSessionSkills(session, manifest, { materializeLinks: true });
-
-    expect(manifest.selected).toMatchObject([
-      { id: 'review-kit:review', source: 'plugin' },
-    ]);
-    expect(fs.readdirSync(path.join(session, 'skills'))).toEqual([]);
-  });
-
   test('host and container plans produce the same selected ids and hash', () => {
     const dataDir = path.join(root, 'data');
     const projectRoot = path.join(root, 'repo');
@@ -171,11 +154,6 @@ describe('EffectiveSkillResolver', () => {
       ),
       'workspace',
     );
-    const pluginRoot = path.join(root, 'runtime', 'review-plugin');
-    skill(
-      path.relative(root, path.join(pluginRoot, 'skills')),
-      'review-helper',
-    );
     const common = {
       group: {
         name: 'workspace',
@@ -188,9 +166,6 @@ describe('EffectiveSkillResolver', () => {
       dataDir,
       groupSessionsDir: path.join(root, 'sessions', '.claude'),
       managedSkillPolicy: { mode: 'custom' as const, ids: ['managed'] },
-      pluginSkillLayers: pluginSkillLayers([
-        { type: 'local' as const, path: pluginRoot },
-      ]),
     };
 
     const hostPlan = buildClaudeContextPlan({
@@ -208,16 +183,6 @@ describe('EffectiveSkillResolver', () => {
       host.selected.map((entry) => entry.id),
     );
     expect(container.hash).toBe(host.hash);
-    expect(host.selected.map((entry) => entry.id)).toContain(
-      'review-plugin:review-helper',
-    );
-    expect(containerPlan.audit.skills.sources).toContainEqual(
-      expect.objectContaining({
-        name: 'plugin',
-        runtimePath: 'options.plugins',
-        count: 1,
-      }),
-    );
     expect(containerPlan.audit.skills.sources).toContainEqual(
       expect.objectContaining({ name: 'managed', count: 1 }),
     );

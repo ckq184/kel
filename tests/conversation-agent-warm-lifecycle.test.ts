@@ -74,9 +74,10 @@ describe('PR #547: conversation agent stays warm after final reply', () => {
     q.markRunnerQueryIdle(jid);
     expect(getState(q, jid).queryInFlight).toBe(false);
 
-    // The warm runner is still a valid target for the next user message —
-    // sendMessage would route into it (no cold start).
-    expect(q.hasActiveMainRunnerForMessage(jid)).toBe(true);
+    // The warm runner is still active and query-idle — the next user message
+    // would route into it via IPC (no cold start).
+    expect(getState(q, jid).active).toBe(true);
+    expect(getState(q, jid).queryInFlight).toBe(false);
   });
 
   test('a hung post-reply tool call does not strand the runner: next message reuses the warm process', () => {
@@ -151,7 +152,7 @@ describe('PR #547: conversation agent stays warm after final reply', () => {
       agentId: 'spawn1',
     });
 
-    expect(q.hasActiveMainRunnerForMessage(jid)).toBe(false);
+    expect(getState(q, jid).active).toBe(false);
     expect(q.sendMessage(jid, 'late message')).toBe('no_active');
   });
 });

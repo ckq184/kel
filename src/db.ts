@@ -3046,24 +3046,6 @@ export function storeMessageDirect(
   return effectiveMsgId;
 }
 
-/**
- * Overwrite the `attachments` JSON column for a single message row.
- *
- * Used by the plugin-command expander to persist the expanded-prompt
- * sentinel after inline `!` commands run successfully (P1 round-14
- * crash-safety): the next recovery pass reads the sentinel and reuses
- * the stored prompt instead of re-executing inline.
- */
-export function updateMessageAttachments(
-  chatJid: string,
-  msgId: string,
-  attachmentsJson: string,
-): void {
-  db.prepare(
-    `UPDATE messages SET attachments = ? WHERE id = ? AND chat_jid = ?`,
-  ).run(attachmentsJson, msgId, chatJid);
-}
-
 /** Return the sanitized provider context bound to one exact persisted turn. */
 export function getMessageChannelTurnContext(
   chatJid: string,

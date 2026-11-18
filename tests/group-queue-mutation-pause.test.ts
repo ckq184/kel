@@ -74,7 +74,6 @@ describe('GroupQueue mutation pause', () => {
     );
 
     const token = queue.pauseGroupsForMutation([WEB_JID, IM_JID]);
-    expect(queue.hasActiveMainRunnerForMessage(IM_JID)).toBe(false);
     expect(queue.sendMessage(IM_JID, 'must not hit old runner')).toBe(
       'no_active',
     );

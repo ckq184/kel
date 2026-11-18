@@ -114,7 +114,6 @@ export interface ClaudeContextSkillsSourceAudit {
     | 'managed'
     | 'workspace'
     | 'user'
-    | 'plugin'
     | 'unknown';
   sourcePath?: string;
   runtimePath?: string;

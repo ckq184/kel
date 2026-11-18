@@ -7,17 +7,6 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), 'capability-preview-'));
 const dataDir = path.join(root, 'data');
 const groupsDir = path.join(dataDir, 'groups');
 const externalDir = path.join(root, '.claude');
-const pluginMcpPath = path.join(
-  dataDir,
-  'plugins',
-  'runtime',
-  'owner',
-  'snapshots',
-  'snapshot-a',
-  'market',
-  'search-plugin',
-  '.mcp.json',
-);
 
 vi.mock('../src/config.js', () => ({
   DATA_DIR: dataDir,
@@ -44,36 +33,6 @@ function writeDisabledSkill(dir: string, id: string): void {
 }
 
 beforeAll(() => {
-  fs.mkdirSync(path.dirname(pluginMcpPath), { recursive: true });
-  fs.mkdirSync(path.join(path.dirname(pluginMcpPath), '.claude-plugin'), {
-    recursive: true,
-  });
-  fs.writeFileSync(
-    path.join(path.dirname(pluginMcpPath), '.claude-plugin', 'plugin.json'),
-    JSON.stringify({ name: 'search-plugin' }),
-  );
-  fs.writeFileSync(
-    pluginMcpPath,
-    JSON.stringify({ search: { command: 'plugin-search-v1' } }),
-  );
-  fs.mkdirSync(path.join(dataDir, 'plugins', 'users', 'owner'), {
-    recursive: true,
-  });
-  fs.writeFileSync(
-    path.join(dataDir, 'plugins', 'users', 'owner', 'plugins.json'),
-    JSON.stringify({
-      schemaVersion: 1,
-      enabled: {
-        'search-plugin@market': {
-          enabled: true,
-          marketplace: 'market',
-          plugin: 'search-plugin',
-          snapshot: 'snapshot-a',
-          enabledAt: '2026-07-21T00:00:00.000Z',
-        },
-      },
-    }),
-  );
   writeSkill(path.join(externalDir, 'skills'), 'shared');
   writeSkill(path.join(externalDir, 'skills'), 'disabled-collision');
   writeSkill(path.join(dataDir, 'skills', 'owner'), 'shared');
@@ -350,58 +309,8 @@ describe('buildAgentCapabilityPreview', () => {
           source: 'workspace',
           available: true,
         }),
-        expect.objectContaining({
-          id: 'plugin:market/search-plugin:search',
-          source: 'plugin',
-          available: true,
-        }),
       ]),
     );
-  });
-
-  test('marks an inherited plugin MCP definition change as a new manifest', () => {
-    const profile = {
-      id: 'plugin-mcp-profile',
-      owner_user_id: 'owner',
-      name: 'Plugin MCP Agent',
-      identity_prompt: '',
-      include_claude_preset: true,
-      avatar_emoji: null,
-      avatar_color: null,
-      avatar_url: null,
-      identity_hash: 'hash',
-      version: 1,
-      is_default: false,
-      status: 'active' as const,
-      created_at: '',
-      updated_at: '',
-      runtime_policy: {
-        context: {
-          source: 'managed' as const,
-          auto_compact_window: 0,
-          auto_compact_percentage: 0,
-        },
-        skills: { mode: 'inherit' as const, ids: [] },
-        mcp: { mode: 'inherit' as const, ids: [] },
-      },
-    };
-    const first = buildAgentCapabilityPreview({ profile, ownerRole: 'admin' });
-    try {
-      fs.writeFileSync(
-        pluginMcpPath,
-        JSON.stringify({ search: { command: 'plugin-search-v2' } }),
-      );
-      const changed = buildAgentCapabilityPreview({
-        profile,
-        ownerRole: 'admin',
-      });
-      expect(changed.mcp.manifestHash).not.toBe(first.mcp.manifestHash);
-    } finally {
-      fs.writeFileSync(
-        pluginMcpPath,
-        JSON.stringify({ search: { command: 'plugin-search-v1' } }),
-      );
-    }
   });
 
   test('marks admin-only system MCP unavailable to members and available to admins', () => {

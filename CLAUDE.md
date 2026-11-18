@@ -14,8 +14,7 @@
 - 渠道能力与会话路由：`src/im-channel-capabilities.ts`、`src/channel-mount-service.ts`
 - StreamEvent：`shared/stream-event.ts`
 
-`docs/agent-first-architecture-plan.md` 和
-`docs/claude-code-plugin-automation-design.md` 是历史设计记录，不作为当前接口或数据结构的真相源。
+`docs/agent-first-architecture-plan.md` 是历史设计记录，不作为当前接口或数据结构的真相源。
 
 ## 2. 产品模型
 
@@ -81,7 +80,7 @@ Radix UI。路由以 `web/src/App.tsx` 为准：
 | `/login`、`/register`     | 登录和注册                            |
 | `/chat/:groupFolder?`     | 工作台与会话                          |
 | `/agent-profiles`         | Agent 管理                            |
-| `/capabilities/:section?` | Skills、MCP、Plugins                  |
+| `/capabilities/:section?` | Skills、MCP                           |
 | `/tasks`                  | 定时任务                              |
 | `/usage`                  | Token 用量统计                        |
 | `/memory`                 | 记忆管理                              |
@@ -89,7 +88,7 @@ Radix UI。路由以 `web/src/App.tsx` 为准：
 | `/monitor`                | 运行状态，需要 `manage_system_config` |
 | `/users`                  | 用户、邀请和审计管理                  |
 
-`/groups`、`/skills`、`/mcp-servers` 和 `/plugins` 是兼容重定向，不应新增独立页面。
+`/groups`、`/skills` 和 `/mcp-servers` 是兼容重定向，不应新增独立页面。
 
 ### 3.3 Agent Runner
 
@@ -139,8 +138,7 @@ Host 模式没有 `maxConcurrentHostProcesses`。旧客户端提交该字段时�
 2. Effective Skill/MCP Resolver 生成精确清单与 hash。
 3. Container 模式逐个只读挂载选中的 Skill。
 4. Host 模式也使用同步后的 Session `.claude` 目录和相同能力清单。
-5. Plugin 使用用户版本化 runtime snapshot，通过 Pi ResourceLoader/Extension 兼容层加载。
-6. PromptPlan 和 ContextBudget 记录最终上下文来源与预算。
+5. PromptPlan 和 ContextBudget 记录最终上下文来源与预算。
 
 规则：
 
@@ -228,7 +226,6 @@ data/
 ├── skills/{userId}/
 ├── builtin-skills/
 ├── mcp-servers/{userId}/
-├── plugins/
 ├── agent-profile-runtime/
 ├── env/
 └── extra/

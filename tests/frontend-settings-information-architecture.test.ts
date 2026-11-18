@@ -25,7 +25,7 @@ describe('settings information architecture', () => {
     expect(nav).toContain('min-h-0 flex-1 overflow-y-auto px-3 pb-28');
     expect(nav).toContain('SheetDescription');
     expect(nav).not.toMatch(
-      /key: '(groups|agent-profiles|memory|skills|mcp-servers|plugins|usage)'/,
+      /key: '(groups|agent-profiles|memory|skills|mcp-servers|usage)'/,
     );
   });
 
@@ -54,7 +54,7 @@ describe('settings information architecture', () => {
     expect(app).toContain('requiredPermission="manage_system_config"');
     expect(settings).toContain("skills: '/capabilities/skills'");
     expect(settings).toContain("'mcp-servers': '/capabilities/mcp'");
-    expect(settings).toContain("plugins: '/capabilities/plugins'");
+    expect(settings).not.toContain("plugins: '/capabilities/plugins'");
     expect(settings).toContain(
       "bindings: '/settings?tab=my-channels&view=bindings'",
     );
@@ -114,7 +114,7 @@ describe('settings information architecture', () => {
     expect(system).toMatch(/Pi 运行时在上下文接近窗口\s+上限时自动压缩/);
     expect(system).toMatch(/百分比与固定阈值仅作为历史兼容配置保留/);
     expect(system).toMatch(
-      /当前目录同时作为提示词、Rules、Skills、MCP 与 Plugin\s+Marketplace\s+的来源/,
+      /当前目录同时作为提示词、Rules、Skills 与 MCP 的来源/,
     );
     expect(system).toMatch(
       /管理员纯宿主机模式[\s\S]*普通成员仍固定使用\s+Docker/,

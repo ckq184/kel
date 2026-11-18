@@ -714,7 +714,6 @@ fs.mkdtempSync = function (prefix, ...args) {
       fs.writeFileSync(sessionSecretPath, 'test-only-secret', { mode: 0o644 });
       const persistentMarkers = [
         ['mcp-servers', 'user-1', 'servers.json'],
-        ['plugins', 'users', 'user-1.json'],
         ['memory', 'workspace-1', 'memory.md'],
         ['avatars', 'agent-1.txt'],
         ['builtin-skills', 'catalog.json'],

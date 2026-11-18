@@ -53,7 +53,6 @@ describe('ClaudeContextResolver', () => {
     writeFile(path.join(external, 'hooks', 'on-stop.sh'), '#!/bin/sh');
     writeFile(path.join(external, 'workflows', 'research.md'), '# workflow');
     writeFile(path.join(external, 'output-styles', 'concise.md'), '# concise');
-    writeFile(path.join(external, 'plugins', 'config.json'), '{}');
     writeFile(path.join(external, 'keybindings.json'), '{}');
     writeFile(
       path.join(external, 'settings.json'),
@@ -101,7 +100,6 @@ describe('ClaudeContextResolver', () => {
       'hooks',
       'workflows',
       'output-styles',
-      'plugins',
       'keybindings.json',
     ]) {
       expect(fs.readlinkSync(path.join(sessionDir, name))).toBe(

@@ -41,7 +41,6 @@ const VALID_TABS: SettingsTab[] = [
   'memory',
   'skills',
   'mcp-servers',
-  'plugins',
   'users',
   'about',
   'bindings',
@@ -65,7 +64,6 @@ const LEGACY_TAB_ROUTES: Partial<Record<SettingsTab, string>> = {
   memory: '/memory',
   skills: '/capabilities/skills',
   'mcp-servers': '/capabilities/mcp',
-  plugins: '/capabilities/plugins',
   bindings: '/settings?tab=my-channels&view=bindings',
   usage: '/usage',
 };
@@ -146,7 +144,6 @@ export function SettingsPage() {
     memory: 'Workspace Memory',
     skills: '技能(Skill)管理',
     'mcp-servers': 'MCP 服务器',
-    plugins: '插件 (Plugins)',
     users: '用户与访问',
     about: '关于',
     bindings: '渠道绑定',
@@ -157,8 +154,7 @@ export function SettingsPage() {
   const sectionDescription: Partial<Record<SettingsTab, string>> = {
     'main-agent':
       '管理主智能体的头像、系统附加能力、宿主机配置继承和上下文压缩策略。',
-    'host-integration':
-      '管理宿主机 Claude 目录以及共享 Plugin Catalog 的来源。',
+    'host-integration': '管理宿主机 Claude 目录的来源。',
   };
 
   const legacyRoute =

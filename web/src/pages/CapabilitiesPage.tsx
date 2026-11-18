@@ -1,14 +1,12 @@
 import { NavLink, Navigate, useParams } from 'react-router-dom';
-import { Plug, Puzzle, Server } from 'lucide-react';
+import { Puzzle, Server } from 'lucide-react';
 
 import { McpServersPage } from './McpServersPage';
-import { PluginsPage } from './PluginsPage';
 import { SkillsPage } from './SkillsPage';
 
 const sections = [
   { key: 'skills', label: 'Skills', icon: Puzzle },
   { key: 'mcp', label: 'MCP', icon: Server },
-  { key: 'plugins', label: 'Plugins', icon: Plug },
 ] as const;
 
 export function CapabilitiesPage() {
@@ -53,7 +51,6 @@ export function CapabilitiesPage() {
 
       {section === 'skills' && <SkillsPage />}
       {section === 'mcp' && <McpServersPage />}
-      {section === 'plugins' && <PluginsPage />}
     </div>
   );
 }

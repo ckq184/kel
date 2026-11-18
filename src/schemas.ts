@@ -700,7 +700,6 @@ export const SystemSettingsSchema = z
 export const HostIntegrationSettingsSchema = z
   .object({
     externalClaudeDir: z.string().max(512).optional(),
-    pluginAutoScan: z.boolean().optional(),
     adminHostOnlyMode: z.boolean().optional(),
     mainAgentContextSource: z.enum(['managed', 'host_claude']).optional(),
     mainAgentAutoCompactWindow: z

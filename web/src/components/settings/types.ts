@@ -110,7 +110,6 @@ export interface HostIntegrationSettings {
   mainAgentAutoCompactWindow: number;
   mainAgentAutoCompactPercentage: number;
   externalClaudeDir: string;
-  pluginAutoScan: boolean;
 }
 
 // ─── OAuth Usage ────────────────────────────────────────────
@@ -150,7 +149,6 @@ export type SettingsTab =
   | 'memory'
   | 'skills'
   | 'mcp-servers'
-  | 'plugins'
   | 'users'
   | 'about'
   | 'bindings'

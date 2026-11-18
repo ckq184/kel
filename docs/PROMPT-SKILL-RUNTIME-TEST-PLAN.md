@@ -7,10 +7,10 @@
 | 层级               | 真实对象                                                   | 代表用例                                     | 通过标准                                        |
 | ------------------ | ---------------------------------------------------------- | -------------------------------------------- | ----------------------------------------------- |
 | 纯函数             | PromptPlan、ContextBudget、TurnOutcome、Skill/MCP Resolver | 同名 Skill、MCP 配置变化、超预算、关闭未回复 | 输出状态、哈希与游标决策精确匹配                |
-| 宿主集成           | Session Skill 对账、Container mounts、API preview          | ghost Skill、disabled collision、Plugin MCP  | 隔离 ghost；预览与实际 manifest 一致            |
+| 宿主集成           | Session Skill 对账、Container mounts、API preview          | ghost Skill、disabled collision              | 隔离 ghost；预览与实际 manifest 一致            |
 | SDK/CLI 集成       | 项目锁定版本的 Claude Agent SDK 和 Claude CLI              | main → Task Subagent → main                  | 子请求只收到自有 prompt、短运行契约与显式 Skill |
 | 前端契约/构建      | Agent 页面、Effective Context                              | 点击“新建”、选择工作区                       | 创建入口在右侧主区；真实上下文与总预算可见      |
-| 真实 Provider 冒烟 | 当前 Miniclaw 已配置 Provider                             | 固定标记问答                                 | 模型完成请求且逐字返回固定标记                  |
+| 真实 Provider 冒烟 | 当前 Miniclaw 已配置 Provider                              | 固定标记问答                                 | 模型完成请求且逐字返回固定标记                  |
 
 ## 可复现命令
 
@@ -64,13 +64,7 @@ npm run test:real-model
 - 打开“自定义 Agent”，点击左侧“新建”。
 - 期望：右侧大工作区出现角色描述、例子、AI 生成和空白创建；左侧不出现小编辑框；移动端动作纵向排列。
 
-### 5. Plugin MCP 能力指纹
-
-- 启用 Plugin，其 `.mcp.json` 声明一个 MCP Server，获取 Agent 有效能力预览。
-- 修改该 Server 的 command/args/env/header 任一真实定义，保持显示名称不变，再次预览。
-- 期望：MCP Manifest hash 改变；`run_context_status` 将旧运行标记为能力配置过期。Agent MCP 策略为 custom/disabled 时，SDK 禁止 Plugin MCP 自动发现，因此这些 Server 不进入有效 Manifest。
-
-### 6. 真实模型固定回答
+### 5. 真实模型固定回答
 
 请求要求模型只回复：
 

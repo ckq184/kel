@@ -559,7 +559,6 @@ export function HostIntegrationSettingsSection({
         draft.mainAgentAutoCompactPercentage !==
           settings.mainAgentAutoCompactPercentage
       : draft.externalClaudeDir !== settings.externalClaudeDir ||
-        draft.pluginAutoScan !== settings.pluginAutoScan ||
         draft.adminHostOnlyMode !== settings.adminHostOnlyMode;
 
   const mainAutoCompactError = (() => {
@@ -608,9 +607,7 @@ export function HostIntegrationSettingsSection({
       toast.success(
         scope === 'main-agent'
           ? '主 CKQClaw 默认策略已保存'
-          : draft.pluginAutoScan !== settings.pluginAutoScan
-            ? '宿主机集成设置已保存；Plugin 自动扫描将在服务重启后生效'
-            : '宿主机集成设置已保存',
+          : '宿主机集成设置已保存',
       );
     } catch (error) {
       toast.error(
@@ -861,49 +858,16 @@ export function HostIntegrationSettingsSection({
               >
                 留空时使用当前服务用户的
                 ~/.claude；自定义目录必须是宿主机上的绝对路径。
-                当前目录同时作为提示词、Rules、Skills、MCP 与 Plugin Marketplace
-                的来源。
+                当前目录同时作为提示词、Rules、Skills 与 MCP 的来源。
               </p>
             </div>
 
-            <div className="flex min-h-16 items-start justify-between gap-6 border-t border-border pt-6">
-              <div className="min-w-0">
-                <Label htmlFor="host-integration-plugin-scan">
-                  自动扫描 Plugin Catalog
-                </Label>
-                <p
-                  id="host-integration-plugin-scan-description"
-                  className="mt-1 text-xs leading-5 text-muted-foreground"
-                >
-                  服务启动后扫描宿主机 marketplace，并每小时刷新共享
-                  Catalog。Catalog
-                  全局共享，但每个用户独立选择启用项；修改后需重启服务。
-                </p>
-              </div>
-              <Switch
-                id="host-integration-plugin-scan"
-                checked={draft.pluginAutoScan}
-                onCheckedChange={(checked) =>
-                  setDraft((current) =>
-                    current ? { ...current, pluginAutoScan: checked } : current,
-                  )
-                }
-                aria-describedby="host-integration-plugin-scan-description"
-              />
-            </div>
             <div className="grid gap-2 border-t border-border pt-6 sm:grid-cols-2">
               <Link
                 to="/capabilities/mcp"
                 className="flex min-h-11 items-center justify-between rounded-lg border border-border px-3 text-sm font-medium text-foreground hover:bg-muted"
               >
                 导入宿主机 MCP 副本
-                <ArrowRight className="size-4 text-muted-foreground" />
-              </Link>
-              <Link
-                to="/capabilities/plugins"
-                className="flex min-h-11 items-center justify-between rounded-lg border border-border px-3 text-sm font-medium text-foreground hover:bg-muted"
-              >
-                查看共享 Plugin Catalog
                 <ArrowRight className="size-4 text-muted-foreground" />
               </Link>
             </div>

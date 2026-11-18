@@ -258,7 +258,7 @@ backup: ## 备份运行时数据到 ckqclaw-backup-{date}.tar.gz
 	node scripts/sqlite-snapshot.mjs \
 	  "$(RUNTIME_DATA_DIR)/db/messages.db" \
 	  "$$TMP_ROOT/data/db/messages.db"; \
-	for DIR in config groups sessions skills mcp-servers plugins memory avatars extra builtin-skills; do \
+	for DIR in config groups sessions skills mcp-servers memory avatars extra builtin-skills; do \
 	  if [ -d "$(RUNTIME_DATA_DIR)/$$DIR" ]; then \
 	    mkdir -p "$$TMP_ROOT/data/$$DIR"; \
 	    cp -a "$(RUNTIME_DATA_DIR)/$$DIR/." "$$TMP_ROOT/data/$$DIR/"; \

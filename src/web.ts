@@ -58,7 +58,6 @@ import skillsRoutes from './routes/skills.js';
 import browseRoutes from './routes/browse.js';
 import agentRoutes from './routes/agents.js';
 import mcpServersRoutes from './routes/mcp-servers.js';
-import pluginsRoutes from './routes/plugins.js';
 import workspaceConfigRoutes from './routes/workspace-config.js';
 import agentProfileRoutes from './routes/agent-profiles.js';
 import workspaceRoutes from './routes/workspaces.js';
@@ -112,14 +111,7 @@ import {
   SESSION_COOKIE_NAME_PLAIN,
   LEGACY_SESSION_COOKIE_NAME_SECURE,
   LEGACY_SESSION_COOKIE_NAME_PLAIN,
-  ASSISTANT_NAME,
-  GROUPS_DIR,
 } from './config.js';
-import { expandPluginSlashCommandIfNeeded } from './plugin-expander-core.js';
-import { makeExpandContext } from './plugin-expander-context.js';
-import type { ExpandContext } from './plugin-expander-context.js';
-import { PLUGIN_EXPANSION_ATTACHMENT_TYPE } from './plugin-expander-sentinel.js';
-import { persistPluginExpansion } from './plugin-expander-store.js';
 import { logger } from './logger.js';
 import { recordRunContextSnapshot } from './run-context-snapshot.js';
 import { RunStreamFence } from './run-stream-fence.js';
@@ -153,37 +145,6 @@ function normalizeTerminalSize(
   return intValue;
 }
 
-/**
- * Build an ExpandContext for plugin-command expansion against a registered
- * group. Returns null when the group has no resolvable owner (no plugins to
- * resolve in that case).
- *
- * Host mode honors `group.customCwd` so inline `!` commands run against the
- * user's real repo (#18 P2-bug-4).
- */
-function buildWebExpandContext(
-  groupJid: string,
-  group: {
-    folder: string;
-    created_by?: string | null;
-    executionMode?: string | null;
-    customCwd?: string | null;
-    is_home?: boolean;
-  },
-): ExpandContext | null {
-  const deps = getWebDeps();
-  const containerName = deps?.queue.getActiveContainerName(groupJid) ?? null;
-  return makeExpandContext({
-    chatJid: groupJid,
-    groupFolder: group.folder,
-    ownerId: group.created_by,
-    executionMode: group.executionMode,
-    customCwd: group.customCwd,
-    groupsDir: GROUPS_DIR,
-    containerName,
-  });
-}
-
 function releaseTerminalOwnership(ws: WebSocket, groupJid: string): void {
   if (wsTerminals.get(ws) === groupJid) {
     wsTerminals.delete(ws);
@@ -200,23 +161,6 @@ function releaseTerminalOwnership(ws: WebSocket, groupJid: string): void {
 // 或 '*'（关闭防御）。
 const CORS_ALLOWED_ORIGINS = process.env.CORS_ALLOWED_ORIGINS || '';
 const CORS_ALLOW_LOCALHOST = process.env.CORS_ALLOW_LOCALHOST !== 'false'; // default: true
-
-function completeWebOutOfBandMessage(
-  webDeps: WebDeps,
-  jid: string,
-  cursor: MessageCursor,
-): void {
-  if (webDeps.completeOutOfBandMessage) {
-    webDeps.completeOutOfBandMessage(jid, cursor);
-    return;
-  }
-  // Compatibility for focused tests that predate the production chokepoint.
-  if (webDeps.hasEarlierPendingMessages(jid, cursor)) {
-    webDeps.advanceNextPullCursorOnly(jid, cursor);
-  } else {
-    webDeps.advanceCursors(jid, cursor);
-  }
-}
 
 function isAllowedOrigin(origin: string | undefined): string | null {
   if (!origin) return null; // same-origin requests
@@ -270,7 +214,6 @@ app.route('/api/skills', skillsRoutes);
 app.route('/api/admin', adminRoutes);
 app.route('/api/browse', browseRoutes);
 app.route('/api/mcp-servers', mcpServersRoutes);
-app.route('/api/plugins', pluginsRoutes);
 app.route('/api/agent-profiles', agentProfileRoutes);
 app.route('/api/workspaces', workspaceRoutes);
 app.route('/api/groups', agentRoutes); // Workspace session routes; /agents paths remain compatibility aliases
@@ -625,127 +568,13 @@ async function handleWebUserMessage(
     };
   }
 
-  // Plugin command expander (DMI commands).
-  //
-  // Hybrid strategy avoiding the round-11/round-12 P2-4 double-exec while
-  // keeping active-runner DMI working:
-  //   - Active runner: expander runs here. `reply` short-circuits with an
-  //     in-band system message; `expanded` mutates `sendContent` to the
-  //     prompt that's piped via `queue.sendMessage`; `miss` passes through.
-  //   - Idle (no active runner): we DO NOT call the expander at all —
-  //     `expandPluginSlashCommandIfNeeded` itself runs inline `!` as a side
-  //     effect (not pure parse), so calling it then discarding the result
-  //     would still execute inline once here AND again when cold-start
-  //     re-reads the DB row and re-expands → double-fire (#20 P2-4 round 12).
-  //     The `enqueueMessageCheck → cold-start → expandMessagesIfNeeded`
-  //     path handles `reply`/`expanded`/`miss` uniformly with no race.
-  //
-  // Race window between the peek and `queue.sendMessage` is small and benign:
-  // if the runner exits in that gap, sendMessage returns 'no_active' and
-  // cold-start re-reads ORIGINAL from DB (we don't write `sendContent` back),
-  // so cold-start re-expands and inline runs again. Lead-approved tradeoff;
-  // log a warn line so we can confirm rarity in production.
-  let sendContent = content;
-  const eagerExpandActive =
-    !deps.queue.requiresFeishuCliContainerRestart(chatJid, {
-      feishuCliAccountId: requiredFeishuCliAccountId,
-    }) && deps.queue.hasActiveMainRunnerForMessage(chatJid);
-  if (eagerExpandActive) {
-    // Use the effective (sibling-resolved) group so non-home groups bound to a
-    // home sibling inherit executionMode / customCwd / created_by — otherwise
-    // buildWebExpandContext returns null on sibling JIDs and the active runner
-    // ends up receiving the literal `/foo` slash command (#21 round-13 P2-3).
-    const expandCtx = buildWebExpandContext(chatJid, runtimeGroup);
-    if (expandCtx) {
-      const expansion = await expandPluginSlashCommandIfNeeded(
-        expandCtx,
-        content,
-      );
-      if (expansion.kind === 'reply') {
-        const sysMsgId = `sys_plugin_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-        const sysTimestamp = new Date().toISOString();
-        storeMessageDirect(
-          sysMsgId,
-          chatJid,
-          '__plugin__',
-          ASSISTANT_NAME,
-          expansion.text,
-          sysTimestamp,
-          true,
-        );
-        broadcastNewMessage(chatJid, {
-          id: sysMsgId,
-          chat_jid: chatJid,
-          sender: '__plugin__',
-          sender_name: ASSISTANT_NAME,
-          content: expansion.text,
-          timestamp: sysTimestamp,
-          is_from_me: true,
-        });
-        // Plugin reply is out-of-band — it does NOT consume an agent turn.
-        // Mirror the cold-start cursor logic (#22 round-14 P2):
-        //   - earlier pending exists → advanceNextPullCursorOnly so the
-        //     next poll skips this reply but lastCommittedCursor stays put
-        //     and recovery still surfaces the earlier message
-        //   - no earlier pending → advanceCursors fully commits with a
-        //     lex (timestamp, id) max-merge (#27 round-17 P2-2). Direct
-        //     overwrite via setCursors regressed the cursor when a same-
-        //     millisecond batch had a higher-UUID neighbor already
-        //     committed → already-processed messages re-polled and the
-        //     reply re-fired.
-        const replyCursor = { timestamp, id: messageId };
-        completeWebOutOfBandMessage(deps, chatJid, replyCursor);
-        deps.advanceGlobalCursor(replyCursor);
-        return {
-          ok: true,
-          messageId,
-          timestamp,
-          disposition: activeRunId ? 'steered' : 'started',
-          runId: activeRunId ?? undefined,
-        };
-      }
-      if (expansion.kind === 'expanded') {
-        sendContent = expansion.prompt;
-        // Crash-safety (#23 round-15 P1-1): the cold-start path persists the
-        // sentinel before the cursor advances; the web eager-expand path was
-        // missing this write, so a runner crash between IPC inject and message
-        // consume left the DB row holding the original `/foo` slash command.
-        // Recovery's expandMessagesIfNeeded would then re-run inline `!` and
-        // fire side effects twice. Mirror the cold-start contract here:
-        // persist BEFORE handing the expanded prompt downstream, only when
-        // every inline succeeded — failed-inline expansions intentionally
-        // skip persistence so recovery legitimately retries.
-        if (expansion.inlineExecuted) {
-          try {
-            persistPluginExpansion(messageId, chatJid, {
-              type: PLUGIN_EXPANSION_ATTACHMENT_TYPE,
-              expanded: true,
-              prompt: expansion.prompt,
-              expandedAt: new Date().toISOString(),
-            });
-          } catch (err) {
-            // Non-fatal: prompt still reaches the agent on this run; recovery
-            // worst-case re-runs inline (the original bug, no regression).
-            logger.warn(
-              { err, chatJid, messageId },
-              'web eager expand: failed to persist expansion sentinel',
-            );
-          }
-        }
-      }
-      // `miss` → sendContent already holds the original.
-    }
-  }
-  // Idle path: skip expander entirely; cold-start will expand once from the
-  // original DB row via `expandMessagesIfNeeded` (handles reply/expanded/miss).
-
   const formatted = deps.formatMessages([
     {
       id: messageId,
       chat_jid: chatJid,
       sender: userId,
       sender_name: displayName,
-      content: sendContent,
+      content,
       timestamp,
     },
   ]);
@@ -786,21 +615,6 @@ async function handleWebUserMessage(
   if (sendResult === 'sent') {
     pipedToActive = true;
   } else {
-    if (eagerExpandActive && sendContent !== content) {
-      // Active runner exited between peek and sendMessage → cold-start will
-      // re-expand from the ORIGINAL DB content, so inline `!` runs again.
-      // Rare but possible — flagged so we can quantify in production.
-      logger.warn(
-        {
-          event: 'plugin_expander_race',
-          subtype: 'user_message',
-          chatJid,
-          userId,
-          messageId,
-        },
-        'Race: eager-expanded but runner exited before sendMessage; cold-start will re-expand (inline may run twice)',
-      );
-    }
     deps.queue.enqueueMessageCheck(chatJid);
   }
 
@@ -997,110 +811,6 @@ async function handleAgentConversationMessage(
     };
   }
 
-  // Plugin command expander (DMI commands).
-  //
-  // Hybrid strategy (mirrors handleWebUserMessage; #20 P2-4 round 12):
-  //   - Active runner: expander runs here. `reply` short-circuits;
-  //     `expanded` mutates `agentSendContent`; `miss` passes through.
-  //   - Idle: skip expander entirely. Calling expander runs inline `!` as a
-  //     side effect, and cold-start (`processAgentConversation` →
-  //     `expandMessagesIfNeeded`) would re-expand from the original DB row
-  //     → inline double-fire. Cold-start handles all three outcomes.
-  let agentSendContent = content;
-  const eagerExpandAgentActive =
-    !deps.queue.requiresFeishuCliContainerRestart(virtualChatJid, {
-      feishuCliAccountId: requiredFeishuCliAccountId,
-    }) && deps.queue.hasActiveMainRunnerForMessage(virtualChatJid);
-  if (eagerExpandAgentActive) {
-    if (parentGroup) {
-      // Use the effective (sibling-resolved) parent group so a non-home parent
-      // bound to a home sibling expands plugins via the home's executionMode /
-      // customCwd / created_by — otherwise buildWebExpandContext returns null
-      // for the agent virtual JID and the active runner receives the raw
-      // slash command (#21 round-13 P2-3).
-      const expandParent = deps.resolveEffectiveGroup
-        ? deps.resolveEffectiveGroup(parentGroup).effectiveGroup
-        : parentGroup;
-      const expandCtx = buildWebExpandContext(virtualChatJid, expandParent);
-      if (expandCtx) {
-        const expansion = await expandPluginSlashCommandIfNeeded(
-          expandCtx,
-          content,
-        );
-        if (expansion.kind === 'reply') {
-          const sysMsgId = `sys_plugin_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-          const sysTimestamp = new Date().toISOString();
-          storeMessageDirect(
-            sysMsgId,
-            virtualChatJid,
-            '__plugin__',
-            ASSISTANT_NAME,
-            expansion.text,
-            sysTimestamp,
-            true,
-          );
-          broadcastNewMessage(
-            virtualChatJid,
-            {
-              id: sysMsgId,
-              chat_jid: virtualChatJid,
-              sender: '__plugin__',
-              sender_name: ASSISTANT_NAME,
-              content: expansion.text,
-              timestamp: sysTimestamp,
-              is_from_me: true,
-            },
-            agentId,
-          );
-          // Plugin reply is out-of-band — it does NOT consume an agent turn.
-          // Mirror the cold-start cursor logic (#22 round-14 P2): commit
-          // both cursors when no earlier pending message exists, otherwise
-          // hold lastCommittedCursor so recovery still picks it up.
-          //
-          // Commit uses lex (timestamp, id) max-merge via `advanceCursors`
-          // (#27 round-17 P2-2) — direct overwrite would regress cursor on
-          // same-millisecond batches and re-fire the reply.
-          const replyCursor = { timestamp, id: messageId };
-          completeWebOutOfBandMessage(deps, virtualChatJid, replyCursor);
-          return {
-            ok: true,
-            messageId,
-            timestamp,
-            disposition: activeRunId ? 'steered' : 'started',
-            runId: activeRunId ?? undefined,
-          };
-        }
-        if (expansion.kind === 'expanded') {
-          agentSendContent = expansion.prompt;
-          // Crash-safety mirror of handleWebUserMessage (#23 round-15 P1-1):
-          // persist the rendered prompt onto the message row BEFORE IPC
-          // injection so a runner crash before consume cannot trick the
-          // agent-conv cold-start into re-running inline `!` from the
-          // original DB content. Sentinel keys on virtualChatJid because
-          // that's the storeMessageDirect / read-back JID.
-          if (expansion.inlineExecuted) {
-            try {
-              persistPluginExpansion(messageId, virtualChatJid, {
-                type: PLUGIN_EXPANSION_ATTACHMENT_TYPE,
-                expanded: true,
-                prompt: expansion.prompt,
-                expandedAt: new Date().toISOString(),
-              });
-            } catch (err) {
-              logger.warn(
-                { err, chatJid, virtualChatJid, agentId, messageId },
-                'web eager expand (agent conv): failed to persist expansion sentinel',
-              );
-            }
-          }
-        }
-        // `miss` → agentSendContent already holds the original.
-      }
-    }
-  }
-  // Idle path: skip expander entirely; cold-start owns expansion via
-  // `expandMessagesIfNeeded` (handles reply/expanded/miss uniformly).
-
   // Format for agent
   const formatted = deps.formatMessages([
     {
@@ -1108,7 +818,7 @@ async function handleAgentConversationMessage(
       chat_jid: virtualChatJid,
       sender: userId,
       sender_name: displayName,
-      content: agentSendContent,
+      content,
       timestamp,
     },
   ]);
@@ -1158,23 +868,6 @@ async function handleAgentConversationMessage(
     });
   }
   if (agentSendResult === 'no_active') {
-    if (eagerExpandAgentActive && agentSendContent !== content) {
-      // Race: peek said active, but the runner exited before sendMessage.
-      // Cold-start re-expands from the original DB row → inline `!` may
-      // run twice. Lead-approved edge case; logged for telemetry.
-      logger.warn(
-        {
-          event: 'plugin_expander_race',
-          subtype: 'agent_conversation',
-          chatJid,
-          virtualChatJid,
-          userId,
-          agentId,
-          messageId,
-        },
-        'Race: eager-expanded agent conv but runner exited before sendMessage; cold-start will re-expand',
-      );
-    }
     // No running process — force close any stale state and start fresh.
     // Mirrors the reliable IM path in buildOnAgentMessage() (#240).
     deps.queue.closeStdin(virtualChatJid);

@@ -14,29 +14,28 @@
 
 ## 路由模块
 
-| 前缀                               | 实现                             | 用途                          |
-| ---------------------------------- | -------------------------------- | ----------------------------- |
-| `/api/auth`                        | `src/routes/auth.ts`             | 初始化、登录、账户、设备      |
-| `/api/groups`                      | `src/routes/groups.ts`           | 工作区兼容模型、消息和环境    |
-| `/api/groups`                      | `src/routes/files.ts`            | 工作区文件                    |
-| `/api/groups`                      | `src/routes/agents.ts`           | Runtime Session 与渠道绑定    |
-| `/api/groups`                      | `src/routes/workspace-config.ts` | 项目 Skills/MCP               |
-| `/api/workspaces`                  | `src/routes/workspaces.ts`       | Agent-first 工作区投影        |
-| `/api/agent-profiles`              | `src/routes/agent-profiles.ts`   | 产品级 Agent                  |
-| `/api/channel-accounts`            | `src/routes/channel-accounts.ts` | 多渠道账号                    |
-| `/api/config`                      | `src/routes/config.ts`           | Provider、系统与兼容渠道配置  |
-| `/api/tasks`                       | `src/routes/tasks.ts`            | 定时任务和运行                |
-| `/api/memory`                      | `src/routes/memory.ts`           | Workspace Memory v2           |
-| `/api/skills`                      | `src/routes/skills.ts`           | 用户 Skills                   |
-| `/api/mcp-servers`                 | `src/routes/mcp-servers.ts`      | 用户/系统 MCP                 |
-| `/api/plugins`                     | `src/routes/plugins.ts`          | Plugin Catalog 与用户启用状态 |
-| `/api/usage`                       | `src/routes/usage.ts`            | Token 用量                    |
-| `/api/pricing`                     | `src/routes/pricing.ts`          | 自定义模型单价规则            |
-| `/api/admin`                       | `src/routes/admin.ts`            | 用户、邀请和审计              |
-| `/api/bug-report`                  | `src/routes/bug-report.ts`       | 脱敏问题报告                  |
-| `/api/browse`                      | `src/routes/browse.ts`           | Host 目录选择                 |
-| `/api`                             | `src/routes/monitor.ts`          | 健康、状态和 Docker 构建      |
-| `/api/messages`、`/api/follow-ups` | `src/web.ts`                     | 消息发送和 Follow-up          |
+| 前缀                               | 实现                             | 用途                         |
+| ---------------------------------- | -------------------------------- | ---------------------------- |
+| `/api/auth`                        | `src/routes/auth.ts`             | 初始化、登录、账户、设备     |
+| `/api/groups`                      | `src/routes/groups.ts`           | 工作区兼容模型、消息和环境   |
+| `/api/groups`                      | `src/routes/files.ts`            | 工作区文件                   |
+| `/api/groups`                      | `src/routes/agents.ts`           | Runtime Session 与渠道绑定   |
+| `/api/groups`                      | `src/routes/workspace-config.ts` | 项目 Skills/MCP              |
+| `/api/workspaces`                  | `src/routes/workspaces.ts`       | Agent-first 工作区投影       |
+| `/api/agent-profiles`              | `src/routes/agent-profiles.ts`   | 产品级 Agent                 |
+| `/api/channel-accounts`            | `src/routes/channel-accounts.ts` | 多渠道账号                   |
+| `/api/config`                      | `src/routes/config.ts`           | Provider、系统与兼容渠道配置 |
+| `/api/tasks`                       | `src/routes/tasks.ts`            | 定时任务和运行               |
+| `/api/memory`                      | `src/routes/memory.ts`           | Workspace Memory v2          |
+| `/api/skills`                      | `src/routes/skills.ts`           | 用户 Skills                  |
+| `/api/mcp-servers`                 | `src/routes/mcp-servers.ts`      | 用户/系统 MCP                |
+| `/api/usage`                       | `src/routes/usage.ts`            | Token 用量                   |
+| `/api/pricing`                     | `src/routes/pricing.ts`          | 自定义模型单价规则           |
+| `/api/admin`                       | `src/routes/admin.ts`            | 用户、邀请和审计             |
+| `/api/bug-report`                  | `src/routes/bug-report.ts`       | 脱敏问题报告                 |
+| `/api/browse`                      | `src/routes/browse.ts`           | Host 目录选择                |
+| `/api`                             | `src/routes/monitor.ts`          | 健康、状态和 Docker 构建     |
+| `/api/messages`、`/api/follow-ups` | `src/web.ts`                     | 消息发送和 Follow-up         |
 
 ## 认证
 
@@ -340,7 +339,11 @@ PATCH 修改 `chat_jid` 时会同时更新任务的具体 `delivery_route_jid`�
 任务被暂停/删除或已被新的活跃 Run 抢占时，续跑请求直接作废（abandoned），不会
 循环或升级。
 
-## Skills、MCP 和 Plugins
+## Skills 和 MCP
+
+> Claude 时代的 Plugin Catalog 体系（`/api/plugins`）已随 pi 内核迁移裁剪
+> （2026-11-18，见 `docs/plugin-prune-plan.md`）；全部 Plugin 接口（含更早的
+> `sync-host` / `available-on-host`）均已删除，不得重新引用。
 
 Skills：
 
@@ -359,22 +362,6 @@ MCP：
 - `GET|POST /api/mcp-servers`
 - `GET|PATCH|DELETE /api/mcp-servers/:id`
 - `POST /api/mcp-servers/sync-host`
-
-Plugins：
-
-- `GET /api/plugins`
-- `PATCH /api/plugins/enabled/:pluginFullId`
-- `POST /api/plugins/materialize`
-- `DELETE /api/plugins/marketplaces/:name`，只清理调用者自己的启用引用
-- `GET /api/plugins/commands`
-- `GET /api/plugins/catalog`
-- `GET /api/plugins/catalog/marketplaces/:mp`
-- `POST /api/plugins/catalog/scan`，admin
-
-已删除的旧 Plugin 接口不得重新引用：
-
-- `POST /api/plugins/sync-host`
-- `GET /api/plugins/available-on-host`
 
 ## Workspace Memory v2
 

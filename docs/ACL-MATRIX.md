@@ -195,18 +195,17 @@ read-only 投影按 host-issued turn ID 精确匹配当前或已接纳的 queued
 
 ## 6. 系统和管理权限
 
-| 路由族/操作                                       | 权限                                               |
-| ------------------------------------------------- | -------------------------------------------------- |
-| Provider、系统容量、Host 集成、注册策略、系统外观 | `manage_system_config`                             |
-| Plugin Catalog 手动扫描                           | admin / `manage_system_config` 路径中的 admin 检查 |
-| 系统 MCP 写入                                     | admin                                              |
-| 用户创建、禁用、恢复、角色与权限                  | `manage_users`                                     |
-| 邀请码                                            | `manage_invites`                                   |
-| 审计日志和导出                                    | `view_audit_log`                                   |
-| `/api/pricing/*` 自定义模型单价                   | `manage_system_config`                             |
-| `/api/docker/pull`、运行监控管理                  | `manage_system_config`                             |
-| `/api/status/channel-outbox/*` 人工裁决           | `manage_system_config`                             |
-| `POST /api/groups/:jid/reset-owner`               | admin break-glass，同时仍验证目标资源              |
+| 路由族/操作                                       | 权限                                  |
+| ------------------------------------------------- | ------------------------------------- |
+| Provider、系统容量、Host 集成、注册策略、系统外观 | `manage_system_config`                |
+| 系统 MCP 写入                                     | admin                                 |
+| 用户创建、禁用、恢复、角色与权限                  | `manage_users`                        |
+| 邀请码                                            | `manage_invites`                      |
+| 审计日志和导出                                    | `view_audit_log`                      |
+| `/api/pricing/*` 自定义模型单价                   | `manage_system_config`                |
+| `/api/docker/pull`、运行监控管理                  | `manage_system_config`                |
+| `/api/status/channel-outbox/*` 人工裁决           | `manage_system_config`                |
+| `POST /api/groups/:jid/reset-owner`               | admin break-glass，同时仍验证目标资源 |
 
 系统 MCP 默认仅 admin 可用；只有显式设置为 shared 后，普通成员的 Agent 才能进入
 有效能力清单。API 不回传 Secret 明文。

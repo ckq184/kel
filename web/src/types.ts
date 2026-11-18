@@ -223,7 +223,6 @@ export type CapabilityLayerSource =
   | 'host'
   | 'project'
   | 'workspace'
-  | 'plugin'
   | 'managed'
   | 'system'
   | 'user';

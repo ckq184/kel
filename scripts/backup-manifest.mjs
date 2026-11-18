@@ -9,7 +9,6 @@ export const MANAGED_BACKUP_COMPONENTS = [
   'sessions',
   'skills',
   'mcp-servers',
-  'plugins',
   'memory',
   'avatars',
   'extra',

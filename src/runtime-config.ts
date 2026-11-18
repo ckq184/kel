@@ -3607,10 +3607,6 @@ export interface SystemSettings {
   // 空 = 关闭（保留原行为：把上限通知直接回给用户）。同一 OAuth 账号下不同模型有
   // 独立额度桶，因此 fable→opus 这类回退无需再配置第二个 provider。
   fallbackModel: string;
-  // Plugin catalog 自动扫描：true（默认）= 启动 5s 后扫一次 + 每小时一次；
-  // false = 关闭定时扫描，admin 仍可手点 POST /api/plugins/catalog/scan。
-  // 适用于不希望本机私有 plugin 自动入共享 catalog 的环境。
-  pluginAutoScan: boolean;
   // 管理员可以先进入后台，稍后再配置 Claude Provider。
   providerSetupSkipped: boolean;
 }
@@ -3641,7 +3637,6 @@ const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
   mainAgentAutoCompactWindow: 0,
   mainAgentAutoCompactPercentage: 0,
   fallbackModel: '',
-  pluginAutoScan: true,
   providerSetupSkipped: false,
 };
 
@@ -3852,10 +3847,6 @@ function normalizeSystemSettings(
       mainAgentAutoCompactPercentage > 0 ? 0 : mainAgentAutoCompactWindow,
     mainAgentAutoCompactPercentage,
     fallbackModel,
-    pluginAutoScan: booleanField(
-      'pluginAutoScan',
-      DEFAULT_SYSTEM_SETTINGS.pluginAutoScan,
-    ),
     providerSetupSkipped: booleanField(
       'providerSetupSkipped',
       DEFAULT_SYSTEM_SETTINGS.providerSetupSkipped,
@@ -3906,7 +3897,6 @@ function buildEnvFallbackSettings(): SystemSettings {
         process.env.MAIN_AGENT_AUTO_COMPACT_PERCENTAGE ??
         process.env.AUTO_COMPACT_PERCENTAGE,
       fallbackModel: process.env.FALLBACK_MODEL,
-      pluginAutoScan: process.env.PLUGIN_AUTO_SCAN,
     },
     'env',
   );

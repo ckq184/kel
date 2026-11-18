@@ -544,11 +544,6 @@ import {
   formatMessages,
 } from './message-prompt.js';
 export { escapeXml, formatMessages } from './message-prompt.js';
-import { scanHostMarketplaces } from './plugin-importer.js';
-import { expandMessagesIfNeeded } from './plugin-expander-core.js';
-import { makeExpandContext } from './plugin-expander-context.js';
-import type { ExpandContext } from './plugin-expander-context.js';
-import { persistPluginExpansion } from './plugin-expander-store.js';
 
 // Set timezone so all child processes (host agents, containers) inherit it
 process.env.TZ = process.env.TZ || TIMEZONE;
@@ -856,11 +851,11 @@ function setCursors(jid: string, cursor: MessageCursor): void {
  * skips this message; lastCommittedCursor stays put so recovery still
  * detects unprocessed earlier messages on crash.
  *
- * Use for plugin-expander system replies that are delivered out-of-band
- * (no agent involvement) when the same batch still has earlier user
- * messages destined for the agent. Without this, a crash between the
- * reply commit and the agent finishing processing of the earlier
- * messages would lose them (#18 P2-bug-2).
+ * Intended for out-of-band messages (no agent involvement) delivered while
+ * the same batch still has earlier user messages destined for the agent.
+ * Without this, a crash between the out-of-band commit and the agent
+ * finishing processing of the earlier messages would lose them
+ * (#18 P2-bug-2).
  *
  * Comparison uses lexicographic (timestamp, id) via `isCursorAfter` —
  * `getMessagesSince` sorts by `(timestamp, id)` so two messages with the
@@ -1426,7 +1421,6 @@ const activeHeldCardFinalizers = new Map<
 
 interface PreparedFollowUp {
   messages: NewMessage[];
-  replyText?: string;
 }
 
 function resolveFollowUpRuntime(chatJid: string): {
@@ -1459,63 +1453,7 @@ function resolveFollowUpRuntime(chatJid: string): {
 async function prepareFollowUp(
   item: QueuedFollowUp,
 ): Promise<PreparedFollowUp> {
-  const runtime = resolveFollowUpRuntime(item.chat_jid);
-  if (!runtime) return { messages: [item] };
-  const expandContext = buildExpandContext(
-    item.chat_jid,
-    runtime.effectiveGroup,
-    runtime.effectiveGroup.created_by,
-  );
-  if (!expandContext) return { messages: [item] };
-  const { toSend, replies } = await expandMessagesIfNeeded(
-    [item],
-    expandContext,
-    undefined,
-    persistPluginExpansion,
-  );
-  return {
-    messages: toSend,
-    replyText: replies[0]?.text,
-  };
-}
-
-async function completeFollowUpReply(
-  item: QueuedFollowUp,
-  replyText: string,
-): Promise<boolean> {
-  const runId = item.delivery_run_id || crypto.randomUUID();
-  const deliveryUpdatedAt = new Date().toISOString();
-  const sourceJid = item.source_jid || item.chat_jid;
-  const followUpRuntime = resolveFollowUpRuntime(item.chat_jid);
-  if (!followUpRuntime) return false;
-  const delivery = await sendPluginExpanderReply(item.chat_jid, replyText, {
-    originalMessageId: item.id,
-    groupFolder: followUpRuntime.effectiveGroup.folder,
-    imRouteJid: getChannelType(sourceJid) ? sourceJid : null,
-    agentId: followUpRuntime.agentId,
-  });
-  if (!delivery.acknowledged) return false;
-  const released = releaseQueuedFollowUp(
-    item.chat_jid,
-    item.id,
-    runId,
-    deliveryUpdatedAt,
-  );
-  if (!released) return false;
-  completeOutOfBandMessage(item.chat_jid, {
-    timestamp: item.timestamp,
-    id: item.id,
-  });
-  broadcastFollowUpUpdate(item.chat_jid, {
-    id: item.id,
-    delivery_status: 'released',
-    delivery_run_id: runId,
-    delivery_updated_at: deliveryUpdatedAt,
-  });
-  if (getChannelType(sourceJid)) {
-    await clearStandaloneProcessingIndicator(item.chat_jid, sourceJid, item.id);
-  }
-  return true;
+  return { messages: [item] };
 }
 
 function enqueueReleasedFollowUp(item: QueuedFollowUp): void {
@@ -1672,21 +1610,6 @@ async function dispatchNextQueuedFollowUp(chatJid: string): Promise<void> {
     const prepared = await prepareFollowUp(item);
     if (!getQueuedFollowUp(chatJid, item.id)) {
       queue.releaseQueryReservation(chatJid, reservedRunId, true);
-      return;
-    }
-    if (prepared.replyText && prepared.messages.length === 0) {
-      const completed = await completeFollowUpReply(item, prepared.replyText);
-      if (!completed) {
-        restorePromotingFollowUp(chatJid, item.id);
-        broadcastFollowUpUpdate(chatJid);
-      }
-      queue.releaseQueryReservation(chatJid, reservedRunId, completed);
-      if (!completed) {
-        const retryTimer = setTimeout(() => {
-          void dispatchNextQueuedFollowUp(chatJid);
-        }, 1_000);
-        retryTimer.unref();
-      }
       return;
     }
     const result = injectPreparedFollowUp(item, prepared, reservedRunId);
@@ -3334,152 +3257,6 @@ function sendSystemMessage(jid: string, type: string, detail: string): void {
     timestamp,
     is_from_me: true,
   });
-}
-
-/**
- * Persist + broadcast a plugin-expander system reply (e.g. command conflict,
- * docker container offline). Uses the `__plugin__` synthetic sender so audits
- * can distinguish it from other system paths.
- *
- * When `imRouteJid` is a connected IM channel, also fan the reply out to that
- * channel so users on Feishu / QQ / WeChat see the response —
- * without this, plugin-expander system replies (conflict / offline-runner /
- * etc.) would silently drop on IM and the slash command appears to no-op
- * (#20 P1-1).
- */
-async function sendPluginExpanderReply(
-  jid: string,
-  content: string,
-  options: {
-    originalMessageId: string;
-    groupFolder: string;
-    imRouteJid?: string | null;
-    agentId?: string | null;
-  },
-): Promise<{ messageId: string; acknowledged: boolean }> {
-  const msgId = `sys_plugin_${crypto
-    .createHash('sha256')
-    .update(`${jid}:${options.originalMessageId}`)
-    .digest('hex')
-    .slice(0, 24)}`;
-  const timestamp = new Date().toISOString();
-  ensureChatExists(jid);
-  storeMessageDirect(
-    msgId,
-    jid,
-    '__plugin__',
-    ASSISTANT_NAME,
-    content,
-    timestamp,
-    true,
-  );
-  broadcastNewMessage(jid, {
-    id: msgId,
-    chat_jid: jid,
-    sender: '__plugin__',
-    sender_name: ASSISTANT_NAME,
-    content,
-    timestamp,
-    is_from_me: true,
-  });
-  const imRouteJid = options.imRouteJid;
-  if (!imRouteJid || !getChannelType(imRouteJid)) {
-    return { messageId: msgId, acknowledged: true };
-  }
-  const address = parseChannelAddress(imRouteJid);
-  const routeGroup = address
-    ? getRegisteredGroup(channelConversationJid(imRouteJid))
-    : undefined;
-  const accountId = address?.channelAccountId ?? routeGroup?.channel_account_id;
-  if (!address || !accountId) {
-    logger.error(
-      { jid, imRouteJid, originalMessageId: options.originalMessageId },
-      'Suppressed plugin-expander IM reply without an exact channel account',
-    );
-    return { messageId: msgId, acknowledged: false };
-  }
-
-  const runtime = ChannelTurnRuntime.start({
-    provider: address.provider,
-    accountId,
-    sourceJid: imRouteJid,
-    chatId: address.externalChatId,
-    rootId: address.rootMessageId,
-    threadId: address.threadId,
-    externalMessageId: `${options.originalMessageId}:plugin-expander-reply`,
-    correlationId: options.originalMessageId,
-    agentId: options.agentId ?? null,
-    sessionId: getSession(options.groupFolder, options.agentId) ?? null,
-  });
-  if (runtime.executionDisposition !== 'execute') {
-    const disposition = runtime.executionDisposition;
-    if (disposition === 'manual_reconciliation') {
-      const notified = await deliverChannelManualReconciliationNotice({
-        logicalChatJid: jid,
-        scopeKey: channelTurnScope(options.groupFolder, options.agentId),
-        targetJid: imRouteJid,
-        runtime,
-        agentId: options.agentId,
-        route: {
-          provider: address.provider,
-          accountId,
-          sourceJid: imRouteJid,
-          chatId: address.externalChatId,
-          rootId: address.rootMessageId,
-          threadId: address.threadId,
-        },
-      });
-      runtime.dispose();
-      return { messageId: msgId, acknowledged: notified };
-    }
-    const existing = getChannelTurnRun(runtime.runId);
-    runtime.dispose();
-    return {
-      messageId: msgId,
-      acknowledged: existing?.status === 'completed',
-    };
-  }
-
-  const scopeKey = channelTurnScope(options.groupFolder, options.agentId);
-  const scope = bindChannelOutboxScope(scopeKey, runtime, {
-    provider: address.provider,
-    accountId,
-    sourceJid: imRouteJid,
-    chatId: address.externalChatId,
-    rootId: address.rootMessageId,
-    threadId: address.threadId,
-  });
-  let acknowledged = false;
-  try {
-    acknowledged = await sendImWithRetry(imRouteJid, content, [], {
-      scopeKey,
-      scopeToken: scope.token,
-      operationKey: `plugin-expander:${options.originalMessageId}:${msgId}`,
-      ordinalSlot: 'plugin-expander-reply',
-    });
-    if (acknowledged) {
-      acknowledged =
-        runtime.markFinalizing() &&
-        runtime.complete({
-          cursorCommitted: true,
-          replyDelivered: true,
-          inputTurnId: options.originalMessageId,
-        });
-    } else {
-      const uncertain = getUncertainChannelOutboxForTurn(runtime.runId);
-      if (uncertain) {
-        runtime.interrupt(
-          `Plugin-expander delivery ${uncertain.id} is uncertain; manual reconciliation required`,
-        );
-      } else {
-        runtime.retry('Plugin-expander reply was not physically acknowledged');
-      }
-    }
-  } finally {
-    activeChannelOutboxScopes.unbind(scopeKey, scope);
-    runtime.dispose();
-  }
-  return { messageId: msgId, acknowledged };
 }
 
 function getSessionClaudeDir(folder: string, agentId?: string): string {
@@ -5220,43 +4997,6 @@ function getAvailableGroups(): AvailableGroup[] {
     }));
 }
 
-/**
- * Build an ExpandContext for plugin slash-command expansion. Resolves the
- * runtime owner / cwd / executionMode / active container name.
- *
- * Returns null when the group has no resolvable owner — in that case callers
- * skip expansion and fall through to the raw message. Plugin commands require
- * a per-user runtime so an ownerless group simply has no plugins to expand.
- *
- * `ownerOverride` lets callers pin a specific owner when a caller already
- * resolved the workspace identity.
- */
-function buildExpandContext(
-  chatJid: string,
-  group: RegisteredGroup,
-  ownerOverride?: string | null,
-): ExpandContext | null {
-  const ownerId = ownerOverride ?? group.created_by;
-  if (
-    (group.executionMode || 'container') === 'host' &&
-    !canExecuteOnHost(ownerId ? getUserById(ownerId) : undefined)
-  ) {
-    // Plugin slash commands may execute inline Bash before the Agent runner is
-    // started. Apply the same live host authorization boundary here so a
-    // downgraded owner cannot bypass the runHostAgent gate.
-    return null;
-  }
-  return makeExpandContext({
-    chatJid,
-    groupFolder: group.folder,
-    ownerId,
-    executionMode: group.executionMode,
-    customCwd: group.customCwd,
-    groupsDir: GROUPS_DIR,
-    containerName: queue.getActiveContainerName(chatJid),
-  });
-}
-
 function collectPersistedReferencedMessageIds(
   chatJid: string,
   messages: NewMessage[],
@@ -5659,79 +5399,6 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   // Publish the current IM reply route so the IPC watcher can forward
   // send_message outputs to the correct IM channel.
   activeImReplyRoutes.set(effectiveGroup.folder, replySourceImJid);
-
-  // Plugin command expander (DMI commands): replace `/foo` slash-commands
-  // contributed by enabled plugins with their fully-rendered prompt body
-  // before the agent ever sees them. Conflicts / offline-container errors
-  // become in-band system replies that advance the cursor without spawning
-  // a runner.
-  {
-    const fallbackExpandCtx = buildExpandContext(
-      chatJid,
-      effectiveGroup,
-      effectiveGroup.created_by,
-    );
-    if (fallbackExpandCtx) {
-      const { toSend, replies } = await expandMessagesIfNeeded(
-        missedMessages,
-        fallbackExpandCtx,
-        undefined,
-        persistPluginExpansion,
-      );
-      // When toSend still has unprocessed messages, only the next-pull cursor
-      // advances for replies — committing the recovery cursor past a reply
-      // could lose earlier toSend messages on crash before the agent runs
-      // (#18 P2-bug-2). When toSend is empty we fully commit.
-      const advanceReplyCursor =
-        toSend.length === 0
-          ? completeOutOfBandMessage
-          : advanceNextPullCursorOnly;
-      let pluginRepliesAcknowledged = true;
-      for (const r of replies) {
-        // Per-reply IM target: prefer the originating message's source_jid
-        // (so individual replies route back to whoever sent the slash command,
-        // even in mixed batches), falling back to the batch's IM source
-        // computed earlier.
-        const perMsgImJid =
-          r.originalMsg.source_jid && getChannelType(r.originalMsg.source_jid)
-            ? r.originalMsg.source_jid
-            : replySourceImJid;
-        const delivery = await sendPluginExpanderReply(chatJid, r.text, {
-          originalMessageId: r.originalMsg.id,
-          groupFolder: effectiveGroup.folder,
-          imRouteJid: perMsgImJid,
-        });
-        if (!delivery.acknowledged) {
-          pluginRepliesAcknowledged = false;
-          break;
-        }
-        if (perMsgImJid) {
-          await clearStandaloneProcessingIndicator(
-            chatJid,
-            perMsgImJid,
-            r.originalMsg.id,
-          );
-        }
-        // Advance cursor to the original user message timestamp so the next
-        // poll skips it. setCursors (not advance) bypasses any stale future
-        // cursor when the reply is the only output of this batch.
-        advanceReplyCursor(chatJid, {
-          timestamp: r.originalMsg.timestamp,
-          id: r.originalMsg.id,
-        });
-      }
-      if (!pluginRepliesAcknowledged) return false;
-      if (toSend.length === 0) {
-        // Reply-only batch never spawns a runner — the normal completion
-        // path's finally block (line ~3532) is skipped, so clear the IM
-        // route here. Otherwise a stale entry leaks across batches and the
-        // next IPC send_message/send_file mirrors to the wrong IM chat.
-        activeImReplyRoutes.delete(effectiveGroup.folder);
-        return true;
-      }
-      missedMessages = toSend;
-    }
-  }
 
   if (effectiveGroup.created_by) {
     learnDirectMessageOwners(effectiveGroup.created_by, missedMessages);
@@ -13923,92 +13590,6 @@ async function processAgentConversation(
     : undefined;
   const isAdminHome = isHome && effectiveOwner?.role === 'admin';
 
-  // Plugin command expander (DMI commands) — agent conversation cold start.
-  // Replies go to virtualChatJid so the agent UI tab routes them correctly;
-  // cursor advancement also uses the virtual JID since that's the read key.
-  {
-    const fallbackExpandCtx = buildExpandContext(
-      virtualChatJid,
-      effectiveGroup,
-      effectiveGroup.created_by,
-    );
-    if (fallbackExpandCtx) {
-      const { toSend, replies } = await expandMessagesIfNeeded(
-        missedMessages,
-        fallbackExpandCtx,
-        undefined,
-        persistPluginExpansion,
-      );
-      // Same crash-safe split as processGroupMessages (#18 P2-bug-2):
-      // hold the recovery cursor when toSend still has work pending.
-      const advanceReplyCursor =
-        toSend.length === 0
-          ? completeOutOfBandMessage
-          : advanceNextPullCursorOnly;
-      // Resolve IM target so plugin replies fan out to the originating IM
-      // channel (#20 P1-1). Per-reply: prefer that message's source_jid;
-      // otherwise fall back to the agent's last_im_jid, but only if its
-      // channel is currently connected (stale jids would just retry-fail).
-      const persistedAgentImJid = (() => {
-        const agentRow = getAgent(agentId);
-        const candidate = agentRow?.last_im_jid;
-        if (
-          candidate &&
-          getChannelType(candidate) &&
-          imManager.isChannelAvailableForJid(candidate)
-        ) {
-          return candidate;
-        }
-        return null;
-      })();
-      let agentPluginRepliesAcknowledged = true;
-      for (const r of replies) {
-        const perMsgImJid =
-          r.originalMsg.source_jid && getChannelType(r.originalMsg.source_jid)
-            ? r.originalMsg.source_jid
-            : persistedAgentImJid;
-        const delivery = await sendPluginExpanderReply(virtualChatJid, r.text, {
-          originalMessageId: r.originalMsg.id,
-          groupFolder: effectiveGroup.folder,
-          imRouteJid: perMsgImJid,
-          agentId,
-        });
-        if (!delivery.acknowledged) {
-          agentPluginRepliesAcknowledged = false;
-          break;
-        }
-        if (perMsgImJid) {
-          await clearStandaloneProcessingIndicator(
-            virtualChatJid,
-            perMsgImJid,
-            r.originalMsg.id,
-          );
-        }
-        advanceReplyCursor(virtualChatJid, {
-          timestamp: r.originalMsg.timestamp,
-          id: r.originalMsg.id,
-        });
-      }
-      if (!agentPluginRepliesAcknowledged) return false;
-      if (toSend.length === 0) {
-        // Spawn agents are fire-and-forget: if expansion consumed all
-        // messages with replies, mark as completed so the agent slot is freed.
-        if (agent.kind === 'spawn' && agent.status === 'idle') {
-          updateAgentStatus(agentId, 'completed');
-          broadcastAgentStatus(
-            chatJid,
-            agentId,
-            'completed',
-            agent.name,
-            agent.prompt,
-          );
-        }
-        return;
-      }
-      missedMessages = toSend;
-    }
-  }
-
   // The batch runtime id is needed before the rest of the conversation setup.
   // Keep this declaration above startBatch so startup recovery cannot hit the
   // temporal dead zone while rebuilding an agent turn.
@@ -16916,10 +16497,9 @@ async function startMessageLoop(): Promise<void> {
           );
           let messagesToSend =
             allPending.length > 0 ? allPending : groupMessages;
-          // The receipt covers the exact pre-expansion DB batch. Plugin replies
-          // removed from `messagesToSend` below are already handled out-of-band,
-          // so a healthy agent result for the remainder may safely commit the
-          // full batch, but never an unrelated cursor inserted inside its range.
+          // The receipt covers the exact DB batch handed to the runner, so a
+          // healthy agent result may safely commit the full batch, but never
+          // an unrelated cursor inserted inside its range.
           const deliveryTarget = createIpcDeliveryTarget(
             chatJid,
             messagesToSend,
@@ -16938,97 +16518,6 @@ async function startMessageLoop(): Promise<void> {
                     activeEffectiveGroup.channel_account_id,
                 })
               : null;
-
-          // Plugin expansion may execute inline commands inside the active
-          // container. Reject a cross-Bot warm path before expansion so even
-          // those commands cannot observe the previous Bot's credentials.
-          if (
-            queue.requiresFeishuCliContainerRestart(chatJid, {
-              feishuCliAccountId: requiredFeishuCliAccountId,
-            })
-          ) {
-            queue.enqueueMessageCheck(chatJid);
-            continue;
-          }
-
-          // Plugin command expander (DMI commands) — same as cold-start path.
-          // Active-runner IPC injection: replies advance the cursor without
-          // touching the running agent; full-reply batches skip sendMessage().
-          //
-          // Resolve effectiveGroup so sibling-JID groups (home main + non-home
-          // child sharing a folder) inherit executionMode / customCwd /
-          // created_by from the home sibling — without this, plugin expansion
-          // returns null on the non-home sibling and DMI commands stop working
-          // once a runner is up (#18 P2-bug-3).
-          {
-            const fallbackExpandCtx = buildExpandContext(
-              chatJid,
-              activeEffectiveGroup,
-              activeEffectiveGroup.created_by,
-            );
-            if (fallbackExpandCtx) {
-              const { toSend, replies } = await expandMessagesIfNeeded(
-                messagesToSend,
-                fallbackExpandCtx,
-                undefined,
-                persistPluginExpansion,
-              );
-              // Hold the recovery cursor while toSend still has work pending
-              // (#18 P2-bug-2 also applies on the active path).
-              const advanceReplyCursor =
-                toSend.length === 0
-                  ? completeOutOfBandMessage
-                  : advanceNextPullCursorOnly;
-              // IM fan-out (#20 P1-1): if chatJid itself is an IM channel
-              // we route to itself; otherwise prefer the originating message's
-              // source_jid (mixed batches retain individual user routing).
-              const directImReply = getChannelType(chatJid) !== null;
-              let warmPluginRepliesAcknowledged = true;
-              for (const r of replies) {
-                let imRouteJid: string | null = null;
-                if (directImReply) {
-                  imRouteJid = chatJid;
-                } else if (
-                  r.originalMsg.source_jid &&
-                  getChannelType(r.originalMsg.source_jid)
-                ) {
-                  imRouteJid = r.originalMsg.source_jid;
-                }
-                const delivery = await sendPluginExpanderReply(
-                  chatJid,
-                  r.text,
-                  {
-                    originalMessageId: r.originalMsg.id,
-                    groupFolder: activeEffectiveGroup.folder,
-                    imRouteJid,
-                  },
-                );
-                if (!delivery.acknowledged) {
-                  warmPluginRepliesAcknowledged = false;
-                  break;
-                }
-                if (imRouteJid) {
-                  await clearStandaloneProcessingIndicator(
-                    chatJid,
-                    imRouteJid,
-                    r.originalMsg.id,
-                  );
-                }
-                advanceReplyCursor(chatJid, {
-                  timestamp: r.originalMsg.timestamp,
-                  id: r.originalMsg.id,
-                });
-              }
-              if (!warmPluginRepliesAcknowledged) {
-                queue.enqueueMessageCheck(chatJid);
-                continue;
-              }
-              if (toSend.length === 0) {
-                continue;
-              }
-              messagesToSend = toSend;
-            }
-          }
 
           // Home and non-home groups now share the same IPC injection path.
           // Reply routing is dynamically updated via activeRouteUpdaters when
@@ -19283,38 +18772,10 @@ async function main(): Promise<void> {
 
   loadState();
 
-  // Plugin catalog scan: one shot 5s after startup + every 1h thereafter.
-  // Disabled when SystemSettings.pluginAutoScan = false; admin can still
-  // trigger via POST /api/plugins/catalog/scan. scanHostMarketplaces has
-  // an in-flight Promise mutex, so UI button / startup / periodic timer
-  // can overlap safely.
-  // NOTE: this runs once at startup; runtime toggle requires restart.
-  let startupPluginScanTimer: ReturnType<typeof setTimeout> | null = null;
-  let periodicPluginScanInterval: ReturnType<typeof setInterval> | null = null;
   let channelReliabilityRecoveryLoop: ReturnType<
     typeof startChannelReliabilityRecoveryLoop
   > | null = null;
   let unsubscribeChannelReadyRecovery: (() => void) | null = null;
-  if (getSystemSettings().pluginAutoScan) {
-    startupPluginScanTimer = setTimeout(() => {
-      scanHostMarketplaces().catch((err) =>
-        logger.warn({ err }, 'startup plugin catalog scan failed'),
-      );
-    }, 5000);
-
-    periodicPluginScanInterval = setInterval(
-      () => {
-        scanHostMarketplaces().catch((err) =>
-          logger.warn({ err }, 'periodic plugin catalog scan failed'),
-        );
-      },
-      60 * 60 * 1000,
-    );
-  } else {
-    logger.info(
-      'Plugin catalog auto-scan disabled by SystemSettings.pluginAutoScan',
-    );
-  }
 
   // --- Channel reload helpers (hot-reload on config save) ---
 
@@ -19349,8 +18810,6 @@ async function main(): Promise<void> {
       feishuSyncInterval = null;
     }
 
-    if (startupPluginScanTimer) clearTimeout(startupPluginScanTimer);
-    if (periodicPluginScanInterval) clearInterval(periodicPluginScanInterval);
     channelReliabilityRecoveryLoop?.stop();
     channelReliabilityRecoveryLoop = null;
     unsubscribeChannelReadyRecovery?.();
@@ -19699,7 +19158,6 @@ async function main(): Promise<void> {
         saveState();
       }
     },
-    hasEarlierPendingMessages: hasEarlierPendingMessage,
     reloadFeishuConnection,
     reloadUserIMConfig,
     reconnectUserIMChannels,

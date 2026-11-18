@@ -210,10 +210,6 @@ const appRoutes = createRoutesFromElements(
         element={<Navigate to="/capabilities/mcp" replace />}
       />
       <Route
-        path="/plugins"
-        element={<Navigate to="/capabilities/plugins" replace />}
-      />
-      <Route
         path="/settings"
         element={
           <Suspense fallback={null}>
