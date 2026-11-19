@@ -1,9 +1,13 @@
 {
-  "task": "wechat-pairing-ui-branch - 微信账号连接弹窗补上配对码区块（AccountPairingSection 移出 authMode 三元分支，qr_session 账号同样渲染）",
-  "base": "c011258",
+  "task": "direct-bind-ui-alignment - 私聊绑定入口与后端策略对齐（换绑对话框按 targetType 过滤目标、私聊只展示会话目标、/list 提示语按可绑定性区分，不改后端策略）",
+  "base": "e6f199c",
   "allow": [
-    "web/src/components/settings/ChannelAccountsManager.tsx",
-    "tests/wechat-pairing-dialog-dom.test.tsx",
-    "docs/wechat-pairing-ui-branch-plan.md"
+    "web/src/components/settings/BindingTargetDialog.tsx",
+    "web/src/components/settings/BindingsSection.tsx",
+    "web/src/components/settings/hooks/useImBindings.ts",
+    "src/im-command-utils.ts",
+    "src/index.ts",
+    "tests/direct-bind-ui-alignment.test.tsx",
+    "docs/direct-bind-ui-alignment-plan.md"
   ]
 }
