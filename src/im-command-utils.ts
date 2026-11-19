@@ -252,6 +252,18 @@ export function formatSystemStatus(
   return lines.join('\n');
 }
 
+// ─── Bind Hint ─────────────────────────────────────────────────
+
+/**
+ * /list 尾部的绑定提示语，按当前聊天能否直接绑定工作区（话题群）区分，
+ * 避免对私聊/普通群教 /bind <工作区> 这种会被策略拒绝的用法。
+ */
+export function buildBindHint(threadMapCapable: boolean): string {
+  return threadMapCapable
+    ? '💡 /bind <工作区> 绑定工作区'
+    : '💡 /bind <工作区>/<会话短ID> 绑定会话；/unbind 恢复默认工作区';
+}
+
 // ─── IM Owner Gate ──────────────────────────────────────────────
 
 /**

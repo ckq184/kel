@@ -19,6 +19,18 @@ type WorkspaceSessionInfo = Omit<AgentInfo, 'kind'> & {
   is_main?: boolean;
 };
 
+/**
+ * Map a conversation kind to the rebind dialog's target type. Groups bind
+ * workspaces (main sessions); direct chats and unknown kinds bind specific
+ * sessions — mirroring the backend's conversationBindingPolicyError so the
+ * dialog never offers a target the API would reject with 400.
+ */
+export function resolveBindingTargetType(
+  kind: 'group' | 'direct' | 'unknown' | null | undefined,
+): 'workspace' | 'session' {
+  return kind === 'group' ? 'workspace' : 'session';
+}
+
 export function useImBindings() {
   const [bindings, setBindings] = useState<AvailableImGroup[]>([]);
   const [loading, setLoading] = useState(true);

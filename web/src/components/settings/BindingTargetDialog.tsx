@@ -49,15 +49,28 @@ export function BindingTargetDialog({
     if (!open) setFilter('');
   }, [open]);
 
+  // Filter by targetType before rendering: the dialog must never offer a
+  // target the backend binding policy would reject (direct chats cannot
+  // bind workspace mains, groups cannot bind individual sessions).
+  const visible = useMemo(() => {
+    if (targetType === 'workspace') {
+      return targets.filter((t) => t.type === 'main');
+    }
+    if (targetType === 'session') {
+      return targets.filter((t) => t.type === 'session');
+    }
+    return targets;
+  }, [targets, targetType]);
+
   const filtered = useMemo(() => {
-    if (!filter.trim()) return targets;
+    if (!filter.trim()) return visible;
     const q = filter.trim().toLowerCase();
-    return targets.filter(
+    return visible.filter(
       (t) =>
         t.groupName.toLowerCase().includes(q) ||
         (t.sessionName && t.sessionName.toLowerCase().includes(q)),
     );
-  }, [targets, filter]);
+  }, [visible, filter]);
 
   // Group targets by Agent profile, then workspace.
   const grouped = useMemo(() => {
@@ -107,7 +120,7 @@ export function BindingTargetDialog({
           </DialogTitle>
         </DialogHeader>
 
-        {!targetsLoading && targets.length > 3 && (
+        {!targetsLoading && visible.length > 3 && (
           <SearchInput
             value={filter}
             onChange={setFilter}
@@ -130,7 +143,7 @@ export function BindingTargetDialog({
             </div>
           )}
 
-          {!targetsLoading && targets.length === 0 && (
+          {!targetsLoading && visible.length === 0 && (
             <div className="text-center py-8 text-muted-foreground text-sm">
               {targetType === 'workspace'
                 ? '暂无可绑定的工作区。请先创建工作区。'

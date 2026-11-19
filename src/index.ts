@@ -307,6 +307,7 @@ import {
   StreamingCardController,
 } from './feishu-streaming-card.js';
 import {
+  buildBindHint,
   formatContextMessages,
   formatWorkspaceList,
   formatSystemStatus,
@@ -3580,13 +3581,25 @@ function handleListCommand(chatJid: string): string {
   const currentAgentId = group.target_agent_id ?? null;
   const currentOnMain = !currentAgentId;
 
+  // 与 handleBindCommand 同源的判定：话题群可直接绑工作区，其余聊天只能
+  // 绑具体会话——提示语不得教会被策略拒绝的用法。
+  const threadMapCapable =
+    group.binding_mode === 'thread_map' ||
+    isThreadMapCapableChat({
+      channel_type: getChannelType(chatJid),
+      chat_mode: group.feishu_chat_mode,
+      group_message_type: group.feishu_group_message_type,
+    });
+
   return (
     formatWorkspaceList(
       workspaces,
       location.folder,
       currentAgentId,
       currentOnMain,
-    ) + '\n💡 使用 /bind <workspace> 或 /bind <workspace>/<会话短ID>'
+    ) +
+    '\n' +
+    buildBindHint(threadMapCapable)
   );
 }
 

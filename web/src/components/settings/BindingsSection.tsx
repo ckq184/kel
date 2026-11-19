@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { SearchInput } from '@/components/common/SearchInput';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
-import { useImBindings } from './hooks/useImBindings';
+import { resolveBindingTargetType, useImBindings } from './hooks/useImBindings';
 import { ImBindingRow } from './ImBindingRow';
 import { BindingTargetDialog } from './BindingTargetDialog';
 import { api } from '../../api/client';
@@ -322,7 +322,7 @@ export function BindingsSection() {
               渠道绑定
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
-              群聊绑定工作区，私聊绑定主会话或指定会话。两类绑定互不混用。
+              群聊绑定工作区，私聊绑定指定会话；私聊回到主会话请使用「恢复账号默认工作区」。
             </p>
           </div>
           <Button
@@ -500,9 +500,7 @@ export function BindingsSection() {
         imGroupName={rebindGroup?.name || ''}
         targets={selectableTargets}
         targetsLoading={targetsLoading}
-        targetType={
-          rebindGroup?.conversation_kind === 'group' ? 'workspace' : 'both'
-        }
+        targetType={resolveBindingTargetType(rebindGroup?.conversation_kind)}
         canUnbind={
           !!(
             (rebindGroup?.bound_session_id ?? rebindGroup?.bound_agent_id) ||

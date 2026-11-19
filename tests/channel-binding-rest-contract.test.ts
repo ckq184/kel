@@ -52,7 +52,7 @@ describe('channel binding REST contract', () => {
       'Boolean(item.bound_session_id ?? item.bound_agent_id)',
     );
     expect(section).toContain(
-      "rebindGroup?.conversation_kind === 'group' ? 'workspace' : 'both'",
+      'resolveBindingTargetType(rebindGroup?.conversation_kind)',
     );
     expect(section).toContain("item.conversation_kind === 'direct'");
     expect(section).toContain("item.conversation_kind === 'group'");

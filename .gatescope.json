@@ -8,6 +8,7 @@
     "src/im-command-utils.ts",
     "src/index.ts",
     "tests/direct-bind-ui-alignment.test.tsx",
+    "tests/channel-binding-rest-contract.test.ts",
     "docs/direct-bind-ui-alignment-plan.md"
   ]
 }
