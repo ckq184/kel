@@ -1,3 +1,12 @@
+/**
+ * Pi 运行时的会话适配层：把 `@earendil-works/pi-coding-agent` 的
+ * AgentSession 事件流翻译为运行时无关的 RuntimeEvent 契约（../types.ts），
+ * 供 pi-runner 上层消费。除 SDK 自身事件外，还经 PiSubAgentAdapter 挂接
+ * 子代理生命周期事件（同一监听器集合分发）。
+ *
+ * 计量核心在 aggregatePiTurnUsage（见其头注释）：回合级 usage 聚合 +
+ * 幂等 eventId，语义必须与宿主账本（usage-service / kaboo-pricing）对齐。
+ */
 import type {
   AgentSession,
   AgentSessionEvent,
@@ -134,6 +143,7 @@ export function aggregatePiTurnUsage(
   };
 }
 
+/** 单个 SDK 事件 → RuntimeEvent 的映射；未识别类型返回 undefined（静默丢弃）。 */
 function mapPiEvent(
   event: AgentSessionEvent,
   sessionId: string,
@@ -240,6 +250,11 @@ function mapPiEvent(
   }
 }
 
+/**
+ * RuntimeSession 的 Pi 实现：订阅 SDK 事件并转发给监听器，提供
+ * prompt/steer/followUp/abort/compact 五个操作。dispose 须先退订两个事件
+ * 源（SDK + 子代理总线）再释放会话，防 disposed 后仍收到回调。
+ */
 export class PiRuntimeSession implements RuntimeSession {
   readonly kind = 'pi' as const;
   private readonly listeners = new Set<RuntimeEventListener>();

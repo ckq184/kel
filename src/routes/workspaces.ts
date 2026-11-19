@@ -1,3 +1,20 @@
+/**
+ * 工作区治理 REST API（挂载于 /api/workspaces，见 src/web.ts）。
+ *
+ * 路由一览：
+ * - GET  /                        可见工作区摘要列表
+ * - GET  /mounts                  可见工作区的渠道挂载聚合
+ * - GET  /:jid                    单工作区详情（治理视角含运行时会话/挂载明细）
+ * - GET  /:jid/runtime-sessions   运行时会话清单（仅 owner/管理员）
+ * - GET  /:jid/channel-mounts     渠道挂载清单（仅 owner/管理员）
+ * - GET/PATCH /:jid/owner-profile 主 CKQClaw 的 Owner Profile 读写
+ *   （仅 home 工作区创建者；revision 乐观锁 → 409）
+ *
+ * 权限模型：resolveWorkspaceAccess 统一收敛——host 执行组要求管理员
+ * （home 组创建者例外）+ canAccessGroup；不可见一律 404 不暴露存在性。
+ * canInspectGovernance（owner/管理员）之外的字段（owner_user_id、
+ * execution_mode、运行时会话、挂载明细）从响应中剔除而非报错。
+ */
 import { Hono, type Context } from 'hono';
 import type { Variables } from '../web-context.js';
 import {

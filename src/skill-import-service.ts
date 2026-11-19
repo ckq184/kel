@@ -1,3 +1,22 @@
+/**
+ * 技能导入服务——从 ZIP 压缩包或 Git 仓库安装技能目录（安全敏感）。
+ *
+ * 威胁模型与纵深防御（每层独立成立，勿因"上游已校验"而删任一层）：
+ * 1. 入口校验：ZIP 大小上限 / Git URL 仅 HTTPS 且禁内嵌凭据 /
+ *    主机必须解析为公网地址（assertResolvesToPublicAddress，防 SSRF）；
+ * 2. 归档条目校验：路径穿越（`..`）、绝对路径、`\0` 字节、符号链接条目
+ *    全部拒绝（zip-slip 防御）；
+ * 3. 解压后二次校验（assertSafeSkillTree）：文件数 / 总字节数 / 再查符号链接
+ *    ——条目头声明的大小可能撒谎，以落盘实际状态为准；
+ * 4. Git clone 加固：pinned HTTPS 代理 + 禁重定向 / 禁 file 协议 /
+ *    禁子模块 + shallow 单分支；clone 期间由目录配额监视器
+ *    （runCommandWithDirectoryQuota）轮询磁盘占用，超限即杀整个进程组；
+ * 5. 事务式安装（installSkillDirectoriesTransactionally）：staging 目录暂存 →
+ *    旧版本先备份 → rename 落位 → commit 回调（调用方在此落库）→
+ *    任一步失败则删除新装目录并从备份回滚，不留半装状态。
+ *
+ * 消费方：`src/routes/skills.ts` 的导入 API。
+ */
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -16,10 +35,13 @@ import {
 } from './safe-git-proxy.js';
 
 const execFileAsync = promisify(execFile);
+/** 解压后总字节数上限（防解压炸弹；ZIP 与 Git 共用）。 */
 const MAX_EXPANDED_BYTES = 25 * 1024 * 1024;
+/** 归档条目数与目录扫描深度上限（防耗尽 inode / 深层遍历拖垮事件循环）。 */
 const MAX_ENTRIES = 1_000;
 const MAX_SCAN_DEPTH = 5;
 export const MAX_GIT_REPOSITORY_BYTES = 64 * 1024 * 1024;
+/** 子进程合并输出的保留上限（防超长报错撑爆内存/日志）。 */
 const MAX_COMMAND_OUTPUT_BYTES = 64 * 1024;
 
 export interface SkillImportResult {
@@ -61,6 +83,11 @@ function directorySizeUntil(root: string, maxBytes: number): number {
   return total;
 }
 
+/**
+ * 执行子进程并以轮询方式监视目标目录的磁盘占用：超配额 / 超时 / 监视器自身
+ * 出错时杀掉整个进程组（detached + 负 PID，防孙进程残留）。输出累计截断到
+ * MAX_COMMAND_OUTPUT_BYTES，仅用于失败时的报错详情。
+ */
 export function runCommandWithDirectoryQuota(
   options: DirectoryQuotaCommandOptions,
 ): Promise<void> {
@@ -165,11 +192,13 @@ export function runCommandWithDirectoryQuota(
   });
 }
 
+/** AdmZip 把外部属性高位字存 unix mode；按 S_IFMT 掩码比对 S_IFLNK 判断符号链接。 */
 function isSymlinkMode(attributes: number): boolean {
   const unixMode = (attributes >>> 16) & 0xffff;
   return (unixMode & 0xf000) === 0xa000;
 }
 
+/** 归档条目名白名单式校验：拒绝绝对路径、盘符、`\0` 与 `..` 穿越，返回归一化名。 */
 function validateArchiveEntryName(entryName: string): string {
   const normalized = entryName.replace(/\\/g, '/');
   if (
@@ -187,6 +216,7 @@ function validateArchiveEntryName(entryName: string): string {
   return normalized;
 }
 
+/** 落盘后二次校验：lstat 逐项拒绝符号链接，累计文件数与字节数超限即抛错。 */
 function assertSafeSkillTree(root: string): void {
   let entries = 0;
   let totalBytes = 0;
@@ -213,6 +243,8 @@ function assertSafeSkillTree(root: string): void {
   visit(root);
 }
 
+/** 以 SKILL.md 为标记定位技能目录（限深度，跳过 .git / node_modules），
+ *  目录名即技能 ID——必须通过 validateSkillId，且全包不得重复。 */
 function findSkillDirectories(
   root: string,
 ): Array<{ id: string; dir: string }> {
@@ -247,6 +279,11 @@ function findSkillDirectories(
     .sort((left, right) => left.id.localeCompare(right.id));
 }
 
+/**
+ * 事务式安装：staging 暂存 →（replace 时）备份同名旧版 → rename 落位 →
+ * commit 回调（调用方在此持久化元数据）→ 清理备份。任一步抛错则删除已
+ * 落位的新目录、从备份还原旧版，保证目标目录不留半装状态。
+ */
 export function installSkillDirectoriesTransactionally(
   candidates: Array<{ id: string; dir: string }>,
   targetRoot: string,
@@ -298,6 +335,13 @@ export function installSkillDirectoriesTransactionally(
   }
 }
 
+/**
+ * 从 Git 仓库导入技能。URL 先过 validateSafeHttpsUrl / 禁内嵌凭据 /
+ * 公网地址解析三道闸；clone 走 pinned 代理并显式禁重定向、file 协议与
+ * 子模块（防代理绕过与本地协议注入），ref 白名单字符集，subdirectory
+ * 归一化后校验不得逃出仓库根。clone 完成后按 ZIP 同一套标准
+ * （assertSafeSkillTree + 事务安装）落盘。
+ */
 export async function importSkillsFromGit(options: {
   url: string;
   ref?: string;
@@ -400,6 +444,11 @@ export async function importSkillsFromGit(options: {
   }
 }
 
+/**
+ * 从 ZIP 压缩包导入技能：先校验包大小（1B–10MB），逐条目做路径安全与
+ * 符号链接检查并按条目头累计解压大小（超限先拒不解压），解压后再跑
+ * assertSafeSkillTree 以实际落盘状态兜底，最后事务安装。
+ */
 export function importSkillsFromZip(options: {
   archive: Buffer;
   archiveName: string;

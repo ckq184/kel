@@ -1,3 +1,13 @@
+/**
+ * 渠道账号 store（对应 /api/channel-accounts CRUD + onboarding 流程）。
+ *
+ * 要点：
+ * - 账号按「provider → 默认优先 → 创建时间」排序；is_default 冲突由
+ *   mergeChannelAccount 就地消解（同 provider 旧默认降级）；
+ * - onboarding（扫码/验证码/登出）各步返回最新 account + onboarding 状态，
+ *   统一走 mergeChannelAccount 合入；实时传输状态变化由 WS 事件驱动
+ *   applyStatusEvent（不整条覆盖账号）。
+ */
 import { create } from 'zustand';
 import { api } from '../api/client';
 

@@ -1,3 +1,18 @@
+/**
+ * Agent Builder 草稿生命周期：prepare（校验+预览）→ 确认短语发布 → discard。
+ *
+ * 安全设计：
+ * - 发布必须由「prepare 之后的另一条人类消息」逐字携带随机确认短语
+ *   （`确认发布 AGENT-XXXX`）——同一条消息、缺失短语或旧草稿一律拒绝，
+ *   防止 Agent 自己或重放旧上下文完成发布；
+ * - 主 CKQClaw（is_default）禁止经 Builder 自改；
+ * - 发布持「系统 + 用户」能力锁与 Agent 档案锁，技能/MCP 删除与发布互斥，
+ *   且引用校验只在双锁持稳后复验（防校验与提交间隙内能力消失）；
+ * - 提交外围用 quiesceWorkspaceRunnersAroundCommit 排空受影响工作区的
+ *   在途运行；提交后清理失败则对该工作区置运行安全阻断（fail-closed）。
+ *
+ * 消费方：`src/routes/agents.ts` 与 IM 内的 Builder 对话流。
+ */
 import crypto from 'node:crypto';
 import path from 'node:path';
 
@@ -250,6 +265,12 @@ export function getAgentBuilderDraftForBuilder(
   return draft;
 }
 
+/**
+ * 准备草稿：定义经 zod 归一化 + 角色权限/引用校验后落库，生成一次性确认
+ * 短语并返回变更预览（create/update、变更字段、受影响工作区数）。
+ * 版本与并发防线：目标 Agent 版本冲突、草稿 revision 冲突、草稿禁止中途
+ * 换绑定目标均在此拦截。
+ */
 export function prepareAgentBuilderDraft(
   actor: AgentBuilderActor,
   input: AgentBuilderPrepareInput,
@@ -340,6 +361,12 @@ export function prepareAgentBuilderDraft(
   };
 }
 
+/**
+ * 发布草稿：校验确认短语（须为 prepare 之后的新人类消息）→ 双层锁内幂等
+ * 复检（并发发布直接返回已发布结果）→ 排空受影响工作区在途运行后提交
+ * （create 或 update Agent 档案）。提交已持久化但运行时清理失败时抛
+ * "published but runtime cleanup failed"——调用方据此知道档案已生效。
+ */
 export async function publishAgentBuilderDraft(
   actor: AgentBuilderActor,
   draftId: string,

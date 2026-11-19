@@ -1,3 +1,29 @@
+/**
+ * CKQClaw 宿主进程入口与总编排。单文件承载多职责，导览如下（按行序）：
+ *
+ * - stream 事件 → 飞书卡片转发（feedStreamEventToCard）
+ * - IPC 投递游标与回执（setCursors / advanceCursors / commitIpcDeliveryReceipts）
+ * - 卡死 runner 扫描（STUCK_RUNNER_* 常量与 startStuckRunnerScan）
+ * - 回复路由准入与每回合回复上限（ReplyRouteUpdater / MAX_REPLIES_PER_TURN）
+ * - 追问（follow-up）队列：入队 / 派发 / 提升 / 取消 / 编辑 / 重排 / steering 中断
+ * - IM 路由解析与群绑定（resolveImRoute / resolveEffectiveGroup / unbindImGroup）
+ * - 渠道输出口：deliverScopedChannelOutput、sendImWithRetry、各类系统通知、
+ *   任务图片/文件投递与 IPC 结算
+ * - IM 命令处理（handleCommand：/bind /new /allow /recall 等）
+ * - 状态持久化与群元数据同步（loadState / saveState / registerGroup / syncGroupMetadata）
+ * - 群消息主流程（processGroupMessages）与任务 IPC（processTaskIpc）
+ * - Agent 运行核心（runAgent）与会话处理（processAgentConversation）
+ * - 消息主循环（startMessageLoop）与启动恢复（recoverPendingMessages 等）
+ * - 渠道事件处理器构建（buildOnNewChat / buildOnAgentMessage / 配对 / 授权 / 热重载）
+ *
+ * 启动顺序见文件末尾的 main()：数据迁移建库 → 状态恢复 → Web 服务器 →
+ * 三渠道（飞书/QQ/微信）连接池 → 调度器 → 渠道可靠性恢复 → IPC 消费 →
+ * 流式缓冲 → 消息主循环 → 卡死扫描。优雅关闭按 Phase 0–3 分阶段排空。
+ *
+ * 修改提示：新职责优先抽成独立模块——历史演进即不断从本文件抽出纯函数模块
+ * （task-routing.ts / reply-delivery.ts / turn-output-coordinator.ts 等均标注
+ * "Extracted from src/index.ts"），避免本文件继续膨胀。
+ */
 import './load-env.js'; // 必须最先执行：加载 .env 到 process.env，供后续模块（config/web 等）读取
 import { ChildProcess, execFile } from 'child_process';
 import crypto from 'crypto';

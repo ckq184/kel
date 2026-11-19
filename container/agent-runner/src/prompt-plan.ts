@@ -1,3 +1,20 @@
+/**
+ * 平台提示词装配器：把各来源（平台身份/引导、Agent 档案、交互与安全规则、
+ * 记忆、渠道格式等）装配为有序、带哈希与 token 估算的 PromptPlan。
+ *
+ * 设计要点：
+ * - 每个 block 携带 id/version/scope/owner/required/condition 及内容哈希——
+ *   该清单随 `context_audit` 事件上报（ClaudeContextPromptAudit），供
+ *   监控面板核对"模型实际看到了哪些提示词"；
+ * - PromptPlan.hash 只含 block 元数据（不含正文），同一提示词结构在
+ *   多次运行间可比对；
+ * - 块顺序是文档化约定（见 buildCkqclawPromptPlan 头注释），保持稳定、
+ *   勿随意调整；
+ * - token 估算刻意保守且零依赖（estimatePromptTokens），仅作 SDK 初始化
+ *   前的 preflight；SDK 的 getContextUsage() 才是权威值；
+ * - 体积护栏：估算 ≥50k token 告警、≥100k 报错（防意外膨胀的生成式
+ *   提示词；模型感知的精确限额在 SDK 初始化后另行评估）。
+ */
 import { createHash } from 'node:crypto';
 
 export type PromptBlockScope = 'main' | 'subagent' | 'both';

@@ -1,3 +1,9 @@
+/**
+ * 工作区容器环境配置 store（对应 /api/groups/:jid/env）。
+ *
+ * 凭据安全：后端只回传掩码（*Masked）与存在性（has*），明文 token 仅在
+ * 保存时提交、永不回显。configs 按 jid 缓存多份工作区配置。
+ */
 import { create } from 'zustand';
 import { api } from '../api/client';
 

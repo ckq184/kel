@@ -1,3 +1,14 @@
+/**
+ * 智能体档案管理页（Agent Builder 的 Web 端，路由 /agent-profiles）。
+ *
+ * 结构：左侧档案列表 + 右侧编辑器；`?agent=<id>` 查询参数同步选中项。
+ * 编辑器分块：四段提示词（identity/soul/agents/tools，支持 AI 助手生成与
+ * 版本历史回滚）、运行时策略（reasoning effort / context source / 技能与
+ * MCP 引用）、生效能力预览（EffectiveCapabilitiesPreview）与治理区
+ * （AgentGovernanceSection）。仅自定义档案可编辑（getCustomAgentProfiles，
+ * 主 CKQClaw 不可自改）；dirty 状态经 useBlocker + beforeunload 拦截
+ * 误触导航离开（createUnsavedNavigationGuard）。
+ */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   useBeforeUnload,

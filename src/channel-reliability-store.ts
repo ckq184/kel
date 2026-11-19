@@ -9,6 +9,26 @@ import crypto from 'node:crypto';
  * by Feishu, QQ, WeChat and future transports.
  */
 
+/**
+ * 中文导览：本模块围绕四张持久化表实现「渠道投递可靠性」模型，三条流水线
+ * 共用同一套租约（lease）领取语义——claim 带租约令牌领取、renew 续租、
+ * 终态前必须持有效租约（fencing，防止两个消费者并发处理同一条目）：
+ *
+ * 1. inbox（入站收件箱）：渠道消息先落库去重 → admitted/queued →
+ *    claimNext 领取处理 → processed / ignored / failed；
+ * 2. turn run（回合运行）：一次渠道触发的 Agent 回合，queued → running →
+ *    （retry_wait / waiting_user / finalizing）→ completed / failed /
+ *    interrupted / cancelled；心跳超时由 interruptExpiredChannelTurnRuns 回收；
+ * 3. outbox（出站发件箱）：待发送内容入队 → claim → uploading/uploaded/sending
+ *    → delivered；发送结果不明时置 `uncertain`，由
+ *    resolveUncertainChannelOutbox 对账（避免重复投递或漏投）；
+ * 4. streaming card（流式卡片记录）：飞书流式卡片的创建/更新/定稿轨迹，
+ *    崩溃后经 claimStreamingCardRecovery 认领收尾。
+ *
+ * 末尾的 scanChannelReliabilityNonterminal / cleanupChannelReliability
+ * 提供全量非终态扫描与过期清理入口。
+ */
+
 interface SqliteRunResult {
   changes: number;
   lastInsertRowid?: number | bigint;
@@ -28,6 +48,8 @@ interface SqliteDatabase {
 
 let database: SqliteDatabase | null = null;
 
+/** 入站消息生命周期：received 原始落库 → admitted 准入 → queued 排队 →
+ *  processing 处理中 → 终态 processed / ignored / failed。 */
 export type ChannelInboxStatus =
   | 'received'
   | 'admitted'
@@ -37,6 +59,8 @@ export type ChannelInboxStatus =
   | 'ignored'
   | 'failed';
 
+/** 回合运行生命周期：queued → running，途中可停留 retry_wait（重试退避）/
+ *  waiting_user（等用户输入）/ finalizing（输出定稿中），终态见尾部四个。 */
 export type ChannelTurnRunStatus =
   | 'queued'
   | 'running'
@@ -50,6 +74,9 @@ export type ChannelTurnRunStatus =
 
 export type ChannelOutboxKind = 'text' | 'image' | 'file' | 'card' | 'mutation';
 
+/** 出站投递生命周期：pending → claimed →（uploading → uploaded）→ sending →
+ *  delivered；发送结果不明置 uncertain 待对账，终态为 delivered / failed /
+ *  cancelled。 */
 export type ChannelOutboxStatus =
   | 'pending'
   | 'claimed'
@@ -284,6 +311,10 @@ export function channelPayloadHash(payload: unknown): string {
     .digest('hex');
 }
 
+// ── schema 建表与绑定 ──────────────────────────────
+// 四张表（inbox / turn_run / outbox / streaming_card）+ 游标表一次性建齐；
+// bind 将连接注入模块级 database（与 better-sqlite3 具体实现解耦）。
+
 export function createChannelReliabilitySchema(
   connection: SqliteDatabase,
 ): void {
@@ -481,6 +512,8 @@ export interface AdvanceChannelCursorInput {
   now?: Date | string;
 }
 
+// ── 消费游标：按 provider/account/scope/chat 维度单调推进（当前用于飞书事件续传）──
+
 export function advanceChannelCursor(input: AdvanceChannelCursorInput): {
   advanced: boolean;
   cursor: ChannelCursor;
@@ -659,6 +692,8 @@ export interface RecordChannelInboxInput extends ChannelRouteSnapshot {
   availableAt?: string;
   now?: Date | string;
 }
+
+// ── inbox：入站收件箱（落库去重 → 准入 → 租约领取 → 终态）──
 
 export function recordChannelInbox(input: RecordChannelInboxInput): {
   created: boolean;
@@ -1053,6 +1088,8 @@ export interface CreateChannelTurnRunInput extends ChannelRouteSnapshot {
   availableAt?: string;
   now?: Date | string;
 }
+
+// ── turn run：渠道回合运行（领取 → 心跳 → 定稿 → 终态；含人工对账与中断回收）──
 
 export function createChannelTurnRun(input: CreateChannelTurnRunInput): {
   created: boolean;
@@ -1579,6 +1616,8 @@ export interface EnqueueChannelOutboxInput extends ChannelRouteSnapshot {
   now?: Date | string;
 }
 
+// ── outbox：出站发件箱（入队 → 租约领取 → 上传/发送 → 终态；uncertain 对账）──
+
 export function enqueueChannelOutbox(input: EnqueueChannelOutboxInput): {
   created: boolean;
   item: ChannelOutboxItem;
@@ -2042,6 +2081,8 @@ export interface CreateStreamingCardRecordInput extends ChannelRouteSnapshot {
   now?: Date | string;
 }
 
+// ── streaming card：流式卡片记录（创建/更新/定稿轨迹 + 崩溃后恢复认领）──
+
 export function createStreamingCardRecord(
   input: CreateStreamingCardRecordInput,
 ): { created: boolean; card: StreamingCardRecord } {
@@ -2299,6 +2340,8 @@ export interface ChannelReliabilityNonterminalSnapshot {
   outbox: ChannelOutboxItem[];
   cards: StreamingCardRecord[];
 }
+
+// ── 全量运维入口：非终态扫描（供启动恢复/巡检）与过期清理 ──
 
 export function scanChannelReliabilityNonterminal(
   limitPerTable = 100,

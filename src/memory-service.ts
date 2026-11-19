@@ -1,3 +1,20 @@
+/**
+ * 工作区记忆的应用服务层：在 `memory-store.ts`（SQLite 持久化）之上统一做
+ * 鉴权、参数校验与错误翻译，routes 与 Agent 运行时只应经由本模块访问记忆。
+ *
+ * 三条不变约束：
+ * 1. 鉴权前置——每个导出函数第一步 authorizeWorkspace（读 canAccessGroup /
+ *    写 canModifyGroup）；拒绝时统一报 not_found，刻意不暴露工作区存在性
+ *    （管理员同样只遵循 owner 策略）；
+ * 2. 写入并发安全——更新/遗忘必须携带 expectedRevision（乐观锁），
+ *    可选 idempotencyKey + requestHash（sha256）实现幂等重放（replayed）；
+ * 3. 错误边界——store 层错误经 translateStoreError 翻译成带 code 的
+ *    WorkspaceMemoryServiceError，未识别的 store 错误一律收敛为 not_found。
+ *
+ * 分页用 base64url 游标（updatedAt+id / revision），limit+1 探测 hasMore。
+ * `getWorkspaceMemorySnapshot` 是 Agent 回合的提示词注入出口：渲染
+ * `<workspace_memory>` XML（逐条 xmlEscape，总长受 maxChars 预算约束）。
+ */
 import crypto from 'node:crypto';
 
 import {
@@ -77,6 +94,7 @@ interface WorkspaceMemoryMutationRequest extends WorkspaceMemoryBaseRequest {
   provenance?: WorkspaceMemoryProvenanceInput;
 }
 
+/** 服务层统一错误：code 供 routes 映射 HTTP 状态；details 携带乐观锁冲突时的当前版本。 */
 export class WorkspaceMemoryServiceError extends Error {
   constructor(
     public readonly code:
@@ -590,6 +608,11 @@ function xmlEscape(value: string): string {
     .replaceAll("'", '&apos;');
 }
 
+/**
+ * 面向 Agent 回合的记忆快照：有 query 时先全文检索，命中不足则按重要性
+ * 补齐当前有效记忆（回合提示词不是检索查询，中文长句 FTS 常零命中），
+ * 再渲染为字符预算内的 `<workspace_memory>` XML。空结果渲染为空字符串。
+ */
 export function getWorkspaceMemorySnapshot(
   input: WorkspaceMemoryBaseRequest & {
     query?: string | null;

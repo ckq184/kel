@@ -1,3 +1,25 @@
+/**
+ * SQLite 数据层（better-sqlite3，库文件 data/db/messages.db）。
+ *
+ * 结构导览（按行序）：
+ * - `CURRENT_SCHEMA_VERSION`（schema 演进的唯一真相源，迁移测试直接引用）
+ * - prepared-statement 缓存（stmts / getNewMessagesStmt，initDatabase 后惰性建）
+ * - schema 辅助：hasColumn / ensureColumn / assertSchema / tableExists、
+ *   外键孤儿上报（reportKnownForeignKeyOrphans）、迁移前备份门禁
+ *   （createPreMigrationBackup / enforcePreMigrationBackup）
+ * - `initDatabase()`：打开库 → PRAGMA（busy_timeout / WAL / synchronous=NORMAL /
+ *   foreign_keys 含孤儿修复）→ 全量 CREATE TABLE IF NOT EXISTS →
+ *   逐版本迁移至 head → 回写 schema_version
+ * - 其余为 CRUD 分区（沿用既有 `// --- XXX ---` 与 `// ===== XXX =====`
+ *   分节横幅）：chats/messages、追问队列、usage 账本、定时任务、router state、
+ *   sessions、registered groups、auth、子代理、billing 等
+ *
+ * 迁移纪律（宪法第 2 条）：
+ * - 原地升级、向后兼容；改列结构用「建 `_new` 表 → 携带数据 INSERT →
+ *   DROP 旧表 → RENAME 改名」的重建法（见 registered_groups / sessions 的迁移）；
+ *   加列用 `ALTER TABLE ... ADD COLUMN` 前先 PRAGMA table_info 判存在。
+ * - 每次升级前强制备份（enforcePreMigrationBackup），拒绝降级打开。
+ */
 import crypto from 'crypto';
 import Database from './sqlite-compat.js';
 import fs from 'fs';
@@ -776,6 +798,12 @@ export function initDatabase(): void {
     CREATE INDEX IF NOT EXISTS idx_agent_channel_mounts_workspace ON agent_channel_mounts(workspace_jid);
     CREATE INDEX IF NOT EXISTS idx_agent_channel_mounts_session ON agent_channel_mounts(session_id);
   `);
+
+  // ── 以下进入逐版本迁移区（老库 → v76）──
+  // 每段迁移按 schema_version 门控（只对低于目标版本的库生效），顺序即历史。
+  // 加列：PRAGMA table_info 判存在后 ALTER TABLE ... ADD COLUMN；
+  // 改列结构：`_new` 表重建四步（CREATE _new → INSERT 携带数据 → DROP 旧表 →
+  // RENAME 改名）。新增迁移必须追加在末尾并递增 CURRENT_SCHEMA_VERSION。
 
   // v64 -> v65: Workspace is the only durable memory continuity boundary.
   // Create and bind this before canonical projection reconciliation because
@@ -2551,6 +2579,8 @@ export function initDatabase(): void {
     );
   }
 
+  // 全部迁移完成后回写版本号；下次启动 rawVersion == CURRENT_SCHEMA_VERSION
+  // 即短路跳过迁移区。该值也作为「库版本 ≥ 程序要求」的降级判定依据。
   db.prepare(
     'INSERT OR REPLACE INTO router_state (key, value) VALUES (?, ?)',
   ).run('schema_version', String(CURRENT_SCHEMA_VERSION));

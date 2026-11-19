@@ -1,3 +1,12 @@
+/**
+ * 工作区记忆管理页（路由 /memory）。
+ *
+ * 结构：工作区选择 → 记忆列表（kind 图标 + 状态徽章）→ 详情抽屉
+ * （内容编辑、来源/时间线、版本历史增量加载——versionsGenerationRef
+ * 防过期响应回写）。支持新建/编辑/遗忘，检索与提议状态流转沿用
+ * 后端 memory-service 的 revision 乐观锁（保存携带 expectedRevision）。
+ * 离开未保存更改同样有导航守卫；useMediaQuery 适配窄屏布局。
+ */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   useBeforeUnload,

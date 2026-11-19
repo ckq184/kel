@@ -1,3 +1,21 @@
+/**
+ * 前端路由真相源：全部路由集中在本文件的 `appRoutes`（createRoutesFromElements）。
+ *
+ * 结构：
+ * - 公开路由：/login /register /setup（首启引导）；
+ * - 受保护路由统一包在 AuthGuard + AppLayout 布局内（/setup/providers 与
+ *   /setup/channels 仅 AuthGuard 无布局）；
+ * - 页面组件全部 React.lazy 按需加载；ChatPage 另有手动 preload（下方
+ *   shouldPreloadChatRoute——历史上静态 modulepreload 让 /login 也下载了
+ *   ChatPage + MarkdownRenderer 的整条依赖链）；
+ * - 权限门：/monitor 要求 manage_system_config；/users 要求
+ *   manage_users / manage_invites / view_audit_log 之一；
+ * - 兼容重定向：/groups→/chat、/skills→/capabilities/skills、
+ *   /mcp-servers→/capabilities/mcp、/ 与 * → /chat。
+ *
+ * 路由器按 shouldUseHashRouter() 在 hash/browser 两种模式间选择
+ * （iOS PWA standalone 模式退回 hash），basename 取 APP_BASE。
+ */
 import {
   Route,
   Navigate,
@@ -106,7 +124,9 @@ const appRoutes = createRoutesFromElements(
     {/* Public Routes */}
     <Route path="/login" element={<LoginPage />} />
     <Route path="/register" element={<RegisterPage />} />
+    {/* 首次启动引导（创建管理员/配置 Provider/渠道） */}
     <Route path="/setup" element={<SetupPage />} />
+    {/* 引导的后续两步：已登录但无布局包裹 */}
     <Route
       path="/setup/providers"
       element={
@@ -132,6 +152,7 @@ const appRoutes = createRoutesFromElements(
         </AuthGuard>
       }
     >
+      {/* 主聊天页：可选 groupFolder 直接定位到某工作区 */}
       <Route
         path="/chat/:groupFolder?"
         element={
@@ -151,6 +172,7 @@ const appRoutes = createRoutesFromElements(
         }
       />
       <Route path="/groups" element={<Navigate to="/chat" replace />} />
+      {/* 智能体档案（Agent Builder）管理页 */}
       <Route
         path="/agent-profiles"
         element={
@@ -159,6 +181,7 @@ const appRoutes = createRoutesFromElements(
           </Suspense>
         }
       />
+      {/* 定时任务列表与详情 */}
       <Route
         path="/tasks"
         element={
@@ -167,6 +190,7 @@ const appRoutes = createRoutesFromElements(
           </Suspense>
         }
       />
+      {/* 系统监控（上下文审计/渠道可靠性），仅 manage_system_config 权限 */}
       <Route
         path="/monitor"
         element={
@@ -177,6 +201,7 @@ const appRoutes = createRoutesFromElements(
           </AuthGuard>
         }
       />
+      {/* 用量分析（token/成本账本） */}
       <Route
         path="/usage"
         element={
@@ -185,6 +210,7 @@ const appRoutes = createRoutesFromElements(
           </Suspense>
         }
       />
+      {/* 工作区记忆管理 */}
       <Route
         path="/memory"
         element={
@@ -193,6 +219,7 @@ const appRoutes = createRoutesFromElements(
           </Suspense>
         }
       />
+      {/* 能力中心：skills / mcp 等分节（section 参数定位） */}
       <Route
         path="/capabilities/:section?"
         element={
@@ -209,6 +236,7 @@ const appRoutes = createRoutesFromElements(
         path="/mcp-servers"
         element={<Navigate to="/capabilities/mcp" replace />}
       />
+      {/* 系统设置（Provider/渠道账号/偏好/定价等分节） */}
       <Route
         path="/settings"
         element={
@@ -217,6 +245,7 @@ const appRoutes = createRoutesFromElements(
           </Suspense>
         }
       />
+      {/* 用户/邀请/审计管理，三种权限任一即可进入 */}
       <Route
         path="/users"
         element={

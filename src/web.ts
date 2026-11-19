@@ -1,3 +1,21 @@
+/**
+ * Web 侧 HTTP + WebSocket 服务层（Hono + @hono/node-server + ws）。
+ *
+ * 结构导览（按行序）：
+ * - 模块级 `app` 装配：压缩 / CORS 白名单（isAllowedOrigin：同源放行、
+ *   `*` 全放行、localhost 任意端口可关、逗号分隔自定义白名单）
+ * - `/api/*` 路由挂载：业务实现分散在 `routes/*.ts`，本文件只做挂载点
+ *   （auth / groups / memory / config / tasks / skills / admin / monitor 等）
+ * - Web 用户消息与 Agent 会话消息处理（handleWebUserMessage /
+ *   handleAgentConversationMessage）
+ * - 静态资源托管（conditionalStatic：web/dist 的 SPA fallback）
+ * - WebSocket 服务器（setupWebSocket）：认证、chat 订阅、终端托管
+ * - 广播出口：broadcastNewMessage / broadcastStreamEvent / broadcastAgentStatus
+ *   等各类运行时状态推送给前端
+ * - 流式快照（updateStreamingSnapshot：按 MAX_SNAPSHOT_* 上限截断的
+ *   断线重连恢复数据）
+ * - startWebServer / shutdownWebServer / createAppForTest（测试用装配镜像）
+ */
 import fs from 'node:fs';
 import path from 'node:path';
 import { Hono } from 'hono';

@@ -1,3 +1,11 @@
+/**
+ * 工作区列表 store（对应 GET /api/groups）。
+ *
+ * groups 按 jid 键控；加载时经 normalizeGroupInteractionMode 归一化交互
+ * 模式字段。runnerStates 是运行中工作区的本地覆盖视图（WS 广播驱动
+ * setRunnerState），idle 即从表移除、不落盘。adminHostOnlyMode 来自
+ * 服务端的全局只读开关，供 UI 禁用 host 执行入口。
+ */
 import { create } from 'zustand';
 import { api } from '../api/client';
 import type { GroupInfo } from '../types';

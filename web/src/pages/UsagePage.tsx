@@ -1,3 +1,11 @@
+/**
+ * 用量分析页（路由 /usage）：token/成本账本的查询与可视化。
+ *
+ * 结构：周期选择（7/14/30/90 天）→ 趋势（图表/表格双视图，日桶数据
+ * 本地补齐 enumerateDates）→ 多维归因（model/agent/workspace/source，
+ * 服务端归因优先、本地聚合兜底）→ CSV 导出。查询条件写入 URL；
+ * 管理员可切换全用户视角（scopeLabel），普通用户只见本人数据。
+ */
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {

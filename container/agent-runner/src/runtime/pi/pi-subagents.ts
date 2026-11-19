@@ -1,3 +1,12 @@
+/**
+ * Pi 子代理适配：跨进程经 pi-subagents 扩展的 EventBus RPC 协议操作子代理。
+ *
+ * RPC 约定：请求发 `subagents:rpc:<op>`，响应回 `subagents:rpc:<op>:reply:<requestId>`
+ * （requestId 用 UUID 关联，一次性订阅防串台）。spawn/stop 走 RPC；
+ * getResult/steer 刻意抛错——协议未提供（由会话内的 get_subagent_result /
+ * steer_subagent 工具在 Pi 会话内部实现）。生命周期经六个广播频道
+ * （created/started/completed/failed/steered/compacted）转成 RuntimeEvent。
+ */
 import crypto from 'node:crypto';
 import type { EventBus } from '@earendil-works/pi-coding-agent';
 import type { RuntimeEventListener } from '../types.js';

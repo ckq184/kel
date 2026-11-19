@@ -1,3 +1,11 @@
+/**
+ * 管理员侧的用户/邀请/审计 store（对应 /api/admin/* REST 端点）。
+ *
+ * 只做轻封装：fetch 类 action 带 loading/error 状态并把结果写入 state；
+ * 写操作（建用户/改用户/邀请码/吊销会话等）直接透传 API、不落 state，
+ * 由调用方（UsersPage）刷新列表。权限元数据（permissions + 模板）来自
+ * fetchPermissionMeta，供用户与邀请表单渲染权限勾选。
+ */
 import { create } from 'zustand';
 import { api } from '../api/client';
 import type { Permission, UserPublic } from './auth';
@@ -115,7 +123,9 @@ function asMessage(err: unknown, fallback: string): string {
   return fallback;
 }
 
-function toQueryString(params: Record<string, string | number | undefined>): string {
+function toQueryString(
+  params: Record<string, string | number | undefined>,
+): string {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
     if (value === undefined) continue;
@@ -139,9 +149,10 @@ export const useUsersStore = create<UsersState>((set) => ({
 
   fetchPermissionMeta: async () => {
     try {
-      const data = await api.get<{ permissions: Permission[]; templates: PermissionTemplate[] }>(
-        '/api/admin/permission-templates',
-      );
+      const data = await api.get<{
+        permissions: Permission[];
+        templates: PermissionTemplate[];
+      }>('/api/admin/permission-templates');
       set({ permissions: data.permissions, templates: data.templates });
     } catch (err) {
       set({ error: asMessage(err, 'Failed to load permission metadata') });
@@ -159,9 +170,12 @@ export const useUsersStore = create<UsersState>((set) => ({
         page: q.page,
         pageSize: q.pageSize,
       });
-      const data = await api.get<{ users: UserPublic[]; total: number; page: number; pageSize: number }>(
-        `/api/admin/users${qs}`,
-      );
+      const data = await api.get<{
+        users: UserPublic[];
+        total: number;
+        page: number;
+        pageSize: number;
+      }>(`/api/admin/users${qs}`);
       set({
         users: data.users,
         totalUsers: data.total,
@@ -197,7 +211,9 @@ export const useUsersStore = create<UsersState>((set) => ({
   fetchInvites: async () => {
     set({ loading: true, error: null });
     try {
-      const data = await api.get<{ invites: InviteCode[] }>('/api/admin/invites');
+      const data = await api.get<{ invites: InviteCode[] }>(
+        '/api/admin/invites',
+      );
       set({ invites: data.invites, loading: false });
     } catch (err) {
       set({ error: asMessage(err, 'Failed to fetch invites'), loading: false });
@@ -234,7 +250,10 @@ export const useUsersStore = create<UsersState>((set) => ({
       }>(`/api/admin/audit-log${qs}`);
       set({ auditLogs: data.logs, loading: false });
     } catch (err) {
-      set({ error: asMessage(err, 'Failed to fetch audit logs'), loading: false });
+      set({
+        error: asMessage(err, 'Failed to fetch audit logs'),
+        loading: false,
+      });
     }
   },
 }));
