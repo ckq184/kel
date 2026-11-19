@@ -1,10 +1,9 @@
 {
-  "task": "feishu-retry-notice-once - 飞书“消息处理暂时失败”重试提示每条消息只发一次（按 channel_inbox.attempt 限制，重试语义不变）",
-  "base": "a8077df",
+  "task": "wechat-pairing-ui-branch - 微信账号连接弹窗补上配对码区块（AccountPairingSection 移出 authMode 三元分支，qr_session 账号同样渲染）",
+  "base": "c011258",
   "allow": [
-    "src/feishu.ts",
-    "tests/feishu-p2p-first-dm-bootstrap.test.ts",
-    "docs/feishu-retry-notice-once-plan.md",
-    "docs/feishu-route-rejection-terminal-plan.md"
+    "web/src/components/settings/ChannelAccountsManager.tsx",
+    "tests/wechat-pairing-dialog-dom.test.tsx",
+    "docs/wechat-pairing-ui-branch-plan.md"
   ]
 }
