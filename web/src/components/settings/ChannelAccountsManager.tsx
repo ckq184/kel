@@ -722,7 +722,7 @@ function AccountSettingsDialog({
   );
 }
 
-function AccountConnectionDialog({
+export function AccountConnectionDialog({
   account,
   autoStart,
   onClose,
@@ -808,6 +808,13 @@ function AccountConnectionDialog({
     }
   };
 
+  // 配对区与认证方式无关：credentials（QQ）与 qr_session（微信）账号都
+  // 需要在连接弹窗里生成配对码；未授权（has_credentials=false）不渲染。
+  const pairingSection =
+    supportsChannelPairing(account.provider) && account.has_credentials ? (
+      <AccountPairingSection account={account} />
+    ) : null;
+
   return (
     <Dialog open onOpenChange={(value) => !value && !saving && onClose()}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
@@ -851,6 +858,7 @@ function AccountConnectionDialog({
               <h3 className="mb-3 text-sm font-medium">扫码与连接状态</h3>
               <QrOnboardingPanel account={account} autoStart={autoStart} />
             </div>
+            {pairingSection}
           </div>
         ) : (
           <div className="space-y-5">
@@ -912,10 +920,7 @@ function AccountConnectionDialog({
               )}
             </div>
 
-            {supportsChannelPairing(account.provider) &&
-              account.has_credentials && (
-                <AccountPairingSection account={account} />
-              )}
+            {pairingSection}
 
             {account.has_credentials && (
               <div className="border-t border-border pt-4">
