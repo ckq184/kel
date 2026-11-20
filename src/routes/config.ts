@@ -2006,6 +2006,7 @@ function toSystemSettingsResponse(
     idleTimeout: settings.idleTimeout,
     containerMaxOutputSize: settings.containerMaxOutputSize,
     maxConcurrentContainers: settings.maxConcurrentContainers,
+    maxConcurrentContainersPerUser: settings.maxConcurrentContainersPerUser,
     maxLoginAttempts: settings.maxLoginAttempts,
     loginLockoutMinutes: settings.loginLockoutMinutes,
     fallbackModel: settings.fallbackModel,

@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { GROUPS_DIR, MAX_FILE_SIZE } from './config.js';
+import { extractFileText } from './file-text-extractor.js';
 
 // MAX_FILE_SIZE 统一由 config.ts 定义（可通过 MAX_FILE_SIZE_MB 环境变量配置），
 // 此处 re-export 保持既有 import 路径不变。IM 渠道收文件与 Web 上传共用此上限。
@@ -143,4 +144,48 @@ export async function saveDownloadedFile(
   // 返回相对于群组工作区根目录的路径
   const groupRoot = path.join(GROUPS_DIR, groupFolder);
   return path.relative(groupRoot, absPath).replace(/\\/g, '/');
+}
+
+/**
+ * 依据内容自适应地选取包裹抽取文本的反引号围栏：围栏长度必须严格大于
+ * 内容中最长的反引号连续串（至少 3 个）。否则攻击者可在文件内容里预埋
+ * ``` 提前闭合围栏，把后续文本伪装成新指令；长度随内容变化，无法预知。
+ */
+function pickContentFence(text: string): string {
+  let longest = 2;
+  for (const run of text.match(/`+/g) ?? []) {
+    longest = Math.max(longest, run.length);
+  }
+  return '`'.repeat(longest + 1);
+}
+
+/**
+ * 把已落盘的入站文件内容内联进消息文本（弱模型兜底）。
+ *
+ * 动机：弱模型（MiniMax 等）不会可靠地调用 Read 读文件、甚至会从会话缓存
+ * 幻觉，所以把抽取文本直接内联进 prompt（原钉钉渠道模式，渠道删除后该
+ * 能力由三渠道共用）。
+ *
+ * 输入：`relPath` 为与消息里 `[文件: relPath]` 标记一致的工作区相对路径
+ * （通常来自 saveDownloadedFile 的返回值）。
+ *
+ * 返回：抽取成功 → `[文件: relPath]` + 换行 + 自适应围栏包裹的抽取文本
+ * （20KB 截断由 extractor 负责，截断标记随文本内联）；抽取失败 / 扩展名
+ * 不支持 / 文件缺失 / relPath 逃逸工作区 → null，调用方维持仅路径标记。
+ */
+export async function buildInlinedFileContent(
+  groupFolder: string,
+  relPath: string,
+): Promise<string | null> {
+  const groupRoot = path.join(GROUPS_DIR, groupFolder);
+  const absPath = path.join(groupRoot, relPath);
+  // relPath 实际来自 saveDownloadedFile 的返回值，但防御性校验避免路径
+  // 穿越把任意磁盘文件读进 prompt。
+  if (!absPath.startsWith(groupRoot + path.sep)) return null;
+
+  const extracted = await extractFileText(absPath);
+  if (!extracted) return null;
+
+  const fence = pickContentFence(extracted.text);
+  return `[文件: ${relPath}]\n${fence}\n${extracted.text}\n${fence}`;
 }

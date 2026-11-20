@@ -405,7 +405,13 @@ function appendVersion(
   );
 }
 
-function appendAuditAndOutbox(
+/**
+ * Audit-only mutation record. The outbox companion write was retired
+ * (ISSUE-07 项7, user decision A): runner reads are direct per-turn IPC
+ * snapshots with no downstream consumer, so pending outbox rows grew
+ * unboundedly. audit_events and tombstones keep full lineage.
+ */
+function appendAuditEvent(
   store: WorkspaceMemoryStore,
   item: WorkspaceMemoryItem,
   action: WorkspaceMemoryChangeType,
@@ -430,28 +436,6 @@ function appendAuditAndOutbox(
     context.actorId,
     normalizeNullable(context.sourceId),
     normalizeNullable(context.sessionId),
-    at,
-  );
-  db.prepare(
-    `INSERT INTO workspace_memory_outbox (
-      id, workspace_jid, store_id, item_id, item_revision, event_type,
-      payload_json, status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
-  ).run(
-    newId('wmo'),
-    store.workspaceJid,
-    store.id,
-    item.id,
-    item.revision,
-    action === 'forget' ? 'memory.forgotten' : `memory.${action}d`,
-    JSON.stringify({
-      workspaceJid: store.workspaceJid,
-      storeRevision: store.revision,
-      itemId: item.id,
-      itemRevision: item.revision,
-      status: item.status,
-    }),
-    at,
     at,
   );
 }
@@ -602,25 +586,10 @@ export function createWorkspaceMemorySchema(db: SqliteDatabase): void {
       FOREIGN KEY (store_id) REFERENCES workspace_memory_stores(id) ON DELETE CASCADE
     );
 
-    CREATE TABLE IF NOT EXISTS workspace_memory_outbox (
-      id TEXT PRIMARY KEY,
-      workspace_jid TEXT NOT NULL,
-      store_id TEXT NOT NULL,
-      item_id TEXT NOT NULL,
-      item_revision INTEGER NOT NULL,
-      event_type TEXT NOT NULL,
-      payload_json TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending'
-        CHECK (status IN ('pending', 'processing', 'delivered', 'failed')),
-      attempt INTEGER NOT NULL DEFAULT 0,
-      available_at TEXT,
-      error TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      delivered_at TEXT
-    );
-    CREATE INDEX IF NOT EXISTS idx_workspace_memory_outbox_pending
-      ON workspace_memory_outbox(status, available_at, created_at);
+    -- ISSUE-07 项7（用户决策 A）：workspace_memory_outbox 停写停建。runner 每
+    -- 回合经 IPC snapshot 直读 memory，无下游消费者，pending 行只增不清。幂等
+    -- DROP 清理存量旧库；新库不再建表（audit_events/tombstones 保留）。
+    DROP TABLE IF EXISTS workspace_memory_outbox;
 
     CREATE TABLE IF NOT EXISTS workspace_memory_audit_events (
       id TEXT PRIMARY KEY,
@@ -701,7 +670,7 @@ export function bindWorkspaceMemoryDatabase(db: SqliteDatabase | null): void {
  * uniqueness invariant. The most recently updated row wins deterministically;
  * status is deliberately not preferred because a newer clear/forget must not
  * be undone by an older active duplicate. Every duplicate is detached from
- * the reserved key with full version/audit/outbox history.
+ * the reserved key with full version/audit history.
  */
 export function reconcileCkqclawOwnerAddressCanonicalKey(): {
   workspaces: number;
@@ -783,7 +752,7 @@ export function reconcileCkqclawOwnerAddressCanonicalKey(): {
           ).run(item.revision, item.id);
         }
         replaceFts(item);
-        appendAuditAndOutbox(store, item, 'update', context, at);
+        appendAuditEvent(store, item, 'update', context, at);
         retiredItems++;
       }
     }
@@ -836,9 +805,6 @@ export function deleteWorkspaceMemoryData(workspaceJid: string): void {
   db.prepare(
     'DELETE FROM workspace_memory_audit_events WHERE workspace_jid = ?',
   ).run(workspaceJid);
-  db.prepare('DELETE FROM workspace_memory_outbox WHERE workspace_jid = ?').run(
-    workspaceJid,
-  );
   db.prepare(
     'DELETE FROM workspace_memory_mutation_requests WHERE store_id = ?',
   ).run(store.id);
@@ -1143,7 +1109,7 @@ export function mutateCkqclawOwnerAddressMemory(input: {
       appendVersion(versionItem, 'create', input.context, at);
       const item = requireItem(store, itemId);
       replaceFts(item);
-      appendAuditAndOutbox(store, item, 'create', input.context, at);
+      appendAuditEvent(store, item, 'create', input.context, at);
       return { store, item, replayed: false, changed: true };
     }
 
@@ -1272,7 +1238,7 @@ export function mutateCkqclawOwnerAddressMemory(input: {
     appendVersion(versionItem, 'update', input.context, at);
     const item = requireItem(store, current.id);
     replaceFts(item);
-    appendAuditAndOutbox(store, item, 'update', input.context, at);
+    appendAuditEvent(store, item, 'update', input.context, at);
     if (idempotencyKey && input.requestHash) {
       db.prepare(
         `INSERT INTO workspace_memory_mutation_requests (
@@ -1373,7 +1339,7 @@ export function createWorkspaceMemoryItem(input: {
     appendVersion(versionItem, 'create', input.context, at);
     const item = requireItem(store, itemId);
     replaceFts(item);
-    appendAuditAndOutbox(store, item, 'create', input.context, at);
+    appendAuditEvent(store, item, 'create', input.context, at);
     return { store, item, replayed: false };
   })();
 }
@@ -1515,7 +1481,7 @@ export function updateWorkspaceMemoryItem(input: {
     appendVersion(versionItem, 'update', input.context, at);
     const item = requireItem(store, current.id);
     replaceFts(item);
-    appendAuditAndOutbox(store, item, 'update', input.context, at);
+    appendAuditEvent(store, item, 'update', input.context, at);
     if (idempotencyKey && input.requestHash) {
       db.prepare(
         `INSERT INTO workspace_memory_mutation_requests (
@@ -1648,7 +1614,7 @@ export function forgetWorkspaceMemoryItem(input: {
       at,
     );
     replaceFts(item);
-    appendAuditAndOutbox(store, item, 'forget', input.context, at);
+    appendAuditEvent(store, item, 'forget', input.context, at);
     if (idempotencyKey && input.requestHash) {
       db.prepare(
         `INSERT INTO workspace_memory_mutation_requests (

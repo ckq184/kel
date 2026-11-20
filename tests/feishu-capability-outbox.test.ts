@@ -377,7 +377,7 @@ describe('Feishu capability mutation outbox', () => {
     );
     const branch = main.slice(
       main.indexOf("case 'feishu_capability':"),
-      main.indexOf("case 'refresh_groups':"),
+      main.indexOf("case 'register_group':"),
     );
     expect(branch).toContain('isFeishuCapabilityMutation(request)');
     expect(branch).toContain('activeChannelOutboxScopes.resolveInput');

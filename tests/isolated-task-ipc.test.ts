@@ -6,7 +6,6 @@ import path from 'node:path';
 import {
   canDeleteAcknowledgedIpcSource,
   ISOLATED_TASK_RUN_COMPLETE_MARKER,
-  awaitRequiredIpcSideEffects,
   extractDurableTaskRunIdFromNamespace,
   getIsolatedTaskRunCompletionMarker,
   markIsolatedTaskRunIpcComplete,
@@ -96,53 +95,5 @@ describe('isolated task IPC completion handshake', () => {
     expect(tryCleanupCompletedIsolatedTaskRunIpc(runDir)).toBe(false);
     fs.unlinkSync(taskFile);
     expect(tryCleanupCompletedIsolatedTaskRunIpc(runDir)).toBe(true);
-  });
-
-  test('does not ACK task output before required delivery settles', async () => {
-    const runDir = makeRunDir();
-    const output = path.join(runDir, 'messages', 'last-message.json');
-    fs.writeFileSync(output, JSON.stringify({ type: 'message', text: 'done' }));
-    markIsolatedTaskRunIpcComplete(runDir, {
-      taskId: 'task-1',
-      taskRunId: 'run-1',
-      workspaceFolder: 'workspace-1',
-      virtualChatJid: 'web:workspace-1#task:run-1',
-      sessionAgentId: 'task-run-1',
-    });
-
-    let finishDelivery!: (success: boolean) => void;
-    const delivery = new Promise<boolean>((resolve) => {
-      finishDelivery = resolve;
-    });
-    const acknowledge = awaitRequiredIpcSideEffects([delivery]).then(() => {
-      fs.unlinkSync(output);
-    });
-
-    await Promise.resolve();
-    expect(fs.existsSync(output)).toBe(true);
-    expect(tryCleanupCompletedIsolatedTaskRunIpc(runDir)).toBe(false);
-
-    finishDelivery(true);
-    await acknowledge;
-    expect(tryCleanupCompletedIsolatedTaskRunIpc(runDir)).toBe(true);
-  });
-
-  test('keeps task output unacknowledged when a required delivery fails', async () => {
-    const runDir = makeRunDir();
-    const output = path.join(runDir, 'messages', 'last-message.json');
-    fs.writeFileSync(output, '{}');
-    markIsolatedTaskRunIpcComplete(runDir, {
-      taskId: 'task-1',
-      taskRunId: 'run-1',
-      workspaceFolder: 'workspace-1',
-      virtualChatJid: 'web:workspace-1#task:run-1',
-      sessionAgentId: 'task-run-1',
-    });
-
-    await expect(
-      awaitRequiredIpcSideEffects([Promise.resolve(false)]),
-    ).rejects.toThrow('required IPC side effect');
-    expect(fs.existsSync(output)).toBe(true);
-    expect(tryCleanupCompletedIsolatedTaskRunIpc(runDir)).toBe(false);
   });
 });

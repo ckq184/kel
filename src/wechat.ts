@@ -18,7 +18,11 @@ import { storeChatMetadata, storeMessageDirect, updateChatName } from './db.js';
 import { notifyNewImMessage } from './message-notifier.js';
 import { broadcastNewMessage } from './web.js';
 import { logger } from './logger.js';
-import { saveDownloadedFile, MAX_FILE_SIZE } from './im-downloader.js';
+import {
+  saveDownloadedFile,
+  buildInlinedFileContent,
+  MAX_FILE_SIZE,
+} from './im-downloader.js';
 import { detectImageMimeType } from './image-detector.js';
 import { downloadAndDecryptMedia, uploadMediaBuffer } from './wechat-crypto.js';
 import {
@@ -775,7 +779,13 @@ export function createWeChatConnection(
         'file',
         () => fileName,
       );
-      if (result?.savedPath) return `[文件: ${result.savedPath}]`;
+      if (result?.savedPath) {
+        // 弱模型兜底：抽取成功则内联文件文本，失败回退仅路径标记。
+        const inlined = groupFolder
+          ? await buildInlinedFileContent(groupFolder, result.savedPath)
+          : null;
+        return inlined ?? `[文件: ${result.savedPath}]`;
+      }
       // CDN media unavailable, fall back to name-only label
       return `[文件: ${fileName}]`;
     } catch (err) {

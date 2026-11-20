@@ -124,7 +124,6 @@ export interface AssistantPrimaryProjectionInput {
   inputTurnCompleted?: boolean;
   finalizationReason?: string;
   pendingBgTasks?: number;
-  sdkMessageUuid?: string;
   /** A non-held, physically acknowledged primary answer already exists. */
   primaryAlreadyProjected: boolean;
   /** Some answer/checkpoint has already been persisted for this input. */
@@ -166,8 +165,7 @@ export function decideAssistantPrimaryProjection(
     input.sourceKind == null &&
     input.inputTurnCompleted === undefined &&
     input.finalizationReason === undefined &&
-    input.pendingBgTasks === undefined &&
-    input.sdkMessageUuid === undefined;
+    input.pendingBgTasks === undefined;
   if (isUncorrelatedLifecycleSuccess && input.anyReplyProjected) {
     return {
       project: false,

@@ -5,6 +5,7 @@ import { ContainerStatus } from '../components/monitor/ContainerStatus';
 import { QueueStatus } from '../components/monitor/QueueStatus';
 import { SystemInfo } from '../components/monitor/SystemInfo';
 import { GroupStatusCard } from '../components/monitor/GroupStatusCard';
+import { UncertainOutboxCard } from '../components/monitor/UncertainOutboxCard';
 import {
   ProviderSwitcher,
   type SimpleProvider,
@@ -33,6 +34,7 @@ export function MonitorPage() {
     pullResult,
     pullDockerImage,
     clearPullResult,
+    loadUncertainOutbox,
   } = useMonitorStore();
   const canManageSystem = useAuthStore((s) =>
     s.hasPermission('manage_system_config'),
@@ -49,6 +51,17 @@ export function MonitorPage() {
 
     return () => clearInterval(interval);
   }, [loadStatus]);
+
+  // 待人工确认的渠道投递（uncertain Channel Outbox）：接口要求
+  // manage_system_config，无权限用户不轮询；与系统状态共用 10 秒节奏
+  useEffect(() => {
+    if (!canManageSystem) return;
+    loadUncertainOutbox();
+    const interval = setInterval(() => {
+      loadUncertainOutbox();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [loadUncertainOutbox, canManageSystem]);
 
   // WebSocket listeners for Docker Hub pull progress
   useEffect(() => {
@@ -121,6 +134,9 @@ export function MonitorPage() {
         />
 
         {loading && !status && <SkeletonStatCards />}
+
+        {/* 待人工确认的渠道投递：uncertain 围栏非空才需要人工放行，卡片内部空列表不渲染 */}
+        <UncertainOutboxCard />
 
         {status && (
           <div className="space-y-6">

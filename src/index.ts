@@ -440,6 +440,7 @@ import {
   saveFeishuOwnerOpenId,
   saveUserWeChatConfig,
   updateAllSessionCredentials,
+  createUserContainerConcurrencyChecker,
 } from './runtime-config.js';
 import {
   MAX_TASK_PROMPT_LENGTH,
@@ -4611,7 +4612,6 @@ interface SendMessageOptions {
   messageMeta?: {
     turnId?: string;
     sessionId?: string;
-    sdkMessageUuid?: string;
     sourceKind?: MessageSourceKind;
     finalizationReason?: MessageFinalizationReason;
   };
@@ -7511,7 +7511,6 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
               inputTurnCompleted: result.inputTurnCompleted,
               finalizationReason: result.finalizationReason,
               pendingBgTasks: result.pendingBgTasks,
-              sdkMessageUuid: result.sdkMessageUuid,
               primaryAlreadyProjected:
                 genuineReplyDeliveredByInput.get(resultInputTurnId) === true,
               anyReplyProjected:
@@ -7849,13 +7848,11 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
                       .digest('hex')
                       .slice(0, 32)}`
                   : undefined;
-              const durableOutputIdentity =
-                result.sdkMessageUuid ||
-                crypto
-                  .createHash('sha256')
-                  .update(text)
-                  .digest('hex')
-                  .slice(0, 24);
+              const durableOutputIdentity = crypto
+                .createHash('sha256')
+                .update(text)
+                .digest('hex')
+                .slice(0, 24);
 
               const replySendOutcome = await sendMessageWithOutcome(
                 chatJid,
@@ -7878,7 +7875,6 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
                   messageMeta: {
                     turnId: turnIdForDb,
                     sessionId: result.sessionId || activeSessionId,
-                    sdkMessageUuid: result.sdkMessageUuid,
                     sourceKind:
                       scheduledGroupRuns.length > 0
                         ? 'scheduled_task_result'
@@ -9426,7 +9422,6 @@ async function sendMessageWithOutcome(
         is_from_me: true,
         turn_id: options.messageMeta?.turnId ?? null,
         session_id: options.messageMeta?.sessionId ?? null,
-        sdk_message_uuid: options.messageMeta?.sdkMessageUuid ?? null,
         source_kind: options.messageMeta?.sourceKind ?? null,
         finalization_reason: options.messageMeta?.finalizationReason ?? null,
         workflow_runs: options.workflowRuns,
@@ -10654,7 +10649,6 @@ function startIpcWatcher(): void {
                     is_from_me: true,
                     turn_id: null,
                     session_id: null,
-                    sdk_message_uuid: null,
                     source_kind: 'sdk_send_message',
                     finalization_reason: null,
                   });
@@ -12979,30 +12973,6 @@ async function processTaskIpc(
       break;
     }
 
-    case 'refresh_groups':
-      // Only admin home group can request a refresh
-      if (isAdminHome) {
-        logger.info(
-          { sourceGroup },
-          'Group metadata refresh requested via IPC',
-        );
-        await syncGroupMetadata(true);
-        // Write updated snapshot immediately
-        const availableGroups = getAvailableGroups();
-        writeGroupsSnapshot(
-          sourceGroup,
-          true,
-          availableGroups,
-          new Set(Object.keys(registeredGroups)),
-        );
-      } else {
-        logger.warn(
-          { sourceGroup },
-          'Unauthorized refresh_groups attempt blocked',
-        );
-      }
-      break;
-
     case 'register_group':
       // Only admin home group can register new groups
       if (!isAdminHome) {
@@ -14169,7 +14139,6 @@ async function processAgentConversation(
           is_from_me: true,
           turn_id: tid,
           session_id: currentAgentSessionId,
-          sdk_message_uuid: null,
           source_kind: 'sdk_final',
           finalization_reason: reason,
         },
@@ -14992,7 +14961,6 @@ async function processAgentConversation(
                   turn_id: output.streamEvent.turnId || lastProcessed.id,
                   session_id:
                     output.streamEvent.sessionId || currentAgentSessionId,
-                  sdk_message_uuid: null,
                   source_kind: 'interrupt_partial',
                   finalization_reason: 'interrupted',
                 },
@@ -15197,7 +15165,6 @@ async function processAgentConversation(
         inputTurnCompleted: output.inputTurnCompleted,
         finalizationReason: output.finalizationReason,
         pendingBgTasks: output.pendingBgTasks,
-        sdkMessageUuid: output.sdkMessageUuid,
         primaryAlreadyProjected:
           agentGenuineReplyDeliveredByInput.get(resultInputTurnId) === true,
         anyReplyProjected:
@@ -15347,7 +15314,6 @@ async function processAgentConversation(
             meta: {
               turnId: dbTurnId,
               sessionId: output.sessionId || currentAgentSessionId,
-              sdkMessageUuid: output.sdkMessageUuid,
               sourceKind: output.sourceKind || 'sdk_final',
               finalizationReason: output.finalizationReason || 'completed',
             },
@@ -15372,7 +15338,6 @@ async function processAgentConversation(
             is_from_me: true,
             turn_id: dbTurnId,
             session_id: output.sessionId || currentAgentSessionId,
-            sdk_message_uuid: output.sdkMessageUuid ?? null,
             source_kind: output.sourceKind || 'sdk_final',
             finalization_reason: output.finalizationReason || 'completed',
             workflow_runs: holdReason
@@ -15560,7 +15525,7 @@ async function processAgentConversation(
               ? {
                   scopeKey: channelTurnScope(effectiveGroup.folder, agentId),
                   scopeToken: outputAgentScope.scope.token,
-                  operationKey: `agent:${agentId}:${lastProcessed.id}:${output.sdkMessageUuid || crypto.createHash('sha256').update(text).digest('hex').slice(0, 24)}`,
+                  operationKey: `agent:${agentId}:${lastProcessed.id}:${crypto.createHash('sha256').update(text).digest('hex').slice(0, 24)}`,
                 }
               : undefined,
           );
@@ -15642,7 +15607,7 @@ async function processAgentConversation(
             {
               scopeKey: agentAdmissionKey,
               scopeToken: mirrorScope.token,
-              operationKey: `agent-mirror:${agentId}:${outputAgentScope.inputId}:${imJid}:${output.sdkMessageUuid || crypto.createHash('sha256').update(text).digest('hex').slice(0, 24)}`,
+              operationKey: `agent-mirror:${agentId}:${outputAgentScope.inputId}:${imJid}:${crypto.createHash('sha256').update(text).digest('hex').slice(0, 24)}`,
               ordinalSlot: `mirror:${imJid}`,
             },
           );
@@ -16253,7 +16218,6 @@ async function processAgentConversation(
               is_from_me: true,
               turn_id: lastProcessed.id,
               session_id: currentAgentSessionId,
-              sdk_message_uuid: null,
               source_kind: 'interrupt_partial',
               finalization_reason: 'interrupted',
             },
@@ -16309,7 +16273,6 @@ async function processAgentConversation(
             is_from_me: true,
             turn_id: lastProcessed.id,
             session_id: currentAgentSessionId,
-            sdk_message_uuid: null,
             source_kind: 'interrupt_partial',
             finalization_reason: 'error',
           },
@@ -19467,6 +19430,26 @@ async function main(): Promise<void> {
         await clearTrackedProcessingIndicators(groupJid);
       }
     },
+  );
+  // 用户级容器并发上限（ISSUE-07 批次B 项1）：原实现随 billing 订阅体系在
+  // 20febca 删除；现按系统设置 maxConcurrentContainersPerUser 恢复（null =
+  // 不启用），与 billing 彻底解耦。每次判定时即时读设置，热更新即时生效
+  // （对齐 maxConcurrentContainers 在 hasCapacityFor 里的读取方式）。
+  // 判定逻辑在 runtime-config 的 createUserContainerConcurrencyChecker，
+  // 与 tests/group-queue-user-concurrency.test.ts 共用同一实现。
+  queue.setUserConcurrentLimitChecker(
+    createUserContainerConcurrencyChecker({
+      getLimit: () => getSystemSettings().maxConcurrentContainersPerUser,
+      getGroup: (baseJid) => registeredGroups[baseJid],
+      getUserById,
+      getOwnedJids: (ownerId) =>
+        Object.entries(registeredGroups)
+          .filter(([, group]) => group.created_by === ownerId)
+          .map(([jid]) => jid),
+      hasDirectActiveRunner: (jid) => queue.hasDirectActiveRunner(jid),
+      countActiveTaskRunners: (baseJid) =>
+        queue.countActiveTaskRunners(baseJid),
+    }),
   );
   // Recovery: when agent process exits with unconsumed IPC messages,
   // re-enqueue processAgentConversation to pick them up. See issue #240.

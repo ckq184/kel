@@ -431,7 +431,7 @@ async function main(): Promise<void> {
   fs.mkdirSync(INPUT_DIR, { recursive: true });
   if (resolveAgentRuntimeKind(process.env) !== 'pi') {
     throw new Error(
-      'The production runner is Pi-only; use the legacy runner explicitly for rollback.',
+      'AGENT_RUNTIME=claude is no longer supported; set AGENT_RUNTIME=pi or remove the environment variable.',
     );
   }
   const provider = resolveClaudeProviderRuntime(process.env);

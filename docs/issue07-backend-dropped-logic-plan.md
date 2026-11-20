@@ -35,8 +35,8 @@ turn 永久卡死、弱模型读不了 PDF/DOCX、third_party token 静默打官
 
 - 不实现 channel outbox 后台 worker（登记为 ISSUE-14，另行立项）。
 - 不执行第 5 项 `context_audit` 快照接入（本任务只把方向写入 ISSUE-10，由其执行）。
-- 不为 `maxConcurrentContainersPerUser` 做 Web 设置 UI（settings API 与 env 已可调；
-  UI 需要时另立）。
+- 不为 `maxConcurrentContainersPerUser` 做 Web 设置 UI 渲染控件（settings API 读写
+  回显已具备、env 可设；渲染控件需要时另立）。
 - 不物理删除 `messages.sdk_message_uuid` 列与 `registered_groups` 三列（DB 迁移统一
   归 ISSUE-09；本任务只做代码层下线并登记）。
 - 不改 `audit_events` / `tombstones` 语义（“可审计的忘记”设计承诺，保留）。
@@ -46,6 +46,9 @@ turn 永久卡死、弱模型读不了 PDF/DOCX、third_party token 静默打官
 
 **后端 src/**：`index.ts`（项1 注入、项8 删 case、项6 多处）、`runtime-config.ts`
 （项1 设置、项10 删函数）、`schemas.ts`（项1、项10）、`routes/groups.ts`（项2）、
+`routes/config.ts`（项1 **范围扩宽**：`toSystemSettingsResponse` 回显
+`maxConcurrentContainersPerUser`——批次B 实现后发现 GET 不回显使设置值无法读回，
+一行补齐并加 `tests/system-settings-per-user-echo.test.ts` 锁定回显与合并语义）、
 `types.ts`（项2 字段、项6 透传）、`db.ts`（项6 写链）、`session-workflows.ts`（项6
 回补簇）、`reply-delivery.ts`（项6 判定）、`container-runner.ts`（项6 声明）、
 `memory-store.ts`（项7）、`isolated-task-ipc.ts` / `workspace-interaction-runtime.ts` /
@@ -69,7 +72,8 @@ turn 永久卡死、弱模型读不了 PDF/DOCX、third_party token 静默打官
 `schema-v65-workspace-memory`、`file-text-extractor`；新增
 `group-queue-user-concurrency`、`groups-mcp-legacy-route`、
 `channel-outbox-restart-retry-wait`、`frontend-monitor-uncertain-release`、
-`unified-provider-third-party-baseurl`、`im-inbound-file-inline`。
+`unified-provider-third-party-baseurl`、`im-inbound-file-inline`、
+`system-settings-per-user-echo`（项1 范围扩宽）。
 
 ## 方案与测试设计
 

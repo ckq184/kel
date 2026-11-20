@@ -346,7 +346,6 @@ describe('Assistant primary projection boundary', () => {
       inputTurnId,
       inputTurnCompleted: true,
       finalizationReason: 'completed',
-      sdkMessageUuid: 'assistant-primary',
     };
     const firstCanonicalTurnId = resolveContainerOutputInputTurnId(
       first,

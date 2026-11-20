@@ -3,6 +3,7 @@
   "base": "2493eab",
   "allow": [
     "docs/issue07-backend-dropped-logic-plan.md",
+    ".gatesecretsignore",
     "docs/issues/ISSUE-07-backend-dropped-logic-decisions.md",
     "docs/issues/ISSUE-09-dead-code-batch2-billing-and-db.md",
     "docs/issues/ISSUE-10-dead-code-batch3-legacy-consumers.md",
@@ -15,6 +16,7 @@
     "src/runtime-config.ts",
     "src/schemas.ts",
     "src/routes/groups.ts",
+    "src/routes/config.ts",
     "src/types.ts",
     "src/db.ts",
     "src/session-workflows.ts",
@@ -52,6 +54,7 @@
     "tests/file-text-extractor.test.ts",
     "tests/group-queue-user-concurrency.test.ts",
     "tests/groups-mcp-legacy-route.test.ts",
+    "tests/system-settings-per-user-echo.test.ts",
     "tests/frontend-monitor-uncertain-release.test.ts",
     "tests/unified-provider-third-party-baseurl.test.ts",
     "tests/im-inbound-file-inline.test.ts"

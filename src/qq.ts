@@ -23,7 +23,11 @@ import {
 import { notifyNewImMessage } from './message-notifier.js';
 import { broadcastNewMessage } from './web.js';
 import { logger } from './logger.js';
-import { saveDownloadedFile, MAX_FILE_SIZE } from './im-downloader.js';
+import {
+  saveDownloadedFile,
+  buildInlinedFileContent,
+  MAX_FILE_SIZE,
+} from './im-downloader.js';
 import { detectImageMimeTypeStrict } from './image-detector.js';
 import path from 'node:path';
 import {
@@ -1180,7 +1184,13 @@ export function createQQConnection(config: QQConnectionConfig): QQConnection {
           fileName,
           buffer,
         );
-        if (relPath) content = `[文件: ${relPath}]\n${content}`.trim();
+        if (relPath) {
+          // 弱模型兜底：抽取成功则内联文件文本，失败回退仅路径标记。
+          const inlined =
+            (await buildInlinedFileContent(groupFolder, relPath)) ??
+            `[文件: ${relPath}]`;
+          content = `${inlined}\n${content}`.trim();
+        }
       } catch (err) {
         logger.warn({ err }, `Failed to save QQ ${logContext} file`);
       }

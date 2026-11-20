@@ -403,7 +403,17 @@ export async function deliverChannelOutboxItem(
   }
 }
 
-/** Run once after transports connect and before new outbox workers start. */
+/**
+ * Run once at startup after transports connect. This pass only flips expired
+ * delivery leases to `retry_wait` (pre-send) or `uncertain` — it never
+ * delivers anything, and there is no background outbox worker that claims the
+ * `retry_wait` rows afterwards. A `retry_wait` row is physically re-delivered
+ * only when a turn re-enters `deliverChannelOutboxItem` with the same
+ * idempotencyKey (new inbound re-drive or cursor replay); until then it stays
+ * stranded, and `uncertain` always waits for a manual resolve. Automatic
+ * retry of stranded rows is tracked in
+ * docs/issues/ISSUE-14-channel-outbox-worker.md.
+ */
 export function reconcileChannelOutboxDeliveries(now?: Date | string): {
   retryable: number;
   uncertain: number;

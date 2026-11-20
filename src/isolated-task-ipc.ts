@@ -50,27 +50,6 @@ export function canDeleteAcknowledgedIpcSource(
   return !requestId || resultWritten;
 }
 
-/**
- * A scheduled-task output file is the durable delivery record until every
- * required IM side effect settles successfully.  Keep this helper separate
- * from the watcher so the ACK ordering can be tested without booting index.ts.
- * A rejected delivery or an exhausted retry (false) rejects the whole batch;
- * the watcher will then archive the source JSON in its error inbox.
- */
-export async function awaitRequiredIpcSideEffects(
-  deliveries: Iterable<Promise<boolean>>,
-): Promise<void> {
-  const results = await Promise.allSettled([...deliveries]);
-  const failures = results.filter(
-    (result) => result.status === 'rejected' || result.value !== true,
-  );
-  if (failures.length > 0) {
-    throw new Error(
-      `Failed to complete ${failures.length} required IPC side effect(s)`,
-    );
-  }
-}
-
 export function markIsolatedTaskRunIpcComplete(
   runDir: string,
   completion: Omit<IsolatedTaskRunCompletion, 'completedAt'>,

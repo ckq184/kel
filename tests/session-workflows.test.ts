@@ -96,7 +96,7 @@ describe('Claude Code Workflow session projection', () => {
     });
   });
 
-  test('attaches a completed workflow only to the final assistant message', () => {
+  test('attaches a completed workflow only to the final assistant message and never backfills usage', () => {
     const group = `workflow-test-${process.pid}-${Date.now()}`;
     createdGroups.push(group);
     const sessionId = 'session-1';
@@ -115,6 +115,9 @@ describe('Claude Code Workflow session projection', () => {
       path.join(workflowDir, 'wf_fixture.json'),
       JSON.stringify(completedWorkflow()),
     );
+    // 旧库遗留的 Claude transcript 仍可能带着 raw.uuid 与 usage 计数。ISSUE-07
+    // 项6（用户决策 A）下线 sdk_message_uuid 后，这些 transcript 不再被读取：
+    // runner 从不设置 uuid（Pi 无消息 id 透传），usage 已随 Pi 最终帧直存。
     fs.writeFileSync(
       path.join(workflowDir, '..', '..', `${sessionId}.jsonl`),
       [
@@ -156,6 +159,11 @@ describe('Claude Code Workflow session projection', () => {
         .join('\n'),
     );
 
+    const zeroUsage = JSON.stringify({
+      inputTokens: 0,
+      outputTokens: 0,
+      durationMs: 296_100,
+    });
     const messages = attachSessionWorkflowRuns(
       [
         {
@@ -165,16 +173,14 @@ describe('Claude Code Workflow session projection', () => {
           is_from_me: true,
         },
         {
+          // 旧库行仍可能带 sdk_message_uuid 值（列物理删除归 ISSUE-09）。负向
+          // 断言：即便 uuid 与 transcript usage 同时在场，也不再回补。
           id: 'final',
           timestamp: '2026-07-21T06:39:38.000Z',
           session_id: sessionId,
           sdk_message_uuid: 'final-sdk',
           is_from_me: true,
-          token_usage: JSON.stringify({
-            inputTokens: 0,
-            outputTokens: 0,
-            durationMs: 296_100,
-          }),
+          token_usage: zeroUsage,
         },
       ],
       { groupFolder: group, agentId: null },
@@ -185,65 +191,7 @@ describe('Claude Code Workflow session projection', () => {
       taskId: 'ws4k8unmd',
       totalTokens: 251_749,
     });
-    expect(JSON.parse(messages[1].token_usage ?? '{}')).toMatchObject({
-      inputTokens: 10,
-      outputTokens: 20,
-      cacheReadInputTokens: 30,
-      durationMs: 296_100,
-      modelUsage: {
-        'glm-5.2': {
-          inputTokens: 10,
-          outputTokens: 20,
-          cacheReadInputTokens: 30,
-        },
-      },
-    });
-
-    // Incremental follow-up: an active session keeps appending to the same
-    // transcript. A half-written line must stay invisible until completed,
-    // then the next pass parses only the appended bytes.
-    const transcript = path.join(workflowDir, '..', '..', `${sessionId}.jsonl`);
-    const turn2User = JSON.stringify({
-      type: 'user',
-      uuid: 'user-turn-2',
-      message: { content: '<messages><message>继续</message></messages>' },
-    });
-    const turn2Assistant = JSON.stringify({
-      type: 'assistant',
-      uuid: 'final-sdk-2',
-      message: {
-        id: 'assistant-api-call-2',
-        model: 'glm-5.2',
-        usage: { input_tokens: 7, output_tokens: 5 },
-        content: [{ type: 'text', text: '第二轮' }],
-      },
-    });
-    const half = turn2Assistant.slice(0, 40);
-    fs.appendFileSync(transcript, `\n${turn2User}\n${half}`);
-    const followUpMessage = () => ({
-      id: 'final-2',
-      timestamp: '2026-07-21T06:59:38.000Z',
-      session_id: sessionId,
-      sdk_message_uuid: 'final-sdk-2',
-      is_from_me: true,
-      token_usage: JSON.stringify({ inputTokens: 0, outputTokens: 0 }),
-    });
-    const midWrite = attachSessionWorkflowRuns([followUpMessage()], {
-      groupFolder: group,
-      agentId: null,
-    });
-    expect(JSON.parse(midWrite[0].token_usage ?? '{}').inputTokens ?? 0).toBe(
-      0,
-    );
-
-    fs.appendFileSync(transcript, turn2Assistant.slice(40));
-    const completed = attachSessionWorkflowRuns([followUpMessage()], {
-      groupFolder: group,
-      agentId: null,
-    });
-    expect(JSON.parse(completed[0].token_usage ?? '{}')).toMatchObject({
-      inputTokens: 7,
-      outputTokens: 5,
-    });
+    expect(messages[0].token_usage).toBeUndefined();
+    expect(messages[1].token_usage).toBe(zeroUsage);
   });
 });
