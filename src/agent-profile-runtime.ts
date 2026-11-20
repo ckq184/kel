@@ -333,32 +333,3 @@ export async function quiesceWorkspaceRunnersAroundCommit<T>(
     deps.queue.resumeGroupsAfterMutation(pauseToken);
   }
 }
-
-export async function stopWorkspaceRunnersForAgentIdentityChange(
-  deps: WebDeps,
-  folder: string,
-  options: {
-    primaryJid?: string;
-    reason: string;
-  },
-): Promise<string[]> {
-  const stopJids = getWorkspaceRuntimeJids(deps, folder, options.primaryJid);
-  const errors = await forceStopRuntimeJids(deps, stopJids);
-
-  if (errors.length > 0) {
-    logger.error(
-      { folder, stopJids, errors, reason: options.reason },
-      'Failed to stop workspace runners for Agent identity change',
-    );
-    throw new Error('Failed to stop workspace runners');
-  }
-
-  if (stopJids.length > 0) {
-    logger.info(
-      { folder, stopJids, reason: options.reason },
-      'Stopped workspace runners for Agent identity change',
-    );
-  }
-
-  return stopJids;
-}

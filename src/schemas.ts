@@ -638,6 +638,15 @@ export const SystemSettingsSchema = z
       .max(104857600)
       .optional(),
     maxConcurrentContainers: z.number().int().min(1).max(100).optional(),
+    // 用户级容器并发上限（容器模式）：null = 不启用；与 runtime-config 的
+    // normalize 口径一致（正整数、上限 100、可空）。
+    maxConcurrentContainersPerUser: z
+      .number()
+      .int()
+      .min(1)
+      .max(100)
+      .nullable()
+      .optional(),
     // Deprecated compatibility input. Host execution is serialized only by
     // Session; the route accepts and discards this key for stale clients.
     maxConcurrentHostProcesses: z.number().int().min(1).max(50).optional(),
@@ -988,6 +997,19 @@ export const UnifiedProviderCreateSchema = z
         code: z.ZodIssueCode.custom,
         path: ['anthropicBaseUrl'],
         message: '第三方供应商需要提供 Base URL 或 Auth Token',
+      });
+    }
+    // third_party 供应商没有官方端点可回退，Auth Token 必须指向自建的
+    // Base URL；official + token-only（官方 Bearer 场景）为有意语义，放行。
+    if (
+      data.type === 'third_party' &&
+      !!data.anthropicAuthToken?.trim() &&
+      !data.anthropicBaseUrl?.trim()
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['anthropicBaseUrl'],
+        message: '第三方供应商使用 Auth Token 时必须配置 Base URL',
       });
     }
   });

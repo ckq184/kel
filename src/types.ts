@@ -201,8 +201,6 @@ export interface RegisteredGroup {
     | 'auto_feishu'
     | 'transfer_reset';
   sender_allowlist?: string[] | null; // null/undefined = 不限制，[] = 仅 owner 可触发（未 /claim 时无人可触发），[ids] = 白名单
-  mcp_mode?: 'inherit' | 'custom'; // MCP 配置模式（默认 'inherit' 继承用户配置）
-  selected_mcps?: string[] | null; // custom 模式下选中的 MCP server IDs
   conversation_source?: ConversationSource; // 工作区会话来源（默认 manual）
   conversation_nav_mode?: ConversationNavMode; // 工作区会话导航模式（默认 horizontal）
   binding_mode?: ImBindingMode; // IM 绑定模式（默认 single_context）
@@ -409,7 +407,6 @@ export interface NewMessage {
   workflow_runs?: WorkflowRunSnapshot[];
   turn_id?: string | null;
   session_id?: string | null;
-  sdk_message_uuid?: string | null;
   source_kind?: MessageSourceKind | null;
   finalization_reason?: MessageFinalizationReason | null;
   task_id?: string | null;

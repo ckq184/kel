@@ -15,7 +15,7 @@ describe('agent runtime migration contracts', () => {
     expect(resolveAgentRuntimeKind({ AGENT_RUNTIME: 'pi' })).toBe('pi');
     expect(resolveAgentRuntimeKind({ CKQCLAW_AGENT_RUNTIME: 'pi' })).toBe('pi');
     expect(() => resolveAgentRuntimeKind({ AGENT_RUNTIME: 'other' })).toThrow(
-      'expected claude or pi',
+      'expected pi',
     );
   });
 

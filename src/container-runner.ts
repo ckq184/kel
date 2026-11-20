@@ -442,7 +442,6 @@ export interface ContainerOutput {
   readonly inputTurnId?: string;
   turnId?: string;
   sessionId?: string;
-  sdkMessageUuid?: string;
   sourceKind?: Exclude<MessageSourceKind, 'user_command'>;
   /** 'truncated'：上游断流截断的 partial（usage 双零指纹，runner 会自动续写） */
   finalizationReason?: 'completed' | 'interrupted' | 'error' | 'truncated';

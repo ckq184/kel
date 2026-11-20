@@ -10,7 +10,7 @@ Miniclaw 的相关数据分成三个彼此独立的层次：
 | 层次                   | 用途                                     | 生命周期                         |
 | ---------------------- | ---------------------------------------- | -------------------------------- |
 | 平台/AgentProfile 身份 | Agent 是谁、平台规则和能力策略           | 配置或代码版本管理，不可被忘记   |
-| Home Owner Profile     | 内置 Miniclaw 如何称呼实际 owner        | Home 跨 Session，专用 API 管理   |
+| Home Owner Profile     | 内置 Miniclaw 如何称呼实际 owner         | Home 跨 Session，专用 API 管理   |
 | Session 历史           | 一段对话的消息、工具轨迹与即时上下文     | 由 Session/消息管理功能单独处理  |
 | Workspace Memory       | 同一 Workspace 跨 Session 复用的提炼知识 | 忘记后不再检索，但保留修订审计线 |
 
@@ -25,7 +25,7 @@ Miniclaw 的相关数据分成三个彼此独立的层次：
   历史。
 - Workspace 文件仍通过文件功能管理，不能通过 Memory API 任意读取或改写。
 - “重建工作区”是明确的内容级永久重置：保留 Workspace 外壳，但删除整个 Memory
-  store 及其 versions、provenance、tombstones、audit/outbox。Home 同时删除
+  store 及其 versions、provenance、tombstones、audit。Home 同时删除
   Owner Profile 称呼并把首次唤醒生命周期重置为 `pending`；关联定时任务停止并
   移入回收站，运行历史保留。
 
@@ -45,7 +45,7 @@ Miniclaw 的相关数据分成三个彼此独立的层次：
   `/api/workspaces/:jid/owner-profile` 管理。owner 明确拒绝时记录 `skipped`；
   清空称呼保持 onboarding 已完成，不会重新触发。
 - 物理唯一真相仍是 Workspace Memory item
-  `miniclaw.owner.preferred_address`，因此沿用 revision、provenance、audit、outbox
+  `miniclaw.owner.preferred_address`，因此沿用 revision、provenance、audit
   和 CAS；但它是平台保留项，通用 Memory 的 create/update/forget、列表、详情、
   versions、搜索、FTS 和 Runtime snapshot 均不暴露它。旧库重复项先确定性收敛，
   再建立数据库唯一索引。

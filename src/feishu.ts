@@ -13,6 +13,7 @@ import { logger } from './logger.js';
 import {
   saveDownloadedFile,
   sanitizeImFilename,
+  buildInlinedFileContent,
   MAX_FILE_SIZE,
   FileTooLargeError,
 } from './im-downloader.js';
@@ -2647,12 +2648,14 @@ export function createFeishuConnection(
               groupFolder,
             );
             const placeholder = `[文件: ${safeFilename}]`;
-            text = text.replace(
-              placeholder,
-              relPath
-                ? `[文件: ${relPath}]`
-                : `[文件下载失败: ${safeFilename}]`,
-            );
+            // 弱模型兜底：抽取成功则内联文件文本，失败回退仅路径标记。
+            const replacement = !relPath
+              ? `[文件下载失败: ${safeFilename}]`
+              : ((await buildInlinedFileContent(groupFolder, relPath)) ??
+                `[文件: ${relPath}]`);
+            // replacer 用函数形式：replacement 含文件抽取文本，其中的
+            // $& / $' 等特殊序列不能被 String.replace 展开。
+            text = text.replace(placeholder, () => replacement);
           }
         }
       }

@@ -56,7 +56,6 @@ export interface Message {
   workflow_runs?: import('../stream-event.types').WorkflowRunSnapshot[];
   turn_id?: string | null;
   session_id?: string | null;
-  sdk_message_uuid?: string | null;
   source_kind?:
     | 'sdk_final'
     | 'sdk_send_message'
@@ -241,7 +240,6 @@ function mergeMessagesChronologically(
         JSON.stringify(m.workflow_runs ?? []) ||
       old.turn_id !== m.turn_id ||
       old.session_id !== m.session_id ||
-      old.sdk_message_uuid !== m.sdk_message_uuid ||
       old.source_kind !== m.source_kind ||
       old.finalization_reason !== m.finalization_reason ||
       old.delivery_mode !== m.delivery_mode ||
@@ -3040,7 +3038,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         completedWorkflowRuns.length > 0 ? completedWorkflowRuns : undefined,
       turn_id: wsMsg.turn_id ?? null,
       session_id: wsMsg.session_id ?? null,
-      sdk_message_uuid: wsMsg.sdk_message_uuid ?? null,
       source_kind: wsMsg.source_kind ?? null,
       finalization_reason: wsMsg.finalization_reason ?? null,
       delivery_mode: wsMsg.delivery_mode ?? null,

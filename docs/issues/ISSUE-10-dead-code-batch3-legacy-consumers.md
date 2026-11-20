@@ -41,7 +41,7 @@
 2. **`ignoreMessagesBefore`**：沿整条透传链删除：`src/index.ts:18425/18514` → `src/im-manager.ts:1082` → `src/im-channel.ts:290/454/591` → `src/feishu.ts:108`
 3. **飞书全局单例旧 API**：`src/feishu.ts:3789-3837`
 4. **`src/im-manager.ts:1261` 的 `sendFeishuMessage` 方法**
-5. **ContainerInput 中的 `contextAudit` 和 `skillManifest`**（`src/container-runner.ts:1737-1812`、`:2747-2754`）：等 ISSUE-07 第 5 项的结论，如果宿主不打算直接使用这份数据，就删除
+5. **ContainerInput 中的 `contextAudit` 和 `skillManifest`**（`src/container-runner.ts:1737-1812`、`:2747-2754`）：ISSUE-07 第 5 项已拍板（2026-11-20）——**方向为宿主直接记快照，不删除**：在 `src/container-runner.ts` 容器路径（约 `:1737-1812` 构造 `contextAudit` 处）与宿主机路径（约 `:2747-2754`）构造完成后调 `recordRunContextSnapshot`（`src/run-context-snapshot.ts`）。实现时注意两点：快照键为 `` `${chatJid}\0${agentId ?? 'main'}` ``（`snapshotKey`），而 agent-profiles 预览按 `'main'` 键读（`src/routes/agent-profiles.ts:317` 调 `getRunContextSnapshot(workspace.jid)` 未传 agentId），需键对齐；宿主构造的 audit 无 `sdkContextUsage` 字段，budget 区会显示 unavailable。ISSUE-07 只登记方向，不实现
 6. **WS 消息**：`status_update`（`src/web.ts:2840-2853`、`:2953`，每 5 秒一次的定时器）、`typing`（`src/web.ts:1983-1991`）、`task_state` 类型（`src/types.ts:946-955`）
 7. **runner 侧的死代码**：`task_progress.rawEvent`（`pi-runner.ts:220-224`），以及 pi-runner 中从未触发过的 case（`:171-186`、`:227-241`、`:257-259`）
 8. **stdin 中的死字段**：`ckqclawOwnerProfile`、`ckqclawBootstrapPending`、`agentName`、`identityHash`（`src/index.ts:9117-9125` 等）

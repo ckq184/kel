@@ -944,6 +944,24 @@ export class GroupQueue {
     return true;
   }
 
+  /** 检查指定 JID 是否有自己直接启动的活跃 runner（非通过 folder 共享匹配） */
+  hasDirectActiveRunner(groupJid: string): boolean {
+    const state = this.groups.get(groupJid);
+    return state?.active === true;
+  }
+
+  /** Count active task runners whose JID starts with the given base JID + '#task:' */
+  countActiveTaskRunners(baseJid: string): number {
+    const prefix = baseJid + '#task:';
+    let count = 0;
+    for (const [jid, state] of this.groups.entries()) {
+      if (state.active && jid.startsWith(prefix)) {
+        count++;
+      }
+    }
+    return count;
+  }
+
   /**
    * List every virtual-JID runner that belongs to the same folder family as
    * `baseJid` (i.e. sub-agents `{...}#agent:{id}` and scheduled tasks

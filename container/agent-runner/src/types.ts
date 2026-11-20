@@ -318,7 +318,6 @@ export interface ContainerOutput {
   readonly inputTurnId?: string;
   turnId?: string;
   sessionId?: string;
-  sdkMessageUuid?: string;
   sourceKind?:
     | 'sdk_final'
     | 'sdk_send_message'

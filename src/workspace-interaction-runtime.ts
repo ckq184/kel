@@ -59,21 +59,6 @@ export function shouldResolveFrameworkPrimaryAnswer(input: {
   );
 }
 
-/**
- * Assistant turns require a healthy SDK terminal plus a physical reply ACK.
- * Proactive turns may intentionally stay silent; once an utterance was delivered,
- * a later runner error must not replay the user's input and duplicate it.
- */
-export function isInteractionTurnSettled(input: {
-  mode: InteractionMode;
-  healthyInputTurnCompleted: boolean;
-  utteranceDelivered: boolean;
-}): boolean {
-  return input.mode === 'proactive'
-    ? input.healthyInputTurnCompleted || input.utteranceDelivered
-    : input.healthyInputTurnCompleted && input.utteranceDelivered;
-}
-
 export function usesNativeMessagePresentation(mode: InteractionMode): boolean {
   return mode === 'proactive';
 }
