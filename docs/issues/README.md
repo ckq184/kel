@@ -40,7 +40,7 @@
 | --------------------------------------------------------------- | -------------------------------------------------------- | ------ | ------------------- | ------------------ | ------ |
 | [ISSUE-01](ISSUE-01-p0-runtime-confirmation.md)                 | P0 实机确认（只读诊断）                                  | P0     | 无                  | 否                 | 已完成 |
 | [ISSUE-02](ISSUE-02-pi-stream-stamping-and-message-boundary.md) | Pi 事件契约（一）：流式盖章与消息边界                    | P0     | 01                  | 部分（已决策 a1）  | 已完成 |
-| [ISSUE-03](ISSUE-03-pi-subagent-and-tool-card.md)               | Pi 事件契约（二）：子代理与工具卡                        | P0     | 01、02              | 部分（已决策 A）   | 进行中 |
+| [ISSUE-03](ISSUE-03-pi-subagent-and-tool-card.md)               | Pi 事件契约（二）：子代理与工具卡                        | P0     | 01、02              | 部分（已决策 A）   | 已完成 |
 | [ISSUE-04](ISSUE-04-pi-runtime-settings-and-credentials.md)     | Pi 运行时设置与凭据（6 项“设置不生效”）                  | P0     | 01（仅 OAuth 一项） | **是**             | 待领取 |
 | [ISSUE-05](ISSUE-05-behavior-small-fixes.md)                    | 行为级小修：孤儿结果文件、溢出标记、/pair 正则、safeRoot | P1     | 无                  | 部分               | 已完成 |
 | [ISSUE-06](ISSUE-06-frontend-dropped-logic.md)                  | 前端掉线逻辑修复                                         | P1     | 无                  | 部分               | 已完成 |
