@@ -1,16 +1,18 @@
 {
-  "task": "issue02-pi-stream-stamping-and-message-boundary - Pi事件契约（一）：流式盖章与消息边界（docs/issue02-pi-stream-stamping-and-message-boundary-plan.md）；base随合入main更新bd6f204（合入前main tip），allow扩入tests/stream-event-producer-contract.test.ts（ISSUE-02完成后按ISSUE-13契约测试失败提示删raw_sdk_event白名单条目，任务池README已预告）",
-  "base": "bd6f204",
+  "task": "issue03-pi-subagent-and-tool-card - Pi事件契约（二）：子代理与工具卡（docs/issue03-pi-subagent-and-tool-card-plan.md）",
+  "base": "cfae147",
   "allow": [
-    "container/agent-runner/src/runtime/types.ts",
-    "container/agent-runner/src/runtime/pi/pi-session.ts",
     "container/agent-runner/src/runtime/pi/pi-runner.ts",
-    "container/agent-runner/src/stream-stamp.ts",
-    "container/agent-runner/src/pi-index.ts",
-    "tests/pi-stream-stamping-and-boundary.test.ts",
+    "shared/stream-event.ts",
+    "src/stream-event.types.ts",
+    "web/src/stream-event.types.ts",
+    "container/agent-runner/src/stream-event.types.ts",
+    "src/index.ts",
+    "web/src/stores/chat.ts",
+    "tests/pi-subagent-tool-contract.test.ts",
     "tests/stream-event-producer-contract.test.ts",
-    "docs/issue02-pi-stream-stamping-and-message-boundary-plan.md",
-    "docs/issues/ISSUE-02-pi-stream-stamping-and-message-boundary.md",
+    "docs/issue03-pi-subagent-and-tool-card-plan.md",
+    "docs/issues/ISSUE-03-pi-subagent-and-tool-card.md",
     "docs/issues/README.md"
   ]
 }
