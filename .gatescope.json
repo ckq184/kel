@@ -56,6 +56,7 @@
     "web/src/hooks/useConnectedChannels.ts",
     "web/src/pages/SetupProvidersPage.tsx",
     "web/src/components/settings/ProviderEditor.tsx",
+    "web/src/components/settings/types.ts",
     "web/src/components/settings/ChannelAccountsManager.tsx",
     "web/src/components/settings/channel-accounts/QrOnboardingPanel.tsx",
     "web/src/pages/UsagePage.tsx",
