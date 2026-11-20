@@ -421,6 +421,7 @@ import {
   buildAgentProfilePrompt,
   hasAgentProfilePrompts,
 } from './agent-profile-prompts.js';
+import { resolveAgentSdkEffort } from './agent-effort.js';
 import {
   getFeishuProviderConfigWithSource,
   getUserFeishuConfig,
@@ -2140,6 +2141,9 @@ function toContainerAgentProfile(
     identityHash: profile.identity_hash,
     identityPrompt: buildAgentProfilePrompt(profile),
     includeClaudePreset: profile.prompt_mode === 'append',
+    // ISSUE-04 ③: resolved effort rides the profile contract; `inherit`
+    // stays undefined so the runner falls back to the provider env.
+    effort: resolveAgentSdkEffort(profile.runtime_policy),
     modelConfigId: profile.model_config_id,
     runtimePolicy: profile.runtime_policy,
   };

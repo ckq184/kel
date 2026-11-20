@@ -240,7 +240,19 @@ export interface ContainerInput {
     isDefault: boolean;
     identityHash: string;
     identityPrompt: string;
+    /**
+     * Legacy Claude-era prompt-mode marker (append vs replace). No Pi
+     * consumer: the Pi system prompt is CKQClaw runtime rules plus the four
+     * profile sections and there is no Claude Code preset to retain
+     * (ISSUE-04 ④). Kept on the wire for host compatibility.
+     */
     includeClaudePreset: boolean;
+    /**
+     * Host-resolved SDK effort override (ISSUE-04 ③), already narrowed to the
+     * Pi-compatible level set; `inherit` never travels on the wire. Wins over
+     * the provider-level CLAUDE_CODE_EFFORT_LEVEL env; undefined defers to it.
+     */
+    effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
     /** Opaque host-normalized policy; retained only for runtime provenance. */
     runtimePolicy?: unknown;
   };

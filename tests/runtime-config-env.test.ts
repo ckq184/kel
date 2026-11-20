@@ -292,3 +292,82 @@ describe('buildClaudeEnvLines', () => {
     expect(env.ANTHROPIC_CUSTOM_HEADERS).toBe('x-current-provider: yes');
   });
 });
+
+// ISSUE-04 ⑥：OAuth-only 官方端点凭据映射为 Pi 认可的 Bearer 变量。
+// 所有 token 均为假 fixture。
+describe('OAuth credential mapping to ANTHROPIC_AUTH_TOKEN (ISSUE-04 ⑥)', () => {
+  test('single setup token maps to ANTHROPIC_AUTH_TOKEN on official endpoints', () => {
+    const lines = buildClaudeEnvLines(
+      config({
+        anthropicBaseUrl: '',
+        claudeCodeOauthToken: 'fake-oauth-token',
+      }),
+      NO_CUSTOM_ENV,
+    );
+
+    expect(lines).toContain('ANTHROPIC_AUTH_TOKEN=fake-oauth-token');
+    // Claude 时代变量保留：遗留面清理归 ISSUE-10
+    expect(lines).toContain('CLAUDE_CODE_OAUTH_TOKEN=fake-oauth-token');
+  });
+
+  test('full OAuth credentials map their access token', () => {
+    const lines = buildClaudeEnvLines(
+      config({
+        anthropicBaseUrl: '',
+        claudeOAuthCredentials: {
+          accessToken: 'fake-access-token',
+          refreshToken: 'fake-refresh-token',
+          expiresAt: 4102444800000,
+          scopes: ['user:inference'],
+        },
+      }),
+      NO_CUSTOM_ENV,
+    );
+
+    expect(lines).toContain('ANTHROPIC_AUTH_TOKEN=fake-access-token');
+  });
+
+  test('explicit api key or auth token wins over the OAuth mapping', () => {
+    const withApiKey = buildClaudeEnvLines(
+      config({
+        anthropicBaseUrl: '',
+        claudeCodeOauthToken: 'fake-oauth-token',
+        anthropicApiKey: 'fake-api-key',
+      }),
+      NO_CUSTOM_ENV,
+    );
+    expect(withApiKey).toContain('ANTHROPIC_API_KEY=fake-api-key');
+    expect(
+      withApiKey.some((line) => line.startsWith('ANTHROPIC_AUTH_TOKEN=')),
+    ).toBe(false);
+
+    const withAuthToken = buildClaudeEnvLines(
+      config({
+        anthropicBaseUrl: '',
+        claudeCodeOauthToken: 'fake-oauth-token',
+        anthropicAuthToken: 'Bearer fake-explicit-bearer',
+      }),
+      NO_CUSTOM_ENV,
+    );
+    expect(withAuthToken).toContain(
+      'ANTHROPIC_AUTH_TOKEN=fake-explicit-bearer',
+    );
+    // OAuth 值不得重复注入或覆盖显式 token
+    expect(
+      withAuthToken.filter((line) => line.startsWith('ANTHROPIC_AUTH_TOKEN='))
+        .length,
+    ).toBe(1);
+  });
+
+  test('custom endpoints never receive OAuth tokens', () => {
+    const lines = buildClaudeEnvLines(
+      config({ claudeCodeOauthToken: 'fake-oauth-token' }),
+      NO_CUSTOM_ENV,
+    );
+
+    expect(lines.some((line) => line.startsWith('ANTHROPIC_AUTH_TOKEN='))).toBe(
+      false,
+    );
+    expect(lines).toContain('CLAUDE_CODE_OAUTH_TOKEN=fake-oauth-token');
+  });
+});

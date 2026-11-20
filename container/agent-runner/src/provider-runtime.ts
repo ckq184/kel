@@ -1,7 +1,4 @@
-import {
-  resolveDeclaredContextWindow,
-  stripOneMillionSuffix,
-} from './context-window.js';
+import { stripOneMillionSuffix } from './context-window.js';
 
 export const CLAUDE_ENDPOINT_KIND_ENV = 'CKQCLAW_CLAUDE_ENDPOINT_KIND';
 export const CKQCLAW_CLAUDE_ENDPOINT_KIND_ENV = 'CKQCLAW_CLAUDE_ENDPOINT_KIND';
@@ -19,17 +16,10 @@ export interface ClaudeProviderRuntime {
    * Host-normalized context-window declaration (任务AL), or undefined when the
    * host never injected one — the runner then falls back to the [1m] heuristic
    * on the raw model string so mixed host/runner versions stay no worse than
-   * the status quo.
+   * the status quo. Consumed by the Pi wiring as a model-definition override
+   * (ISSUE-04 ①, `resolveContextWindowOverride`).
    */
   declaredContextWindow: number | undefined;
-}
-
-export interface ClaudeQueryModelRuntime {
-  model: string;
-  queryModelOptions: { model?: string };
-  usageModelKey: string;
-  /** Effective context window: declared > [1m] heuristic > 200K. */
-  contextWindow: number;
 }
 
 /** Parse the host declaration; garbage or missing values fall back to the heuristic. */
@@ -40,25 +30,6 @@ function parseDeclaredContextWindow(
   if (!raw) return undefined;
   const value = Number.parseInt(raw, 10);
   return Number.isFinite(value) && value > 0 ? value : undefined;
-}
-
-/** Resolve a model at query time so a warm runner can switch tiers without respawn. */
-export function resolveClaudeQueryModelRuntime(
-  providerRuntime: ClaudeProviderRuntime,
-  modelOverride?: string,
-): ClaudeQueryModelRuntime {
-  const model = modelOverride?.trim() || providerRuntime.model;
-  return {
-    model,
-    // Egress point: the bare model id goes on the wire, the raw string keeps
-    // feeding usage aggregation so legacy buckets do not split.
-    queryModelOptions: model ? { model: stripOneMillionSuffix(model) } : {},
-    usageModelKey: model || 'default',
-    contextWindow: resolveDeclaredContextWindow(
-      model,
-      providerRuntime.declaredContextWindow,
-    ),
-  };
 }
 
 /**

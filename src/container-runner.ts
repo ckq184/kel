@@ -113,6 +113,7 @@ import { resolveRunnerLivenessTimeouts } from './runner-liveness.js';
 import {
   removeProviderEffortEnv,
   resolveAgentSdkEffort,
+  type SdkAgentEffort,
 } from './agent-effort.js';
 
 /**
@@ -379,7 +380,14 @@ export interface ContainerInput {
     isDefault: boolean;
     identityHash: string;
     identityPrompt: string;
+    /** Legacy Claude-era prompt-mode marker; no Pi consumer (ISSUE-04 ④). */
     includeClaudePreset: boolean;
+    /**
+     * Host-resolved SDK effort override (ISSUE-04 ③), already narrowed to the
+     * Pi-compatible level set. Undefined means inherit the provider-level
+     * CLAUDE_CODE_EFFORT_LEVEL env or the Pi default.
+     */
+    effort?: SdkAgentEffort;
     /** Null means inherit the system default model configuration. */
     modelConfigId?: string | null;
     runtimePolicy?: AgentProfileRuntimePolicy;
@@ -578,19 +586,6 @@ function resolveAgentProfileHostSkillPolicy(
     }
   }
   return policy;
-}
-
-function getAgentAutoCompactWindow(agentProfile?: RunnerAgentProfile): number {
-  const value = agentProfile?.runtimePolicy?.context?.auto_compact_window ?? 0;
-  return value === 0 || (value >= 100_000 && value <= 1_000_000) ? value : 0;
-}
-
-function getAgentAutoCompactPercentage(
-  agentProfile?: RunnerAgentProfile,
-): number {
-  const value =
-    agentProfile?.runtimePolicy?.context?.auto_compact_percentage ?? 0;
-  return value === 0 || (value >= 50 && value <= 90) ? value : 0;
 }
 
 function resolveAgentProfileUserSkillsPolicy(
@@ -936,21 +931,6 @@ export function trySelectPoolProvider(
   }
 }
 
-/** Inject the globally configured same-turn fallback into the agent runner. */
-export function applyFallbackModelToEnvLines(
-  envLines: string[],
-  configuredFallbackModel = getSystemSettings().fallbackModel,
-): void {
-  for (let i = envLines.length - 1; i >= 0; i--) {
-    if (envLines[i].startsWith('CKQCLAW_FALLBACK_MODEL=')) {
-      envLines.splice(i, 1);
-    }
-  }
-  const fallbackModel = configuredFallbackModel?.trim();
-  if (!fallbackModel) return;
-  envLines.push(`CKQCLAW_FALLBACK_MODEL=${fallbackModel}`);
-}
-
 function assertRuntimeEnvPathSegment(value: string, label: string): string {
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(value)) {
     throw new Error(`Invalid ${label} for container environment isolation`);
@@ -1291,6 +1271,9 @@ export function buildVolumeMounts(
   const agentEffort = resolveAgentSdkEffort(agentProfile?.runtimePolicy);
   removeProviderEffortEnv(envLines, agentEffort);
   // Agent policy is authoritative; do not inherit global/custom runtime env.
+  // AUTO_COMPACT_* stays stripped without re-injection: the percentage/window
+  // knobs were retired from the UI (ISSUE-04 ⑤) and Pi owns its compaction
+  // threshold, so no consumer remains for an injected value.
   for (let index = envLines.length - 1; index >= 0; index -= 1) {
     if (
       envLines[index]?.startsWith('AUTO_COMPACT_WINDOW=') ||
@@ -1301,13 +1284,6 @@ export function buildVolumeMounts(
     ) {
       envLines.splice(index, 1);
     }
-  }
-  const autoCompactPercentage = getAgentAutoCompactPercentage(agentProfile);
-  const autoCompactWindow = getAgentAutoCompactWindow(agentProfile);
-  if (autoCompactPercentage > 0) {
-    envLines.push(`AUTO_COMPACT_PERCENTAGE=${autoCompactPercentage}`);
-  } else if (autoCompactWindow > 0) {
-    envLines.push(`AUTO_COMPACT_WINDOW=${autoCompactWindow}`);
   }
   const mcpPolicyMode = getAgentProfileMcpPolicyMode(agentProfile);
   if (mcpPolicyMode !== 'inherit') {
@@ -1328,7 +1304,6 @@ export function buildVolumeMounts(
       `CKQCLAW_USER_MCP_SERVERS_JSON=${JSON.stringify(userMcpServers)}`,
     );
   }
-  applyFallbackModelToEnvLines(envLines);
   applyFeishuCliBindingToEnvLines(envLines, feishuCliBinding);
   if (envLines.length > 0) {
     const envFilePath = path.join(envDir, 'env');
@@ -2497,12 +2472,6 @@ export async function runHostAgent(
       hostEnv,
       resolveRuntimeMcpServers(group, input.agentProfile),
     );
-    const fallbackModel = getSystemSettings().fallbackModel?.trim();
-    if (fallbackModel) {
-      hostEnv['CKQCLAW_FALLBACK_MODEL'] = fallbackModel;
-    } else {
-      delete hostEnv['CKQCLAW_FALLBACK_MODEL'];
-    }
 
     // Third-party provider: unless this provider explicitly injects
     // ANTHROPIC_AUTH_TOKEN (Bearer proxy mode), remove any inherited host token
@@ -2572,17 +2541,10 @@ export async function runHostAgent(
     }
 
     // Agent policy is authoritative; clear inherited legacy process env first.
+    // AUTO_COMPACT_* stays stripped without re-injection: the knobs were
+    // retired from the UI (ISSUE-04 ⑤) and Pi owns its compaction threshold.
     delete hostEnv['AUTO_COMPACT_WINDOW'];
     delete hostEnv['AUTO_COMPACT_PERCENTAGE'];
-    const autoCompactPercentage = getAgentAutoCompactPercentage(
-      input.agentProfile,
-    );
-    const autoCompactWindow = getAgentAutoCompactWindow(input.agentProfile);
-    if (autoCompactPercentage > 0) {
-      hostEnv['AUTO_COMPACT_PERCENTAGE'] = String(autoCompactPercentage);
-    } else if (autoCompactWindow > 0) {
-      hostEnv['AUTO_COMPACT_WINDOW'] = String(autoCompactWindow);
-    }
     const hostMcpPolicyMode = getAgentProfileMcpPolicyMode(input.agentProfile);
     delete hostEnv['CKQCLAW_AGENT_TOOL_POLICY'];
     delete hostEnv['CKQCLAW_AGENT_DISALLOWED_TOOLS'];

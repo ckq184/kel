@@ -15,24 +15,19 @@ import {
   composeAgentPrompt,
   estimatePromptTokens,
   totalPromptStats,
-  type AgentPromptMode,
   type AgentPromptParts,
   type AgentPromptSection,
 } from '@/utils/agent-prompts';
 
 interface AgentPromptEditorProps {
   value: AgentPromptParts;
-  mode: AgentPromptMode;
   onChange: (value: AgentPromptParts) => void;
-  onModeChange: (mode: AgentPromptMode) => void;
   onOpenAssistant?: (section: AgentPromptSection) => void;
 }
 
 export function AgentPromptEditor({
   value,
-  mode,
   onChange,
-  onModeChange,
   onOpenAssistant,
 }: AgentPromptEditorProps) {
   const [activeSection, setActiveSection] =
@@ -81,30 +76,15 @@ export function AgentPromptEditor({
       </div>
 
       <div className="space-y-5 px-5 py-5">
-        <fieldset>
-          <legend className="mb-2 text-xs font-medium text-muted-foreground">
-            Claude Code 默认提示词
-          </legend>
-          <div className="grid gap-2 sm:grid-cols-2">
-            <PromptModeOption
-              checked={mode === 'append'}
-              title="保留并追加（推荐）"
-              description="Assistant 模式保留 Claude Code 默认提示词，再追加下面四部分。"
-              onSelect={() => onModeChange('append')}
-            />
-            <PromptModeOption
-              checked={mode === 'replace'}
-              title="完全替换"
-              description="仅使用下面四部分和 CKQClaw 必需的运行指令。"
-              onSelect={() => onModeChange('replace')}
-            />
-          </div>
-          <p className="mt-2 text-xs leading-5 text-muted-foreground">
-            主动模式始终使用智能体配置与 CKQClaw
-            运行规则组成的独立系统提示词，不继承 Assistant 导向的 Claude Code
-            默认提示词；此选项仅影响 Assistant 模式。
+        <div className="rounded-lg border border-border bg-muted/30 px-4 py-3">
+          <p className="text-xs font-medium text-foreground">系统提示词构成</p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            Pi 运行时的系统提示词由 CKQClaw
+            运行规则（安全、记忆、渠道、输出契约）与下面四段提示词组成。Claude
+            Code 默认提示词已随运行时迁移消失，历史的「追加 /
+            替换」两种模式产物一致，故不再提供切换。
           </p>
-        </fieldset>
+        </div>
 
         <div className="grid gap-4 lg:grid-cols-[190px_minmax(0,1fr)]">
           <div
@@ -189,9 +169,9 @@ export function AgentPromptEditor({
           <DialogHeader>
             <DialogTitle>四段自定义提示词预览</DialogTitle>
             <DialogDescription>
-              {mode === 'append'
-                ? '以下内容会追加到 Claude Code 默认提示词之后。预览不包含 Claude Code 默认层及 CKQClaw 强制注入的安全、运行时和渠道规则。'
-                : '以下内容会替换 Claude Code 默认提示词。预览不包含 CKQClaw 强制注入的安全、运行时和渠道规则。'}
+              以下为四段自定义提示词。实际系统提示词还会前置 CKQClaw
+              强制注入的安全、运行时和渠道规则；Pi 运行时没有 Claude Code
+              默认提示词层。
             </DialogDescription>
           </DialogHeader>
           <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap rounded-lg border bg-muted/20 p-4 text-xs leading-6 text-foreground">
@@ -200,36 +180,5 @@ export function AgentPromptEditor({
         </DialogContent>
       </Dialog>
     </section>
-  );
-}
-
-function PromptModeOption({
-  checked,
-  title,
-  description,
-  onSelect,
-}: {
-  checked: boolean;
-  title: string;
-  description: string;
-  onSelect: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={checked}
-      onClick={onSelect}
-      className={`min-h-20 rounded-lg border px-3 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-        checked
-          ? 'border-primary bg-primary/5'
-          : 'border-border hover:bg-muted/60'
-      }`}
-    >
-      <span className="block text-sm font-medium text-foreground">{title}</span>
-      <span className="mt-1 block text-xs leading-5 text-muted-foreground">
-        {description}
-      </span>
-    </button>
   );
 }

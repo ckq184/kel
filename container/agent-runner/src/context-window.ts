@@ -36,37 +36,23 @@ export function resolveDeclaredContextWindow(
     : STANDARD_CONTEXT_WINDOW;
 }
 
-/** Convert a window-relative compact percentage into the SDK token setting. */
-export function resolveAutoCompactWindow(
-  contextWindow: number,
-  percentage: number,
-): number | undefined {
-  if (!Number.isInteger(percentage) || percentage < 50 || percentage > 90) {
-    return undefined;
-  }
-  if (!Number.isFinite(contextWindow) || contextWindow <= 0) {
-    return undefined;
-  }
-  return Math.round((contextWindow * percentage) / 100);
-}
-
 /**
- * Older installs persisted an absolute compact threshold.  Preserve smaller
- * values, but never pass a threshold above 90% of the effective context window
- * to the SDK: an 800K value inherited from a 1M-window model would otherwise
- * overflow after switching back to a regular 200K model before compaction can
- * run.
+ * Pi wiring override (ISSUE-04 ①): produce the context-window value that
+ * should override the Pi model definition, or undefined when Pi's own
+ * catalog/registration value must be preserved. The host declaration wins;
+ * the legacy [1m] suffix keeps mixed host/runner versions no worse than the
+ * status quo; an undeclared, unsuffixed model defers to Pi.
+ *
+ * The historical AUTO_COMPACT_WINDOW/PERCENTAGE resolvers were removed with
+ * the settings retirement (ISSUE-04 ⑤): Pi runs native reserve-based
+ * compaction and its threshold is runtime-owned.
  */
-export function resolveLegacyAutoCompactWindow(
-  contextWindow: number,
-  configuredTokens: number,
+export function resolveContextWindowOverride(
+  model: string,
+  declared?: number,
 ): number | undefined {
-  if (!Number.isFinite(configuredTokens) || configuredTokens <= 0) {
-    return undefined;
+  if (declared !== undefined && Number.isFinite(declared) && declared > 0) {
+    return declared;
   }
-  if (!Number.isFinite(contextWindow) || contextWindow <= 0) {
-    return undefined;
-  }
-  const safeMaximum = Math.floor(contextWindow * 0.9);
-  return Math.min(Math.floor(configuredTokens), safeMaximum);
+  return isExtendedContextModel(model) ? EXTENDED_CONTEXT_WINDOW : undefined;
 }

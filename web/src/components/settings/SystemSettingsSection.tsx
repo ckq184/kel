@@ -273,9 +273,6 @@ export function SystemSettingsSection({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  // fallbackModel 是自由字符串，独立于数值 field 抽象；仅在 runtime scope 展示。
-  const [fallbackModel, setFallbackModel] = useState('');
-  const [initialFallbackModel, setInitialFallbackModel] = useState('');
 
   const loadSettings = useCallback(async () => {
     if (!canManage) return;
@@ -287,8 +284,6 @@ export function SystemSettingsSection({
       setSettings(data);
       setValues(nextValues);
       setInitialValues(nextValues);
-      setFallbackModel(data.fallbackModel ?? '');
-      setInitialFallbackModel(data.fallbackModel ?? '');
       setTouched({});
       setSubmitted(false);
     } catch (error) {
@@ -322,18 +317,14 @@ export function SystemSettingsSection({
     ) as Partial<Record<NumericSettingKey, string>>;
   }, [activeFields, values]);
 
-  const fallbackModelDirty =
-    scope === 'runtime' && fallbackModel.trim() !== initialFallbackModel.trim();
-
   const dirty = useMemo(
     () =>
-      (!!values &&
-        !!initialValues &&
-        activeFields.some(
-          (field) => values[field.key] !== initialValues[field.key],
-        )) ||
-      fallbackModelDirty,
-    [activeFields, initialValues, values, fallbackModelDirty],
+      !!values &&
+      !!initialValues &&
+      activeFields.some(
+        (field) => values[field.key] !== initialValues[field.key],
+      ),
+    [activeFields, initialValues, values],
   );
 
   const handleSave = async () => {
@@ -345,9 +336,6 @@ export function SystemSettingsSection({
     for (const field of activeFields) {
       payload[field.key] = field.toStored(Number(values[field.key]));
     }
-    if (scope === 'runtime') {
-      payload.fallbackModel = fallbackModel.trim();
-    }
 
     setSaving(true);
     try {
@@ -356,8 +344,6 @@ export function SystemSettingsSection({
       setSettings(data);
       setValues(nextValues);
       setInitialValues(nextValues);
-      setFallbackModel(data.fallbackModel ?? '');
-      setInitialFallbackModel(data.fallbackModel ?? '');
       setTouched({});
       setSubmitted(false);
       toast.success('系统参数已保存，将应用于后续启动的任务');
@@ -440,32 +426,6 @@ export function SystemSettingsSection({
         ))}
       </div>
 
-      {scope === 'runtime' && (
-        <section className="border-t border-border py-6">
-          <header className="mb-5 max-w-2xl">
-            <h2 className="text-base font-semibold text-foreground">
-              额度墙回退模型
-            </h2>
-            <p className="mt-1 text-xs leading-5 text-muted-foreground">
-              主模型在一轮里撞到账号用量上限（如「You've reached your Fable 5
-              limit」）时，用该模型在同一轮无缝重跑一次，上限通知不外发给用户。填模型别名或完整
-              ID（如 <code>opus</code>、<code>claude-opus-4-8</code>
-              ）。留空关闭，保留原行为。同一 OAuth
-              账号下不同模型有独立额度桶，因此 fable→opus
-              这类回退无需额外配置第二个 provider。
-            </p>
-          </header>
-          <Input
-            type="text"
-            value={fallbackModel}
-            onChange={(e) => setFallbackModel(e.target.value)}
-            placeholder="留空 = 关闭（如 opus / claude-opus-4-8）"
-            className="max-w-xs"
-            aria-label="额度墙回退模型"
-          />
-        </section>
-      )}
-
       <div className="sticky bottom-0 z-10 -mx-4 mt-2 flex min-h-16 items-center justify-between gap-4 border-t border-border bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/85">
         <p className="text-xs text-muted-foreground" aria-live="polite">
           {dirty ? '有尚未保存的系统参数' : '系统参数已保存'}
@@ -498,8 +458,6 @@ export function HostIntegrationSettingsSection({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [mainAutoCompactPercentage, setMainAutoCompactPercentage] =
-    useState('80');
 
   const loadSettings = useCallback(async () => {
     if (!isAdmin) return;
@@ -511,11 +469,6 @@ export function HostIntegrationSettingsSection({
       );
       setSettings(data);
       setDraft(data);
-      setMainAutoCompactPercentage(
-        data.mainAgentAutoCompactPercentage > 0
-          ? String(data.mainAgentAutoCompactPercentage)
-          : '80',
-      );
     } catch (error) {
       setLoadError(
         getErrorMessage(error, '无法读取宿主机集成设置，请稍后重试。'),
@@ -553,33 +506,9 @@ export function HostIntegrationSettingsSection({
 
   const dirty =
     scope === 'main-agent'
-      ? draft.mainAgentContextSource !== settings.mainAgentContextSource ||
-        draft.mainAgentAutoCompactWindow !==
-          settings.mainAgentAutoCompactWindow ||
-        draft.mainAgentAutoCompactPercentage !==
-          settings.mainAgentAutoCompactPercentage
+      ? draft.mainAgentContextSource !== settings.mainAgentContextSource
       : draft.externalClaudeDir !== settings.externalClaudeDir ||
         draft.adminHostOnlyMode !== settings.adminHostOnlyMode;
-
-  const mainAutoCompactError = (() => {
-    if (
-      draft.mainAgentAutoCompactWindow === 0 &&
-      draft.mainAgentAutoCompactPercentage === 0
-    ) {
-      return null;
-    }
-    if (
-      draft.mainAgentAutoCompactWindow > 0 &&
-      draft.mainAgentAutoCompactPercentage === 0
-    ) {
-      return null;
-    }
-    const value = Number(mainAutoCompactPercentage);
-    if (!Number.isInteger(value) || value < 50 || value > 90) {
-      return '请输入 50–90 之间的整数。';
-    }
-    return null;
-  })();
 
   const handleSave = async () => {
     setSaving(true);
@@ -599,11 +528,6 @@ export function HostIntegrationSettingsSection({
       }
       setSettings(data);
       setDraft(data);
-      setMainAutoCompactPercentage(
-        data.mainAgentAutoCompactPercentage > 0
-          ? String(data.mainAgentAutoCompactPercentage)
-          : '80',
-      );
       toast.success(
         scope === 'main-agent'
           ? '主 CKQClaw 默认策略已保存'
@@ -664,143 +588,17 @@ export function HostIntegrationSettingsSection({
             </div>
 
             <div className="border-t border-border pt-6">
-              <div className="flex min-h-14 items-start justify-between gap-6">
-                <div className="min-w-0">
-                  <Label htmlFor="main-agent-auto-compact-default">
-                    自动压缩（推荐）
-                  </Label>
-                  <p
-                    id="main-agent-auto-compact-default-description"
-                    className="mt-1 text-xs leading-5 text-muted-foreground"
-                  >
-                    全局作用于所有用户的默认 CKQClaw。Pi 运行时在上下文接近窗口
-                    上限时自动压缩；百分比与固定阈值仅作为历史兼容配置保留，
-                    实际压缩时机由运行时决定。
-                  </p>
-                </div>
-                <Switch
-                  id="main-agent-auto-compact-default"
-                  checked={
-                    draft.mainAgentAutoCompactWindow === 0 &&
-                    draft.mainAgentAutoCompactPercentage === 0
-                  }
-                  onCheckedChange={(checked) => {
-                    const compactPercentage = Number(mainAutoCompactPercentage);
-                    const validCompactPercentage =
-                      Number.isInteger(compactPercentage) &&
-                      compactPercentage >= 50 &&
-                      compactPercentage <= 90
-                        ? compactPercentage
-                        : 80;
-                    setDraft((current) =>
-                      current
-                        ? {
-                            ...current,
-                            mainAgentAutoCompactWindow: checked
-                              ? 0
-                              : current.mainAgentAutoCompactWindow,
-                            mainAgentAutoCompactPercentage: checked
-                              ? 0
-                              : current.mainAgentAutoCompactWindow > 0
-                                ? 0
-                                : validCompactPercentage,
-                          }
-                        : current,
-                    );
-                  }}
-                  aria-describedby="main-agent-auto-compact-default-description"
-                />
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-foreground">自动压缩</p>
+                <p
+                  id="main-agent-auto-compact-default-description"
+                  className="mt-1 text-xs leading-5 text-muted-foreground"
+                >
+                  全局作用于所有用户的默认 CKQClaw。Pi 运行时在上下文接近窗口
+                  上限时自动压缩；历史百分比与固定阈值配置已于 Pi 运行时下线
+                  （存量值仅保留存储兼容），实际压缩时机由运行时决定。
+                </p>
               </div>
-
-              {(draft.mainAgentAutoCompactWindow !== 0 ||
-                draft.mainAgentAutoCompactPercentage !== 0) && (
-                <div className="mt-4 max-w-xs">
-                  {draft.mainAgentAutoCompactWindow > 0 &&
-                  draft.mainAgentAutoCompactPercentage === 0 ? (
-                    <div className="rounded-md border border-warning/30 bg-warning-bg p-3">
-                      <p className="text-xs leading-5 text-warning">
-                        当前保留旧版固定阈值{' '}
-                        {Math.round(draft.mainAgentAutoCompactWindow / 1000)}K。
-                        固定值无法同时适配 200K 与 1M 模型。
-                      </p>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="mt-2"
-                        onClick={() =>
-                          setDraft((current) =>
-                            current
-                              ? {
-                                  ...current,
-                                  mainAgentAutoCompactWindow: 0,
-                                  mainAgentAutoCompactPercentage: 80,
-                                }
-                              : current,
-                          )
-                        }
-                      >
-                        改用 80% 模型比例
-                      </Button>
-                    </div>
-                  ) : (
-                    <>
-                      <Label htmlFor="main-agent-auto-compact-percentage">
-                        上下文使用比例
-                      </Label>
-                      <div className="mt-2 flex items-center gap-2">
-                        <Input
-                          id="main-agent-auto-compact-percentage"
-                          type="number"
-                          inputMode="numeric"
-                          min={50}
-                          max={90}
-                          step={5}
-                          value={mainAutoCompactPercentage}
-                          onChange={(event) => {
-                            const rawValue = event.target.value;
-                            const value = Number(rawValue);
-                            setMainAutoCompactPercentage(rawValue);
-                            if (rawValue.trim() && Number.isInteger(value)) {
-                              setDraft((current) =>
-                                current
-                                  ? {
-                                      ...current,
-                                      mainAgentAutoCompactWindow: 0,
-                                      mainAgentAutoCompactPercentage: value,
-                                    }
-                                  : current,
-                              );
-                            }
-                          }}
-                          aria-invalid={!!mainAutoCompactError}
-                          aria-describedby={`main-agent-auto-compact-percentage-description${mainAutoCompactError ? ' main-agent-auto-compact-percentage-error' : ''}`}
-                          className="h-11"
-                        />
-                        <span className="shrink-0 text-xs text-muted-foreground">
-                          %
-                        </span>
-                      </div>
-                      <p
-                        id="main-agent-auto-compact-percentage-description"
-                        className="mt-1.5 text-xs leading-5 text-muted-foreground"
-                      >
-                        可设置 50–90%。例如 80% 在普通模型下为 160K，在 [1m]
-                        模型下为 800K。
-                      </p>
-                    </>
-                  )}
-                  {mainAutoCompactError && (
-                    <p
-                      id="main-agent-auto-compact-percentage-error"
-                      role="alert"
-                      className="mt-1 text-xs text-destructive"
-                    >
-                      {mainAutoCompactError}
-                    </p>
-                  )}
-                </div>
-              )}
             </div>
           </>
         )}
@@ -878,11 +676,7 @@ export function HostIntegrationSettingsSection({
       <div className="mt-6 flex justify-end border-t border-border pt-4">
         <Button
           onClick={() => void handleSave()}
-          disabled={
-            saving ||
-            !dirty ||
-            (scope === 'main-agent' && !!mainAutoCompactError)
-          }
+          disabled={saving || !dirty}
           className="min-h-11"
         >
           {saving && (
