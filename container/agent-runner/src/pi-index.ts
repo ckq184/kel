@@ -37,6 +37,7 @@ import { resolveAgentRuntimeKind } from './runtime-config.js';
 import { adaptClaudeMcpToolsToPi } from './runtime/pi/pi-tools.js';
 import { PiRuntimeAdapter } from './runtime/pi/pi-runtime.js';
 import { runPiQueryAttempt } from './runtime/pi/pi-runner.js';
+import { stampStreamEventIdentity } from './stream-stamp.js';
 
 const WORKSPACE_GROUP =
   process.env.CKQCLAW_WORKSPACE_GROUP || '/workspace/group';
@@ -368,6 +369,19 @@ async function runTurn(
     containerInput: input,
     tracker,
     emit: (output) => {
+      // ISSUE-02 P0-1: every stream event leaves this runner carrying the
+      // exact query identity, in one place — the host fence (observeExact on
+      // queryRunId) and every turn-keyed consumer rely on it. Pre-existing
+      // values (the interrupted event attaches its own) are never overwritten.
+      if (output.streamEvent) {
+        output = {
+          ...output,
+          streamEvent: stampStreamEventIdentity(output.streamEvent, {
+            turnId: activeInputTurnId,
+            queryRunId: input.queryRunId,
+          }),
+        };
+      }
       if (
         !firstWakeAcknowledgementStarted &&
         owner.result?.firstWake === true &&

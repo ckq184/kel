@@ -149,6 +149,19 @@ function mapPiEvent(
   sessionId: string,
 ): RuntimeEvent | undefined {
   switch (event.type) {
+    case 'message_start':
+    case 'message_end': {
+      // Only assistant messages host answer text; user/toolResult boundaries
+      // carry no reducer-relevant content and stay unmapped (silent drop).
+      if ((event.message as { role?: unknown }).role !== 'assistant') {
+        return undefined;
+      }
+      return {
+        type: 'message_boundary',
+        boundary: event.type === 'message_start' ? 'start' : 'stop',
+        sessionId,
+      };
+    }
     case 'message_update': {
       const update = event.assistantMessageEvent;
       if (update.type === 'text_delta') {
