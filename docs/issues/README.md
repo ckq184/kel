@@ -48,7 +48,7 @@
 | [ISSUE-08](ISSUE-08-dead-code-batch1-orphans.md)                | 死代码批 1：孤儿函数、局部死代码、类成员（不涉及 DB）    | P2     | 无                  | 否                 | 已完成 |
 | [ISSUE-09](ISSUE-09-dead-code-batch2-billing-and-db.md)         | 死代码批 2：billing 残留与 DB 死表死列迁移               | P2     | 07（仅 3 个列）     | 部分               | 待领取 |
 | [ISSUE-10](ISSUE-10-dead-code-batch3-legacy-consumers.md)       | 死代码批 3：Claude SDK 遗留消费端与无人消费的链路        | P2     | 02、03、04          | 部分               | 待领取 |
-| [ISSUE-11](ISSUE-11-compat-and-duplicate-convergence.md)        | 兼容层下线与重复实现收敛                                 | P3     | 06                  | **是**             | 待领取 |
+| [ISSUE-11](ISSUE-11-compat-and-duplicate-convergence.md)        | 兼容层下线与重复实现收敛                                 | P3     | 06                  | **是**             | 进行中 |
 | [ISSUE-12](ISSUE-12-structural-refactor.md)                     | 结构重构：镜像函数收敛与巨型函数拆分                     | P3     | 02、03、05、08、10  | **是**（拆分方案） | 待领取 |
 | [ISSUE-13](ISSUE-13-docs-drift-and-regression-contracts.md)     | 文档漂移修正与防回归契约测试                             | P3     | 04（仅文档部分）    | 否                 | 已完成 |
 | [ISSUE-14](ISSUE-14-channel-outbox-worker.md)                   | Channel Outbox 后台 worker：重启后 retry_wait 自动重投   | P2     | 无                  | **是**             | 待领取 |
