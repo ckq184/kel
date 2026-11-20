@@ -1,7 +1,6 @@
 import type {
   ContainerInput,
   ContainerOutput,
-  ImageMediaType,
   StreamEvent,
 } from '../../types.js';
 import type { McpContext } from '../../mcp-tools.js';

@@ -2,7 +2,6 @@ import path from 'path';
 import fs from 'fs';
 import { DATA_DIR, GROUPS_DIR, MAX_FILE_SIZE } from './config.js';
 import { deleteContainerEnvConfig } from './runtime-config.js';
-import { logger } from './logger.js';
 
 // --- Storage usage cache (5 minute TTL) ---
 const _storageCache = new Map<string, { bytes: number; expires: number }>();

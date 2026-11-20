@@ -37,7 +37,6 @@ import {
   DATA_DIR,
   GROUPS_DIR,
   STORE_DIR,
-  MAIN_GROUP_FOLDER,
   CONVERSATION_AGENT_ARCHIVE_DAYS,
   POLL_INTERVAL,
   TIMEZONE,
@@ -123,7 +122,6 @@ import {
   createTask,
   deleteExpiredSessions,
   getExpiredSessionIds,
-  deleteTask,
   ensureChatExists,
   ensureUserHomeGroup,
   getAllChats,
@@ -136,7 +134,6 @@ import {
   getJidsByFolder,
   getLastGroupSync,
   getRegisteredGroup,
-  listChannelMountsByWorkspace,
   getAgentBuilderInputMessage,
   getMessageChannelTurnContext,
   getMessage,
@@ -150,13 +147,10 @@ import {
   getTaskById,
   getTaskRunById,
   getActiveTaskRunForTask,
-  getTaskRunsForTask,
   finalizeDeliveredGroupTaskRun,
   recordGroupWorkspaceProjectionFailureAndFinalize,
   recordTaskRunNotificationReceipt,
   finalizeTaskRunNotificationIfPending,
-  type TaskRunAtomicNotificationPayload,
-  type TaskRunNotificationPayload,
   type TaskRunNotificationReceipt,
   getUserHomeGroup,
   forceActiveAdminRuntimesToHost,
@@ -299,7 +293,6 @@ import { ChannelTurnRuntime } from './channel-turn-runtime.js';
 import { resolveStickyChannelOwner } from './channel-session-owner.js';
 import {
   getChannelType,
-  extractChatId,
   type StreamingSession,
   type ChannelMessageDeliveryOptions,
 } from './im-channel.js';
@@ -414,7 +407,6 @@ import {
 import {
   loadChannelAccountSecret,
   saveChannelAccountSecret,
-  type ChannelAccountSecret,
 } from './channel-account-secrets.js';
 import {
   ensureLegacyDefaultChannelAccount,
@@ -439,7 +431,6 @@ import {
   saveUserFeishuConfig,
   saveFeishuOwnerOpenId,
   saveUserWeChatConfig,
-  updateAllSessionCredentials,
 } from './runtime-config.js';
 import {
   MAX_TASK_PROMPT_LENGTH,
@@ -482,7 +473,6 @@ import {
 } from './script-task-policy.js';
 import { recordUsageEvent } from './usage-service.js';
 import {
-  AgentStatus,
   AgentProfile,
   ChannelMessageMeta,
   ChannelTurnContext,
@@ -544,7 +534,6 @@ import {
   broadcastAgentStatus,
   broadcastAgentRemoved,
   broadcastTitleGenerating,
-  broadcastGroupCreated,
   broadcastChannelAccountStatus,
   shutdownTerminals,
   shutdownWebServer,
@@ -3223,16 +3212,6 @@ async function settleAndRecordTaskIpcDeliveries(
     );
   }
   return { accepted: true, receipt: outcome.receipt };
-}
-
-/** Fire-and-forget wrapper for sendImWithRetry (used in non-await contexts). */
-function sendImWithFailTracking(
-  imJid: string,
-  text: string,
-  localImagePaths: string[],
-  outbox?: ChannelOutboxDeliveryRef,
-): void {
-  sendImWithRetry(imJid, text, localImagePaths, outbox).catch(() => {});
 }
 
 export function isCursorAfter(
@@ -6382,7 +6361,6 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     effectiveGroup.folder,
     async (newSourceJid, inputTurnId, inputCursor) => {
       let acceptedNewInput = false;
-      let previousSessionForRotation: typeof streamingSession;
       let durableLifecycleForInput: typeof activeDurableCardLifecycle;
       const admittedInput = inputTurnId
         ? admittedWarmMainInputs.get(inputTurnId)
@@ -6439,23 +6417,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       // 用户新消息注入：挂起中的卡片先定稿轮换——IM 时间线上旧卡在用户消息
       // 之前，新 turn 的回复不能长在旧卡里。route updater 在所有用户消息
       // 注入点（index.ts 消息循环 / web.ts）都会被调用，是天然的挂钩位置。
-      if (previousSessionForRotation) {
-        const previousText = heldCardParts.join(HELD_TURN_DIVIDER);
-        heldCardParts = [];
-        heldCardUsage = null;
-        heldDbTurnId = null;
-        try {
-          if (previousSessionForRotation.isActive()) {
-            if (previousText) {
-              await previousSessionForRotation.complete(previousText);
-            } else {
-              await previousSessionForRotation.abort('新消息已开始');
-            }
-          }
-        } finally {
-          previousSessionForRotation.dispose();
-        }
-      } else if (!acceptedNewInput)
+      if (!acceptedNewInput)
         await finalizeHeldCardForNewMessage().catch((err) => {
           logger.warn(
             { err, chatJid },
@@ -19540,7 +19502,6 @@ async function main(): Promise<void> {
   recoverDurableFollowUps();
   const schedulerDeps: import('./task-scheduler.js').SchedulerDependencies = {
     registeredGroups: () => registeredGroups,
-    getSessions: () => sessions,
     queue,
     onProcess: (
       groupJid,
@@ -19566,7 +19527,6 @@ async function main(): Promise<void> {
       return outcome.messageId;
     },
     broadcastStreamEvent,
-    onWorkspaceCreated: broadcastGroupCreated,
     storePromptMessage: (
       chatJid,
       senderId,

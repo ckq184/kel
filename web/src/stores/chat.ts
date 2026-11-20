@@ -386,7 +386,6 @@ interface ChatState {
     expectedRunId?: string | null,
     content?: string,
   ) => Promise<boolean>;
-  stopGroup: (jid: string) => Promise<boolean>;
   interruptQuery: (jid: string) => Promise<boolean>;
   resetSession: (jid: string, agentId?: string) => Promise<boolean>;
   clearHistory: (jid: string) => Promise<boolean>;
@@ -2056,27 +2055,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
           : '操作失败，请稍后重试';
       showToast('操作未执行', message);
       await get().loadFollowUps(chatJid);
-      return false;
-    }
-  },
-
-  stopGroup: async (jid: string) => {
-    try {
-      await api.post<{ success: boolean }>(
-        `/api/groups/${encodeURIComponent(jid)}/stop`,
-      );
-      cancelPendingDeltaForRuntime(jid);
-      get().clearStreaming(jid, { preserveThinking: false });
-      set((s) => {
-        const next = { ...s.waiting };
-        delete next[jid];
-        const activeRuns = { ...s.activeRuns };
-        delete activeRuns[jid];
-        return { waiting: next, activeRuns };
-      });
-      return true;
-    } catch (err) {
-      set({ error: err instanceof Error ? err.message : String(err) });
       return false;
     }
   },

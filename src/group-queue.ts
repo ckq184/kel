@@ -1,4 +1,4 @@
-import { ChildProcess, exec, execFile } from 'child_process';
+import { ChildProcess, execFile } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { randomUUID } from 'node:crypto';
@@ -944,24 +944,6 @@ export class GroupQueue {
     return true;
   }
 
-  /** 检查指定 JID 是否有自己直接启动的活跃 runner（非通过 folder 共享匹配） */
-  hasDirectActiveRunner(groupJid: string): boolean {
-    const state = this.groups.get(groupJid);
-    return state?.active === true;
-  }
-
-  /** Count active task runners whose JID starts with the given base JID + '#task:' */
-  countActiveTaskRunners(baseJid: string): number {
-    const prefix = baseJid + '#task:';
-    let count = 0;
-    for (const [jid, state] of this.groups.entries()) {
-      if (state.active && jid.startsWith(prefix)) {
-        count++;
-      }
-    }
-    return count;
-  }
-
   /**
    * List every virtual-JID runner that belongs to the same folder family as
    * `baseJid` (i.e. sub-agents `{...}#agent:{id}` and scheduled tasks
@@ -994,16 +976,6 @@ export class GroupQueue {
       }
     }
     return result;
-  }
-
-  /**
-   * Returns true if the active runner for this group (or its serialization
-   * sibling) is currently executing a scheduled task rather than user messages.
-   * Used by the message loop to avoid prematurely interrupting task containers.
-   */
-  isActiveRunnerTask(groupJid: string): boolean {
-    const state = this.resolveActiveState(groupJid);
-    return state?.activeRunnerIsTask === true;
   }
 
   markRunnerActivity(groupJid: string): void {
@@ -1269,11 +1241,6 @@ export class GroupQueue {
    * Get the PID of the active runner process for a group.
    * Returns undefined if no active process or running in container mode.
    */
-  getRunnerPid(groupJid: string): number | undefined {
-    const state = this.groups.get(groupJid);
-    return state?.process?.pid;
-  }
-
   requiresFeishuCliContainerRestart(
     groupJid: string,
     requirements: RunnerMessageRequirements,
@@ -1943,27 +1910,6 @@ export class GroupQueue {
     } catch {
       return false;
     }
-  }
-
-  /**
-   * Signal a specific group's active container to gracefully exit.
-   * Used by provider switch: after the container exits, processGroupMessages
-   * will automatically restart it (picking up the new provider via override).
-   * Uses _drain (not _close) so the current query finishes before exit.
-   */
-  requestGracefulRestart(groupJid: string): boolean {
-    const state = this.groups.get(groupJid);
-    if (!state?.active || !state.groupFolder) return false;
-    const written = this.writeDrainSentinel(state as ActiveGroupState);
-    if (written) {
-      // Ensure close handler triggers a new run even if no messages are pending
-      state.pendingMessages = true;
-      logger.info(
-        { groupJid, groupFolder: state.groupFolder },
-        'Sent drain signal for provider switch',
-      );
-    }
-    return written;
   }
 
   /**

@@ -19,10 +19,7 @@ import {
 import { notifyNewImMessage } from './message-notifier.js';
 import { broadcastFollowUpUpdate, broadcastNewMessage } from './web.js';
 import { detectImageMimeType } from './image-detector.js';
-import {
-  resolveJidByMessageId,
-  getStreamingSession,
-} from './feishu-streaming-card.js';
+import { resolveJidByMessageId } from './feishu-streaming-card.js';
 import { optimizeMarkdownStyle } from './feishu-markdown-style.js';
 import {
   buildAgentReplyCard,

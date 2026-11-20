@@ -98,4 +98,11 @@
 ## 验收标准
 
 - issue 删除清单逐项完成或有登记原因；`npm run verify` 六步与 `node scripts/check-scope.mjs` 通过。
-- `npx tsc --noEmit --noUnusedLocals` 剩余条目 ⊆ 基线 56 条 −（本批已删 52 条），且新增为 0。
+- `npx tsc --noEmit --noUnusedLocals` 剩余条目 ⊆ 基线 56 条 −（本批已删 49 条），且新增为 0。
+
+## 实现偏差记录（相对本 plan 初稿，供立项批准者复核）
+
+1. **`src/qq-streaming-card.ts` 的 3 个 tsc 条目（`lastAuxFlushTime`、`AUX_FLUSH_INTERVAL`、`buildAuxPrefix`）跳过不删**（初稿曾纳入）：实现时细读发现该文件头注释明确写有「Rationale for keeping this dormant: QQ stream_messages 端点强制前缀稳定性」——属任务池 README 审查口径中的**意图信号**（注释写明设计动机），且这 3 项不在 ISSUE-08 显式清单内。按「默认保留、删除前必须经用户确认」跳过，3 条 tsc 报错随之保留。
+2. **`src/web.ts` 的 `broadcastGroupCreated` 保留不删**（初稿曾作为连带孤儿删除）：删除 `onWorkspaceCreated` 注入后发现 `broadcastGroupCreated` 是 WS 消息 `group_created` 的唯一生产者，而前端 `web/src/components/layout/AppLayout.tsx:90` 仍在订阅（刷新侧边栏/任务列表）——属审查口径「掉线逻辑：消费者还在、生产者没了，不要直接删，先让用户决定」。本批只删 `SchedulerDependencies` 两字段 + `src/index.ts` 注入行与失效 import（issue 显式范围），函数与前端消费端原样保留，决策登记入 ISSUE-08 交付记录。
+3. **级联二阶孤儿 6 处一并清理**（超出 issue 清单，属删除本体的必然连带，均由 tsc 复跑暴露后以输出为准清理）：`feishu-streaming-card.ts` 的 `lastAuxBeforeHash`/`lastAuxAfterHash` 字段声明与 card 创建处的两行写入（原仅被已删的 `updateAuxiliary` 读取）；`runtime-config.ts` 的 `CURRENT_CONFIG_VERSION` 常量（原仅被已删的 `writeStoredState` 使用）、`ClaudeStoredProfileResolved` 接口与 `ClaudeProviderMode` 类型（原仅被已删的 `resolveActiveProfile` 使用）。
+4. tsc 基线 56 条的最终处置：清理 49 条、保留 7 条（ISSUE-09 的 `UserBalance`/`safeParseJsonArray`、ISSUE-10 的 `STORAGE_CACHE_TTL`/`calculateDirSize`、上述偏差 1 的 qq-streaming-card 3 条）；按「文件+符号」归一对比基线，新增为 0。

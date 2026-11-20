@@ -25,7 +25,7 @@ import Database from './sqlite-compat.js';
 import fs from 'fs';
 import path from 'path';
 
-import { STORE_DIR, GROUPS_DIR } from './config.js';
+import { STORE_DIR } from './config.js';
 import { normalizeAgentEffort } from './agent-effort.js';
 import { logger } from './logger.js';
 import {
@@ -12266,10 +12266,6 @@ export function queryAuthAuditLogs(
   }));
 
   return { logs, total, limit, offset };
-}
-
-export function getAuthAuditLogs(limit = 100, offset = 0): AuthAuditLog[] {
-  return queryAuthAuditLogs({ limit, offset }).logs;
 }
 
 // ===================== Sub-Agent CRUD =====================

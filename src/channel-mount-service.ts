@@ -112,10 +112,6 @@ export type ChannelMountTargetResolution =
       workspaceJid: string;
     };
 
-export function isImChannelJid(jid: string): boolean {
-  return jid !== '' && !jid.startsWith('web:') && getChannelType(jid) !== null;
-}
-
 /**
  * A native-context container owns many platform conversations (for example a
  * Feishu topic group). It must route through thread_map;
@@ -331,12 +327,6 @@ export function upgradeNativeContextChannelMount(
   const updated = buildWorkspaceMountUpdate(group, workspaceJid, 'thread_map');
   commitChannelMountUpdate(channelJid, updated);
   return { status: 'upgraded', updated };
-}
-
-export function toRoutingMode(
-  group: Pick<RegisteredGroup, 'binding_mode'>,
-): ChannelRoutingMode {
-  return group.binding_mode === 'thread_map' ? 'thread_map' : 'single_session';
 }
 
 export function resolveWorkspaceJid(

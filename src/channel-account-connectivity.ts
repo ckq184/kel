@@ -1,7 +1,7 @@
 import type { ChannelAccount } from './types.js';
 import type { ChannelAccountSecret } from './channel-account-secrets.js';
 import { testFeishuCredentials } from './feishu-connectivity.js';
-import { fetch as undiciFetch, ProxyAgent } from 'undici';
+import { fetch as undiciFetch } from 'undici';
 import {
   configuredWeChatHttpProxy,
   createWeChatHttpDispatcher,
