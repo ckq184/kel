@@ -58,6 +58,12 @@ describe('settings information architecture', () => {
     expect(settings).toContain(
       "bindings: '/settings?tab=my-channels&view=bindings'",
     );
+    // ISSUE-11 A6：LEGACY_TAB_ROUTES 全量映射补锁（skills/mcp/bindings 三条
+    // 已由上方锁定，此处补 groups/agent-profiles/memory/usage 四条）。
+    expect(settings).toContain("groups: '/chat'");
+    expect(settings).toContain("'agent-profiles': '/agent-profiles'");
+    expect(settings).toContain("memory: '/memory'");
+    expect(settings).toContain("usage: '/usage'");
     expect(navItems).toContain("label: '能力库'");
     expect(capabilities).toMatch(/能力库[\s\S]*具体智能体的“能力配置”/);
   });

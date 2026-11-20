@@ -201,11 +201,35 @@ export function SetupProvidersPage() {
 
     setSaving(true);
     try {
-      // Feishu is optional. Only save when user entered anything.
+      // Feishu is optional. Only save when user entered anything. Credentials
+      // flow through /api/channel-accounts: PATCH the existing Feishu account
+      // if one exists (the legacy singleton config is projected as an account
+      // automatically), otherwise create a new account. Server-side
+      // syncLegacyUserImFacade mirrors first-class mutations back to the
+      // legacy store, so no extra compatibility write is needed here.
       if (feishuAppId.trim() || feishuAppSecret.trim()) {
-        const payload: Record<string, string> = { appId: feishuAppId.trim() };
-        if (feishuAppSecret.trim()) payload.appSecret = feishuAppSecret.trim();
-        await api.put('/api/config/user-im/feishu', payload);
+        const credentials: Record<string, string> = {
+          appId: feishuAppId.trim(),
+        };
+        if (feishuAppSecret.trim())
+          credentials.appSecret = feishuAppSecret.trim();
+        const { accounts } = await api.get<{
+          accounts: Array<{ id: string; provider: string }>;
+        }>('/api/channel-accounts');
+        const existing = accounts.find((item) => item.provider === 'feishu');
+        if (existing) {
+          await api.patch(
+            `/api/channel-accounts/${encodeURIComponent(existing.id)}`,
+            { credentials },
+          );
+        } else {
+          await api.post('/api/channel-accounts', {
+            provider: 'feishu',
+            name: '飞书',
+            enabled: true,
+            credentials,
+          });
+        }
       }
 
       if (providerMode === 'official') {

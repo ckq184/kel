@@ -254,7 +254,6 @@ function toRunnerAgentProfile(profile: AgentProfile | undefined) {
     isDefault: profile.is_default,
     identityHash: profile.identity_hash,
     identityPrompt: buildAgentProfilePrompt(profile),
-    includeClaudePreset: profile.prompt_mode === 'append',
     // ISSUE-04 ③: resolved effort rides the profile contract; `inherit`
     // stays undefined so the runner falls back to the provider env.
     effort: resolveAgentSdkEffort(profile.runtime_policy),

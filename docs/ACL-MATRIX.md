@@ -100,7 +100,7 @@ Host Workspace 在 Access 之外还要求 admin。
 - 创建、修改、删除 Runtime Session
 - 写入工作区 Skills/MCP
 - 修改群聊绑定、激活方式、响应对象和 owner
-- `/clear` 的 HTTP 与 WebSocket 分支
+- `/clear` 的 HTTP 分支
 
 Pin 是当前用户自己的偏好，只要求 Access，不修改共享工作区状态。
 
@@ -187,7 +187,6 @@ read-only 投影按 host-issued turn ID 精确匹配当前或已接纳的 queued
 | --------------------- | -------- | ------------------------------------------------- |
 | Workspace Mount       | 群聊     | `/api/groups/:jid/im-binding`                     |
 | Runtime Session Mount | 私聊     | `/api/groups/:jid/sessions/:sessionId/im-binding` |
-| `/agents` 兼容 Mount  | 私聊     | `/api/groups/:jid/agents/:agentId/im-binding`     |
 
 附加规则：
 
@@ -220,9 +219,6 @@ read-only 投影按 host-issued turn ID 精确匹配当前或已接纳的 queued
 
 | 操作                             | 权限                               |
 | -------------------------------- | ---------------------------------- |
-| `send_message`                   | Access；Host 再加 Host             |
-| `send_message` 中的 `/clear`     | Modify；Host 再加 Host             |
-| Runtime Session 消息             | Access + Session 属于该 Workspace  |
 | `terminal_start`                 | Access；只支持 Container Workspace |
 | `terminal_input` / resize / stop | 必须是当前 WebSocket 已拥有的终端  |
 | Docker Build 流                  | 对应系统管理权限                   |

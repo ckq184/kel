@@ -381,7 +381,6 @@ describe('managed MCP runtime secret boundary', () => {
           version: 1,
           identityHash: 'hash',
           identityPrompt: '',
-          includeClaudePreset: true,
           runtimePolicy: {
             skills: { mode: 'inherit', ids: [] },
             mcp: { mode: 'custom', ids: ['system:legacyArgs'] },

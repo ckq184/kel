@@ -72,7 +72,6 @@ interface AgentProfilesState {
     agents_prompt?: string;
     tools_prompt?: string;
     prompt_mode?: AgentProfilePromptMode;
-    include_claude_preset?: boolean;
     avatar_emoji?: string | null;
     avatar_color?: string | null;
     model_config_id?: string | null;
@@ -88,7 +87,6 @@ interface AgentProfilesState {
       agents_prompt?: string;
       tools_prompt?: string;
       prompt_mode?: AgentProfilePromptMode;
-      include_claude_preset?: boolean;
       avatar_emoji?: string | null;
       avatar_color?: string | null;
       model_config_id?: string | null;

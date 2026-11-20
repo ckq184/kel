@@ -2140,7 +2140,6 @@ function toContainerAgentProfile(
     isDefault: profile.is_default,
     identityHash: profile.identity_hash,
     identityPrompt: buildAgentProfilePrompt(profile),
-    includeClaudePreset: profile.prompt_mode === 'append',
     // ISSUE-04 ③: resolved effort rides the profile contract; `inherit`
     // stays undefined so the runner falls back to the provider env.
     effort: resolveAgentSdkEffort(profile.runtime_policy),
@@ -19237,7 +19236,6 @@ async function main(): Promise<void> {
     finalizeHeldCard: (key: string) => {
       activeHeldCardFinalizers.get(key)?.();
     },
-    handleSpawnCommand,
     applyAutoIsolateContext: (userId: string, enable: boolean) =>
       applyAutoIsolateContext(userId, enable),
     resolveEffectiveGroup,

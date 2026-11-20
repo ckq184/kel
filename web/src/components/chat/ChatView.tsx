@@ -47,6 +47,8 @@ import {
 } from 'lucide-react';
 import { useDisplayMode } from '../../hooks/useDisplayMode';
 import { useTheme } from '../../hooks/useTheme';
+import { deriveConnectedChannels } from '../../hooks/useConnectedChannels';
+import type { ChannelAccount } from '../../stores/channel-accounts';
 import { cn } from '@/lib/utils';
 import { wsManager } from '../../api/ws';
 import { api } from '../../api/client';
@@ -57,7 +59,6 @@ const TerminalPanel = lazy(() =>
 );
 import { ImBindingDialog } from './ImBindingDialog';
 import { SessionSidebar } from './SessionSidebar';
-import { showToast } from '../../utils/toast';
 import {
   getWorkspaceLastAgent,
   setWorkspaceLastAgent,
@@ -260,9 +261,9 @@ export function ChatView({ groupJid, onBack, headerLeft }: ChatViewProps) {
     let active = true;
     const fetchStatus = () => {
       api
-        .get<Record<string, boolean>>('/api/config/user-im/status')
+        .get<{ accounts: ChannelAccount[] }>('/api/channel-accounts')
         .then((data) => {
-          if (active) setImStatus(data);
+          if (active) setImStatus(deriveConnectedChannels(data.accounts));
         })
         .catch(() => {});
     };
@@ -505,12 +506,6 @@ export function ChatView({ groupJid, onBack, headerLeft }: ChatViewProps) {
         handleWsNewMessage(groupJid, data.message, data.agentId, data.source);
       }
     });
-    // WebSocket 消息校验失败时通知用户
-    const unsub3 = wsManager.on('ws_error', (data: any) => {
-      if (!data.chatJid || data.chatJid === groupJid) {
-        showToast('发送失败', data.error || '消息格式无效', 4000);
-      }
-    });
     // 后端推送的流式快照（WS 重连时恢复）
     const agentSnapshotPrefix = groupJid + '#agent:';
     const unsub4 = wsManager.on('stream_snapshot', (data: any) => {
@@ -542,7 +537,6 @@ export function ChatView({ groupJid, onBack, headerLeft }: ChatViewProps) {
     return () => {
       unsub1();
       unsub2();
-      unsub3();
       unsub4();
       unsub5();
     };
