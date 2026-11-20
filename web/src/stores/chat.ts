@@ -269,7 +269,6 @@ function mergeMessagesChronologically(
 
 const MAX_THINKING_CACHE_SIZE = 500;
 const loadMessagesInFlight = new Map<string, Promise<void>>();
-let loadGroupsInFlight: Promise<void> | null = null;
 
 /** Evict oldest entries when cache exceeds capacity (relies on insertion order) */
 function capThinkingCache<V>(cache: Record<string, V>): Record<string, V> {
@@ -1651,55 +1650,37 @@ export const useChatStore = create<ChatState>((set, get) => ({
   unreadReplies: {},
 
   loadGroups: async () => {
-    // 桌面端（侧边栏 + ChatPage）会各触发一次；同一时刻只发一个请求。
-    if (loadGroupsInFlight) return loadGroupsInFlight;
-    loadGroupsInFlight = (async () => {
-      set({ loading: true });
-      try {
-        const data = await api.get<{
-          groups: Record<string, GroupInfo>;
-          admin_host_only_mode?: boolean;
-        }>('/api/groups');
-        const groups = Object.fromEntries(
-          Object.entries(data.groups).map(([jid, group]) => [
-            jid,
-            normalizeGroupInteractionMode(group),
-          ]),
+    // ISSUE-11 B3：拉取路径收敛到 groups store（唯一 owner + 并发去重），
+    // 这里委托其 loader 并把结果镜像进自身 groups；currentGroup 语义
+    // 保持 chat store 独占。桌面端（侧边栏 + ChatPage）会各触发一次，
+    // 去重由 groups store 的 in-flight 承担。
+    set({ loading: true });
+    await useGroupsStore.getState().loadGroups();
+    const fetched = useGroupsStore.getState();
+    set((state) => {
+      const currentStillExists =
+        state.currentGroup && !!fetched.groups[state.currentGroup];
+
+      let nextCurrent = currentStillExists ? state.currentGroup : null;
+      if (!nextCurrent) {
+        const homeEntry = Object.entries(fetched.groups).find(
+          ([_, group]) => group.is_my_home,
         );
-        set((state) => {
-          const currentStillExists =
-            state.currentGroup && !!groups[state.currentGroup];
-
-          let nextCurrent = currentStillExists ? state.currentGroup : null;
-          if (!nextCurrent) {
-            const homeEntry = Object.entries(groups).find(
-              ([_, group]) => group.is_my_home,
-            );
-            if (homeEntry) {
-              nextCurrent = homeEntry[0];
-            } else {
-              nextCurrent = Object.keys(groups)[0] || null;
-            }
-          }
-
-          return {
-            groups,
-            adminHostOnlyMode: data.admin_host_only_mode === true,
-            currentGroup: nextCurrent,
-            loading: false,
-            error: null,
-          };
-        });
-      } catch (err) {
-        set({
-          loading: false,
-          error: err instanceof Error ? err.message : String(err),
-        });
+        if (homeEntry) {
+          nextCurrent = homeEntry[0];
+        } else {
+          nextCurrent = Object.keys(fetched.groups)[0] || null;
+        }
       }
-    })().finally(() => {
-      loadGroupsInFlight = null;
+
+      return {
+        groups: fetched.groups,
+        adminHostOnlyMode: fetched.adminHostOnlyMode,
+        currentGroup: nextCurrent,
+        loading: false,
+        error: fetched.error,
+      };
     });
-    return loadGroupsInFlight;
   },
 
   selectGroup: (jid: string) => {
@@ -2299,6 +2280,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
         groups: { ...s.groups, [data.jid]: group },
         error: null,
       }));
+      // ISSUE-11 B3：写流向 groups store 确定性广播（updateInteractionMode 先例）。
+      useGroupsStore.setState((s) => ({
+        groups: { ...s.groups, [data.jid]: group },
+      }));
 
       return { jid: data.jid, folder: group.folder };
     } catch (err) {
@@ -2313,20 +2298,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
         `/api/groups/${encodeURIComponent(jid)}`,
         { name },
       );
-      set((s) => {
-        const group = s.groups[jid];
-        if (!group) return s;
+      const patchGroups = (groups: Record<string, GroupInfo>) => {
+        const group = groups[jid];
+        if (!group) return groups;
         return {
-          groups: {
-            ...s.groups,
-            [jid]: {
-              ...group,
-              name,
-            },
+          ...groups,
+          [jid]: {
+            ...group,
+            name,
           },
-          error: null,
         };
-      });
+      };
+      set((state) => ({
+        groups: patchGroups(state.groups),
+        error: null,
+      }));
+      // ISSUE-11 B3：写流向 groups store 确定性广播（updateInteractionMode 先例）。
+      useGroupsStore.setState((state) => ({
+        groups: patchGroups(state.groups),
+      }));
     } catch (err) {
       set({ error: err instanceof Error ? err.message : String(err) });
     }
@@ -2369,21 +2359,26 @@ export const useChatStore = create<ChatState>((set, get) => ({
         `/api/groups/${encodeURIComponent(jid)}`,
         { is_pinned: willPin },
       );
-      set((s) => {
-        const g = s.groups[jid];
-        if (!g) return s;
+      const patchGroups = (groups: Record<string, GroupInfo>) => {
+        const g = groups[jid];
+        if (!g) return groups;
         return {
-          groups: {
-            ...s.groups,
-            [jid]: {
-              ...g,
-              pinned_at: willPin
-                ? data.pinned_at || new Date().toISOString()
-                : undefined,
-            },
+          ...groups,
+          [jid]: {
+            ...g,
+            pinned_at: willPin
+              ? data.pinned_at || new Date().toISOString()
+              : undefined,
           },
         };
-      });
+      };
+      set((state) => ({
+        groups: patchGroups(state.groups),
+      }));
+      // ISSUE-11 B3：写流向 groups store 确定性广播（updateInteractionMode 先例）。
+      useGroupsStore.setState((state) => ({
+        groups: patchGroups(state.groups),
+      }));
     } catch (err) {
       set({ error: err instanceof Error ? err.message : String(err) });
     }
@@ -2443,6 +2438,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
           currentGroup: nextCurrent,
           error: null,
         };
+      });
+      // ISSUE-11 B3：写流向 groups store 确定性广播（updateInteractionMode
+      // 先例）。useDeleteWorkspace 的删除流经此入口获得同一份广播。
+      useGroupsStore.setState((state) => {
+        const nextGroups = { ...state.groups };
+        delete nextGroups[jid];
+        return { groups: nextGroups };
       });
     } catch (err: unknown) {
       const apiErr = err as {

@@ -155,7 +155,9 @@ describe('Agent profile frontend write contract', () => {
     useAgentProfilesStore.setState({ profiles: [profile] });
     const updated = { ...profile, name: 'Reviewer 2', version: 2 };
     vi.mocked(api.patch).mockResolvedValue({ profile: updated });
-    storeDeps.loadGroups.mockRejectedValueOnce(new Error('refresh failed'));
+    // B3 收敛后 updateProfile 的刷新走 chat store loadGroups（groups store 为其
+    // 内部委托），mock 打在 chat 侧断言「刷新失败不阻断已提交 PATCH」的原意图。
+    storeDeps.loadChatGroups.mockRejectedValueOnce(new Error('refresh failed'));
 
     await expect(
       useAgentProfilesStore

@@ -1,21 +1,16 @@
+import { stripOneMillionSuffix } from './model-suffix.js';
+
+// Re-export (ISSUE-11 B10): provider-runtime.ts imports stripOneMillionSuffix
+// from this module; the implementation itself lives in the synced
+// ./model-suffix.ts copy of shared/model-suffix.ts.
+export { stripOneMillionSuffix };
+
 const STANDARD_CONTEXT_WINDOW = 200_000;
 const EXTENDED_CONTEXT_WINDOW = 1_000_000;
 
 /** Legacy heuristic: the [1m] model suffix marks an extended-context model. */
 export function isExtendedContextModel(model: string): boolean {
   return /(\[1m\])+$/i.test(model.trim());
-}
-
-/**
- * Strip the legacy `[1m]` suffix from a model name so the bare id goes on the
- * wire (third-party Anthropic-compatible endpoints reject the suffix with 400).
- * Idempotent; only a trailing suffix is removed, interior matches stay intact.
- */
-export function stripOneMillionSuffix(model: string): string {
-  return model
-    .trim()
-    .replace(/(\[1m\])+$/i, '')
-    .trim();
 }
 
 /**

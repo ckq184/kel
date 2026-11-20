@@ -9,6 +9,7 @@ import {
   YAxis,
 } from 'recharts';
 import { formatTokens } from './format';
+import { formatCost } from '../../utils/usage-format';
 
 export type UsageTrendMetric = 'tokens' | 'cost' | 'runs';
 
@@ -32,13 +33,6 @@ const TOKEN_LABELS: Record<string, string> = {
   outputTokens: '输出',
   reasoningTokens: '推理',
 };
-
-function formatCost(value: number): string {
-  if (value >= 1) return `$${value.toFixed(2)}`;
-  if (value >= 0.01) return `$${value.toFixed(3)}`;
-  if (value > 0) return `$${value.toFixed(4)}`;
-  return '$0.00';
-}
 
 export function UsageTrendChart({
   data,

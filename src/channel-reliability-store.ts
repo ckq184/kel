@@ -1,5 +1,7 @@
 import crypto from 'node:crypto';
 
+import { requireDatabase } from './store-helpers.js';
+
 /**
  * Durable channel delivery primitives.
  *
@@ -236,13 +238,12 @@ const CARD_TERMINAL: readonly StreamingCardStatus[] = [
   'failed',
 ];
 
-function requireDatabase(): SqliteDatabase {
-  if (!database) {
-    throw new Error('Channel reliability store is not initialized');
-  }
-  return database;
-}
-
+/**
+ * Enhanced clock helper (kept, not converged): unlike the shared nowIso this
+ * accepts an injectable Date or preformatted string so lease/recovery tests
+ * can pin time — registered in the ISSUE-11 B6 delivery notes as a
+ * deliberate non-copy.
+ */
 function isoNow(now?: Date | string): string {
   if (now instanceof Date) return now.toISOString();
   if (typeof now === 'string') return now;
@@ -518,7 +519,7 @@ export function advanceChannelCursor(input: AdvanceChannelCursorInput): {
   advanced: boolean;
   cursor: ChannelCursor;
 } {
-  const connection = requireDatabase();
+  const connection = requireDatabase(database, 'Channel reliability');
   const provider = input.provider.trim();
   const accountId = input.accountId.trim();
   const scope = input.scope.trim();
@@ -575,7 +576,7 @@ export function getChannelCursor(input: {
   scope: string;
   chatId?: string | null;
 }): ChannelCursor | undefined {
-  const row = requireDatabase()
+  const row = requireDatabase(database, 'Channel reliability')
     .prepare(
       `SELECT * FROM channel_cursors
        WHERE provider = ? AND account_id = ? AND scope = ? AND chat_id = ?`,
@@ -594,7 +595,7 @@ export function listChannelCursors(
 ): ChannelCursor[] {
   const limit = Math.max(1, Math.min(10_000, Math.trunc(input.limit ?? 100)));
   return (
-    requireDatabase()
+    requireDatabase(database, 'Channel reliability')
       .prepare(
         `SELECT * FROM channel_cursors
          WHERE (? IS NULL OR provider = ?) AND (? IS NULL OR account_id = ?)
@@ -619,7 +620,7 @@ export function deleteChannelCursor(input: {
   expectedPosition: number;
   expectedTieBreaker?: string;
 }): boolean {
-  const changed = requireDatabase()
+  const changed = requireDatabase(database, 'Channel reliability')
     .prepare(
       `DELETE FROM channel_cursors
        WHERE provider = ? AND account_id = ? AND scope = ? AND chat_id = ?
@@ -699,7 +700,7 @@ export function recordChannelInbox(input: RecordChannelInboxInput): {
   created: boolean;
   item: ChannelInboxItem;
 } {
-  const connection = requireDatabase();
+  const connection = requireDatabase(database, 'Channel reliability');
   const route = normalizeRoute(input);
   const externalMessageId = input.externalMessageId.trim();
   if (!externalMessageId) throw new Error('externalMessageId is required');
@@ -744,7 +745,7 @@ export function recordChannelInbox(input: RecordChannelInboxInput): {
 }
 
 export function getChannelInboxItem(id: string): ChannelInboxItem | undefined {
-  const row = requireDatabase()
+  const row = requireDatabase(database, 'Channel reliability')
     .prepare('SELECT * FROM channel_inbox WHERE id = ?')
     .get(id) as InboxRow | undefined;
   return row ? mapInbox(row) : undefined;
@@ -763,7 +764,7 @@ export function transitionChannelInbox(
 ): boolean {
   const now = isoNow(input.now);
   const terminal = INBOX_TERMINAL.includes(nextStatus) ? now : null;
-  const result = requireDatabase()
+  const result = requireDatabase(database, 'Channel reliability')
     .prepare(
       `UPDATE channel_inbox
        SET status = ?, normalized_payload = CASE WHEN ? = 1 THEN ? ELSE normalized_payload END,
@@ -816,7 +817,7 @@ function claimChannelInbox(
   },
   inboxId?: string,
 ): ClaimedChannelInboxItem | undefined {
-  const connection = requireDatabase();
+  const connection = requireDatabase(database, 'Channel reliability');
   const now = isoNow(options.now);
   const expires = addMilliseconds(now, leaseMs);
   return connection.transaction(() => {
@@ -894,7 +895,7 @@ export function updateClaimedChannelInbox(
   },
 ): boolean {
   const now = isoNow(input.now);
-  const changed = requireDatabase()
+  const changed = requireDatabase(database, 'Channel reliability')
     .prepare(
       `UPDATE channel_inbox
        SET normalized_payload = CASE WHEN ? = 1 THEN ? ELSE normalized_payload END,
@@ -926,7 +927,7 @@ export function renewChannelInboxClaim(
 ): boolean {
   const now = isoNow(nowInput);
   const expires = addMilliseconds(now, leaseMs);
-  const changed = requireDatabase()
+  const changed = requireDatabase(database, 'Channel reliability')
     .prepare(
       `UPDATE channel_inbox
        SET lease_expires_at = ?, updated_at = ?
@@ -946,7 +947,7 @@ function finishClaimedInbox(
   },
 ): boolean {
   const now = isoNow(input.now);
-  const result = requireDatabase()
+  const result = requireDatabase(database, 'Channel reliability')
     .prepare(
       `UPDATE channel_inbox
        SET status = ?, error = ?, completed_at = ?, updated_at = ?,
@@ -998,7 +999,7 @@ export function failChannelInbox(
       now,
     });
   }
-  const result = requireDatabase()
+  const result = requireDatabase(database, 'Channel reliability')
     .prepare(
       `UPDATE channel_inbox
        SET status = 'queued', error = ?, available_at = ?, updated_at = ?,
@@ -1095,7 +1096,7 @@ export function createChannelTurnRun(input: CreateChannelTurnRunInput): {
   created: boolean;
   run: ChannelTurnRun;
 } {
-  const connection = requireDatabase();
+  const connection = requireDatabase(database, 'Channel reliability');
   const route = normalizeRoute(input);
   const idempotencyKey = input.idempotencyKey.trim();
   if (!idempotencyKey) throw new Error('idempotencyKey is required');
@@ -1160,7 +1161,7 @@ export function createChannelTurnRun(input: CreateChannelTurnRunInput): {
 }
 
 export function getChannelTurnRun(id: string): ChannelTurnRun | undefined {
-  const row = requireDatabase()
+  const row = requireDatabase(database, 'Channel reliability')
     .prepare('SELECT * FROM turn_runs WHERE id = ?')
     .get(id) as TurnRow | undefined;
   return row ? mapTurn(row) : undefined;
@@ -1200,7 +1201,7 @@ export function interruptChannelTurnRunWithDeliveredEffect(
   id: string,
   nowInput?: Date | string,
 ): boolean {
-  const connection = requireDatabase();
+  const connection = requireDatabase(database, 'Channel reliability');
   const now = isoNow(nowInput);
   return connection.transaction(() => {
     const changed = connection
@@ -1237,7 +1238,7 @@ export function interruptChannelTurnRunsWithDeliveredEffects(
   nowInput?: Date | string,
 ): number {
   const now = isoNow(nowInput);
-  return requireDatabase()
+  return requireDatabase(database, 'Channel reliability')
     .prepare(
       `UPDATE turn_runs
        SET status = 'interrupted', completed_at = ?, updated_at = ?,
@@ -1289,7 +1290,7 @@ function claimChannelTurnRun(
   options: { provider?: string; accountId?: string; now?: Date | string },
   runId?: string,
 ): ClaimedChannelTurnRun | undefined {
-  const connection = requireDatabase();
+  const connection = requireDatabase(database, 'Channel reliability');
   const now = isoNow(options.now);
   const expires = addMilliseconds(now, leaseMs);
   return connection.transaction(() => {
@@ -1351,7 +1352,7 @@ export function heartbeatChannelTurnRun(
 ): boolean {
   const now = isoNow(nowInput);
   const expires = addMilliseconds(now, leaseMs);
-  const result = requireDatabase()
+  const result = requireDatabase(database, 'Channel reliability')
     .prepare(
       `UPDATE turn_runs
        SET heartbeat_at = ?, lease_expires_at = ?, updated_at = ?
@@ -1367,7 +1368,7 @@ export function markChannelTurnFinalizing(
   nowInput?: Date | string,
 ): boolean {
   const now = isoNow(nowInput);
-  const result = requireDatabase()
+  const result = requireDatabase(database, 'Channel reliability')
     .prepare(
       `UPDATE turn_runs SET status = 'finalizing', revision = revision + 1,
            updated_at = ?
@@ -1384,7 +1385,7 @@ export function waitChannelTurnForUser(
   nowInput?: Date | string,
 ): boolean {
   const now = isoNow(nowInput);
-  const changed = requireDatabase()
+  const changed = requireDatabase(database, 'Channel reliability')
     .prepare(
       `UPDATE turn_runs
        SET status = 'waiting_user', result = ?, lease_owner = NULL,
@@ -1412,7 +1413,7 @@ export function resumeWaitingChannelTurn(
   nowInput?: Date | string,
 ): boolean {
   const now = isoNow(nowInput);
-  const changed = requireDatabase()
+  const changed = requireDatabase(database, 'Channel reliability')
     .prepare(
       `UPDATE turn_runs
        SET status = 'queued', available_at = ?, result = NULL, error = NULL,
@@ -1428,7 +1429,7 @@ export function retryChannelTurnRun(
   input: { availableAt: string; error: string; now?: Date | string },
 ): boolean {
   const now = isoNow(input.now);
-  const changed = requireDatabase()
+  const changed = requireDatabase(database, 'Channel reliability')
     .prepare(
       `UPDATE turn_runs
        SET status = 'retry_wait', available_at = ?, error = ?,
@@ -1463,7 +1464,7 @@ export function completeChannelTurnRun(
 ): boolean {
   const now = isoNow(input.now);
   const status = input.status ?? 'completed';
-  const changed = requireDatabase()
+  const changed = requireDatabase(database, 'Channel reliability')
     .prepare(
       `UPDATE turn_runs
        SET status = ?, result = ?, error = ?, completed_at = ?,
@@ -1506,7 +1507,7 @@ export function interruptExpiredChannelTurnRuns(
   const error = manualReconciliationError(
     'Process stopped after Agent execution began; manual reconciliation required',
   );
-  return requireDatabase()
+  return requireDatabase(database, 'Channel reliability')
     .prepare(
       `UPDATE turn_runs
        SET status = 'interrupted', completed_at = ?, updated_at = ?,
@@ -1532,7 +1533,7 @@ export function interruptChannelTurnRunById(
   const now = isoNow(nowInput);
   const normalizedReason = reason.trim();
   if (!normalizedReason) throw new Error('interrupt reason is required');
-  const changed = requireDatabase()
+  const changed = requireDatabase(database, 'Channel reliability')
     .prepare(
       `UPDATE turn_runs
        SET status = 'interrupted', completed_at = ?, updated_at = ?,
@@ -1622,7 +1623,7 @@ export function enqueueChannelOutbox(input: EnqueueChannelOutboxInput): {
   created: boolean;
   item: ChannelOutboxItem;
 } {
-  const connection = requireDatabase();
+  const connection = requireDatabase(database, 'Channel reliability');
   const route = normalizeRoute(input);
   if (!Number.isInteger(input.ordinal) || input.ordinal < 0) {
     throw new Error('ordinal must be a non-negative integer');
@@ -1697,7 +1698,7 @@ export function enqueueChannelOutbox(input: EnqueueChannelOutboxInput): {
 export function getChannelOutboxItem(
   id: string,
 ): ChannelOutboxItem | undefined {
-  const row = requireDatabase()
+  const row = requireDatabase(database, 'Channel reliability')
     .prepare('SELECT * FROM channel_outbox WHERE id = ?')
     .get(id) as OutboxRow | undefined;
   return row ? mapOutbox(row) : undefined;
@@ -1711,7 +1712,7 @@ export function getChannelOutboxItem(
 export function getUncertainChannelOutboxForTurn(
   turnRunId: string,
 ): ChannelOutboxItem | undefined {
-  const row = requireDatabase()
+  const row = requireDatabase(database, 'Channel reliability')
     .prepare(
       `SELECT * FROM channel_outbox
        WHERE turn_run_id = ? AND status = 'uncertain'
@@ -1735,7 +1736,7 @@ export function hasUncertainChannelOutbox(turnRunId: string): boolean {
  */
 export function listUncertainChannelOutbox(limit = 100): ChannelOutboxItem[] {
   const bounded = Math.min(Math.max(Math.trunc(limit) || 0, 1), 500);
-  const rows = requireDatabase()
+  const rows = requireDatabase(database, 'Channel reliability')
     .prepare(
       `SELECT * FROM channel_outbox
        WHERE status = 'uncertain'
@@ -1768,7 +1769,7 @@ function claimChannelOutbox(
   options: { provider?: string; accountId?: string; now?: Date | string },
   itemId?: string,
 ): ClaimedChannelOutboxItem | undefined {
-  const connection = requireDatabase();
+  const connection = requireDatabase(database, 'Channel reliability');
   const now = isoNow(options.now);
   const expires = addMilliseconds(now, leaseMs);
   return connection.transaction(() => {
@@ -1833,7 +1834,7 @@ function transitionClaimedOutbox(
 ): boolean {
   const now = isoNow(input.now);
   const placeholders = expectedStatuses.map(() => '?').join(',');
-  const changed = requireDatabase()
+  const changed = requireDatabase(database, 'Channel reliability')
     .prepare(
       `UPDATE channel_outbox
        SET status = ?,
@@ -1890,7 +1891,7 @@ export function completeChannelOutbox(
   input: { providerMessageId: string; now?: Date | string },
 ): boolean {
   const now = isoNow(input.now);
-  const changed = requireDatabase()
+  const changed = requireDatabase(database, 'Channel reliability')
     .prepare(
       `UPDATE channel_outbox
        SET status = 'delivered', provider_message_id = ?, delivered_at = ?,
@@ -1926,7 +1927,7 @@ export function failChannelOutbox(
     : input.retryAt
       ? 'retry_wait'
       : 'failed';
-  const changed = requireDatabase()
+  const changed = requireDatabase(database, 'Channel reliability')
     .prepare(
       `UPDATE channel_outbox
        SET status = ?, error = ?, available_at = COALESCE(?, available_at),
@@ -1956,7 +1957,7 @@ export function reconcileExpiredChannelOutbox(nowInput?: Date | string): {
   retryable: number;
   uncertain: number;
 } {
-  const connection = requireDatabase();
+  const connection = requireDatabase(database, 'Channel reliability');
   const now = isoNow(nowInput);
   return connection.transaction(() => {
     const retryable = connection
@@ -2001,7 +2002,7 @@ export function resolveUncertainChannelOutbox(
 ): boolean {
   const now = isoNow(input.now);
   const nextStatus = input.resolution === 'delivered' ? 'delivered' : 'failed';
-  const changed = requireDatabase()
+  const changed = requireDatabase(database, 'Channel reliability')
     .prepare(
       `UPDATE channel_outbox
        SET status = ?,
@@ -2086,7 +2087,7 @@ export interface CreateStreamingCardRecordInput extends ChannelRouteSnapshot {
 export function createStreamingCardRecord(
   input: CreateStreamingCardRecordInput,
 ): { created: boolean; card: StreamingCardRecord } {
-  const connection = requireDatabase();
+  const connection = requireDatabase(database, 'Channel reliability');
   const route = normalizeRoute(input);
   const id = input.id?.trim() || crypto.randomUUID();
   const now = isoNow(input.now);
@@ -2140,7 +2141,7 @@ export function createStreamingCardRecord(
 export function getStreamingCardRecord(
   id: string,
 ): StreamingCardRecord | undefined {
-  const row = requireDatabase()
+  const row = requireDatabase(database, 'Channel reliability')
     .prepare('SELECT * FROM streaming_cards WHERE id = ?')
     .get(id) as CardRow | undefined;
   return row ? mapCard(row) : undefined;
@@ -2159,7 +2160,7 @@ export function rollbackUnpublishedStreamingCardReservation(
 ): boolean {
   if (card.turnRunId !== claim.id) return false;
   const now = isoNow(nowInput);
-  const changed = requireDatabase()
+  const changed = requireDatabase(database, 'Channel reliability')
     .prepare(
       `DELETE FROM streaming_cards
        WHERE id = ? AND turn_run_id = ? AND revision = ?
@@ -2205,7 +2206,7 @@ export function updateStreamingCardRecord(
     now?: Date | string;
   },
 ): StreamingCardRecord | undefined {
-  const connection = requireDatabase();
+  const connection = requireDatabase(database, 'Channel reliability');
   const now = isoNow(input.now);
   const status = input.status;
   const completedAt = status && CARD_TERMINAL.includes(status) ? now : null;
@@ -2268,7 +2269,7 @@ export function claimStreamingCardRecovery(
   nowInput?: Date | string,
   recoveryLeaseMs = 45_000,
 ): StreamingCardRecord | undefined {
-  const connection = requireDatabase();
+  const connection = requireDatabase(database, 'Channel reliability');
   const now = isoNow(nowInput);
   const staleBefore = new Date(
     new Date(now).getTime() - Math.max(1_000, recoveryLeaseMs),
@@ -2293,7 +2294,7 @@ export function releaseStreamingCardRecovery(
   error: string,
   nowInput?: Date | string,
 ): StreamingCardRecord | undefined {
-  const connection = requireDatabase();
+  const connection = requireDatabase(database, 'Channel reliability');
   const now = isoNow(nowInput);
   const changed = connection
     .prepare(
@@ -2310,7 +2311,7 @@ export function releaseStreamingCardRecovery(
 export function listAllNonterminalStreamingCards(
   pageSize = 1_000,
 ): StreamingCardRecord[] {
-  const connection = requireDatabase();
+  const connection = requireDatabase(database, 'Channel reliability');
   const limit = Math.max(1, Math.min(10_000, Math.trunc(pageSize)));
   const cards: StreamingCardRecord[] = [];
   let updatedAfter = '';
@@ -2346,7 +2347,7 @@ export interface ChannelReliabilityNonterminalSnapshot {
 export function scanChannelReliabilityNonterminal(
   limitPerTable = 100,
 ): ChannelReliabilityNonterminalSnapshot {
-  const connection = requireDatabase();
+  const connection = requireDatabase(database, 'Channel reliability');
   const limit = Math.max(1, Math.min(10_000, Math.trunc(limitPerTable)));
   return {
     inbox: (
@@ -2408,7 +2409,7 @@ export function cleanupChannelReliability(
   turnsDeleted: number;
   cursorsDeleted: number;
 } {
-  const connection = requireDatabase();
+  const connection = requireDatabase(database, 'Channel reliability');
   return connection.transaction(() => {
     const inboxPayloadsCleared = connection
       .prepare(

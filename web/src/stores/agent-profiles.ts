@@ -320,10 +320,13 @@ export const useAgentProfilesStore = create<AgentProfilesState>((set, get) => ({
       // The profile PATCH is already committed at this point. A secondary
       // navigation-list refresh must not turn a successful capability save
       // into a false failure that makes the editor roll back its UI.
-      await Promise.allSettled([
-        useChatStore.getState().loadGroups(),
-        useGroupsStore.getState().loadGroups(),
-      ]);
+      // ISSUE-11 B3：chat store 的 loadGroups 已委托 groups store 的唯一
+      // loader 并镜像结果，单次调用即覆盖两份 state 容器；沿用收敛前
+      // Promise.allSettled 的吞失败语义，刷新失败不阻断已提交的 PATCH。
+      await useChatStore
+        .getState()
+        .loadGroups()
+        .catch(() => undefined);
       return res.profile;
     } catch (err) {
       const persistedProfile =

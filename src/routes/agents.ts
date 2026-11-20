@@ -21,7 +21,6 @@ import {
   getGroupsByTargetAgent,
   setRegisteredGroup,
   getJidsByFolder,
-  updateAgentLastImJid,
   updateAgentInfo,
   updateAgentContextInfo,
   updateChatName,
@@ -42,173 +41,37 @@ import { getChannelType, extractChatId } from '../im-channel.js';
 import { ensureAgentDirectories } from '../utils.js';
 import {
   buildSessionMountUpdate,
-  buildDetachedWorkspaceUpdate,
   buildWorkspaceMountUpdate,
   commitChannelMountUpdate,
-  hasRemainingThreadMapMount,
+  detachThreadMapWorkspaceIfLast,
+  fetchLiveChatInfo,
+  getConversationKind,
+  hasConsistentChannelAccount,
   hasSessionMountConflict,
   hasWorkspaceMountConflict,
   isNativeContextContainer,
+  markNativeContextWorkspace,
   matchesWorkspaceMount,
+  refreshAgentLastImJid,
   restoreDefaultChannelMount,
-  resolveWorkspaceJid,
-  type NativeContextMetadata,
+  type ChannelChatInfo,
 } from '../channel-mount-service.js';
-import {
-  channelConversationJid,
-  parseChannelAddress,
-} from '../channel-address.js';
 import { isMentionActivationMode } from '../feishu-conversation-policy.js';
 import { normalizeLegacyOwnerMention } from '../im-audience-policy.js';
 import {
   conversationBindingPolicyError,
-  resolveChannelConversationKind,
   type ChannelConversationKind,
 } from '../channel-conversation-kind.js';
 
 const router = new Hono<{ Variables: Variables }>();
 
-type ChannelChatInfo = NativeContextMetadata & {
-  avatar?: string;
-  name?: string;
-  user_count?: string;
-};
-
-function getConversationKind(
-  imJid: string,
-  group: Pick<RegisteredGroup, 'feishu_chat_mode'>,
-  chatInfo?: ChannelChatInfo | null,
-): ChannelConversationKind {
-  return resolveChannelConversationKind(imJid, {
-    feishu_chat_mode: group.feishu_chat_mode,
-    chat_mode: chatInfo?.chat_mode,
-  });
-}
-
-// Only fetches live chat metadata — does NOT compute threadCapable. That
-// decision must be (re-)computed by the caller against a freshly re-read
-// imGroup taken AFTER this await, never against the pre-await snapshot:
-// getChannelChatInfo/getFeishuChatInfo is a real network call that yields
-// the event loop, during which the message router can upgrade
-// native_context_type from 'none' to 'thread' for this exact imJid. Using a
-// stale imGroup here would compute threadCapable from outdated persisted
-// state and could bind a now-native-thread-capable container as a fixed
-// single_session, breaking that thread's session isolation from its
-// siblings. See callers for the fresh-read + recompute pattern.
-async function fetchLiveChatInfo(
-  userId: string,
-  imJid: string,
-): Promise<{ chatInfo?: ChannelChatInfo | null }> {
-  const channelType = getChannelType(imJid);
-  if (!channelType) return {};
-  const deps = getWebDeps();
-  const chatInfo = deps?.getChannelChatInfo
-    ? ((await deps.getChannelChatInfo(imJid)) as ChannelChatInfo | null)
-    : channelType === 'feishu' && deps?.getFeishuChatInfo
-      ? await deps.getFeishuChatInfo(userId, extractChatId(imJid))
-      : null;
-  return { chatInfo };
-}
-
-/** Update workspace RegisteredGroup in DB + in-memory cache. */
-function updateWorkspaceGroup(jid: string, workspace: RegisteredGroup): void {
-  setRegisteredGroup(jid, workspace);
-  const deps = getWebDeps();
-  if (deps) {
-    const groups = deps.getRegisteredGroups();
-    groups[jid] = workspace;
-  }
-}
-
-function hasConsistentChannelAccount(
-  userId: string,
-  imJid: string,
-  group: RegisteredGroup,
-): boolean {
-  const encodedAccountId = parseChannelAddress(imJid)?.channelAccountId ?? null;
-  const storedAccountId = group.channel_account_id ?? null;
-  if (encodedAccountId !== storedAccountId) {
-    // Legacy/default account chats intentionally retain their historical
-    // unscoped JID while the normalized account id is stored on the row.
-    if (!encodedAccountId && storedAccountId) {
-      const account = getChannelAccount(storedAccountId);
-      return (
-        account?.is_legacy_default === true && account.owner_user_id === userId
-      );
-    }
-    return false;
-  }
-  if (!storedAccountId) return true;
-  return getChannelAccount(storedAccountId)?.owner_user_id === userId;
-}
-
-function markNativeContextWorkspace(jid: string): void {
-  const freshWorkspace = getRegisteredGroup(jid);
-  if (!freshWorkspace) return;
-  updateWorkspaceGroup(jid, {
-    ...freshWorkspace,
-    conversation_source: 'native_thread',
-    conversation_nav_mode: 'vertical_threads',
-  });
-}
-
-/** Keep the agent's fallback reply route when another bound chat remains. */
-function refreshAgentLastImJid(agentId: string): void {
-  const agent = getAgent(agentId);
-  if (!agent) return;
-  const remaining = getGroupsByTargetAgent(agentId);
-  const current = agent.last_im_jid
-    ? channelConversationJid(agent.last_im_jid)
-    : null;
-  if (current && remaining.some(({ jid }) => jid === current)) return;
-
-  remaining.sort((a, b) => {
-    const dateDiff =
-      Date.parse(b.group.added_at) - Date.parse(a.group.added_at);
-    if (Number.isFinite(dateDiff) && dateDiff !== 0) return dateDiff;
-    return a.jid.localeCompare(b.jid);
-  });
-  updateAgentLastImJid(agentId, remaining[0]?.jid ?? null);
-}
-
-/**
- * Keep native-thread navigation while any Feishu topic group still maps into
- * the workspace. The source update must be committed
- * before calling this helper.
- */
-function detachPreviousThreadMapIfLast(
-  imJid: string,
-  previous: RegisteredGroup,
-  nextWorkspaceJid?: string,
-  nextRoutingMode?: 'single_session' | 'thread_map',
-): void {
-  if (previous.binding_mode !== 'thread_map' || !previous.target_main_jid) {
-    return;
-  }
-  const previousWorkspaceJid = resolveWorkspaceJid(previous.target_main_jid, {
-    getRegisteredGroup,
-    getJidsByFolder,
-  });
-  if (!previousWorkspaceJid) return;
-
-  const nextResolvedWorkspaceJid =
-    nextRoutingMode === 'thread_map'
-      ? resolveWorkspaceJid(nextWorkspaceJid, {
-          getRegisteredGroup,
-          getJidsByFolder,
-        })
-      : null;
-  if (nextResolvedWorkspaceJid === previousWorkspaceJid) return;
-  if (hasRemainingThreadMapMount(previousWorkspaceJid, imJid)) return;
-
-  const workspace = getRegisteredGroup(previousWorkspaceJid);
-  if (workspace) {
-    updateWorkspaceGroup(
-      previousWorkspaceJid,
-      buildDetachedWorkspaceUpdate(workspace),
-    );
-  }
-}
+// Group-binding helpers (getConversationKind / fetchLiveChatInfo /
+// hasConsistentChannelAccount / markNativeContextWorkspace /
+// refreshAgentLastImJid / detachThreadMapWorkspaceIfLast) are shared with
+// routes/config.ts via ../channel-mount-service.js (ISSUE-11 B1). The
+// agents-side markNativeContextWorkspace call sites gained the config
+// folding semantics with that move: legacy web:{folder} targets fold onto
+// the registered workspace jid (user decision #6).
 
 function isNativeManagedSession(
   session: Pick<SubAgent, 'source_kind' | 'title_source'>,
@@ -257,9 +120,9 @@ async function restoreBindingDefault(
   );
   if (restored.status !== 'resolved') return restored;
 
-  detachPreviousThreadMapIfLast(
-    imJid,
+  detachThreadMapWorkspaceIfLast(
     freshImGroup,
+    imJid,
     restored.workspaceJid,
     restored.routingMode,
   );
@@ -1033,7 +896,7 @@ router.put(
         replyPolicy,
       });
       commitChannelMountUpdate(imJid, updated);
-      detachPreviousThreadMapIfLast(imJid, freshImGroup);
+      detachThreadMapWorkspaceIfLast(freshImGroup, imJid);
       logger.info(
         { imJid, sessionId, userId: user.id },
         'IM group bound to workspace session',
@@ -1155,9 +1018,9 @@ router.put(
         : {}),
     };
     commitChannelMountUpdate(imJid, updated);
-    detachPreviousThreadMapIfLast(
-      imJid,
+    detachThreadMapWorkspaceIfLast(
       freshImGroup,
+      imJid,
       targetMainJid,
       threadCapable ? 'thread_map' : 'single_session',
     );
@@ -1420,9 +1283,9 @@ router.put('/:jid/im-binding', authMiddleware, async (c) => {
       : {}),
   };
   commitChannelMountUpdate(imJid, updated);
-  detachPreviousThreadMapIfLast(
-    imJid,
+  detachThreadMapWorkspaceIfLast(
     freshImGroup,
+    imJid,
     targetMainJid,
     threadCapable ? 'thread_map' : 'single_session',
   );

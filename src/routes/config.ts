@@ -4,19 +4,15 @@ import { randomBytes, createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Hono } from 'hono';
-import { DATA_DIR } from '../config.js';
-import {
-  avatarUploadBodyLimit,
-  AVATAR_MAX_FILE_BYTES,
-} from '../http-upload-policy.js';
+import { avatarUploadBodyLimit } from '../http-upload-policy.js';
+import { reapAvatarFiles, storeAvatarUpload } from '../avatar-upload.js';
 import type { Variables } from '../web-context.js';
-import { canAccessGroup, canModifyGroup, getWebDeps } from '../web-context.js';
-import { extractChatId, getChannelType } from '../im-channel.js';
+import { canAccessGroup, canModifyGroup } from '../web-context.js';
+import { getChannelType } from '../im-channel.js';
 import {
   getRegisteredGroup,
   getAllRegisteredGroups,
   forceActiveAdminRuntimesToHost,
-  setRegisteredGroup,
   getAgent,
   getAgentProfileForWorkspace,
   getUserById,
@@ -30,22 +26,11 @@ import {
   deleteRouterState,
   isDatabaseInitialized,
   VALID_ACTIVATION_MODES,
-  getChannelAccount,
-  getGroupsByTargetAgent,
-  updateAgentLastImJid,
   countAgentProfilesByModelConfigId,
 } from '../db.js';
-import {
-  channelConversationJid,
-  parseChannelAddress,
-} from '../channel-address.js';
 import { isMentionActivationMode } from '../feishu-conversation-policy.js';
 import { normalizeLegacyOwnerMention } from '../im-audience-policy.js';
-import {
-  conversationBindingPolicyError,
-  resolveChannelConversationKind,
-  type ChannelConversationKind,
-} from '../channel-conversation-kind.js';
+import { conversationBindingPolicyError } from '../channel-conversation-kind.js';
 import {
   adminRoleMiddleware,
   authMiddleware,
@@ -96,15 +81,19 @@ import type { AudienceMode, AuthUser, RegisteredGroup } from '../types.js';
 import { logger } from '../logger.js';
 import {
   buildSessionMountUpdate,
-  buildDetachedWorkspaceUpdate,
   buildWorkspaceMountUpdate,
   commitChannelMountUpdate,
-  hasRemainingThreadMapMount,
+  detachThreadMapWorkspaceIfLast,
+  fetchLiveChatInfo,
+  getConversationKind,
+  hasConsistentChannelAccount,
   hasSessionMountConflict,
   hasWorkspaceMountConflict,
   isNativeContextContainer,
+  markNativeContextWorkspace,
+  refreshAgentLastImJid,
   restoreDefaultChannelMount,
-  type NativeContextMetadata,
+  type ChannelChatInfo,
 } from '../channel-mount-service.js';
 import { providerPool } from '../provider-pool.js';
 import { getClientIp } from '../utils.js';
@@ -1561,138 +1550,12 @@ function applyBindingUpdate(imJid: string, updated: RegisteredGroup): void {
   commitChannelMountUpdate(imJid, updated);
 }
 
-function applyRegisteredGroupUpdate(
-  jid: string,
-  updated: RegisteredGroup,
-): void {
-  setRegisteredGroup(jid, updated);
-  const webDeps = getWebDeps();
-  if (webDeps) {
-    const groups = webDeps.getRegisteredGroups();
-    if (groups[jid]) groups[jid] = updated;
-  }
-}
-
-function hasConsistentChannelAccount(
-  userId: string,
-  imJid: string,
-  group: RegisteredGroup,
-): boolean {
-  const encodedAccountId = parseChannelAddress(imJid)?.channelAccountId ?? null;
-  const storedAccountId = group.channel_account_id ?? null;
-  if (encodedAccountId !== storedAccountId) {
-    if (!encodedAccountId && storedAccountId) {
-      const account = getChannelAccount(storedAccountId);
-      return (
-        account?.is_legacy_default === true && account.owner_user_id === userId
-      );
-    }
-    return false;
-  }
-  if (!storedAccountId) return true;
-  return getChannelAccount(storedAccountId)?.owner_user_id === userId;
-}
-
-function refreshAgentLastImJid(agentId: string): void {
-  const agent = getAgent(agentId);
-  if (!agent) return;
-  const remaining = getGroupsByTargetAgent(agentId);
-  const current = agent.last_im_jid
-    ? channelConversationJid(agent.last_im_jid)
-    : null;
-  if (current && remaining.some(({ jid }) => jid === current)) return;
-  remaining.sort((a, b) => {
-    const dateDiff =
-      Date.parse(b.group.added_at) - Date.parse(a.group.added_at);
-    if (Number.isFinite(dateDiff) && dateDiff !== 0) return dateDiff;
-    return a.jid.localeCompare(b.jid);
-  });
-  updateAgentLastImJid(agentId, remaining[0]?.jid ?? null);
-}
-
-type ChannelChatInfo = NativeContextMetadata & {
-  avatar?: string;
-  name?: string;
-  user_count?: string;
-};
-
-function getConversationKind(
-  imJid: string,
-  group: Pick<RegisteredGroup, 'feishu_chat_mode'>,
-  chatInfo?: ChannelChatInfo | null,
-): ChannelConversationKind {
-  return resolveChannelConversationKind(imJid, {
-    feishu_chat_mode: group.feishu_chat_mode,
-    chat_mode: chatInfo?.chat_mode,
-  });
-}
-
-// Only fetches live chat metadata — does NOT compute threadCapable. That
-// decision must be (re-)computed by the caller against a freshly re-read
-// imGroup taken AFTER this await, never against the pre-await snapshot —
-// see the identical helper's doc comment in routes/agents.ts for why.
-async function fetchLiveChatInfo(
-  userId: string,
-  imJid: string,
-): Promise<{ chatInfo?: ChannelChatInfo | null }> {
-  const channelType = getChannelType(imJid);
-  if (!channelType) return {};
-  const webDeps = getWebDeps();
-  const chatInfo = webDeps?.getChannelChatInfo
-    ? ((await webDeps.getChannelChatInfo(imJid)) as ChannelChatInfo | null)
-    : channelType === 'feishu' && webDeps?.getFeishuChatInfo
-      ? await webDeps.getFeishuChatInfo(userId, extractChatId(imJid))
-      : null;
-  return { chatInfo };
-}
-
-function resolveWorkspaceForBinding(
-  targetMainJid: string,
-): { jid: string; group: RegisteredGroup } | null {
-  const direct = getRegisteredGroup(targetMainJid);
-  if (direct) return { jid: targetMainJid, group: direct };
-  if (!targetMainJid.startsWith('web:')) return null;
-
-  const folder = targetMainJid.slice(4);
-  for (const [jid, group] of Object.entries(getAllRegisteredGroups())) {
-    if (jid.startsWith('web:') && group.folder === folder) {
-      return { jid, group };
-    }
-  }
-  return null;
-}
-
-function detachThreadMapWorkspaceIfLast(
-  targetMainJid: string | undefined,
-  excludingImJid: string,
-  nextWorkspaceJid?: string,
-  nextRoutingMode?: 'single_session' | 'thread_map',
-): void {
-  if (!targetMainJid) return;
-  const workspace = resolveWorkspaceForBinding(targetMainJid);
-  if (!workspace) return;
-  const nextWorkspace =
-    nextRoutingMode === 'thread_map' && nextWorkspaceJid
-      ? resolveWorkspaceForBinding(nextWorkspaceJid)
-      : null;
-  if (nextWorkspace?.jid === workspace.jid) return;
-  if (hasRemainingThreadMapMount(workspace.jid, excludingImJid)) return;
-
-  applyRegisteredGroupUpdate(
-    workspace.jid,
-    buildDetachedWorkspaceUpdate(workspace.group),
-  );
-}
-
-function markNativeContextWorkspace(targetMainJid: string): void {
-  const workspace = resolveWorkspaceForBinding(targetMainJid);
-  if (!workspace) return;
-  applyRegisteredGroupUpdate(workspace.jid, {
-    ...workspace.group,
-    conversation_source: 'native_thread',
-    conversation_nav_mode: 'vertical_threads',
-  });
-}
+// Group-binding helpers (applyRegisteredGroupUpdate /
+// resolveWorkspaceForBinding / markNativeContextWorkspace /
+// detachThreadMapWorkspaceIfLast / hasConsistentChannelAccount /
+// refreshAgentLastImJid / getConversationKind / fetchLiveChatInfo) are
+// shared with routes/agents.ts via ../channel-mount-service.js
+// (ISSUE-11 B1) — no local copies remain in this file.
 
 function restoreDefaultChannelError(restored: { reason: string }): string {
   if (restored.reason === 'account_mismatch') {
@@ -1752,23 +1615,7 @@ configRoutes.put(
 
 // ─── Appearance config ────────────────────────────────────────────
 
-const SYSTEM_AGENT_AVATARS_DIR = path.join(DATA_DIR, 'avatars');
 const SYSTEM_AGENT_AVATAR_PREFIX = 'system-agent-';
-const SYSTEM_AGENT_AVATAR_EXTENSIONS: Record<string, string> = {
-  'image/jpeg': '.jpg',
-  'image/png': '.png',
-  'image/gif': '.gif',
-  'image/webp': '.webp',
-};
-
-function removeStaleSystemAgentAvatars(keep?: string): void {
-  if (!fs.existsSync(SYSTEM_AGENT_AVATARS_DIR)) return;
-  for (const filename of fs.readdirSync(SYSTEM_AGENT_AVATARS_DIR)) {
-    if (!filename.startsWith(SYSTEM_AGENT_AVATAR_PREFIX) || filename === keep)
-      continue;
-    fs.rmSync(path.join(SYSTEM_AGENT_AVATARS_DIR, filename), { force: true });
-  }
-}
 
 configRoutes.get('/appearance', authMiddleware, systemConfigMiddleware, (c) => {
   try {
@@ -1813,34 +1660,18 @@ configRoutes.post(
   adminRoleMiddleware,
   avatarUploadBodyLimit,
   async (c) => {
-    if (!(c.req.header('content-type') || '').includes('multipart/form-data')) {
-      return c.json({ error: 'Expected multipart/form-data' }, 400);
+    // Shared validation + write pipeline (ISSUE-11 B9); this route keeps the
+    // admin auth, appearance persistence and system-agent reap policy.
+    const stored = await storeAvatarUpload(c.req, SYSTEM_AGENT_AVATAR_PREFIX);
+    if (!stored.ok) {
+      return c.json({ error: stored.error }, stored.status);
     }
-    const formData = await c.req.formData();
-    const file = formData.get('avatar');
-    if (!file || !(file instanceof File)) {
-      return c.json({ error: 'No avatar file provided' }, 400);
-    }
-    if (file.size > AVATAR_MAX_FILE_BYTES) {
-      return c.json({ error: 'File too large (max 3MB)' }, 413);
-    }
-    const extension = SYSTEM_AGENT_AVATAR_EXTENSIONS[file.type];
-    if (!extension) {
-      return c.json(
-        { error: 'Unsupported image type. Use jpg, png, gif or webp' },
-        400,
-      );
-    }
-
-    fs.mkdirSync(SYSTEM_AGENT_AVATARS_DIR, { recursive: true });
-    const filename = `${SYSTEM_AGENT_AVATAR_PREFIX}${randomBytes(4).toString('hex')}${extension}`;
-    const destination = path.join(SYSTEM_AGENT_AVATARS_DIR, filename);
-    const temporary = `${destination}.tmp`;
-    fs.writeFileSync(temporary, Buffer.from(await file.arrayBuffer()));
-    fs.renameSync(temporary, destination);
-    const aiAvatarUrl = `/api/auth/avatars/${filename}`;
+    const aiAvatarUrl = stored.avatarUrl;
     const appearance = saveAppearanceConfig({ aiAvatarUrl });
-    removeStaleSystemAgentAvatars(filename);
+    reapAvatarFiles({
+      prefix: SYSTEM_AGENT_AVATAR_PREFIX,
+      keep: [stored.filename],
+    });
     return c.json({ appearance, avatarUrl: aiAvatarUrl });
   },
 );
@@ -1854,7 +1685,7 @@ configRoutes.delete(
       aiAvatarUrl: null,
       aiAvatarMode: 'emoji',
     });
-    removeStaleSystemAgentAvatars();
+    reapAvatarFiles({ prefix: SYSTEM_AGENT_AVATAR_PREFIX });
     return c.json({ appearance });
   },
 );
@@ -2400,7 +2231,6 @@ configRoutes.put('/user-im/bindings/:imJid', authMiddleware, async (c) => {
       return c.json({ error: 'Invalid or inaccessible channel account' }, 400);
     }
     const previousTargetAgentId = freshImGroup.target_agent_id;
-    const previousTargetMainJid = freshImGroup.target_main_jid;
     const wasThreadMap = freshImGroup.binding_mode === 'thread_map';
     const restored = restoreDefaultChannelMount(
       imJid,
@@ -2413,7 +2243,7 @@ configRoutes.put('/user-im/bindings/:imJid', authMiddleware, async (c) => {
     }
     if (wasThreadMap) {
       detachThreadMapWorkspaceIfLast(
-        previousTargetMainJid,
+        freshImGroup,
         imJid,
         restored.workspaceJid,
         restored.routingMode,
@@ -2547,7 +2377,7 @@ configRoutes.put('/user-im/bindings/:imJid', authMiddleware, async (c) => {
     );
     applyBindingUpdate(imJid, updated);
     if (freshImGroup.binding_mode === 'thread_map') {
-      detachThreadMapWorkspaceIfLast(freshImGroup.target_main_jid, imJid);
+      detachThreadMapWorkspaceIfLast(freshImGroup, imJid);
     }
     logger.info(
       { imJid, sessionId, userId: user.id },
@@ -2680,7 +2510,7 @@ configRoutes.put('/user-im/bindings/:imJid', authMiddleware, async (c) => {
     applyBindingUpdate(imJid, updated);
     if (freshImGroup.binding_mode === 'thread_map') {
       detachThreadMapWorkspaceIfLast(
-        freshImGroup.target_main_jid,
+        freshImGroup,
         imJid,
         targetMainJid,
         threadCapable ? 'thread_map' : 'single_session',
@@ -2747,7 +2577,7 @@ configRoutes.put('/user-im/bindings/:imJid', authMiddleware, async (c) => {
       : candidate;
     applyBindingUpdate(imJid, updated);
     if (imGroup.binding_mode === 'thread_map' && !threadCapable) {
-      detachThreadMapWorkspaceIfLast(imGroup.target_main_jid, imJid);
+      detachThreadMapWorkspaceIfLast(imGroup, imJid);
     }
     if (threadCapable && updated.target_main_jid) {
       markNativeContextWorkspace(updated.target_main_jid);

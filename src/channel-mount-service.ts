@@ -6,21 +6,31 @@ import type {
   RegisteredGroup,
   SubAgent,
 } from './types.js';
-import { getChannelType } from './im-channel.js';
-import { parseChannelAddress } from './channel-address.js';
+import { getChannelType, extractChatId } from './im-channel.js';
+import {
+  channelConversationJid,
+  parseChannelAddress,
+} from './channel-address.js';
 import { isThreadMapCapableChat } from './im-channel-capabilities.js';
 import { requiresMention as feishuRequiresMention } from './feishu-conversation-policy.js';
 import {
+  getAgent,
   getChannelAccount,
   getAllRegisteredGroups,
   getDefaultChannelAccount,
+  getGroupsByTargetAgent,
   getJidsByFolder,
   getLegacyChannelAccount,
   getRegisteredGroup,
   getUserHomeGroup,
   setRegisteredGroup,
+  updateAgentLastImJid,
 } from './db.js';
 import { getWebDeps } from './web-context.js';
+import {
+  resolveChannelConversationKind,
+  type ChannelConversationKind,
+} from './channel-conversation-kind.js';
 
 export interface ChannelMountResolutionDeps {
   getAgent: (
@@ -590,4 +600,232 @@ export function buildNativeThreadWorkspaceUpdate(
         : 'native_thread',
     conversation_nav_mode: 'vertical_threads',
   };
+}
+
+// ─── Group binding route helpers (ISSUE-11 B1) ──────────────────────────────
+//
+// Single shared implementations of the helper families that routes/agents.ts
+// and routes/config.ts previously maintained as parallel copies. Semantics
+// chosen per the ISSUE-11 convergence decisions (user decision #6):
+//   - markNativeContextWorkspace takes the config folding version: legacy
+//     `web:{folder}` aliases fold onto the registered workspace jid before
+//     the native-thread markers are written.
+//   - cache sync takes the guarded variant (`if (groups[jid])`): a write
+//     must never create a phantom router-cache entry.
+//   - detach unifies on the group-object signature with the binding-mode
+//     guard inside the helper (more robust than the string-only variant).
+
+export type ChannelChatInfo = NativeContextMetadata & {
+  avatar?: string;
+  name?: string;
+  user_count?: string;
+};
+
+/** Lookup + persistence deps for the shared group-binding helpers. */
+export interface GroupBindingUpdateDeps extends ThreadMapMountLookupDeps {
+  setGroup: (jid: string, group: RegisteredGroup) => void;
+  /** Live router cache; guarded writes never create phantom entries. */
+  getInMemoryGroups?: () => Record<string, RegisteredGroup> | undefined;
+}
+
+function groupBindingLookupDeps(): Pick<
+  GroupBindingUpdateDeps,
+  'getAllGroups' | 'getGroup' | 'getJidsByFolder'
+> {
+  return {
+    getAllGroups: getAllRegisteredGroups,
+    getGroup: getRegisteredGroup,
+    getJidsByFolder,
+  };
+}
+
+/**
+ * Resolve the registered workspace a binding target names. Historical rows
+ * sometimes stored `target_main_jid` as the `web:{folder}` alias instead of
+ * the registered `web:{uuid}` JID; the alias folds onto the registered jid
+ * (returns its live group) so binding writes and native-thread markers
+ * survive the format drift. Unresolvable targets return null and callers
+ * treat that as a silent no-op.
+ */
+export function resolveWorkspaceForBinding(
+  targetMainJid: string,
+  deps: Pick<ThreadMapMountLookupDeps, 'getAllGroups' | 'getGroup'> = {
+    getAllGroups: getAllRegisteredGroups,
+    getGroup: getRegisteredGroup,
+  },
+): { jid: string; group: RegisteredGroup } | null {
+  const direct = deps.getGroup(targetMainJid);
+  if (direct) return { jid: targetMainJid, group: direct };
+  if (!targetMainJid.startsWith('web:')) return null;
+
+  const folder = targetMainJid.slice(4);
+  for (const [jid, group] of Object.entries(deps.getAllGroups())) {
+    if (jid.startsWith('web:') && group.folder === folder) {
+      return { jid, group };
+    }
+  }
+  return null;
+}
+
+/**
+ * Persist a RegisteredGroup update and sync the in-memory router cache.
+ * Guarded: the cache is only refreshed for jids it already tracks, so a
+ * write never creates a phantom cache entry for an unmounted jid.
+ */
+export function applyRegisteredGroupUpdate(
+  jid: string,
+  updated: RegisteredGroup,
+  deps: Pick<GroupBindingUpdateDeps, 'setGroup' | 'getInMemoryGroups'> = {
+    setGroup: setRegisteredGroup,
+    getInMemoryGroups: () => getWebDeps()?.getRegisteredGroups(),
+  },
+): void {
+  deps.setGroup(jid, updated);
+  const groups = deps.getInMemoryGroups?.();
+  if (groups?.[jid]) groups[jid] = updated;
+}
+
+/**
+ * Mark a binding target's workspace as native-thread navigated. Legacy
+ * `web:{folder}` targets fold onto the registered jid first (user decision
+ * #6): the marker is written where the router actually looks, never lost to
+ * the stale alias. Unregistered targets are a silent no-op.
+ */
+export function markNativeContextWorkspace(
+  targetMainJid: string,
+  deps: GroupBindingUpdateDeps = {
+    ...groupBindingLookupDeps(),
+    setGroup: setRegisteredGroup,
+    getInMemoryGroups: () => getWebDeps()?.getRegisteredGroups(),
+  },
+): void {
+  const workspace = resolveWorkspaceForBinding(targetMainJid, deps);
+  if (!workspace) return;
+  applyRegisteredGroupUpdate(
+    workspace.jid,
+    {
+      ...workspace.group,
+      conversation_source: 'native_thread',
+      conversation_nav_mode: 'vertical_threads',
+    },
+    deps,
+  );
+}
+
+/**
+ * Keep native-thread navigation while any Feishu topic group still maps into
+ * the workspace. The source update must be committed before calling this
+ * helper. Guards inside: a non-thread_map previous binding never detaches,
+ * and rebinding the same workspace as thread_map keeps the markers.
+ */
+export function detachThreadMapWorkspaceIfLast(
+  previous: Pick<RegisteredGroup, 'binding_mode' | 'target_main_jid'>,
+  excludingImJid: string,
+  nextWorkspaceJid?: string,
+  nextRoutingMode?: 'single_session' | 'thread_map',
+  deps: GroupBindingUpdateDeps = {
+    ...groupBindingLookupDeps(),
+    setGroup: setRegisteredGroup,
+    getInMemoryGroups: () => getWebDeps()?.getRegisteredGroups(),
+  },
+): void {
+  if (previous.binding_mode !== 'thread_map' || !previous.target_main_jid) {
+    return;
+  }
+  const workspace = resolveWorkspaceForBinding(previous.target_main_jid, deps);
+  if (!workspace) return;
+  const nextWorkspace =
+    nextRoutingMode === 'thread_map' && nextWorkspaceJid
+      ? resolveWorkspaceForBinding(nextWorkspaceJid, deps)
+      : null;
+  if (nextWorkspace?.jid === workspace.jid) return;
+  if (hasRemainingThreadMapMount(workspace.jid, excludingImJid, deps)) return;
+
+  applyRegisteredGroupUpdate(
+    workspace.jid,
+    buildDetachedWorkspaceUpdate(workspace.group),
+    deps,
+  );
+}
+
+/** Provider-neutral classification of a channel chat (group/direct/unknown). */
+export function getConversationKind(
+  imJid: string,
+  group: Pick<RegisteredGroup, 'feishu_chat_mode'>,
+  chatInfo?: ChannelChatInfo | null,
+): ChannelConversationKind {
+  return resolveChannelConversationKind(imJid, {
+    feishu_chat_mode: group.feishu_chat_mode,
+    chat_mode: chatInfo?.chat_mode,
+  });
+}
+
+// Only fetches live chat metadata — does NOT compute threadCapable. That
+// decision must be (re-)computed by the caller against a freshly re-read
+// imGroup taken AFTER this await, never against the pre-await snapshot:
+// getChannelChatInfo/getFeishuChatInfo is a real network call that yields
+// the event loop, during which the message router can upgrade
+// native_context_type from 'none' to 'thread' for this exact imJid. Using a
+// stale imGroup here would compute threadCapable from outdated persisted
+// state and could bind a now-native-thread-capable container as a fixed
+// single_session, breaking that thread's session isolation from its
+// siblings. See callers for the fresh-read + recompute pattern.
+export async function fetchLiveChatInfo(
+  userId: string,
+  imJid: string,
+): Promise<{ chatInfo?: ChannelChatInfo | null }> {
+  const channelType = getChannelType(imJid);
+  if (!channelType) return {};
+  const deps = getWebDeps();
+  const chatInfo = deps?.getChannelChatInfo
+    ? ((await deps.getChannelChatInfo(imJid)) as ChannelChatInfo | null)
+    : channelType === 'feishu' && deps?.getFeishuChatInfo
+      ? await deps.getFeishuChatInfo(userId, extractChatId(imJid))
+      : null;
+  return { chatInfo };
+}
+
+/**
+ * Whether the channel account encoded in the chat JID still matches the row's
+ * stored account and its owner. Legacy/default account chats intentionally
+ * retain their historical unscoped JID while the normalized account id is
+ * stored on the row.
+ */
+export function hasConsistentChannelAccount(
+  userId: string,
+  imJid: string,
+  group: RegisteredGroup,
+): boolean {
+  const encodedAccountId = parseChannelAddress(imJid)?.channelAccountId ?? null;
+  const storedAccountId = group.channel_account_id ?? null;
+  if (encodedAccountId !== storedAccountId) {
+    if (!encodedAccountId && storedAccountId) {
+      const account = getChannelAccount(storedAccountId);
+      return (
+        account?.is_legacy_default === true && account.owner_user_id === userId
+      );
+    }
+    return false;
+  }
+  if (!storedAccountId) return true;
+  return getChannelAccount(storedAccountId)?.owner_user_id === userId;
+}
+
+/** Keep the agent's fallback reply route when another bound chat remains. */
+export function refreshAgentLastImJid(agentId: string): void {
+  const agent = getAgent(agentId);
+  if (!agent) return;
+  const remaining = getGroupsByTargetAgent(agentId);
+  const current = agent.last_im_jid
+    ? channelConversationJid(agent.last_im_jid)
+    : null;
+  if (current && remaining.some(({ jid }) => jid === current)) return;
+
+  remaining.sort((a, b) => {
+    const dateDiff =
+      Date.parse(b.group.added_at) - Date.parse(a.group.added_at);
+    if (Number.isFinite(dateDiff) && dateDiff !== 0) return dateDiff;
+    return a.jid.localeCompare(b.jid);
+  });
+  updateAgentLastImJid(agentId, remaining[0]?.jid ?? null);
 }

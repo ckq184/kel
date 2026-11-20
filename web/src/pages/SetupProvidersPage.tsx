@@ -22,50 +22,21 @@ import type {
 } from '../components/settings/types';
 import { getErrorMessage } from '../components/settings/types';
 import { useAuthStore } from '../stores/auth';
+import { buildCustomEnv } from '../utils/custom-env';
 
 type ProviderMode = 'official' | 'third_party';
 
-const RESERVED_ENV_KEYS = new Set([
-  'ANTHROPIC_BASE_URL',
-  'ANTHROPIC_AUTH_TOKEN',
-  'ANTHROPIC_API_KEY',
-  'CLAUDE_CODE_OAUTH_TOKEN',
-  'ANTHROPIC_MODEL',
-]);
-
-function buildCustomEnv(rows: EnvRow[]): {
-  customEnv: Record<string, string>;
-  error: string | null;
-} {
-  const customEnv: Record<string, string> = {};
-  for (const [idx, row] of rows.entries()) {
-    const key = row.key.trim();
-    const value = row.value.trim();
-    if (!key && !value) continue;
-    if (!key || !value) {
-      return {
-        customEnv: {},
-        error: `第 ${idx + 1} 行环境变量的 Key 和 Value 都要填写`,
-      };
-    }
-    if (!/^[A-Z_][A-Z0-9_]*$/.test(key)) {
-      return {
-        customEnv: {},
-        error: `环境变量 Key "${key}" 格式无效（仅允许大写字母/数字/下划线，且不能数字开头）`,
-      };
-    }
-    if (RESERVED_ENV_KEYS.has(key)) {
-      return {
-        customEnv: {},
-        error: `${key} 属于系统保留字段，请在必填区域填写`,
-      };
-    }
-    if (customEnv[key] !== undefined) {
-      return { customEnv: {}, error: `环境变量 Key "${key}" 重复` };
-    }
-    customEnv[key] = value;
-  }
-  return { customEnv, error: null };
+/**
+ * ISSUE-11 B5：EnvRow 行编辑器 → KEY=value 逐行文本（key/value 均空的占位
+ * 行序列化为空行，交给共享 buildCustomEnv 的空行跳过逻辑）。本页不传
+ * options（不启用第三方默认键拦截），校验行为与原 Setup 版一致。
+ */
+function envRowsToText(rows: EnvRow[]): string {
+  return rows
+    .map((row) =>
+      row.key === '' && row.value === '' ? '' : `${row.key}=${row.value}`,
+    )
+    .join('\n');
 }
 
 export function SetupProvidersPage() {
@@ -186,7 +157,7 @@ export function SetupProvidersPage() {
         setError('第三方渠道必须填写 ANTHROPIC_AUTH_TOKEN');
         return;
       }
-      const envResult = buildCustomEnv(customEnvRows);
+      const envResult = buildCustomEnv(envRowsToText(customEnvRows));
       if (envResult.error) {
         setError(envResult.error);
         return;

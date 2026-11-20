@@ -32,6 +32,7 @@ import type {
 import { buildUsageQueryParams, usageQueryKey } from '../stores/usage';
 import { useAuthStore } from '../stores/auth';
 import { formatTokens } from '../components/usage/format';
+import { formatCost } from '../utils/usage-format';
 import {
   UsageTrendChart,
   type DailyUsagePoint,
@@ -102,13 +103,6 @@ function parseQuery(params: URLSearchParams, isAdmin: boolean): UsageQuery {
     groupFolder: read('groupFolder'),
     source: read('source'),
   };
-}
-
-function formatCost(value: number): string {
-  if (value >= 1) return `$${value.toFixed(2)}`;
-  if (value >= 0.01) return `$${value.toFixed(3)}`;
-  if (value > 0) return `$${value.toFixed(4)}`;
-  return '$0.00';
 }
 
 function formatInteger(value: number): string {
