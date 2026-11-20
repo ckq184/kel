@@ -2,13 +2,12 @@ import { describe, expect, test } from 'vitest';
 
 import {
   isExtendedContextModel,
-  resolveAutoCompactWindow,
+  resolveContextWindowOverride,
   resolveDeclaredContextWindow,
-  resolveLegacyAutoCompactWindow,
   stripOneMillionSuffix,
 } from '../container/agent-runner/src/context-window.js';
 
-describe('Claude model-aware context compression', () => {
+describe('Claude model-aware context window resolution', () => {
   test('uses 200K for ordinary models and 1M for [1m] models', () => {
     expect(resolveDeclaredContextWindow('claude-sonnet-4-5')).toBe(200_000);
     expect(resolveDeclaredContextWindow('model_hub/glm-5.2[1m]')).toBe(
@@ -48,30 +47,35 @@ describe('Claude model-aware context compression', () => {
     );
   });
 
-  test('clamps legacy fixed thresholds to the effective context window', () => {
-    expect(resolveLegacyAutoCompactWindow(200_000, 800_000)).toBe(180_000);
-    expect(resolveLegacyAutoCompactWindow(200_000, 120_000)).toBe(120_000);
-    expect(resolveLegacyAutoCompactWindow(1_000_000, 950_000)).toBe(900_000);
-    expect(resolveLegacyAutoCompactWindow(1_000_000, 800_000)).toBe(800_000);
-    expect(resolveLegacyAutoCompactWindow(512_000, 950_000)).toBe(460_800);
-    expect(resolveLegacyAutoCompactWindow(200_000, 0)).toBeUndefined();
-    // 无效窗口值（NaN/非正数）不产出阈值
-    expect(resolveLegacyAutoCompactWindow(Number.NaN, 800_000)).toBeUndefined();
-    expect(resolveLegacyAutoCompactWindow(0, 800_000)).toBeUndefined();
-  });
+  // ISSUE-04 ①：Pi 端窗口覆盖值只在「有宿主声明或旧 [1m] 后缀」时产出；
+  // 无声明无后缀返回 undefined，官方端点保留 Pi 目录真实窗口。
+  describe('resolveContextWindowOverride (Pi wiring, ISSUE-04)', () => {
+    test('host declaration produces the override value', () => {
+      expect(resolveContextWindowOverride('glm-5.2', 1_000_000)).toBe(
+        1_000_000,
+      );
+      expect(resolveContextWindowOverride('claude-haiku-4-5', 512_000)).toBe(
+        512_000,
+      );
+    });
 
-  test('converts the same percentage relative to the effective context window', () => {
-    expect(resolveAutoCompactWindow(200_000, 80)).toBe(160_000);
-    expect(resolveAutoCompactWindow(1_000_000, 80)).toBe(800_000);
-    expect(resolveAutoCompactWindow(256_000, 50)).toBe(128_000);
-  });
+    test('declaration wins over the legacy [1m] suffix heuristic', () => {
+      expect(resolveContextWindowOverride('glm-5.2[1m]', 256_000)).toBe(
+        256_000,
+      );
+    });
 
-  test('rejects percentages outside the supported safety range', () => {
-    expect(resolveAutoCompactWindow(200_000, 49)).toBeUndefined();
-    expect(resolveAutoCompactWindow(200_000, 91)).toBeUndefined();
-    expect(resolveAutoCompactWindow(200_000, 80.5)).toBeUndefined();
-    // 无效窗口值（NaN/非正数）不产出阈值
-    expect(resolveAutoCompactWindow(Number.NaN, 80)).toBeUndefined();
-    expect(resolveAutoCompactWindow(0, 80)).toBeUndefined();
+    test('legacy [1m] suffix without a declaration upgrades to 1M', () => {
+      expect(resolveContextWindowOverride('glm-5.2[1m]', undefined)).toBe(
+        1_000_000,
+      );
+    });
+
+    test('no declaration and no suffix keeps the Pi catalog value', () => {
+      expect(resolveContextWindowOverride('claude-haiku-4-5')).toBeUndefined();
+      expect(
+        resolveContextWindowOverride('glm-5.2', undefined),
+      ).toBeUndefined();
+    });
   });
 });

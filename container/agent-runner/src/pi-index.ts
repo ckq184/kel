@@ -32,6 +32,8 @@ import {
 import { loadCkqclawOwnerProfileTurnContext } from './owner-profile-context.js';
 import { loadWorkspaceMemoryTurnContext } from './workspace-memory-context.js';
 import { buildCkqclawPromptPlan } from './prompt-plan.js';
+import { resolveContextWindowOverride } from './context-window.js';
+import { resolveAgentThinkingLevel } from './pi-settings.js';
 import { resolveClaudeProviderRuntime } from './provider-runtime.js';
 import { resolveAgentRuntimeKind } from './runtime-config.js';
 import { adaptClaudeMcpToolsToPi } from './runtime/pi/pi-tools.js';
@@ -351,17 +353,32 @@ async function runTurn(
       provider: {
         endpointKind: provider.endpointKind,
         baseUrl: process.env.ANTHROPIC_BASE_URL,
-        apiKey:
-          process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN,
+        apiKey: process.env.ANTHROPIC_API_KEY,
+        // Bearer token stays out of setRuntimeApiKey (ISSUE-04 ⑥): Pi's env
+        // discovery turns it into Authorization: Bearer, which is the only
+        // shape official Anthropic OAuth tokens authenticate with.
+        authToken: process.env.ANTHROPIC_AUTH_TOKEN,
+        // ISSUE-04 ①: host-declared window overrides the Pi model definition;
+        // undefined keeps the catalog/registration value.
+        contextWindow: resolveContextWindowOverride(
+          provider.model,
+          provider.declaredContextWindow,
+        ),
       },
+      // ISSUE-04 ③: effort → thinkingLevel. Agent-level wins, the provider
+      // env is the fallback, undefined defers to Pi's own default.
+      thinkingLevel: resolveAgentThinkingLevel(
+        input.agentProfile?.effort,
+        process.env.CLAUDE_CODE_EFFORT_LEVEL,
+      ),
       skillPaths: [
         path.join(process.env.CLAUDE_CONFIG_DIR || '', 'skills'),
         path.join(WORKSPACE_GROUP, '.claude', 'skills'),
       ].filter((entry) => entry && fs.existsSync(entry)),
-      // The historical Claude SDK auto-compact knobs are advisory under Pi:
-      // the product always keeps compaction enabled and Pi decides its own
-      // reserve-based threshold. An explicit runtime-level disable remains
-      // expressible through the runtime contract.
+      // The historical auto-compact percentage/window settings were retired
+      // from the UI (ISSUE-04 ⑤): the product keeps compaction enabled and
+      // Pi decides its own reserve-based threshold. An explicit runtime-level
+      // disable remains expressible through the runtime contract.
       autoCompactEnabled: true,
     },
     prompt: turnPrompt,

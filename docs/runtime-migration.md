@@ -154,10 +154,17 @@ and unit/integration coverage for each are in place.
 - Pi does not provide Claude's WebSearch/WebFetch built-ins; a first-class Pi
   capability adapter is still needed for parity.
 - The historical `AUTO_COMPACT_PERCENTAGE`/`AUTO_COMPACT_WINDOW` product knobs
-  are now advisory: Pi runs native reserve-based compaction and decides its own
-  threshold. The runtime contract exposes `autoCompactEnabled` and the Pi
-  adapter maps it to `SettingsManager.setCompactionEnabled`; the percentage
-  inputs no longer steer the trigger point.
+  were retired with ISSUE-04 (2026-11): Pi runs native reserve-based
+  compaction, decides its own threshold, and the percentage/window editing
+  controls were removed from the UI (stored values stay inert for storage
+  compatibility; env injection stopped). The runtime contract keeps
+  `autoCompactEnabled`, mapped to `SettingsManager.setCompactionEnabled`.
+- OAuth/setup-token credentials reach Pi through `ANTHROPIC_AUTH_TOKEN`
+  (Bearer) since ISSUE-04: the host maps OAuth-only official-provider tokens,
+  and the runner no longer downgrades bearer tokens into stored X-Api-Key
+  credentials. Pi never reads `CLAUDE_CODE_OAUTH_TOKEN` or Claude's
+  `.credentials.json`; it also never refreshes OAuth tokens — expired ones
+  must be re-imported in the provider UI.
 - The built-in main Agent is renamed to Miniclaw; existing databases keep
   stored `Miniclaw`/`Default Agent` default-profile names until the next
   read, which lazily migrates them (one-time version bump and identity-hash

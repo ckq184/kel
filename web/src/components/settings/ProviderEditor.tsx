@@ -626,6 +626,11 @@ export function ProviderEditor({
                     </button>
                   ))}
                 </div>
+                <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
+                  Pi 运行时下，OAuth / Setup Token 凭据以 Bearer Token
+                  方式对官方端点生效；运行时不会自动刷新，
+                  过期后需在此重新授权或导入。
+                </p>
               </div>
 
               {authTab === 'oauth' && (

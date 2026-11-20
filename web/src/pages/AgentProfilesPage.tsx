@@ -263,9 +263,11 @@ export function AgentProfilesPage() {
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const [contextSource, setContextSource] =
     useState<AgentContextSource>('managed');
-  const [useSdkCompactDefault, setUseSdkCompactDefault] = useState(true);
-  const [autoCompactPercentage, setAutoCompactPercentage] = useState('80');
-  const [legacyAutoCompactWindow, setLegacyAutoCompactWindow] = useState(0);
+  // ISSUE-04 ⑤：自动压缩百分比/固定阈值旋钮已下线（Pi 运行时自主决定压缩
+  // 时机）。存量策略值仅透传保存，不再提供编辑控件。
+  const [storedAutoCompactWindow, setStoredAutoCompactWindow] = useState(0);
+  const [storedAutoCompactPercentage, setStoredAutoCompactPercentage] =
+    useState(0);
   const [skillsMode, setSkillsMode] = useState<RuntimePolicyMode>('inherit');
   const [skillIds, setSkillIds] = useState<string[]>([]);
   const [hostSkillsMode, setHostSkillsMode] =
@@ -417,29 +419,11 @@ export function AgentProfilesPage() {
     setMcpMode(normalized.mcp.mode);
     setMcpIds(normalizeMcpPolicyReferences(normalized.mcp.ids));
     setContextSource(getAgentContextSource(normalized));
-    const compactWindow = normalized.context?.auto_compact_window ?? 0;
-    const compactPercentage = normalized.context?.auto_compact_percentage ?? 0;
-    setUseSdkCompactDefault(compactWindow === 0 && compactPercentage === 0);
-    setAutoCompactPercentage(
-      compactPercentage > 0
-        ? String(compactPercentage)
-        : compactWindow > 0
-          ? 'legacy'
-          : '80',
+    setStoredAutoCompactWindow(normalized.context?.auto_compact_window ?? 0);
+    setStoredAutoCompactPercentage(
+      normalized.context?.auto_compact_percentage ?? 0,
     );
-    setLegacyAutoCompactWindow(compactWindow);
   };
-
-  const autoCompactError = useMemo(() => {
-    if (useSdkCompactDefault) return null;
-    if (autoCompactPercentage === 'legacy') return null;
-    if (!autoCompactPercentage.trim()) return '请输入压缩比例。';
-    const value = Number(autoCompactPercentage);
-    if (!Number.isInteger(value) || value < 50 || value > 90) {
-      return '请输入 50–90 之间的整数。';
-    }
-    return null;
-  }, [autoCompactPercentage, useSdkCompactDefault]);
 
   const managedSkillsError = useMemo(
     () =>
@@ -465,16 +449,8 @@ export function AgentProfilesPage() {
         reasoning: { effort },
         context: {
           source: contextSource,
-          auto_compact_window: useSdkCompactDefault
-            ? 0
-            : autoCompactPercentage === 'legacy'
-              ? legacyAutoCompactWindow
-              : 0,
-          auto_compact_percentage: useSdkCompactDefault
-            ? 0
-            : autoCompactPercentage === 'legacy'
-              ? 0
-              : Number(autoCompactPercentage),
+          auto_compact_window: storedAutoCompactWindow,
+          auto_compact_percentage: storedAutoCompactPercentage,
         },
         skills: {
           mode: skillsMode,
@@ -484,17 +460,16 @@ export function AgentProfilesPage() {
         mcp: { mode: mcpMode, ids: mcpIds },
       }),
     [
-      autoCompactPercentage,
       contextSource,
       effort,
       hostSkillIds,
       hostSkillsMode,
-      legacyAutoCompactWindow,
       mcpIds,
       mcpMode,
       skillIds,
       skillsMode,
-      useSdkCompactDefault,
+      storedAutoCompactPercentage,
+      storedAutoCompactWindow,
     ],
   );
 
@@ -793,7 +768,7 @@ export function AgentProfilesPage() {
 
   const handleCreate = async () => {
     const trimmed = name.trim();
-    if (!trimmed || autoCompactError || capabilityError) return;
+    if (!trimmed || capabilityError) return;
     setCreating(true);
     try {
       const profile = await createProfile({
@@ -821,8 +796,7 @@ export function AgentProfilesPage() {
   };
 
   const handleSave = async () => {
-    if (!selected || !name.trim() || autoCompactError || capabilityError)
-      return;
+    if (!selected || !name.trim() || capabilityError) return;
     setSaving(true);
     try {
       const changes: Parameters<typeof updateProfile>[1] = {};
@@ -1798,9 +1772,7 @@ export function AgentProfilesPage() {
                   <div hidden={draftMode && draftStep !== 2}>
                     <AgentPromptEditor
                       value={currentPrompts}
-                      mode={promptMode}
                       onChange={setCurrentPrompts}
-                      onModeChange={setPromptMode}
                       onOpenAssistant={
                         draftMode ? undefined : setAssistantSection
                       }
@@ -1855,12 +1827,6 @@ export function AgentProfilesPage() {
                         <SummaryItem
                           label="提示词完成度"
                           value={`${Object.values(currentPrompts).filter((value) => value.trim()).length}/4 段`}
-                        />
-                        <SummaryItem
-                          label="Claude 默认提示词"
-                          value={
-                            promptMode === 'append' ? '保留并追加' : '完全替换'
-                          }
                         />
                         <SummaryItem
                           label="模型配置"
@@ -2024,104 +1990,18 @@ export function AgentProfilesPage() {
                       </section>
 
                       <div className="border-t border-border pt-5">
-                        <div className="flex min-h-14 items-start justify-between gap-5">
-                          <div className="min-w-0">
-                            <label
-                              htmlFor="agent-auto-compact-default"
-                              className="text-xs font-medium text-muted-foreground"
-                            >
-                              SDK 自动压缩（推荐）
-                            </label>
-                            <p
-                              id="agent-auto-compact-default-description"
-                              className="mt-1 text-[11px] leading-5 text-muted-foreground"
-                            >
-                              根据当前模型自动决定压缩时机。普通模型通常为 200K
-                              上下文；模型配置中声明的上下文窗口（如
-                              1M）优先，历史 [1m] 后缀仍按 1M 处理。
-                            </p>
-                          </div>
-                          <Switch
-                            id="agent-auto-compact-default"
-                            checked={useSdkCompactDefault}
-                            onCheckedChange={setUseSdkCompactDefault}
-                            aria-describedby="agent-auto-compact-default-description"
-                          />
+                        <div className="min-w-0">
+                          <p className="text-xs font-medium text-muted-foreground">
+                            SDK 自动压缩
+                          </p>
+                          <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
+                            根据当前模型自动决定压缩时机。普通模型通常为 200K
+                            上下文；模型配置中声明的上下文窗口（如
+                            1M）优先，历史 [1m] 后缀仍按 1M 处理。历史百分比与
+                            固定阈值配置已于 Pi 运行时下线（存量值仅保留存储
+                            兼容），实际压缩时机由运行时决定。
+                          </p>
                         </div>
-                        {!useSdkCompactDefault && (
-                          <div className="mt-4 max-w-xs">
-                            {autoCompactPercentage === 'legacy' ? (
-                              <div className="rounded-md border border-warning/30 bg-warning-bg p-3">
-                                <p className="text-[11px] leading-5 text-warning">
-                                  当前保留旧版固定阈值{' '}
-                                  {Math.round(legacyAutoCompactWindow / 1000)}
-                                  K。 固定值无法同时适配 200K 与 1M 模型。
-                                </p>
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  className="mt-2"
-                                  onClick={() => {
-                                    setAutoCompactPercentage('80');
-                                    setLegacyAutoCompactWindow(0);
-                                  }}
-                                >
-                                  改用 80% 模型比例
-                                </Button>
-                              </div>
-                            ) : (
-                              <>
-                                <label
-                                  htmlFor="agent-auto-compact-percentage"
-                                  className="mb-1.5 block text-xs font-medium text-muted-foreground"
-                                >
-                                  上下文使用比例
-                                </label>
-                                <div className="flex items-center gap-2">
-                                  <Input
-                                    id="agent-auto-compact-percentage"
-                                    type="number"
-                                    inputMode="numeric"
-                                    min={50}
-                                    max={90}
-                                    step={5}
-                                    value={autoCompactPercentage}
-                                    onChange={(event) => {
-                                      setAutoCompactPercentage(
-                                        event.target.value,
-                                      );
-                                      setLegacyAutoCompactWindow(0);
-                                    }}
-                                    aria-invalid={!!autoCompactError}
-                                    aria-describedby={`agent-auto-compact-percentage-description${autoCompactError ? ' agent-auto-compact-percentage-error' : ''}`}
-                                    className="h-11"
-                                  />
-                                  <span className="shrink-0 text-xs text-muted-foreground">
-                                    %
-                                  </span>
-                                </div>
-                                <p
-                                  id="agent-auto-compact-percentage-description"
-                                  className="mt-1.5 text-[11px] leading-5 text-muted-foreground"
-                                >
-                                  可设置 50–90%。例如 80% 在普通模型下为
-                                  160K；声明 1M 窗口（或历史 [1m] 后缀）时为
-                                  800K。
-                                </p>
-                              </>
-                            )}
-                            {autoCompactError && (
-                              <p
-                                id="agent-auto-compact-percentage-error"
-                                role="alert"
-                                className="mt-1 text-xs text-destructive"
-                              >
-                                {autoCompactError}
-                              </p>
-                            )}
-                          </div>
-                        )}
                       </div>
                     </div>
                   </section>
@@ -2193,10 +2073,7 @@ export function AgentProfilesPage() {
                         <Button
                           onClick={handleCreate}
                           disabled={
-                            creating ||
-                            !name.trim() ||
-                            !!autoCompactError ||
-                            !!capabilityError
+                            creating || !name.trim() || !!capabilityError
                           }
                         >
                           {creating ? (
@@ -2218,7 +2095,6 @@ export function AgentProfilesPage() {
                           hostSkillsSaving ||
                           runtimeCleanupRepairing ||
                           !name.trim() ||
-                          !!autoCompactError ||
                           !!capabilityError
                         }
                       >

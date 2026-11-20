@@ -79,6 +79,12 @@ export class PiRuntimeAdapter implements AgentRuntime {
       endpointKind: options.provider?.endpointKind,
       baseUrl: options.provider?.baseUrl,
       apiKey: options.provider?.apiKey,
+      // ISSUE-04 ①⑥: this adapter is the only hop between the runner session
+      // options and the provider resolution. Dropping either field silently
+      // reverts the host-declared context window and the bearer credential
+      // routing, so both must be forwarded explicitly.
+      authToken: options.provider?.authToken,
+      contextWindow: options.provider?.contextWindow,
     });
 
     const eventBus = createEventBus();

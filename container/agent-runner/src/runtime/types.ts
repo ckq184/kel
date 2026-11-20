@@ -154,11 +154,26 @@ export type RuntimeSessionOptions = {
     endpointKind?: 'official' | 'custom';
     baseUrl?: string;
     apiKey?: string;
+    /**
+     * Bearer-style token (`ANTHROPIC_AUTH_TOKEN`, ISSUE-04 ⑥). For official
+     * endpoints this is deliberately NOT forwarded through setRuntimeApiKey:
+     * it stays in the process env so Pi's own resolution sends
+     * `Authorization: Bearer`. Custom registrations keep folding it into the
+     * registered api key, preserving third-party proxy behavior.
+     */
+    authToken?: string;
+    /**
+     * Host-declared context-window override (ISSUE-04 ①). Applied as a
+     * shallow-copy override on the resolved model; undefined keeps the Pi
+     * catalog/registration value.
+     */
+    contextWindow?: number;
   };
   /**
    * Product auto-compact toggle (default true). Maps to the runtime-native
-   * compaction switch; the historical Claude SDK percentage/window knobs are
-   * advisory only and do not control Pi's threshold.
+   * compaction switch. The historical percentage/window knobs were retired
+   * from the UI with ISSUE-04 ⑤: Pi runs reserve-based compaction and owns
+   * the threshold; only this explicit runtime-level disable stays expressible.
    */
   autoCompactEnabled?: boolean;
 };

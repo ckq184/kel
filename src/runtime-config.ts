@@ -1942,6 +1942,27 @@ export function buildClaudeEnvLines(
       lines.push(`ANTHROPIC_AUTH_TOKEN=${sanitizeEnvValue(token)}`);
     }
   }
+
+  // ISSUE-04 ⑥: OAuth-only official providers authenticate via
+  // `Authorization: Bearer`, which is exactly what Pi's ANTHROPIC_AUTH_TOKEN
+  // env discovery emits. Map the OAuth token (legacy single setup token, or
+  // the full credential's access token) onto that env var — Pi never reads
+  // CLAUDE_CODE_OAUTH_TOKEN or Claude's .credentials.json. Explicit
+  // api-key/auth-token credentials win, and custom endpoints never receive
+  // OAuth tokens: they only work against api.anthropic.com.
+  if (
+    !config.anthropicBaseUrl &&
+    !config.anthropicApiKey &&
+    !config.anthropicAuthToken
+  ) {
+    const oauthToken =
+      config.claudeCodeOauthToken?.trim() ||
+      config.claudeOAuthCredentials?.accessToken?.trim() ||
+      '';
+    if (oauthToken) {
+      lines.push(`ANTHROPIC_AUTH_TOKEN=${sanitizeEnvValue(oauthToken)}`);
+    }
+  }
   if (config.anthropicModel) {
     // 任务AL：剥离 [1m] 后缀后再上送，第三方端点不再收到带后缀的模型名。
     lines.push(

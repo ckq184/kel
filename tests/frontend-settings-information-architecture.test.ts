@@ -112,7 +112,11 @@ describe('settings information architecture', () => {
     expect(validTabs).not.toContain("'automation'");
     expect(page).toContain("rawTabValue === 'automation' ? 'system'");
     expect(system).toMatch(/Pi 运行时在上下文接近窗口\s+上限时自动压缩/);
-    expect(system).toMatch(/百分比与固定阈值仅作为历史兼容配置保留/);
+    // ISSUE-04 ⑤：百分比/固定阈值旋钮已下线（注记如实说明，控件不再提供）
+    expect(system).toMatch(/历史百分比与固定阈值配置已于 Pi 运行时下线/);
+    expect(system).not.toMatch(
+      /id="main-agent-auto-compact-percentage"|id="main-agent-auto-compact-default"/,
+    );
     expect(system).toMatch(
       /当前目录同时作为提示词、Rules、Skills 与 MCP 的来源/,
     );
