@@ -948,6 +948,24 @@ configRoutes.patch(
       return await withClaudeConfigMutationLock(async () => {
         const previous = getProviders().find((p) => p.id === id);
         if (!previous) throw new Error('未找到指定供应商');
+        // ISSUE-07 项10（规格审查修复）：third_party + Auth Token 必须配置
+        // Base URL。create 口由 UnifiedProviderCreateSchema.superRefine 拦截，
+        // 但 PATCH 是部分更新，必须按合并后的最终状态校验——
+        // UnifiedProviderPatchSchema 不携带 type 与密钥字段，故 type 与
+        // authToken 只能来自现有 provider，而 baseUrl 可能被 payload 显式
+        // 置空或改写（ProviderBaseUrlSchema 允许空串）。official +
+        // token-only（官方 Bearer 场景）为有意语义，放行。
+        const mergedBaseUrl =
+          validation.data.anthropicBaseUrl !== undefined
+            ? validation.data.anthropicBaseUrl.trim()
+            : previous.anthropicBaseUrl;
+        if (
+          previous.type === 'third_party' &&
+          !!previous.anthropicAuthToken.trim() &&
+          !mergedBaseUrl.trim()
+        ) {
+          throw new Error('第三方供应商使用 Auth Token 时必须配置 Base URL');
+        }
         const changedFields = Object.keys(validation.data).map(
           (k) => `${k}:updated`,
         );
@@ -1087,6 +1105,22 @@ configRoutes.put(
       return await withClaudeConfigMutationLock(async () => {
         const previous = getProviders().find((provider) => provider.id === id);
         if (!previous) throw new Error('未找到指定供应商');
+        // ISSUE-07 项10（规格审查修复）：为 third_party 补设 Auth Token 时
+        // 必须已有 Base URL（create 口由 UnifiedProviderCreateSchema.
+        // superRefine 拦截）。secrets 口只改密钥，按现有 provider 状态 +
+        // 新 token 判断合并态；official + token-only（官方 Bearer 场景）为
+        // 有意语义，放行。
+        const incomingAuthToken =
+          typeof validation.data.anthropicAuthToken === 'string'
+            ? validation.data.anthropicAuthToken.trim()
+            : '';
+        if (
+          previous.type === 'third_party' &&
+          !!incomingAuthToken &&
+          !previous.anthropicBaseUrl.trim()
+        ) {
+          throw new Error('第三方供应商使用 Auth Token 时必须配置 Base URL');
+        }
         const changedFields: string[] = [];
         if (validation.data.anthropicAuthToken !== undefined)
           changedFields.push('anthropicAuthToken:set');
