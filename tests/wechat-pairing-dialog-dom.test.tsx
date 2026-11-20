@@ -68,7 +68,6 @@ vi.mock('../web/src/components/settings/hooks/usePairedChats', () => ({
     removingJid: null,
     load: mocks.pairedLoad,
     remove: vi.fn(),
-    rename: vi.fn(),
   }),
 }));
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { useMonitorStore } from '../stores/monitor';
 import { useAuthStore } from '../stores/auth';
 import { ContainerStatus } from '../components/monitor/ContainerStatus';
@@ -6,10 +6,7 @@ import { QueueStatus } from '../components/monitor/QueueStatus';
 import { SystemInfo } from '../components/monitor/SystemInfo';
 import { GroupStatusCard } from '../components/monitor/GroupStatusCard';
 import { UncertainOutboxCard } from '../components/monitor/UncertainOutboxCard';
-import {
-  ProviderSwitcher,
-  type SimpleProvider,
-} from '../components/monitor/ProviderSwitcher';
+import { ProviderSwitcher } from '../components/monitor/ProviderSwitcher';
 import {
   RefreshCw,
   AlertTriangle,
@@ -22,12 +19,12 @@ import { SkeletonStatCards } from '@/components/common/Skeletons';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { wsManager } from '../api/ws';
-import { api } from '@/api/client';
 
 export function MonitorPage() {
   const {
     status,
     loading,
+    error,
     loadStatus,
     pulling,
     pullLogs,
@@ -40,7 +37,6 @@ export function MonitorPage() {
     s.hasPermission('manage_system_config'),
   );
   const logEndRef = useRef<HTMLDivElement>(null);
-  const [providers, setProviders] = useState<SimpleProvider[]>([]);
 
   useEffect(() => {
     loadStatus();
@@ -90,22 +86,6 @@ export function MonitorPage() {
     };
   }, [loadStatus]);
 
-  // Fetch providers once for all ProviderSwitcher instances
-  useEffect(() => {
-    api
-      .get<{
-        providers: Array<{ id: string; name: string; enabled: boolean }>;
-      }>('/api/config/claude/providers')
-      .then((data) =>
-        setProviders(
-          data.providers
-            .filter((p) => p.enabled)
-            .map(({ id, name }) => ({ id, name })),
-        ),
-      )
-      .catch(() => {});
-  }, []);
-
   // Auto-scroll pull logs to bottom
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -134,6 +114,16 @@ export function MonitorPage() {
         />
 
         {loading && !status && <SkeletonStatCards />}
+
+        {/* loadStatus 失败时 status 可能一直为 null——没有这行横幅就是白屏 */}
+        {error && (
+          <div
+            role="alert"
+            className="mb-4 rounded-lg border border-error/20 bg-error-bg px-4 py-3 text-sm text-error"
+          >
+            系统状态加载失败：{error}
+          </div>
+        )}
 
         {/* 待人工确认的渠道投递：uncertain 围栏非空才需要人工放行，卡片内部空列表不渲染 */}
         <UncertainOutboxCard />
@@ -264,11 +254,7 @@ export function MonitorPage() {
                   {/* 移动端：卡片列表 */}
                   <div className="lg:hidden space-y-3">
                     {status.groups.map((group) => (
-                      <GroupStatusCard
-                        key={group.jid}
-                        group={group}
-                        providers={providers}
-                      />
+                      <GroupStatusCard key={group.jid} group={group} />
                     ))}
                   </div>
 
@@ -332,7 +318,6 @@ export function MonitorPage() {
                                   currentProviderName={
                                     group.selectedProviderName
                                   }
-                                  providers={providers}
                                 />
                               ) : (
                                 <span className="text-muted-foreground">-</span>

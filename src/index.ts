@@ -10549,7 +10549,9 @@ function startIpcWatcher(): void {
                       const failMsg = durableScopedImage
                         ? `⚠️ 图片 "${fileName || caption || 'image'}" 的投递结果待确认，系统不会自动重发，以免产生重复图片。`
                         : `⚠️ 图片 "${fileName || caption || 'image'}" 发送失败（IM 通道发送失败），请稍后重试。`;
-                      broadcastToWebClients(sourceGroup, failMsg);
+                      broadcastToWebClients(sourceGroup, failMsg, {
+                        notice: true,
+                      });
                     }
                   } else if (!isTaskIpcImage) {
                     logger.debug(
@@ -10560,6 +10562,9 @@ function startIpcWatcher(): void {
                     broadcastToWebClients(
                       data.chatJid ?? sourceGroup,
                       skipImgMsg,
+                      {
+                        notice: true,
+                      },
                     );
                   }
 
@@ -13207,7 +13212,7 @@ async function processTaskIpc(
               resolvedPath = foundPath;
             } else {
               const warnMsg = `⚠️ 文件 "${data.fileName}" 未找到（路径 "${data.filePath}" 不存在）。请引导用户确认正确的文件路径，或使用 'send_file' 时提供正确的相对路径。`;
-              broadcastToWebClients(sourceGroup, warnMsg);
+              broadcastToWebClients(sourceGroup, warnMsg, { notice: true });
               // Also notify via IM channel for conversation agents bound to IM
               const imRoute = resolveImRoute({
                 ipcAgentId,
@@ -13314,6 +13319,9 @@ async function processTaskIpc(
                 broadcastToWebClients(
                   sourceGroup,
                   `⚠️ 文件 "${data.fileName}" 发送失败，请稍后重试。`,
+                  {
+                    notice: true,
+                  },
                 );
               }
               finishSendFile(
@@ -13396,7 +13404,7 @@ async function processTaskIpc(
                 const failMsg = durableScopedFile
                   ? `⚠️ 文件 "${data.fileName}" 的投递结果待确认，系统不会自动重发，以免产生重复文件。`
                   : `⚠️ 文件 "${data.fileName}" 发送失败，请稍后重试。`;
-                broadcastToWebClients(sourceGroup, failMsg);
+                broadcastToWebClients(sourceGroup, failMsg, { notice: true });
                 if (!durableScopedFile) {
                   try {
                     await imManager.sendMessage(regularFileImRoute, failMsg);
@@ -13433,7 +13441,9 @@ async function processTaskIpc(
             );
             // Notify the user that file delivery to IM was skipped
             const skipMsg = `⚠️ 文件 "${data.fileName}" 未发送到 IM 通道（当前会话无 IM 路由绑定，文件仅保存在工作区）。`;
-            broadcastToWebClients(data.chatJid ?? sourceGroup, skipMsg);
+            broadcastToWebClients(data.chatJid ?? sourceGroup, skipMsg, {
+              notice: true,
+            });
             finishSendFile(
               false,
               'No IM route is available for file delivery.',

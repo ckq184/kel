@@ -29,6 +29,7 @@ import { cn } from '@/lib/utils';
 import { filterNavItems } from './nav-items';
 import { compareByLastActivity } from '../../utils/group-utils';
 import {
+  buildAgentCapabilitiesHref,
   getAgentNavigationTargets,
   getPrimaryAgentWorkspaceRows,
   groupWorkspacesByAgent,
@@ -171,6 +172,13 @@ export function UnifiedSidebar({
             ? () => openClear(directGroup.jid, section.name)
             : undefined
         }
+        onManageCapabilities={
+          // 自定义智能体分组直跳该档案的能力区块（深链处理见 AgentProfilesPage）。
+          // '__default__' 是无档案分组的哨兵 id，没有可跳转的档案页。
+          section.id !== '__default__'
+            ? () => navigate(buildAgentCapabilitiesHref(section.id))
+            : undefined
+        }
       >
         {workspaces.map((g) => (
           <ChatGroupItem
@@ -178,7 +186,6 @@ export function UnifiedSidebar({
             jid={g.jid}
             name={g.name}
             folder={g.folder}
-            lastMessage={g.lastMessage}
             isActive={currentGroup === g.jid}
             isHome={false}
             isPinned={!!g.pinned_at}
@@ -207,7 +214,6 @@ export function UnifiedSidebar({
             jid={g.jid}
             name={g.name}
             folder={g.folder}
-            lastMessage={g.lastMessage}
             isActive={currentGroup === g.jid}
             isHome={!!g.is_my_home}
             isPinned={!!g.pinned_at}

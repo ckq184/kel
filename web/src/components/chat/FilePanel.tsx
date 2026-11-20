@@ -813,6 +813,7 @@ export function FilePanel({ groupJid, onClose }: FilePanelProps) {
     files,
     currentPath,
     loading,
+    error,
     loadFiles,
     deleteFile,
     createDirectory,
@@ -1045,6 +1046,16 @@ export function FilePanel({ groupJid, onClose }: FilePanelProps) {
           )}
         </div>
       </div>
+
+      {/* 加载/操作失败提示（store 的 error 此前没有任何组件读取） */}
+      {error && (
+        <div
+          role="alert"
+          className="border-b border-error/20 bg-error-bg px-4 py-2 text-xs text-error"
+        >
+          {error}
+        </div>
+      )}
 
       {/* Breadcrumb */}
       <div className="px-4 py-2 border-b border-border bg-muted">

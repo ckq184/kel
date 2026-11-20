@@ -3,6 +3,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Card, CardContent } from '@/components/ui/card';
 import { useAuthStore } from '../stores/auth';
+import { useUsersStore } from '../stores/users';
 import { UserListTab } from '../components/users/UserListTab';
 import { InviteCodesTab } from '../components/users/InviteCodesTab';
 import { AuditLogTab } from '../components/users/AuditLogTab';
@@ -14,13 +15,19 @@ export function UsersPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const currentUser = useAuthStore((s) => s.user);
+  // users store 的 fetch 全部在 catch 里吞错误不 rethrow，各 Tab 的 try/catch
+  // 永不触发——加载失败只能由 store 的 error 字段感知，必须直接订阅。
+  const usersError = useUsersStore((s) => s.error);
 
   const canManageUsers =
-    currentUser?.role === 'admin' || !!currentUser?.permissions.includes('manage_users');
+    currentUser?.role === 'admin' ||
+    !!currentUser?.permissions.includes('manage_users');
   const canManageInvites =
-    currentUser?.role === 'admin' || !!currentUser?.permissions.includes('manage_invites');
+    currentUser?.role === 'admin' ||
+    !!currentUser?.permissions.includes('manage_invites');
   const canViewAudit =
-    currentUser?.role === 'admin' || !!currentUser?.permissions.includes('view_audit_log');
+    currentUser?.role === 'admin' ||
+    !!currentUser?.permissions.includes('view_audit_log');
 
   const tabs = useMemo(() => {
     const list: Array<{ key: Tab; label: string; visible: boolean }> = [
@@ -53,16 +60,18 @@ export function UsersPage() {
   return (
     <div className="min-h-full bg-background p-4 lg:p-8">
       <div className="max-w-5xl mx-auto space-y-6">
-        <PageHeader
-          title="用户管理"
-          subtitle="账户、邀请码与审计日志"
-        />
+        <PageHeader title="用户管理" subtitle="账户、邀请码与审计日志" />
 
-        {(notice || error) && (
+        {(notice || error || usersError) && (
           <Card>
             <CardContent className="space-y-1">
               {notice && <div className="text-sm text-success">{notice}</div>}
               {error && <div className="text-sm text-error">{error}</div>}
+              {usersError && (
+                <div role="alert" className="text-sm text-error">
+                  {usersError}
+                </div>
+              )}
             </CardContent>
           </Card>
         )}
@@ -78,10 +87,18 @@ export function UsersPage() {
         </Tabs>
 
         {tab === 'users' && canManageUsers && (
-          <UserListTab currentUser={currentUser} setNotice={setNotice} setError={setError} />
+          <UserListTab
+            currentUser={currentUser}
+            setNotice={setNotice}
+            setError={setError}
+          />
         )}
         {tab === 'invites' && canManageInvites && (
-          <InviteCodesTab currentUser={currentUser} setNotice={setNotice} setError={setError} />
+          <InviteCodesTab
+            currentUser={currentUser}
+            setNotice={setNotice}
+            setError={setError}
+          />
         )}
         {tab === 'audit' && canViewAudit && <AuditLogTab setError={setError} />}
       </div>

@@ -1912,12 +1912,22 @@ function normalizeRuntimeJid(chatJid: string): string {
   return `${normalizeHomeJid(baseJid)}${chatJid.slice(markerIndex)}`;
 }
 
-export function broadcastToWebClients(chatJid: string, text: string): void {
+export function broadcastToWebClients(
+  chatJid: string,
+  text: string,
+  options?: { notice?: boolean },
+): void {
   const timestamp = new Date().toISOString();
   const jid = normalizeHomeJid(chatJid);
   const allowedUserIds = getGroupAllowedUserIds(chatJid);
   safeBroadcast(
-    { type: 'agent_reply', chatJid: jid, text, timestamp },
+    {
+      type: 'agent_reply',
+      chatJid: jid,
+      text,
+      timestamp,
+      notice: options?.notice,
+    },
     isHostGroupJid(chatJid),
     allowedUserIds,
   );

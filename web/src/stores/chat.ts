@@ -415,6 +415,9 @@ interface ChatState {
     agentId?: string,
     source?: string,
   ) => void;
+  /** agent_reply WS 事件中 notice=true 的 ⚠️ 运行时警告（投递失败/文件未找到等）：
+   * 以本地 __system__ 消息追加进对应会话展示；非当前会话时另弹 toast。 */
+  handleAgentNotice: (chatJid: string, text: string) => void;
   handleAgentStatus: (
     chatJid: string,
     agentId: string,
@@ -1870,10 +1873,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     followUpBehavior: FollowUpMode = 'queue',
   ) => {
     try {
-      // streaming 状态由以下 3 条路径正确清理，sendMessage 不应无条件清空：
+      // streaming 状态由以下 2 条路径正确清理，sendMessage 不应无条件清空：
       // 1. handleWsNewMessage 收到 is_from_me 消息时
-      // 2. agent_reply WebSocket 事件时
-      // 3. status:interrupted 事件时
+      // 2. status:interrupted 事件时（interrupt_partial 冻结转正的两阶段）
+      // （历史注：早期由 agent_reply 事件清理；该事件的完整回复广播已不由前端
+      // 消费，前端只处理其中 notice=true 的 ⚠️ 警告，见 handleAgentNotice。）
 
       const body: {
         chatJid: string;
@@ -3323,6 +3327,29 @@ export const useChatStore = create<ChatState>((set, get) => ({
           });
         }
       }, 20_000);
+    }
+  },
+
+  // agent_reply(notice) 警告：仅做本地展示，不落库、不参与流式/等待状态清理。
+  // MessageList 对未知 __system__ 内容按 divider 样式原样渲染文本。
+  handleAgentNotice: (chatJid, text) => {
+    const notice: Message = {
+      id: `local-notice-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      chat_jid: chatJid,
+      sender: '__system__',
+      sender_name: '系统',
+      content: text,
+      timestamp: new Date().toISOString(),
+      is_from_me: false,
+    };
+    set((s) => ({
+      messages: {
+        ...s.messages,
+        [chatJid]: [...(s.messages[chatJid] || []), notice],
+      },
+    }));
+    if (get().currentGroup !== chatJid) {
+      showToast('系统提示', text);
     }
   },
 

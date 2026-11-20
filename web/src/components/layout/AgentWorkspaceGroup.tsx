@@ -1,5 +1,10 @@
 import { useEffect, useId, useState } from 'react';
-import { ChevronRight, MoreHorizontal, RotateCcw } from 'lucide-react';
+import {
+  ChevronRight,
+  MoreHorizontal,
+  RotateCcw,
+  Sparkles,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   DropdownMenu,
@@ -45,6 +50,8 @@ interface AgentWorkspaceGroupProps {
   containsActiveWorkspace?: boolean;
   onSelect: () => void;
   onRebuild?: () => void;
+  /** 跳转到该智能体的能力管理深链（/agent-profiles?agent=<id>#agent-capabilities） */
+  onManageCapabilities?: () => void;
   children: React.ReactNode;
 }
 
@@ -59,6 +66,7 @@ export function AgentWorkspaceGroup({
   containsActiveWorkspace = false,
   onSelect,
   onRebuild,
+  onManageCapabilities,
   children,
 }: AgentWorkspaceGroupProps) {
   const contentId = useId();
@@ -138,7 +146,7 @@ export function AgentWorkspaceGroup({
             />
           </button>
         )}
-        {onRebuild && (
+        {(onRebuild || onManageCapabilities) && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
@@ -152,13 +160,24 @@ export function AgentWorkspaceGroup({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-40">
-              <DropdownMenuItem
-                onClick={onRebuild}
-                className="min-h-9 gap-2 text-amber-700 transition-[background-color,box-shadow] duration-150 hover:bg-amber-50 hover:text-amber-700 hover:shadow-md focus:text-amber-700 focus:shadow-md data-[highlighted]:bg-amber-50 data-[highlighted]:shadow-md dark:text-amber-400 dark:hover:bg-amber-950/30 dark:hover:text-amber-400 dark:focus:text-amber-400 dark:data-[highlighted]:bg-amber-950/30"
-              >
-                <RotateCcw className="h-4 w-4" />
-                重建工作区
-              </DropdownMenuItem>
+              {onManageCapabilities && (
+                <DropdownMenuItem
+                  onClick={onManageCapabilities}
+                  className="min-h-9 gap-2"
+                >
+                  <Sparkles className="h-4 w-4" />
+                  管理能力
+                </DropdownMenuItem>
+              )}
+              {onRebuild && (
+                <DropdownMenuItem
+                  onClick={onRebuild}
+                  className="min-h-9 gap-2 text-amber-700 transition-[background-color,box-shadow] duration-150 hover:bg-amber-50 hover:text-amber-700 hover:shadow-md focus:text-amber-700 focus:shadow-md data-[highlighted]:bg-amber-50 data-[highlighted]:shadow-md dark:text-amber-400 dark:hover:bg-amber-950/30 dark:hover:text-amber-400 dark:focus:text-amber-400 dark:data-[highlighted]:bg-amber-950/30"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  重建工作区
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         )}

@@ -194,7 +194,6 @@ export function ChatPage() {
             jid={workspace.jid}
             name={workspace.name}
             folder={workspace.folder}
-            lastMessage={workspace.lastMessage}
             isActive={currentGroup === workspace.jid}
             isHome={false}
             isPinned={!!workspace.pinned_at}
@@ -231,7 +230,6 @@ export function ChatPage() {
             jid={workspace.jid}
             name={workspace.name}
             folder={workspace.folder}
-            lastMessage={workspace.lastMessage}
             isActive={currentGroup === workspace.jid}
             isHome={!!workspace.is_my_home}
             isPinned={!!workspace.pinned_at}
