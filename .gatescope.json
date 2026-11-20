@@ -1,30 +1,5 @@
 {
-  "task": "comments-batch-1 - 批次1代码注释（三侧高价值热点20文件，全中文纯注释新增，风格约定与后续批次路线图落档 docs/comments-batch-1-plan.md）",
-  "base": "5bd5c75",
-  "allow": [
-    "shared/stream-event.ts",
-    "src/index.ts",
-    "src/db.ts",
-    "src/web.ts",
-    "src/channel-reliability-store.ts",
-    "src/skill-import-service.ts",
-    "src/memory-service.ts",
-    "src/agent-builder.ts",
-    "src/routes/workspaces.ts",
-    "web/src/App.tsx",
-    "web/src/pages/AgentProfilesPage.tsx",
-    "web/src/pages/MemoryPage.tsx",
-    "web/src/pages/UsagePage.tsx",
-    "web/src/stores/users.ts",
-    "web/src/stores/groups.ts",
-    "web/src/stores/channel-accounts.ts",
-    "web/src/stores/container-env.ts",
-    "container/agent-runner/src/prompt-plan.ts",
-    "container/agent-runner/src/runtime/pi/pi-session.ts",
-    "container/agent-runner/src/runtime/pi/pi-subagents.ts",
-    "container/agent-runner/src/stream-event.types.ts",
-    "src/stream-event.types.ts",
-    "web/src/stream-event.types.ts",
-    "docs/comments-batch-1-plan.md"
-  ]
+  "task": "dead-code-review-r2 - 死代码与臃肿审查R2只读报告（含与另一份审查的交叉对照）及13个可领取工作包issue（docs/issues），不改任何代码",
+  "base": "3f34cf7",
+  "allow": ["docs/dead-code-review-r2.md", "docs/issues/**"]
 }
