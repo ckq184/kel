@@ -146,12 +146,11 @@ describe('schema v50 channel account protocol lifecycle', () => {
       name: string;
     }>;
     expect(accountColumns.map((column) => column.name)).toEqual(
-      expect.arrayContaining([
-        'secret_ref',
-        'default_agent_profile_id',
-        'default_workspace_jid',
-        'status',
-      ]),
+      expect.arrayContaining(['secret_ref', 'default_workspace_jid', 'status']),
+    );
+    // ISSUE-09 (v77): the deprecated Agent-default column was dropped outright.
+    expect(accountColumns.map((column) => column.name)).not.toContain(
+      'default_agent_profile_id',
     );
     raw.close();
   });

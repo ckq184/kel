@@ -162,11 +162,7 @@ const PROVIDER_NAMES: Record<ChannelProvider, string> = {
 };
 
 function publicAccount(account: ChannelAccount): ChannelAccountPublic {
-  const {
-    secret_ref: _secretRef,
-    default_agent_profile_id: _deprecatedDefaultAgentProfileId,
-    ...metadata
-  } = account;
+  const { secret_ref: _secretRef, ...metadata } = account;
   const secret = loadChannelAccountSecret(account.secret_ref) ?? {};
   const options: ChannelAccountPublic['options'] = {};
   if (account.provider === 'wechat') {

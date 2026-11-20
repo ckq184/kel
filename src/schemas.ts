@@ -726,19 +726,6 @@ export const ProfileUpdateSchema = z.object({
     .refine((v) => v.startsWith('/api/auth/avatars/'), 'Invalid avatar URL')
     .nullable()
     .optional(),
-  ai_name: z.string().min(1).max(32).nullable().optional(),
-  ai_avatar_emoji: z.string().max(8).nullable().optional(),
-  ai_avatar_color: z
-    .string()
-    .regex(/^#[0-9a-fA-F]{6}$/)
-    .nullable()
-    .optional(),
-  ai_avatar_url: z
-    .string()
-    .max(2048)
-    .refine((v) => v.startsWith('/api/auth/avatars/'), 'Invalid avatar URL')
-    .nullable()
-    .optional(),
   default_require_mention: z.boolean().optional(),
 });
 
@@ -892,40 +879,6 @@ export const TerminalResizeSchema = z.object({
 
 export const TerminalStopSchema = z.object({
   chatJid: z.string().min(1),
-});
-
-// --- Billing schemas ---
-
-export const BillingPlanCreateSchema = z.object({
-  id: z
-    .string()
-    .min(1)
-    .max(64)
-    .regex(/^[\w-]+$/, 'ID must be alphanumeric with hyphens/underscores'),
-  name: z.string().min(1).max(64),
-  description: z.string().max(500).nullable().optional(),
-  tier: z.number().int().min(0).max(100).optional(),
-  monthly_cost_usd: z.number().min(0).optional(),
-  monthly_token_quota: z.number().int().min(0).nullable().optional(),
-  monthly_cost_quota: z.number().min(0).nullable().optional(),
-  daily_cost_quota: z.number().min(0).nullable().optional(),
-  weekly_cost_quota: z.number().min(0).nullable().optional(),
-  daily_token_quota: z.number().int().min(0).nullable().optional(),
-  weekly_token_quota: z.number().int().min(0).nullable().optional(),
-  rate_multiplier: z.number().min(0.01).max(100).optional(),
-  trial_days: z.number().int().min(1).max(365).nullable().optional(),
-  sort_order: z.number().int().min(0).max(9999).optional(),
-  display_price: z.string().max(64).nullable().optional(),
-  highlight: z.boolean().optional(),
-  max_groups: z.number().int().min(0).nullable().optional(),
-  max_concurrent_containers: z.number().int().min(0).nullable().optional(),
-  max_im_channels: z.number().int().min(0).nullable().optional(),
-  max_mcp_servers: z.number().int().min(0).nullable().optional(),
-  max_storage_mb: z.number().int().min(0).nullable().optional(),
-  allow_overage: z.boolean().optional(),
-  features: z.array(z.string().max(64)).max(50).optional(),
-  is_default: z.boolean().optional(),
-  is_active: z.boolean().optional(),
 });
 
 // --- Bug Report schemas ---

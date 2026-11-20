@@ -68,7 +68,6 @@ import {
   TaskRunTrigger,
   TaskRunLog,
   User,
-  UserBalance,
   UserPublic,
   UserStatus,
   UserRole,
@@ -113,7 +112,7 @@ let db: InstanceType<typeof Database>;
  * restating the number. Hardcoding it meant every schema bump edited a dozen
  * unrelated test files, which is churn that hides real assertion changes.
  */
-export const CURRENT_SCHEMA_VERSION = 76;
+export const CURRENT_SCHEMA_VERSION = 77;
 
 export function isDatabaseInitialized(): boolean {
   return Boolean(db?.open);
@@ -124,7 +123,6 @@ let _stmts: {
   storeMessageSelect: any;
   storeMessageInsert: any;
   insertUsageInsert: any;
-  insertUsageUpsert: any;
   updateTokenUsageById: any;
   updateTokenUsageLatest: any;
   getSessionWithUser: any;
@@ -156,25 +154,9 @@ function stmts() {
         `INSERT INTO usage_records (id, event_id, user_id, group_folder, agent_id, message_id, model,
           input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens,
           reasoning_output_tokens,
-          cost_usd, provider_estimated_cost_usd, billed_cost_usd,
+          provider_estimated_cost_usd,
           duration_ms, num_turns, source, usage_date, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ),
-      insertUsageUpsert: db.prepare(
-        `INSERT INTO usage_daily_summary (user_id, model, date,
-          total_input_tokens, total_output_tokens,
-          total_cache_read_tokens, total_cache_creation_tokens,
-          total_reasoning_tokens, total_cost_usd, request_count, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))
-        ON CONFLICT(user_id, model, date) DO UPDATE SET
-          total_input_tokens = total_input_tokens + excluded.total_input_tokens,
-          total_output_tokens = total_output_tokens + excluded.total_output_tokens,
-          total_cache_read_tokens = total_cache_read_tokens + excluded.total_cache_read_tokens,
-          total_cache_creation_tokens = total_cache_creation_tokens + excluded.total_cache_creation_tokens,
-          total_reasoning_tokens = total_reasoning_tokens + excluded.total_reasoning_tokens,
-          total_cost_usd = total_cost_usd + excluded.total_cost_usd,
-          request_count = request_count + 1,
-          updated_at = datetime('now')`,
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ),
       getSessionWithUser: db.prepare(
         `SELECT s.*, u.username, u.role, u.status, u.display_name, u.permissions, u.must_change_password
@@ -566,7 +548,6 @@ export function initDatabase(): void {
       channel_context TEXT,
       turn_id TEXT,
       session_id TEXT,
-      sdk_message_uuid TEXT,
       source_kind TEXT,
       finalization_reason TEXT,
       delivery_mode TEXT,
@@ -704,7 +685,6 @@ export function initDatabase(): void {
       auth_status TEXT NOT NULL DEFAULT 'draft',
       transport_status TEXT NOT NULL DEFAULT 'disconnected',
       status TEXT NOT NULL DEFAULT 'disconnected',
-      default_agent_profile_id TEXT,
       default_workspace_jid TEXT,
       last_error TEXT,
       connected_at TEXT,
@@ -826,10 +806,6 @@ export function initDatabase(): void {
       notes TEXT,
       avatar_emoji TEXT,
       avatar_color TEXT,
-      ai_name TEXT,
-      ai_avatar_emoji TEXT,
-      ai_avatar_color TEXT,
-      ai_avatar_url TEXT,
       default_require_mention INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
@@ -1056,9 +1032,7 @@ export function initDatabase(): void {
       cache_read_input_tokens INTEGER NOT NULL DEFAULT 0,
       cache_creation_input_tokens INTEGER NOT NULL DEFAULT 0,
       reasoning_output_tokens INTEGER NOT NULL DEFAULT 0,
-      cost_usd REAL NOT NULL DEFAULT 0,
       provider_estimated_cost_usd REAL NOT NULL DEFAULT 0,
-      billed_cost_usd REAL NOT NULL DEFAULT 0,
       duration_ms INTEGER DEFAULT 0,
       num_turns INTEGER DEFAULT 0,
       source TEXT NOT NULL DEFAULT 'agent',
@@ -1080,7 +1054,6 @@ export function initDatabase(): void {
       cache_creation_input_tokens INTEGER NOT NULL DEFAULT 0,
       reasoning_output_tokens INTEGER NOT NULL DEFAULT 0,
       provider_estimated_cost_usd REAL NOT NULL DEFAULT 0,
-      billed_cost_usd REAL NOT NULL DEFAULT 0,
       duration_ms INTEGER NOT NULL DEFAULT 0,
       num_turns INTEGER NOT NULL DEFAULT 0,
       source TEXT NOT NULL DEFAULT 'agent',
@@ -1092,23 +1065,6 @@ export function initDatabase(): void {
       ON usage_events(group_folder, created_at);
     CREATE INDEX IF NOT EXISTS idx_usage_events_agent_date
       ON usage_events(agent_id, created_at);
-
-    CREATE TABLE IF NOT EXISTS usage_daily_summary (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id TEXT NOT NULL,
-      model TEXT NOT NULL,
-      date TEXT NOT NULL,
-      total_input_tokens INTEGER NOT NULL DEFAULT 0,
-      total_output_tokens INTEGER NOT NULL DEFAULT 0,
-      total_cache_read_tokens INTEGER NOT NULL DEFAULT 0,
-      total_cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
-      total_reasoning_tokens INTEGER NOT NULL DEFAULT 0,
-      total_cost_usd REAL NOT NULL DEFAULT 0,
-      request_count INTEGER NOT NULL DEFAULT 0,
-      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-      UNIQUE(user_id, model, date)
-    );
-    CREATE INDEX IF NOT EXISTS idx_daily_user_date ON usage_daily_summary(user_id, date);
   `);
 
   // v51 usage event ledger columns. These must be added before creating the
@@ -1120,7 +1076,6 @@ export function initDatabase(): void {
     'provider_estimated_cost_usd',
     'REAL NOT NULL DEFAULT 0',
   );
-  ensureColumn('usage_records', 'billed_cost_usd', 'REAL NOT NULL DEFAULT 0');
   ensureColumn('usage_records', 'usage_date', 'TEXT');
   db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_usage_event_model
@@ -1156,10 +1111,6 @@ export function initDatabase(): void {
   // N+1 provider lookup on every open. Provider sync refreshes this URL.
   ensureColumn('registered_groups', 'avatar_url', 'TEXT');
   ensureColumn('users', 'avatar_url', 'TEXT');
-  ensureColumn('users', 'ai_name', 'TEXT');
-  ensureColumn('users', 'ai_avatar_emoji', 'TEXT');
-  ensureColumn('users', 'ai_avatar_color', 'TEXT');
-  ensureColumn('users', 'ai_avatar_url', 'TEXT');
   ensureColumn(
     'users',
     'default_require_mention',
@@ -1231,7 +1182,7 @@ export function initDatabase(): void {
   //
   // ORDERING CONTRACT (task Z follow-up fix): this rebuild DROPs and
   // recreates registered_groups, so it must run BEFORE every additive
-  // registered_groups ensureColumn below (selected_skills … sender_allowlist,
+  // registered_groups ensureColumn below (target_agent_id … sender_allowlist,
   // channel_account_id) — formerly it sat below them, and
   // an ancient DB's first boot both wiped those columns and then hard-failed
   // the assertSchema('registered_groups', …) pin, only converging after a
@@ -1303,7 +1254,6 @@ export function initDatabase(): void {
     })();
   }
 
-  ensureColumn('registered_groups', 'selected_skills', 'TEXT');
   ensureColumn('sessions', 'agent_id', "TEXT NOT NULL DEFAULT ''");
   ensureColumn('agents', 'kind', "TEXT NOT NULL DEFAULT 'task'");
   ensureColumn('registered_groups', 'target_agent_id', 'TEXT');
@@ -1314,8 +1264,6 @@ export function initDatabase(): void {
     "TEXT DEFAULT 'source_only'",
   );
   ensureColumn('registered_groups', 'require_mention', 'INTEGER DEFAULT 0');
-  ensureColumn('registered_groups', 'mcp_mode', "TEXT DEFAULT 'inherit'");
-  ensureColumn('registered_groups', 'selected_mcps', 'TEXT');
   ensureColumn('registered_groups', 'activation_mode', "TEXT DEFAULT 'auto'");
   ensureColumn(
     'registered_groups',
@@ -1399,7 +1347,6 @@ export function initDatabase(): void {
   ensureColumn('messages', 'turn_id', 'TEXT');
   ensureColumn('messages', 'task_id', 'TEXT');
   ensureColumn('messages', 'session_id', 'TEXT');
-  ensureColumn('messages', 'sdk_message_uuid', 'TEXT');
   ensureColumn('messages', 'source_kind', 'TEXT');
   ensureColumn('messages', 'finalization_reason', 'TEXT');
   ensureColumn('messages', 'delivery_mode', 'TEXT');
@@ -1481,7 +1428,6 @@ export function initDatabase(): void {
       'init_git_url',
       'created_by',
       'is_home',
-      'selected_skills',
       'target_agent_id',
       'target_main_jid',
       'reply_policy',
@@ -1503,10 +1449,6 @@ export function initDatabase(): void {
     'avatar_emoji',
     'avatar_color',
     'avatar_url',
-    'ai_name',
-    'ai_avatar_emoji',
-    'ai_avatar_color',
-    'ai_avatar_url',
     'default_require_mention',
     'created_at',
     'updated_at',
@@ -1662,11 +1604,14 @@ export function initDatabase(): void {
           .get() as { cnt: number }
       ).cnt;
 
-      // Migrate from messages.token_usage modelUsage into usage_records
+      // Migrate from messages.token_usage modelUsage into usage_records.
+      // ISSUE-09 (v77): the retired cost_usd mirror column is gone, so the
+      // historical per-model cost lands directly in the provider estimate
+      // (the same value the v51 UPDATE used to reconcile out of cost_usd).
       db.exec(`
         INSERT OR IGNORE INTO usage_records (id, user_id, group_folder, message_id, model,
           input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens,
-          cost_usd, duration_ms, num_turns, source, created_at)
+          provider_estimated_cost_usd, duration_ms, num_turns, source, created_at)
         SELECT
           lower(hex(randomblob(16))),
           COALESCE(rg.created_by, 'system'),
@@ -1693,7 +1638,7 @@ export function initDatabase(): void {
       db.exec(`
         INSERT OR IGNORE INTO usage_records (id, user_id, group_folder, message_id, model,
           input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens,
-          cost_usd, duration_ms, num_turns, source, created_at)
+          provider_estimated_cost_usd, duration_ms, num_turns, source, created_at)
         SELECT
           lower(hex(randomblob(16))),
           COALESCE(rg.created_by, 'system'),
@@ -1714,21 +1659,6 @@ export function initDatabase(): void {
         WHERE m.token_usage IS NOT NULL
           AND (json_extract(m.token_usage, '$.modelUsage') IS NULL
                OR json_type(json_extract(m.token_usage, '$.modelUsage')) != 'object')
-      `);
-
-      // Build daily summary from usage_records
-      db.exec(`
-        INSERT OR REPLACE INTO usage_daily_summary (user_id, model, date,
-          total_input_tokens, total_output_tokens,
-          total_cache_read_tokens, total_cache_creation_tokens,
-          total_cost_usd, request_count, updated_at)
-        SELECT
-          user_id, model, date(created_at, 'localtime'),
-          SUM(input_tokens), SUM(output_tokens),
-          SUM(cache_read_input_tokens), SUM(cache_creation_input_tokens),
-          SUM(cost_usd), COUNT(*), datetime('now')
-        FROM usage_records
-        GROUP BY user_id, model, date(created_at, 'localtime')
       `);
 
       const countAfter = (
@@ -2141,19 +2071,22 @@ export function initDatabase(): void {
     'reasoning_output_tokens',
     'INTEGER NOT NULL DEFAULT 0',
   );
-  ensureColumn(
-    'usage_daily_summary',
-    'total_reasoning_tokens',
-    'INTEGER NOT NULL DEFAULT 0',
-  );
   const v51Check = getRouterStateInternal('schema_version');
   if (!v51Check || parseInt(v51Check, 10) < 51) {
     db.transaction(() => {
-      db.exec(`
-        UPDATE usage_records
-        SET provider_estimated_cost_usd = cost_usd
-        WHERE provider_estimated_cost_usd = 0 AND cost_usd != 0;
+      // ISSUE-09 (v77): pre-v51 databases carried the raw cost in the
+      // cost_usd mirror (dropped in v77); reconcile it into the provider
+      // estimate while the column still exists. Fresh databases never
+      // create the column, so the guard keeps this block bootable there.
+      if (hasColumn('usage_records', 'cost_usd')) {
+        db.exec(`
+          UPDATE usage_records
+          SET provider_estimated_cost_usd = cost_usd
+          WHERE provider_estimated_cost_usd = 0 AND cost_usd != 0;
+        `);
+      }
 
+      db.exec(`
         UPDATE usage_records
         SET usage_date = date(created_at, 'localtime')
         WHERE usage_date IS NULL OR usage_date = '';
@@ -2176,13 +2109,13 @@ export function initDatabase(): void {
           input_tokens, output_tokens, cache_read_input_tokens,
           cache_creation_input_tokens, reasoning_output_tokens,
           provider_estimated_cost_usd,
-          billed_cost_usd, duration_ms, num_turns, source, created_at
+          duration_ms, num_turns, source, created_at
         )
         SELECT event_id, user_id, group_folder, agent_id, message_id,
           input_tokens, output_tokens, cache_read_input_tokens,
           cache_creation_input_tokens, reasoning_output_tokens,
           provider_estimated_cost_usd,
-          billed_cost_usd, duration_ms, num_turns, source, created_at
+          duration_ms, num_turns, source, created_at
         FROM usage_records;
       `);
     })();
@@ -2575,6 +2508,49 @@ export function initDatabase(): void {
     dropRetiredTables();
     logger.info(
       'v76 prune trim: retired billing/redeem/quota tables and dead columns dropped',
+    );
+  }
+
+  // v76→v77 trim (ISSUE-09): drop the retired usage_daily_summary table and
+  // the dead billing-mirror / legacy columns. Every write path to these
+  // columns was removed in the same change; surviving data is untouched and
+  // the pre-migration backup (enforcePreMigrationBackup gate, v<77) keeps the
+  // dropped values recoverable. turn_runs.heartbeat_at / correlation_id were
+  // reviewed and deliberately KEPT (user decision 2026-11-20: channel
+  // reliability state machine diagnostics).
+  const v77Check = getRouterStateInternal('schema_version');
+  if (!v77Check || parseInt(v77Check, 10) < 77) {
+    const dropRetiredUsageStructures = db.transaction(() => {
+      db.exec('DROP TABLE IF EXISTS usage_daily_summary');
+
+      // Dead columns (additive-era leftovers; SQLite 3.35+ DROP COLUMN).
+      const dropColumns: Array<[string, string]> = [
+        ['usage_records', 'cost_usd'],
+        ['usage_records', 'billed_cost_usd'],
+        ['usage_events', 'billed_cost_usd'],
+        ['registered_groups', 'selected_skills'],
+        ['registered_groups', 'mcp_mode'],
+        ['registered_groups', 'selected_mcps'],
+        ['messages', 'sdk_message_uuid'],
+        ['channel_accounts', 'default_agent_profile_id'],
+        ['users', 'ai_name'],
+        ['users', 'ai_avatar_emoji'],
+        ['users', 'ai_avatar_color'],
+        ['users', 'ai_avatar_url'],
+        ['workspace_memory_provenance', 'recorded_at'],
+      ];
+      for (const [table, column] of dropColumns) {
+        const cols = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{
+          name: string;
+        }>;
+        if (cols.some((c) => c.name === column)) {
+          db.exec(`ALTER TABLE ${table} DROP COLUMN ${column}`);
+        }
+      }
+    });
+    dropRetiredUsageStructures();
+    logger.info(
+      'v77 prune trim: retired usage summary table and dead billing-mirror/legacy columns dropped',
     );
   }
 
@@ -3284,7 +3260,6 @@ export interface UsageModelRecordInput {
   cacheCreationInputTokens: number;
   reasoningTokens?: number;
   providerEstimatedCostUSD: number;
-  billedCostUSD: number;
 }
 
 export interface UsagePricingBucketTotals {
@@ -3299,18 +3274,16 @@ export interface UsagePricingBucketTotals {
 
 export function getRecordedUsageEventCost(
   eventId: string,
-): { providerEstimatedCostUSD: number; billedCostUSD: number } | null {
+): { providerEstimatedCostUSD: number } | null {
   const row = db
     .prepare(
-      `SELECT provider_estimated_cost_usd AS providerEstimatedCostUSD,
-        billed_cost_usd AS billedCostUSD
+      `SELECT provider_estimated_cost_usd AS providerEstimatedCostUSD
        FROM usage_events WHERE event_id = ? LIMIT 1`,
     )
     .get(eventId) as Record<string, number> | undefined;
   return row
     ? {
         providerEstimatedCostUSD: Number(row.providerEstimatedCostUSD) || 0,
-        billedCostUSD: Number(row.billedCostUSD) || 0,
       }
     : null;
 }
@@ -3378,7 +3351,6 @@ export interface UsageEventRecordInput {
   cacheCreationInputTokens: number;
   reasoningTokens?: number;
   providerEstimatedCostUSD: number;
-  billedCostUSD: number;
   durationMs?: number;
   numTurns?: number;
   source?: string;
@@ -3416,7 +3388,6 @@ export function recordUsageEventBatch(input: UsageEventRecordInput): {
           cacheCreationInputTokens: input.cacheCreationInputTokens,
           reasoningTokens: input.reasoningTokens,
           providerEstimatedCostUSD: input.providerEstimatedCostUSD,
-          billedCostUSD: input.billedCostUSD,
         },
       ];
 
@@ -3428,8 +3399,8 @@ export function recordUsageEventBatch(input: UsageEventRecordInput): {
           input_tokens, output_tokens, cache_read_input_tokens,
           cache_creation_input_tokens, reasoning_output_tokens,
           provider_estimated_cost_usd,
-          billed_cost_usd, duration_ms, num_turns, source, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          duration_ms, num_turns, source, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         input.eventId,
@@ -3443,7 +3414,6 @@ export function recordUsageEventBatch(input: UsageEventRecordInput): {
         nonNegative(input.cacheCreationInputTokens),
         nonNegative(input.reasoningTokens),
         nonNegative(input.providerEstimatedCostUSD),
-        nonNegative(input.billedCostUSD),
         nonNegative(input.durationMs ?? 0),
         nonNegative(input.numTurns ?? 0),
         source,
@@ -3455,7 +3425,6 @@ export function recordUsageEventBatch(input: UsageEventRecordInput): {
     for (const modelUsage of models) {
       const model = modelUsage.model.trim() || 'unknown';
       const estimated = nonNegative(modelUsage.providerEstimatedCostUSD);
-      const billed = nonNegative(modelUsage.billedCostUSD);
       stmts().insertUsageInsert.run(
         crypto.randomUUID(),
         input.eventId,
@@ -3470,24 +3439,11 @@ export function recordUsageEventBatch(input: UsageEventRecordInput): {
         nonNegative(modelUsage.cacheCreationInputTokens),
         nonNegative(modelUsage.reasoningTokens),
         estimated,
-        estimated,
-        billed,
         nonNegative(input.durationMs ?? 0),
         nonNegative(input.numTurns ?? 0),
         source,
         localDate,
         createdAt,
-      );
-      stmts().insertUsageUpsert.run(
-        input.userId,
-        model,
-        localDate,
-        nonNegative(modelUsage.inputTokens),
-        nonNegative(modelUsage.outputTokens),
-        nonNegative(modelUsage.cacheReadInputTokens),
-        nonNegative(modelUsage.cacheCreationInputTokens),
-        nonNegative(modelUsage.reasoningTokens),
-        estimated,
       );
     }
 
@@ -3538,7 +3494,6 @@ export interface UsageAttributionItem {
   reasoningTokens: number;
   totalTokens: number;
   providerEstimatedCostUSD: number;
-  billedCostUSD: number;
   runCount: number;
   modelCallCount: number;
 }
@@ -3552,7 +3507,6 @@ export function getUsageAnalytics(filters: UsageQueryFilters): {
     reasoningTokens: number;
     totalTokens: number;
     providerEstimatedCostUSD: number;
-    billedCostUSD: number;
     runCount: number;
     modelCallCount: number;
     activeDays: number;
@@ -3570,8 +3524,6 @@ export function getUsageAnalytics(filters: UsageQueryFilters): {
     cache_creation_tokens: number;
     reasoning_tokens: number;
     provider_estimated_cost_usd: number;
-    cost_usd: number;
-    billed_cost_usd: number;
     run_count: number;
     model_call_count: number;
   }>;
@@ -3583,8 +3535,6 @@ export function getUsageAnalytics(filters: UsageQueryFilters): {
     cache_creation_tokens: number;
     reasoning_tokens: number;
     provider_estimated_cost_usd: number;
-    cost_usd: number;
-    billed_cost_usd: number;
     run_count: number;
     model_call_count: number;
   }>;
@@ -3603,7 +3553,6 @@ export function getUsageAnalytics(filters: UsageQueryFilters): {
     COALESCE(SUM(r.cache_creation_input_tokens), 0) AS cache_creation_tokens,
     COALESCE(SUM(r.reasoning_output_tokens), 0) AS reasoning_tokens,
     COALESCE(SUM(r.provider_estimated_cost_usd), 0) AS provider_cost,
-    COALESCE(SUM(r.billed_cost_usd), 0) AS billed_cost,
     COUNT(DISTINCT r.event_id) AS run_count,
     COUNT(*) AS model_call_count`;
   const summaryRow = db
@@ -3637,8 +3586,6 @@ export function getUsageAnalytics(filters: UsageQueryFilters): {
       cache_creation_tokens: Number(row.cache_creation_tokens) || 0,
       reasoning_tokens: Number(row.reasoning_tokens) || 0,
       provider_estimated_cost_usd: Number(row.provider_cost) || 0,
-      cost_usd: Number(row.provider_cost) || 0,
-      billed_cost_usd: Number(row.billed_cost) || 0,
       run_count: Number(row.run_count) || 0,
       model_call_count: Number(row.model_call_count) || 0,
     }));
@@ -3659,8 +3606,6 @@ export function getUsageAnalytics(filters: UsageQueryFilters): {
       cache_creation_tokens: Number(row.cache_creation_tokens) || 0,
       reasoning_tokens: Number(row.reasoning_tokens) || 0,
       provider_estimated_cost_usd: Number(row.provider_cost) || 0,
-      cost_usd: Number(row.provider_cost) || 0,
-      billed_cost_usd: Number(row.billed_cost) || 0,
       run_count: Number(row.run_count) || 0,
       model_call_count: Number(row.model_call_count) || 0,
     }));
@@ -3711,7 +3656,6 @@ export function getUsageAnalytics(filters: UsageQueryFilters): {
         reasoningTokens: reasoning,
         totalTokens: input + output + cacheRead + cacheCreation + reasoning,
         providerEstimatedCostUSD: Number(row.provider_cost) || 0,
-        billedCostUSD: Number(row.billed_cost) || 0,
         runCount: Number(row.run_count) || 0,
         modelCallCount: Number(row.model_call_count) || 0,
       };
@@ -3737,7 +3681,6 @@ export function getUsageAnalytics(filters: UsageQueryFilters): {
         cacheCreationTokens +
         reasoningTokens,
       providerEstimatedCostUSD: Number(summaryRow.provider_cost) || 0,
-      billedCostUSD: Number(summaryRow.billed_cost) || 0,
       runCount: Number(summaryRow.run_count) || 0,
       modelCallCount: Number(summaryRow.model_call_count) || 0,
       activeDays: Number(summaryRow.active_days) || 0,
@@ -3797,7 +3740,7 @@ export function getUsageRecordsPage(
         r.cache_creation_input_tokens AS cacheCreationTokens,
         r.reasoning_output_tokens AS reasoningTokens,
         r.provider_estimated_cost_usd AS providerEstimatedCostUSD,
-        r.billed_cost_usd AS billedCostUSD, r.duration_ms AS durationMs,
+        r.duration_ms AS durationMs,
         r.num_turns AS numTurns, r.source, r.created_at AS createdAt
        FROM usage_records r WHERE ${where.sql}
        ORDER BY r.created_at DESC, r.id DESC LIMIT ? OFFSET ?`,
@@ -9113,7 +9056,6 @@ type RegisteredGroupRow = {
   created_by: string | null;
   channel_account_id: string | null;
   is_home: number;
-  selected_skills: string | null;
   target_agent_id: string | null;
   target_main_jid: string | null;
   reply_policy: string | null;
@@ -9122,8 +9064,6 @@ type RegisteredGroupRow = {
   audience_mode: string | null;
   owner_im_id: string | null;
   owner_claim_source: string | null;
-  mcp_mode: string | null;
-  selected_mcps: string | null;
   conversation_source: string | null;
   conversation_nav_mode: string | null;
   binding_mode: string | null;
@@ -9728,7 +9668,6 @@ type ChannelAccountRow = {
   auth_status: string;
   transport_status: string;
   status: string;
-  default_agent_profile_id: string | null;
   default_workspace_jid: string | null;
   last_error: string | null;
   connected_at: string | null;
@@ -9770,7 +9709,6 @@ function parseChannelAccountRow(row: ChannelAccountRow): ChannelAccount {
     auth_status: authStatus,
     transport_status: transportStatus,
     status: transportStatus,
-    default_agent_profile_id: row.default_agent_profile_id,
     default_workspace_jid: row.default_workspace_jid,
     last_error: row.last_error,
     connected_at: row.connected_at,
@@ -9790,7 +9728,6 @@ export function createChannelAccount(input: {
   is_legacy_default?: boolean;
   auth_mode?: ChannelAccount['auth_mode'];
   auth_status?: ChannelAccount['auth_status'];
-  default_agent_profile_id?: string | null;
   default_workspace_jid?: string | null;
 }): ChannelAccount {
   return db.transaction(() => {
@@ -9811,9 +9748,9 @@ export function createChannelAccount(input: {
     db.prepare(
       `INSERT INTO channel_accounts (
         id, owner_user_id, provider, name, secret_ref, enabled, is_default, is_legacy_default,
-        auth_mode, auth_status, transport_status, status, default_agent_profile_id, default_workspace_jid,
+        auth_mode, auth_status, transport_status, status, default_workspace_jid,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'disconnected', 'disconnected', ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'disconnected', 'disconnected', ?, ?, ?)`,
     ).run(
       id,
       input.owner_user_id,
@@ -9825,7 +9762,6 @@ export function createChannelAccount(input: {
       input.is_legacy_default === true ? 1 : 0,
       input.auth_mode ?? 'credentials',
       input.auth_status ?? 'draft',
-      input.default_agent_profile_id ?? null,
       input.default_workspace_jid ?? null,
       now,
       now,
@@ -9905,11 +9841,7 @@ export function updateChannelAccount(
   patch: Partial<
     Pick<
       ChannelAccount,
-      | 'name'
-      | 'enabled'
-      | 'is_default'
-      | 'default_agent_profile_id'
-      | 'default_workspace_jid'
+      'name' | 'enabled' | 'is_default' | 'default_workspace_jid'
     >
   >,
 ): ChannelAccount | undefined {
@@ -9924,16 +9856,13 @@ export function updateChannelAccount(
     }
     db.prepare(
       `UPDATE channel_accounts SET
-        name = ?, enabled = ?, is_default = ?, default_agent_profile_id = ?,
+        name = ?, enabled = ?, is_default = ?,
         default_workspace_jid = ?, updated_at = ?
        WHERE id = ? AND owner_user_id = ?`,
     ).run(
       patch.name?.trim() ?? current.name,
       (patch.enabled ?? current.enabled) ? 1 : 0,
       (patch.is_default ?? current.is_default) ? 1 : 0,
-      patch.default_agent_profile_id === undefined
-        ? current.default_agent_profile_id
-        : patch.default_agent_profile_id,
       patch.default_workspace_jid === undefined
         ? current.default_workspace_jid
         : patch.default_workspace_jid,
@@ -10045,8 +9974,8 @@ export function setRegisteredGroup(jid: string, group: RegisteredGroup): void {
   db.transaction(() => {
     const existing = getRegisteredGroup(jid);
     db.prepare(
-      `INSERT INTO registered_groups (jid, name, folder, added_at, avatar_url, container_config, execution_mode, custom_cwd, init_source_path, init_git_url, created_by, channel_account_id, is_home, selected_skills, target_agent_id, target_main_jid, reply_policy, require_mention, activation_mode, audience_mode, owner_im_id, owner_claim_source, mcp_mode, selected_mcps, conversation_source, conversation_nav_mode, binding_mode, native_context_type, feishu_chat_mode, feishu_group_message_type, sender_allowlist)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO registered_groups (jid, name, folder, added_at, avatar_url, container_config, execution_mode, custom_cwd, init_source_path, init_git_url, created_by, channel_account_id, is_home, target_agent_id, target_main_jid, reply_policy, require_mention, activation_mode, audience_mode, owner_im_id, owner_claim_source, conversation_source, conversation_nav_mode, binding_mode, native_context_type, feishu_chat_mode, feishu_group_message_type, sender_allowlist)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(jid) DO UPDATE SET
          name = excluded.name,
          folder = excluded.folder,
@@ -10060,7 +9989,6 @@ export function setRegisteredGroup(jid: string, group: RegisteredGroup): void {
          created_by = excluded.created_by,
          channel_account_id = excluded.channel_account_id,
          is_home = excluded.is_home,
-         selected_skills = excluded.selected_skills,
          target_agent_id = excluded.target_agent_id,
          target_main_jid = excluded.target_main_jid,
          reply_policy = excluded.reply_policy,
@@ -10069,8 +9997,6 @@ export function setRegisteredGroup(jid: string, group: RegisteredGroup): void {
          audience_mode = excluded.audience_mode,
          owner_im_id = excluded.owner_im_id,
          owner_claim_source = excluded.owner_claim_source,
-         mcp_mode = excluded.mcp_mode,
-         selected_mcps = excluded.selected_mcps,
          conversation_source = excluded.conversation_source,
          conversation_nav_mode = excluded.conversation_nav_mode,
          binding_mode = excluded.binding_mode,
@@ -10094,7 +10020,6 @@ export function setRegisteredGroup(jid: string, group: RegisteredGroup): void {
       group.created_by ?? null,
       group.channel_account_id ?? null,
       group.is_home ? 1 : 0,
-      null, // selected_skills: deprecated, always null (user-level skills apply globally)
       group.target_agent_id ?? null,
       group.target_main_jid ?? null,
       group.reply_policy ?? 'source_only',
@@ -10103,8 +10028,6 @@ export function setRegisteredGroup(jid: string, group: RegisteredGroup): void {
       parseAudienceMode(group.audience_mode),
       group.owner_im_id ?? null,
       group.owner_claim_source ?? null,
-      'inherit', // mcp_mode: deprecated, always inherit (user-level MCP applies globally)
-      null, // selected_mcps: deprecated, always null
       group.conversation_source ?? 'manual',
       group.conversation_nav_mode ?? 'horizontal',
       group.binding_mode ?? 'single_context',
@@ -11446,13 +11369,6 @@ function mapUserRow(row: Record<string, unknown>): User {
     avatar_color:
       typeof row.avatar_color === 'string' ? row.avatar_color : null,
     avatar_url: typeof row.avatar_url === 'string' ? row.avatar_url : null,
-    ai_name: typeof row.ai_name === 'string' ? row.ai_name : null,
-    ai_avatar_emoji:
-      typeof row.ai_avatar_emoji === 'string' ? row.ai_avatar_emoji : null,
-    ai_avatar_color:
-      typeof row.ai_avatar_color === 'string' ? row.ai_avatar_color : null,
-    ai_avatar_url:
-      typeof row.ai_avatar_url === 'string' ? row.ai_avatar_url : null,
     default_require_mention: !!row.default_require_mention,
     created_at: String(row.created_at),
     updated_at: String(row.updated_at),
@@ -11476,10 +11392,6 @@ function toUserPublic(user: User, lastActiveAt: string | null): UserPublic {
     avatar_emoji: user.avatar_emoji,
     avatar_color: user.avatar_color,
     avatar_url: user.avatar_url,
-    ai_name: user.ai_name,
-    ai_avatar_emoji: user.ai_avatar_emoji,
-    ai_avatar_color: user.ai_avatar_color,
-    ai_avatar_url: user.ai_avatar_url,
     default_require_mention: user.default_require_mention,
     created_at: user.created_at,
     last_login_at: user.last_login_at,
@@ -11710,10 +11622,6 @@ export type UserFieldUpdates = Partial<
     | 'avatar_emoji'
     | 'avatar_color'
     | 'avatar_url'
-    | 'ai_name'
-    | 'ai_avatar_emoji'
-    | 'ai_avatar_color'
-    | 'ai_avatar_url'
     | 'default_require_mention'
     | 'deleted_at'
   >
@@ -11774,22 +11682,6 @@ export function updateUserFields(id: string, updates: UserFieldUpdates): void {
   if (updates.avatar_url !== undefined) {
     fields.push('avatar_url = ?');
     values.push(updates.avatar_url);
-  }
-  if (updates.ai_name !== undefined) {
-    fields.push('ai_name = ?');
-    values.push(updates.ai_name);
-  }
-  if (updates.ai_avatar_emoji !== undefined) {
-    fields.push('ai_avatar_emoji = ?');
-    values.push(updates.ai_avatar_emoji);
-  }
-  if (updates.ai_avatar_color !== undefined) {
-    fields.push('ai_avatar_color = ?');
-    values.push(updates.ai_avatar_color);
-  }
-  if (updates.ai_avatar_url !== undefined) {
-    fields.push('ai_avatar_url = ?');
-    values.push(updates.ai_avatar_url);
   }
   if (updates.default_require_mention !== undefined) {
     fields.push('default_require_mention = ?');
@@ -12616,18 +12508,6 @@ export function deleteMessage(chatJid: string, messageId: string): boolean {
   return result.changes > 0;
 }
 
-// --- Billing CRUD functions ---
-
-function safeParseJsonArray(val: unknown): string[] {
-  if (typeof val !== 'string') return [];
-  try {
-    const parsed = JSON.parse(val);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
 // --- Custom model pricing CRUD (task V) ---
 
 /**
@@ -12831,21 +12711,6 @@ export function deleteCustomModelPricingRule(id: string): boolean {
 // --- Monthly Usage ---
 
 // --- Redeem Codes ---
-
-// --- Billing Audit Log ---
-
-// --- Billing summary helpers ---
-
-export function getUserGroupCount(userId: string): number {
-  const row = db
-    .prepare(
-      "SELECT COUNT(DISTINCT rg.folder) as cnt FROM registered_groups rg WHERE rg.created_by = ? AND rg.jid LIKE 'web:%'",
-    )
-    .get(userId) as { cnt: number };
-  return row.cnt;
-}
-
-// --- Daily Usage ---
 
 /**
  * Close the database connection.

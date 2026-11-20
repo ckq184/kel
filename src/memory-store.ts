@@ -382,9 +382,8 @@ function appendVersion(
   );
   db.prepare(
     `INSERT INTO workspace_memory_provenance (
-      item_id, revision, source_type, source_id, session_id, observed_at,
-      recorded_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      item_id, revision, source_type, source_id, session_id, observed_at
+    ) VALUES (?, ?, ?, ?, ?, ?)`,
   ).run(
     item.id,
     item.revision,
@@ -392,7 +391,6 @@ function appendVersion(
     normalizeNullable(context.sourceId),
     normalizeNullable(context.sessionId),
     context.observedAt ?? null,
-    at,
   );
 }
 
@@ -548,7 +546,6 @@ export function createWorkspaceMemorySchema(db: SqliteDatabase): void {
       source_id TEXT,
       session_id TEXT,
       observed_at TEXT,
-      recorded_at TEXT NOT NULL,
       PRIMARY KEY (item_id, revision),
       FOREIGN KEY (item_id, revision)
         REFERENCES workspace_memory_versions(item_id, revision) ON DELETE CASCADE

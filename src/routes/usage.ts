@@ -99,18 +99,15 @@ usage.get('/stats', (c) => {
   const user = c.get('user') as AuthUser;
   const { window, filters } = queryContext(c, user);
   const data = getUsageAnalytics(filters);
+  // Backwards-compatible aliases for external API consumers.
   const summary = {
     ...data.summary,
-    // Backwards-compatible aliases. totalMessages now has the precise
-    // semantics of logical Agent runs, never per-model database rows.
     totalInputTokens: data.summary.inputTokens,
     totalOutputTokens: data.summary.outputTokens,
     totalCacheReadTokens: data.summary.cacheReadTokens,
     totalCacheCreationTokens: data.summary.cacheCreationTokens,
     totalReasoningTokens: data.summary.reasoningTokens,
     totalCostUSD: data.summary.providerEstimatedCostUSD,
-    totalMessages: data.summary.runCount,
-    totalActiveDays: data.summary.activeDays,
   };
   return c.json({
     window,
@@ -199,7 +196,6 @@ usage.get('/export.csv', (c) => {
     'cacheCreationTokens',
     'reasoningTokens',
     'providerEstimatedCostUSD',
-    'billedCostUSD',
     'durationMs',
     'numTurns',
     'messageId',
