@@ -2,7 +2,7 @@
 
 | 字段          | 值                                                                                                                                                                                                                                                            |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 状态          | 进行中                                                                                                                                                                                                                                                        |
+| 状态          | 已完成                                                                                                                                                                                                                                                        |
 | 领取人 / 分支 | issue-06-frontend-dropped-logic                                                                                                                                                                                                                               |
 | 优先级        | P1                                                                                                                                                                                                                                                            |
 | 类型          | 缺陷修复（掉线逻辑与无效请求）                                                                                                                                                                                                                                |
@@ -62,4 +62,14 @@
 
 ## 交付记录
 
-（领取后填写）
+- **提交**：立项 `c1daf86`（计划 `docs/frontend-dropped-logic-plan.md` + 范围声明，base=2493eab）；实现 `4b9b397`（24 文件，+619/−136，含 7 个新测试文件）。分支 `issue-06-frontend-dropped-logic`，未合入 main，合入由用户决定。
+- **验证**：`npm run verify` 六步全绿（第 4 步 322 个测试文件 / 2596 用例通过、23 skipped）；`node scripts/check-scope.mjs` 28 个路径全在声明范围内；pre-commit secret 扫描与格式检查通过。
+- **用户决策执行**：第 2 项按 (a) 在 `AgentWorkspaceGroup`"更多操作"菜单接"管理能力"入口（custom 分区专用，`__default__` 哨兵排除）；第 3 项按 (b) 删除 `usePairedChats.rename`/`renamingJid` 及 `PairingSection` 类型占位。
+- **独立规格审查**：通过（无阻塞问题；3 条非阻塞建议均已在下述偏差与登记中处理）。
+- **与 issue 描述的偏差**：
+  1. 第 4 项 issue/审查报告称"7 处 ⚠️ 警告"——逐点核实后真实警告为 **6 处**（`src/index.ts` 原 10661 行一处是图片**发送成功**的 displayText 回显，无 ⚠️ 且已由 `broadcastNewMessage` 承载，属完整输出冗余广播，与 9444 行文本回复同类）。6 处警告均已带 `notice: true`，2 处完整输出广播保持未标记，测试按"6+2"锁定。
+  2. 第 6b 项 issue 称后端 `lastMessage`"前端从不渲染"——交叉核实发现存活消费者：`ChatView.tsx:778` 将其作为会话侧栏主行 meta 渲染（`tests/frontend-session-sidebar-copy.test.ts:17` 契约锁定）。故**后端字段保留**，只删前端 `ChatGroupItem` 的死 prop 链（4 处传参点）。
+  3. 第 6a 项实现比 plan 字面更彻底：`ProviderSwitcher` 中的 `SimpleProvider` 类型定义一并删除（全仓已无引用，测试锁定不存在），避免遗留新死代码。
+- **范围外登记**：
+  - `web/src/stores/agent-profiles.ts` 的孤儿 `error` 字段（加载失败已由 `profilesError` 展示于 `AgentProfilesPage`，该字段无人读取）——死代码，归 **ISSUE-08** 处置，本任务未动。
+  - `agent_reply` 完整回复冗余广播（9444/10666 行，内容已由 `new_message` 承载）的存废属掉线逻辑决策，归 **ISSUE-07/10** 统筹，本任务保持原状仅加注释。
