@@ -2,7 +2,7 @@
 
 | 字段          | 值                                                                                                                                                                                                                                                     |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 状态          | 进行中                                                                                                                                                                                                                                                 |
+| 状态          | 已完成                                                                                                                                                                                                                                                 |
 | 领取人 / 分支 | zcode-issue05 会话（main 分支）                                                                                                                                                                                                                        |
 | 优先级        | P1                                                                                                                                                                                                                                                     |
 | 类型          | 缺陷修复（每项改动范围都很小）                                                                                                                                                                                                                         |
@@ -64,4 +64,15 @@
 
 ## 交付记录
 
-（领取后填写）
+- **立项提交**：`2493eab`（plan `docs/behavior-small-fixes-plan.md` + `.gatescope.json`，base=`b08a3b8`）
+- **实现提交**：`83d59f2`（四项修复 + 4 个新测试文件 16 用例）
+- **验证**：`npm run verify` 六步全绿（2 次复跑，最终 6/6 通过、总耗时 34.3s）；`node scripts/check-scope.mjs` 通过（14 路径全在声明范围内）；相关既有测试回归 63/63。
+- **需求采访（2026-11-20，用户拍板）**：
+  - 第 2 项选**连同读取端一起下线**。调查发现"溢出跳过退避"的实际效果由 `src/index.ts` 的 `context_overflow:` handler 分支达成（`commitCursor()` + `return true` → 队列视为成功不进 `scheduleRetry`），`markContextOverflow` 是从未接线的平行机制，接上调用也无实际作用。
+  - 第 3 项选**严格语义**（拒绝 `/pair abc extra` 这类多余参数），QQ 两处、微信一处改调共享函数 `parseChannelPairingCode`。
+- **与 issue 描述的偏差**：
+  1. 第 1 项采用"加测试断言每个写入 type 都在名单里"路线（源码一致性测试，先例 `tests/provider-auth-error.test.ts`），未做运行时自动派生名单——`src/index.ts` 为主服务入口，导出常量无可导入消费方。
+  2. 第 2 项补充调查结论：issue 中"上下文溢出时仍然走指数退避重试、设计从未生效"的表述不精确——**溢出跳过退避实际已生效**（由 handler 分支达成），从未生效的只是 `markContextOverflow` 这条平行机制；下线它无行为变化。
+  3. 第 3 项"为飞书补用例"不适用：飞书无 `/pair` 文本命令路径（DM 即绑定信号，`src/feishu.ts` 仅注释提及），共享语义由 `tests/channel-admission.test.ts` + 新增 `tests/channel-pairing-uniform.test.ts` 锁定。
+  4. 第 4 项收敛函数落在 `container/agent-runner/src/utils.ts`（超出 issue 预计改动路径）：utils.ts 是既有纯函数模块且测试可直接导入，mcp-tools.ts 重依赖不可导入。此为 `.gatescope.json` 相对立项提交的范围扩宽，已随实现提交说明并由立项批准者复核。
+- **范围外新发现**（未处理，仅登记）：`RESULT_FILE_PREFIXES` 中 `install_skill_result_`、`uninstall_skill_result_`、`list_tasks_result_`、`ckqclaw_owner_profile_result_` 四项目前在 `src/index.ts` 已无对应的 `writeTaskResult` 写入点（疑似历史遗留的多余名单项，无害——清理更宽不是更窄）。若要裁剪可并入 ISSUE-08（孤儿死代码批 1）处理。
