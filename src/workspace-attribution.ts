@@ -1,4 +1,5 @@
 import type { ChannelMount, RegisteredGroup } from './types.js';
+import { resolveWorkspaceJid } from './channel-mount-service.js';
 
 /**
  * Dependencies for resolving where a channel chat's output belongs.
@@ -11,25 +12,6 @@ export interface WorkspaceAttributionDeps {
   getChannelMount?: (
     jid: string,
   ) => Pick<ChannelMount, 'workspace_jid' | 'session_id'> | null | undefined;
-}
-
-/**
- * Legacy compatibility fold: historical rows sometimes stored `target_main_jid`
- * as `web:{folder}` instead of the registered `web:{uuid}` workspace JID.
- * Mirrors `resolveWorkspaceJid` in ./channel-mount-service.ts, duplicated here
- * so pure output-routing modules do not have to import the mount service.
- */
-function foldLegacyWorkspaceJid(
-  workspaceJid: string,
-  deps: WorkspaceAttributionDeps,
-): string | null {
-  if (deps.getRegisteredGroup(workspaceJid)) return workspaceJid;
-  if (!workspaceJid.startsWith('web:')) return null;
-  const folder = workspaceJid.slice(4);
-  for (const jid of deps.getJidsByFolder(folder)) {
-    if (jid.startsWith('web:') && deps.getRegisteredGroup(jid)) return jid;
-  }
-  return null;
 }
 
 /**
@@ -79,7 +61,15 @@ export function resolveBoundWorkspaceJid(
   }
 
   if (group.target_main_jid) {
-    return foldLegacyWorkspaceJid(group.target_main_jid, deps);
+    // Legacy rows sometimes stored target_main_jid as `web:{folder}`; the
+    // shared resolver in ./channel-mount-service.ts folds that alias onto the
+    // registered workspace jid (ISSUE-11 B2 — this module previously kept a
+    // mirrored copy of the fold; it now delegates so the fold semantics have
+    // exactly one implementation).
+    return resolveWorkspaceJid(group.target_main_jid, {
+      getRegisteredGroup: (jid) => deps.getRegisteredGroup(jid) ?? undefined,
+      getJidsByFolder: (folder) => deps.getJidsByFolder(folder),
+    });
   }
 
   return null;

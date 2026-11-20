@@ -20,6 +20,7 @@ import {
   buildMcpSecretReplacement,
   type McpSecretRow,
 } from '../../utils/mcp-secrets';
+import { extractErrorMessage } from '../../utils/error';
 
 interface McpServerDetailProps {
   server: McpServer | null;
@@ -110,7 +111,7 @@ export function McpServerDetail({ server, onDeleted }: McpServerDetailProps) {
       setSecretRows(null);
       toast.success('MCP 配置已保存');
     } catch (error) {
-      toast.error(errorMessage(error, '保存 MCP 配置失败'));
+      toast.error(extractErrorMessage(error, '保存 MCP 配置失败'));
     } finally {
       setSaving(false);
     }
@@ -127,7 +128,7 @@ export function McpServerDetail({ server, onDeleted }: McpServerDetailProps) {
       setSecretRows(null);
       toast.success(`${secretLabel}已清空`);
     } catch (error) {
-      toast.error(errorMessage(error, `清空${secretLabel}失败`));
+      toast.error(extractErrorMessage(error, `清空${secretLabel}失败`));
     } finally {
       setSaving(false);
     }
@@ -141,7 +142,7 @@ export function McpServerDetail({ server, onDeleted }: McpServerDetailProps) {
       onDeleted?.();
       toast.success('MCP 服务器已删除');
     } catch (error) {
-      toast.error(errorMessage(error, '删除 MCP 服务器失败'));
+      toast.error(extractErrorMessage(error, '删除 MCP 服务器失败'));
     } finally {
       setDeleting(false);
     }
@@ -522,12 +523,8 @@ function Field({
 }) {
   return (
     <div>
-      <Label className="mb-1.5 block">{label}</Label>
+      <Label className="mb-1 block">{label}</Label>
       {children}
     </div>
   );
-}
-
-function errorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error && error.message ? error.message : fallback;
 }

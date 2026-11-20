@@ -4,21 +4,11 @@ import { ChevronRight, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { LogoLoading } from '../components/common/LogoLoading';
 
 import { useAuthStore } from '../stores/auth';
+import { extractErrorMessage } from '../utils/error';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-
-// --- Helpers ---
-
-function getErrorMessage(err: unknown, fallback: string): string {
-  if (typeof err === 'object' && err !== null && 'message' in err) {
-    const msg = (err as { message?: unknown }).message;
-    if (typeof msg === 'string' && msg.trim()) return msg;
-  }
-  if (err instanceof Error && err.message) return err.message;
-  return fallback;
-}
 
 // --- Component ---
 
@@ -142,7 +132,7 @@ function CreateAdminStep({
         }, 2000);
         return;
       }
-      setError(getErrorMessage(err, '创建管理员失败'));
+      setError(extractErrorMessage(err, '创建管理员失败'));
     } finally {
       setSaving(false);
     }

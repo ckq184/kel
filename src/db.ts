@@ -12569,8 +12569,10 @@ function mapCustomPricingRow(row: Record<string, unknown>): CustomModelPricing {
 }
 
 /** Lower-cased because rule matching is case-insensitive; this keeps the
- * pattern uniqueness index aligned with what the matcher can actually see. */
-function normalizePricingPattern(pattern: string): string {
+ * pattern uniqueness index aligned with what the matcher can actually see.
+ * Exported (ISSUE-11 B8) so the pricing routes' 409 uniqueness prechecks use
+ * the exact write-path semantics instead of an inline copy. */
+export function normalizePricingPattern(pattern: string): string {
   return pattern.trim().toLowerCase();
 }
 

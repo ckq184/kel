@@ -152,12 +152,12 @@ HTTP 状态为 409；请求不会停止现有 Runner，也不会修改绑定。
 - `PUT /api/groups/:jid/sessions/:sessionId/im-binding`
 - `DELETE /api/groups/:jid/sessions/:sessionId/im-binding/:imJid`
 
-`/agents` 是同一模型的历史兼容别名：
+`/agents` 的历史写别名已删除（ISSUE-11，与 `/sessions` 版重复实现且无调用
+方）；会话列表仍由 `GET /api/groups/:jid/agents` 提供：
 
-- `GET|POST /api/groups/:jid/agents`
-- `PATCH|DELETE /api/groups/:jid/agents/:agentId`
-- `PUT /api/groups/:jid/agents/:agentId/im-binding`
-- `DELETE /api/groups/:jid/agents/:agentId/im-binding/:imJid`
+- `GET /api/groups/:jid/agents`
+
+写操作一律使用上面的 `/sessions` 语义。
 
 群聊绑定到工作区：
 
@@ -281,7 +281,6 @@ owner 明确拒绝首次设置时可提交
 
 Provider：
 
-- `GET /api/config/claude`
 - `GET|POST /api/config/claude/providers`
 - `PATCH|DELETE /api/config/claude/providers/:id`
 - `PUT /api/config/claude/providers/:id/secrets`
@@ -295,7 +294,6 @@ Provider：
 - `POST /api/config/claude/apply`
 - `POST /api/config/claude/oauth/start`
 - `POST /api/config/claude/oauth/callback`
-- `PUT /api/config/claude/custom-env`
 
 系统：
 
@@ -310,10 +308,13 @@ Provider：
 - `GET /api/config/appearance/public`，Public
 - `POST|DELETE /api/config/appearance/avatar`
 
-Legacy 渠道 facade 位于 `/api/config/user-im/*`，涵盖飞书、QQ 和微信。
-它们继续服务旧数据和旧客户端；新 UI 与新功能使用 `/api/channel-accounts`。
+`/api/config/user-im/*` 的死门面（QQ 7 条、微信 5 条、`GET /user-im/feishu`）
+与 `GET /user-im/status`、`PUT /user-im/feishu` 已随渠道账号化删除
+（ISSUE-11）：连接状态与飞书凭据统一走 `/api/channel-accounts`。存留的两条
+绑定管理路由为正式路由，非兼容门面：
 
-系统级 `/api/config/feishu` 也只保留兼容用途。
+- `PUT /api/config/user-im/bindings/:imJid`
+- `POST /api/config/user-im/bindings/:imJid/reset-allowlist`
 
 ## 定时任务
 
@@ -324,10 +325,7 @@ Legacy 渠道 facade 位于 `/api/config/user-im/*`，涵盖飞书、QQ 和微�
 - `GET /api/tasks/:id/runs`
 - `GET /api/tasks/runs/:runId`
 - `POST /api/tasks/runs/:runId/cancel`
-- `POST /api/tasks/:id/run`，旧立即运行入口
-- `GET /api/tasks/:id/logs`，旧日志入口
 - `POST /api/tasks/ai`
-- `POST /api/tasks/parse`
 - `POST /api/tasks/purge`，回收站任务批量永久删除（revision CAS；script 任务
   仅 admin 可永久删除；存在活跃 run 时返回 409 `TASK_HAS_ACTIVE_RUN`）
 
@@ -575,7 +573,6 @@ Agent 镜像只由 `main` 分支的 GitHub Actions 构建并发布。该接口�
 
 客户端主要操作：
 
-- `send_message`
 - `terminal_start`
 - `terminal_input`
 - `terminal_resize`

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { api } from '../api/client';
+import { extractErrorMessage } from '../utils/error';
 
 export interface UsageSummary {
   inputTokens: number;
@@ -512,14 +513,6 @@ function queryFromState(state: UsageState): UsageQuery {
   };
 }
 
-function errorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (error && typeof error === 'object' && 'message' in error) {
-    return String((error as { message: unknown }).message);
-  }
-  return '用量数据加载失败，请检查网络后重试。';
-}
-
 let statsRequestId = 0;
 let filtersRequestId = 0;
 
@@ -627,7 +620,10 @@ export const useUsageStore = create<UsageState>((set, get) => ({
         return;
       set({
         loading: false,
-        error: errorMessage(error),
+        error: extractErrorMessage(
+          error,
+          '用量数据加载失败，请检查网络后重试。',
+        ),
         summary: null,
         breakdown: [],
         daily: [],

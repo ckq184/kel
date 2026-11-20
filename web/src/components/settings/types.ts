@@ -53,8 +53,6 @@ export interface ProvidersListResponse {
   defaultProviderId: string | null;
 }
 
-// ─── 兼容旧类型（仍被 GET /claude 返回） ────────────────────
-
 // ─── 通用类型 ────────────────────────────────────────────────
 
 export interface EnvRow {

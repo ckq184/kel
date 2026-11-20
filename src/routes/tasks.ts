@@ -17,7 +17,6 @@ import {
   getDeletedTasks,
   getTaskById,
   createTask,
-  getTaskRunLogs,
   updateTaskWithRevision,
   softDeleteTaskWithRevision,
   restoreTaskWithRevision,
@@ -866,95 +865,6 @@ tasksRoutes.post('/runs/:runId/cancel', authMiddleware, (c) => {
   return c.json({ success: true, run: getTaskRunById(run.id) });
 });
 
-tasksRoutes.post('/:id/run', authMiddleware, async (c) => {
-  const id = c.req.param('id');
-  const existing = getTaskById(id);
-  if (!existing) return c.json({ error: 'Task not found' }, 404);
-  const authUser = c.get('user') as AuthUser;
-  const group = getRegisteredGroup(existing.chat_jid);
-  if (!group) {
-    if (authUser.role !== 'admin')
-      return c.json({ error: 'Task not found' }, 404);
-  } else {
-    if (!canAccessGroup({ id: authUser.id, role: authUser.role }, group)) {
-      return c.json({ error: 'Task not found' }, 404);
-    }
-    if (isHostExecutionGroup(group) && !hasHostExecutionPermission(authUser)) {
-      return c.json(
-        { error: 'Insufficient permissions for host execution mode' },
-        403,
-      );
-    }
-  }
-  // Only admin can run script tasks
-  if (existing.execution_type === 'script' && authUser.role !== 'admin') {
-    return c.json({ error: '只有管理员可以运行脚本类型任务' }, 403);
-  }
-  const legacyRunPolicyError = getScriptTaskHostExecutionError(
-    existing,
-    getAllRegisteredGroups(),
-  );
-  if (legacyRunPolicyError) {
-    updateTaskWithRevision(existing.id, existing.revision, {
-      status: 'paused',
-      next_run: null,
-    });
-    notifyTaskSchedulerChanged();
-    return c.json({ error: legacyRunPolicyError }, 400);
-  }
-
-  const deps = getWebDeps();
-  if (!deps?.triggerTaskRun)
-    return c.json({ error: 'Scheduler not available' }, 503);
-
-  const body = (await c.req.json().catch(() => ({}))) as Record<
-    string,
-    unknown
-  >;
-  const suppliedKey =
-    c.req.header('Idempotency-Key') ||
-    (typeof body.idempotency_key === 'string' ? body.idempotency_key : '');
-  // Requests from legacy clients remain compatible; upgraded clients can
-  // safely retry by reusing either the header or body key.
-  const idempotencyKey =
-    suppliedKey.trim().slice(0, 200) || crypto.randomUUID();
-  const result = deps.triggerTaskRun(id, idempotencyKey);
-  if (!result.success) {
-    return c.json({ error: result.error, runId: result.runId }, 409);
-  }
-
-  return c.json({ success: true, runId: result.runId, idempotencyKey });
-});
-
-tasksRoutes.get('/:id/logs', authMiddleware, (c) => {
-  const id = c.req.param('id');
-  const existing = getTaskById(id);
-  if (!existing) return c.json({ error: 'Task not found' }, 404);
-  const authUser = c.get('user') as AuthUser;
-  const group = getRegisteredGroup(existing.chat_jid);
-  if (!group) {
-    if (authUser.role !== 'admin')
-      return c.json({ error: 'Task not found' }, 404);
-  } else {
-    if (!canAccessGroup({ id: authUser.id, role: authUser.role }, group)) {
-      return c.json({ error: 'Task not found' }, 404);
-    }
-    if (isHostExecutionGroup(group) && !hasHostExecutionPermission(authUser)) {
-      return c.json(
-        { error: 'Insufficient permissions for host execution mode' },
-        403,
-      );
-    }
-  }
-  const limitRaw = parseInt(c.req.query('limit') || '20', 10);
-  const limit = Math.min(
-    Number.isFinite(limitRaw) ? Math.max(1, limitRaw) : 20,
-    200,
-  );
-  const logs = getTaskRunLogs(id, limit);
-  return c.json({ logs });
-});
-
 /** Build the AI parse prompt for a task description */
 function buildParsePrompt(description: string): string {
   const now = new Date();
@@ -1243,40 +1153,6 @@ tasksRoutes.post('/ai', authMiddleware, async (c) => {
   );
 
   return c.json({ success: true, taskId });
-});
-
-/**
- * Parse natural language task description (synchronous, kept for backward compat).
- */
-tasksRoutes.post('/parse', authMiddleware, async (c) => {
-  const body = await c.req.json().catch(() => ({}));
-  const description =
-    typeof body.description === 'string' ? body.description.trim() : '';
-  if (!description) {
-    return c.json({ error: '请输入任务描述' }, 400);
-  }
-
-  try {
-    const model = process.env.RECALL_MODEL || undefined;
-    const result = await sdkQuery(buildParsePrompt(description), {
-      model,
-      timeout: 30_000,
-    });
-
-    if (!result) {
-      return c.json({ error: 'AI 解析失败，请重试或切换到手动模式' }, 502);
-    }
-
-    const parsed = parseAiResult(result, description);
-    if (!parsed) {
-      return c.json({ error: 'AI 返回格式异常，请重试或切换到手动模式' }, 502);
-    }
-
-    return c.json({ success: true, parsed });
-  } catch (err) {
-    logger.warn({ err }, 'task-parse: failed to parse AI response');
-    return c.json({ error: 'AI 返回格式异常，请重试或切换到手动模式' }, 502);
-  }
 });
 
 export default tasksRoutes;

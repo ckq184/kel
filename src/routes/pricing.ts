@@ -14,6 +14,7 @@ import {
   deleteCustomModelPricingRule,
   getCustomModelPricingRule,
   listCustomModelPricingRules,
+  normalizePricingPattern,
   updateCustomModelPricingRule,
   type CustomModelPricing,
 } from '../db.js';
@@ -74,7 +75,7 @@ pricingRoutes.post('/rules', async (c) => {
     existing.some(
       (r) =>
         r.kind === 'pattern' &&
-        r.pattern === data.pattern!.trim().toLowerCase(),
+        r.pattern === normalizePricingPattern(data.pattern!),
     )
   ) {
     return c.json({ error: '该模型模式已存在同名规则' }, 409);
@@ -103,7 +104,7 @@ pricingRoutes.patch('/rules/:id', async (c) => {
 
   const updates = validation.data;
   if (updates.pattern !== undefined) {
-    const normalized = updates.pattern.trim().toLowerCase();
+    const normalized = normalizePricingPattern(updates.pattern);
     const clash = listCustomModelPricingRules().some(
       (r) => r.kind === 'pattern' && r.pattern === normalized && r.id !== id,
     );

@@ -262,6 +262,7 @@ import {
   hasRemainingThreadMapMount,
   isNativeContextContainer,
   resolveChannelMountTarget,
+  resolveWorkspaceJid,
   restoreDefaultChannelMount,
   upgradeNativeContextChannelMount,
 } from './channel-mount-service.js';
@@ -1892,7 +1893,7 @@ function detachThreadMapWorkspace(
 ): void {
   if (!targetMainJid) return;
   if (hasRemainingThreadMapMount(targetMainJid, excludingImJid)) return;
-  const workspaceJid = resolveWorkspaceJid(targetMainJid);
+  const workspaceJid = resolveRegisteredWorkspaceJid(targetMainJid);
   if (!workspaceJid) return;
   const workspace =
     registeredGroups[workspaceJid] ?? getRegisteredGroup(workspaceJid);
@@ -1905,7 +1906,7 @@ function detachThreadMapWorkspace(
 
 function markThreadMapWorkspace(targetMainJid?: string): void {
   if (!targetMainJid) return;
-  const workspaceJid = resolveWorkspaceJid(targetMainJid);
+  const workspaceJid = resolveRegisteredWorkspaceJid(targetMainJid);
   if (!workspaceJid) return;
   const workspace =
     registeredGroups[workspaceJid] ?? getRegisteredGroup(workspaceJid);
@@ -1969,7 +1970,8 @@ function unbindImGroup(jid: string, reason: string): boolean {
   if (
     wasThreadMap &&
     (restored.routingMode !== 'thread_map' ||
-      resolveWorkspaceJid(targetMainJid || '') !== restored.workspaceJid)
+      resolveRegisteredWorkspaceJid(targetMainJid || '') !==
+        restored.workspaceJid)
   ) {
     detachThreadMapWorkspace(targetMainJid, jid);
   }
@@ -2140,7 +2142,6 @@ function toContainerAgentProfile(
     isDefault: profile.is_default,
     identityHash: profile.identity_hash,
     identityPrompt: buildAgentProfilePrompt(profile),
-    includeClaudePreset: profile.prompt_mode === 'append',
     // ISSUE-04 ③: resolved effort rides the profile contract; `inherit`
     // stays undefined so the runner falls back to the provider env.
     effort: resolveAgentSdkEffort(profile.runtime_policy),
@@ -3417,7 +3418,7 @@ async function handleClearCommand(chatJid: string): Promise<string> {
     (jid) => registeredGroups[jid] ?? getRegisteredGroup(jid),
     getAgent,
     findGroupNameByFolder,
-    resolveWorkspaceJid,
+    resolveRegisteredWorkspaceJid,
   );
   if (!target) return '当前绑定目标不存在，请先重新绑定工作区或会话。';
 
@@ -4258,7 +4259,7 @@ function resolveSpawnWorkspace(
       (jid) => registeredGroups[jid] ?? getRegisteredGroup(jid),
       getAgent,
       findGroupNameByFolder,
-      resolveWorkspaceJid,
+      resolveRegisteredWorkspaceJid,
     );
     if (!target) {
       return group.target_agent_id
@@ -9710,12 +9711,11 @@ function broadcastToOwnerIMChannels(
       getChannelType,
       resolveJidFolder: (jid: string) => {
         // Follow ImBindingDialog's target_main_jid binding to the bound
-        // workspace's folder. Delegated to resolveWorkspaceJid so we inherit
+        // workspace's folder. Delegated to the shared resolver so we inherit
         // its legacy-format compatibility: historical DBs may store
         // target_main_jid as `web:{folder}` instead of `web:{uuid}`,
-        // and resolveWorkspaceJid folds both shapes to the canonical
-        // registered jid.
-        const effectiveJid = resolveWorkspaceJid(jid);
+        // and the fold maps both shapes to the canonical registered jid.
+        const effectiveJid = resolveRegisteredWorkspaceJid(jid);
         if (!effectiveJid) return null;
         const target =
           registeredGroups[effectiveJid] ?? getRegisteredGroup(effectiveJid);
@@ -17409,25 +17409,20 @@ function buildIsChatAuthorized(
   };
 }
 
-function resolveWorkspaceJid(targetMainJid: string): string | null {
-  let effectiveJid = targetMainJid;
-  if (
-    !registeredGroups[effectiveJid] &&
-    !getRegisteredGroup(effectiveJid) &&
-    effectiveJid.startsWith('web:')
-  ) {
-    const folder = effectiveJid.slice(4);
-    const jids = getJidsByFolder(folder);
-    for (const j of jids) {
-      if (j.startsWith('web:')) {
-        effectiveJid = j;
-        break;
-      }
-    }
-  }
-  return registeredGroups[effectiveJid] || getRegisteredGroup(effectiveJid)
-    ? effectiveJid
-    : null;
+/**
+ * Route the shared legacy-fold resolver (channel-mount-service) through this
+ * module's read-through router cache. Convergence note (ISSUE-11 B2): the
+ * former private copy stopped at the first `web:{folder}` candidate and
+ * returned null when that candidate was unregistered; the shared resolver
+ * skips unregistered candidates and keeps searching, so a stale duplicate no
+ * longer masks the registered workspace.
+ */
+function resolveRegisteredWorkspaceJid(targetMainJid: string): string | null {
+  return resolveWorkspaceJid(targetMainJid, {
+    getRegisteredGroup: (jid) =>
+      registeredGroups[jid] ?? getRegisteredGroup(jid),
+    getJidsByFolder,
+  });
 }
 
 function buildOnPairAttempt(
@@ -17620,7 +17615,7 @@ function findActiveFeishuContext(
   messageMeta: ChannelMessageMeta,
 ): ActiveFeishuContext | undefined {
   const expectedWorkspaceJid = group.target_main_jid
-    ? resolveWorkspaceJid(group.target_main_jid)
+    ? resolveRegisteredWorkspaceJid(group.target_main_jid)
     : null;
   if (!expectedWorkspaceJid) return undefined;
 
@@ -17887,7 +17882,7 @@ function buildResolveEffectiveChatJid(): (
       group.target_main_jid &&
       nativeThread
     ) {
-      const workspaceJid = resolveWorkspaceJid(group.target_main_jid);
+      const workspaceJid = resolveRegisteredWorkspaceJid(group.target_main_jid);
       if (!workspaceJid) {
         logger.warn(
           { chatJid, targetMainJid: group.target_main_jid },
@@ -17910,7 +17905,7 @@ function buildResolveEffectiveChatJid(): (
 
     // Main conversation binding
     if (group.target_main_jid) {
-      const effectiveJid = resolveWorkspaceJid(group.target_main_jid);
+      const effectiveJid = resolveRegisteredWorkspaceJid(group.target_main_jid);
       if (!effectiveJid) {
         logger.warn(
           { chatJid, targetMainJid: group.target_main_jid },
@@ -19237,7 +19232,6 @@ async function main(): Promise<void> {
     finalizeHeldCard: (key: string) => {
       activeHeldCardFinalizers.get(key)?.();
     },
-    handleSpawnCommand,
     applyAutoIsolateContext: (userId: string, enable: boolean) =>
       applyAutoIsolateContext(userId, enable),
     resolveEffectiveGroup,

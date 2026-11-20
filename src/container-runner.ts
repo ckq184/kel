@@ -380,8 +380,6 @@ export interface ContainerInput {
     isDefault: boolean;
     identityHash: string;
     identityPrompt: string;
-    /** Legacy Claude-era prompt-mode marker; no Pi consumer (ISSUE-04 ④). */
-    includeClaudePreset: boolean;
     /**
      * Host-resolved SDK effort override (ISSUE-04 ③), already narrowed to the
      * Pi-compatible level set. Undefined means inherit the provider-level

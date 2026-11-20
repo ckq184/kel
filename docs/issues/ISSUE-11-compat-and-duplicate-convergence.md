@@ -2,8 +2,8 @@
 
 | 字段          | 值                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 状态          | 待领取                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| 领取人 / 分支 | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| 状态          | 已完成（2026-11-20；八项决策拍板后实现交付，规格符合性审查通过，质量轮按用户指示跳过）                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| 领取人 / 分支 | ZCode 会话 / `issue-11`（计划 `docs/issue11-compat-and-duplicate-convergence-plan.md`）                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | 优先级        | P3                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | 类型          | 清理：下线兼容层、合并重复实现                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | 依赖          | ISSUE-06（两个 store 重复加载 `/api/groups` 的问题）                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
@@ -63,4 +63,32 @@
 
 ## 交付记录
 
-（领取后填写）
+（2026-11-20 交付，分支 `issue-11`，提交链 7f7b786 立项 / e99eadd A 实现 / b28ed51 B 实现 / 交付落档见本提交）
+
+**提交号**：立项 `7f7b786`（八项决策拍板 + 计划落档）；A 实现 `e99eadd`（27 文件 +318/−1865：死门面 13 条、旧入口 7 条、/agents 写路由 5 条、WS send_message 及其类型面、includeClaudePreset 契约层、phoneNumber 死字段、status/飞书凭据前端迁 /api/channel-accounts）；B 实现 `b28ed51`（54 文件 +2115/−1062：B1-B10 收敛 + 2 个契约测试文件 44 用例）。
+
+**验证**：`npm run verify` 六步全绿（A 34.4s / B 35.3s）；`node scripts/check-scope.mjs` 通过（A 30 路径 / B 77 路径全在声明内；扩宽路径均已随提交信息说明）。规格符合性审查（独立代理）**通过**（零阻塞；3 条非阻塞建议已处置或登记于 `docs/审查记录.md`）；代码质量审查按用户 2026-11-20 指示跳过，审查记录如实注明。
+
+**与 issue 描述的偏差**：
+
+1. A.1：原文要求 4 条活路由全部迁 `/api/channel-accounts`——核实发现 `PUT bindings/:imJid` 与 `reset-allowlist` 在 channel-accounts 无等价物，用户拍板**原地保留**（现行活 API 非死门面）；status 与 PUT feishu 迁移后下线（前端经 `deriveConnectedChannels` 派生与 POST/PATCH channel-accounts 写凭据）。
+2. A.3：原文「改为委托 /sessions」→ 用户拍板**直接删除**（前端零调用；ACL 测试写用例迁 sessions 版）。
+3. A.5：WhatsApp 残留在领取时已被先前任务清光，实际仅剩 phoneNumber 死字段；`include_claude_preset` 按用户拍板**契约层彻底下线**（含 ContainerInput 线缆、宿主两处计算、runner 声明；DB `prompt_mode` 列与 profile API 字段留 ISSUE-09/10；`agent-profile-prompts.ts` 两 helper 因 DB/API 存活调用方未删，归 09/10）；`settings/types.ts:56` 空段落标题（A.5 第 3 小项，规格审查非阻塞发现）随交付提交删除。
+4. A.4：WS `send_message` 删除连带其专属 `ws_error` 错误通道，按用户审查口径单独拍板**连消费端一起下线**（类型变体 + ChatView 订阅 + ACL-MATRIX §7 行）。
+5. A.6：重定向 8 处**全保留**，CLAUDE.md 声明补齐 + 测试补锁 4 条（用户拍板，未收敛条数）。
+6. B.9：头像实为三套（`agent-profiles.ts` 第三套为核实新发现），用户拍板一并收敛，gatescope 随立项扩入。
+
+**分叉实现的最终行为选择**（对应验收标准第 2 条）：
+
+- `markNativeContextWorkspace`：**config 折叠版**（旧格式 `web:{folder}` 折叠到注册 jid 再写 native_thread 标记；agents 侧 3 调用点随之获得折叠语义——用户拍板）。共享实现落 `src/channel-mount-service.ts`。
+- `updateWorkspaceGroup`/`applyRegisteredGroupUpdate`：**守卫版**（`if (groups[jid])`，不凭空建缓存条目）；detach 统一签名取 group 对象版、binding_mode 守卫内化。
+- `resolveWorkspaceJid`：channel-mount-service 导出版 + index 薄适配保「缓存优先」语义；边缘行为变化=同 folder 多候选第一个未注册时跳过继续找（原私有版返回 null，拍板内更健壮方向）。
+- groups 双 store：唯一 loader 落 groups store（in-flight 去重），chat store 委托 + 镜像 + create/rename/pin/delete/interaction 五流广播；两份 state 容器保留（组件 API 不动）。
+- 错误提取：`web/src/utils/error.ts` 基准（Error.message → 对象 .message → String(err)，**不 trim**，fallback 可选参数）；11 副本全替换；顺带修复 McpServerDetail 吞 API 文案真 bug；`download.ts` 特化版与 `settings/types.ts getErrorMessage` 保留。
+- `buildCustomEnv`：**严格合成版**（大写 key / 非空 value / trim 存储 / 整包作废）；文案取舍：保留键与第三方默认键取 ProviderEditor 版、格式/非空/重复取 Setup 版——SetupProvidersPage 保留键报错文案随之统一（文案级变化，拦截语义不变，规格审查已核实登记）。
+- `nowIso`/`requireDatabase`：`src/store-helpers.ts` 参数化，三条抛错文案逐字保住；`isoNow`（可注入时钟增强版）保留。
+- `OAuthUsageBucket`：删无注释版保 :250 注释版，类型不变。
+- 计费 pattern 归一化：db 导出版为唯一实现，pricing 两处内联改调，409 行为不变（pricing-routes 19 用例照跑全绿）。
+- 头像：共享 `src/avatar-upload.ts`（落 src/ 根仿 `http-upload-policy.ts` 先例，`src/routes/` 会触 docs:check 路由索引）；MIME 大小写不归一维持现状。
+
+**遗留登记（未收敛）**：HMAC payload 构造两份同构（签名一致性仍靠注释纪律，建议后续纳入 shared/）；一行式错误提取约 75 处未全局清扫；`GET /agents` 与 `GET /sessions` 的读侧重复对（GET /agents 按拍板保留为 chat store 数据源）；`scripts/check-stream-event-sync.sh` 未扩展新两组 sync（完整性由 `tests/no-duplicate-helpers-contract.test.ts` fs 逐字节断言承担）；`agent-profile-prompts.ts` 两 helper（归 ISSUE-09/10）。

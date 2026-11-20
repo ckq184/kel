@@ -1129,7 +1129,11 @@ describe('tasks route ownership and cleanup contract', () => {
     expect(db.getTaskRunById(queued.run.id)?.status).toBe('queued');
   });
 
-  test('legacy run endpoint accepts a stable idempotency key and returns conflict run id', async () => {
+  test('run-now endpoint accepts a stable idempotency key and returns conflict run id', async () => {
+    // Migrated from the removed legacy POST /:id/run entry (ISSUE-11 A2):
+    // the current POST /:id/runs entry carries the same contract — a stable
+    // body idempotency key passes through to the scheduler, and a conflict
+    // returns the existing run id.
     createTask('runs-route-task', OWNER_ID);
     asUser(OWNER_ID);
     const trigger = vi
@@ -1142,24 +1146,22 @@ describe('tasks route ownership and cleanup contract', () => {
       });
     webContext.setWebDeps({ triggerTaskRun: trigger } as any);
 
-    const first = await tasksRoutes.request('/runs-route-task/run', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'Idempotency-Key': 'legacy-stable-key',
-      },
-      body: '{}',
-    });
-    expect(first.status).toBe(200);
-    expect(trigger).toHaveBeenLastCalledWith(
-      'runs-route-task',
-      'legacy-stable-key',
-    );
-
-    const retry = await tasksRoutes.request('/runs-route-task/run', {
+    const first = await tasksRoutes.request('/runs-route-task/runs', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ idempotency_key: 'legacy-stable-key' }),
+      body: JSON.stringify({ idempotency_key: 'stable-run-key' }),
+    });
+    expect(first.status).toBe(202);
+    expect(trigger).toHaveBeenLastCalledWith(
+      'runs-route-task',
+      'stable-run-key',
+    );
+    expect(await first.json()).toMatchObject({ runId: 'run-stable' });
+
+    const retry = await tasksRoutes.request('/runs-route-task/runs', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ idempotency_key: 'stable-run-key' }),
     });
     expect(retry.status).toBe(409);
     expect(await retry.json()).toMatchObject({ runId: 'run-stable' });

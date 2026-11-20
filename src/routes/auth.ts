@@ -3,16 +3,16 @@
 import fs from 'fs';
 import { readFile } from 'fs/promises';
 import path from 'path';
-import crypto from 'crypto';
 import { Hono } from 'hono';
 import type { Variables } from '../web-context.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { getClientIp } from '../utils.js';
-import { DATA_DIR } from '../config.js';
+import { avatarUploadBodyLimit } from '../http-upload-policy.js';
 import {
-  avatarUploadBodyLimit,
-  AVATAR_MAX_FILE_BYTES,
-} from '../http-upload-policy.js';
+  AVATARS_DIR,
+  reapAvatarFiles,
+  storeAvatarUpload,
+} from '../avatar-upload.js';
 import {
   LoginSchema,
   RegisterSchema,
@@ -743,40 +743,8 @@ authRoutes.delete('/sessions/:id', authMiddleware, (c) => {
 
 // --- Avatar Upload ---
 
-const AVATARS_DIR = path.join(DATA_DIR, 'avatars');
-const ALLOWED_AVATAR_TYPES: Record<string, string> = {
-  'image/jpeg': '.jpg',
-  'image/png': '.png',
-  'image/gif': '.gif',
-  'image/webp': '.webp',
-};
 authRoutes.post('/avatar', authMiddleware, avatarUploadBodyLimit, async (c) => {
   const user = c.get('user') as AuthUser;
-  const contentType = c.req.header('content-type') || '';
-
-  if (!contentType.includes('multipart/form-data')) {
-    return c.json({ error: 'Expected multipart/form-data' }, 400);
-  }
-
-  const formData = await c.req.formData();
-  const file = formData.get('avatar');
-  if (!file || !(file instanceof File)) {
-    return c.json({ error: 'No avatar file provided' }, 400);
-  }
-
-  if (file.size > AVATAR_MAX_FILE_BYTES) {
-    return c.json({ error: 'File too large (max 3MB)' }, 413);
-  }
-
-  const ext = ALLOWED_AVATAR_TYPES[file.type];
-  if (!ext) {
-    return c.json(
-      { error: 'Unsupported image type. Use jpg, png, gif or webp' },
-      400,
-    );
-  }
-
-  fs.mkdirSync(AVATARS_DIR, { recursive: true });
 
   // ISSUE-09: users.ai_avatar_url 已随死列下线——AI 头像走
   // /api/config/appearance/avatar（appearance.json，独立目录与前缀，不受
@@ -798,14 +766,14 @@ authRoutes.post('/avatar', authMiddleware, avatarUploadBodyLimit, async (c) => {
     ? current.avatar_url.replace(/^\/api\/auth\/avatars\//, '')
     : null;
 
-  const filename = `${user.id}-user-${crypto.randomBytes(4).toString('hex')}${ext}`;
-  const filePath = path.join(AVATARS_DIR, filename);
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const tmpPath = filePath + '.tmp';
-  fs.writeFileSync(tmpPath, buffer);
-  fs.renameSync(tmpPath, filePath);
-
-  const avatarUrl = `/api/auth/avatars/${filename}`;
+  // Shared validation + write pipeline (ISSUE-11 B9); this route keeps the
+  // user auth and the per-user filename prefix. ISSUE-09 removed the AI
+  // target, so the prefix is always the user's own.
+  const stored = await storeAvatarUpload(c.req, `${user.id}-user-`);
+  if (!stored.ok) {
+    return c.json({ error: stored.error }, stored.status);
+  }
+  const avatarUrl = stored.avatarUrl;
 
   // Reap this user's stale avatar files: same-target leftovers, legacy
   // `${user.id}-{hex}` files (uploaded before the user- prefix), and legacy
@@ -814,13 +782,10 @@ authRoutes.post('/avatar', authMiddleware, avatarUploadBodyLimit, async (c) => {
   // The AI avatar uploaded via /api/config/appearance/avatar lives in a
   // different directory with a different prefix and is never touched here.
   try {
-    const keep = new Set(
-      [filename, currentFilename].filter((x): x is string => !!x),
-    );
-    for (const f of fs.readdirSync(AVATARS_DIR)) {
-      if (!f.startsWith(`${user.id}-`) || keep.has(f)) continue;
-      fs.unlinkSync(path.join(AVATARS_DIR, f));
-    }
+    reapAvatarFiles({
+      prefix: `${user.id}-`,
+      keep: [stored.filename, currentFilename].filter((x): x is string => !!x),
+    });
   } catch {
     /* ignore */
   }

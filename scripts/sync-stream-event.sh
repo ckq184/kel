@@ -43,3 +43,21 @@ for target in \
 ; do
   sync_file "$SRC_CP" "$target"
 done
+
+# --- Canonical JSON (2 targets: backend + agent-runner; HMAC-signature red line) ---
+SRC_CJ="$ROOT/shared/canonical-json.ts"
+for target in \
+  "$ROOT/src/canonical-json.ts" \
+  "$ROOT/container/agent-runner/src/canonical-json.ts" \
+; do
+  sync_file "$SRC_CJ" "$target"
+done
+
+# --- Model suffix (2 targets: backend + agent-runner) ---
+SRC_MS="$ROOT/shared/model-suffix.ts"
+for target in \
+  "$ROOT/src/model-suffix.ts" \
+  "$ROOT/container/agent-runner/src/model-suffix.ts" \
+; do
+  sync_file "$SRC_MS" "$target"
+done

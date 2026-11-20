@@ -61,8 +61,6 @@ export interface AgentProfile {
   agents_prompt: string;
   tools_prompt: string;
   prompt_mode: AgentProfilePromptMode;
-  /** @deprecated Compatibility alias for prompt_mode === 'append'. */
-  include_claude_preset: boolean;
   avatar_emoji: string | null;
   avatar_color: string | null;
   avatar_url: string | null;

@@ -81,6 +81,7 @@ import {
   type AgentProfileRuntimePolicy,
 } from '../types';
 import { getCustomAgentProfiles } from '../utils/agent-product';
+import { extractErrorMessage } from '../utils/error';
 import {
   buildAgentPromptPatch,
   type AgentPromptParts,
@@ -511,7 +512,7 @@ export function AgentProfilesPage() {
   useEffect(() => {
     if (draftMode || !selected) return;
     void loadProfileGovernance(selected.id).catch((err) => {
-      toast.error(getErrorMessage(err, '加载智能体治理数据失败'));
+      toast.error(extractErrorMessage(err, '加载智能体治理数据失败'));
     });
   }, [draftMode, loadProfileGovernance, selected?.id]);
 
@@ -585,15 +586,6 @@ export function AgentProfilesPage() {
     setCreatePanelOpen(true);
     setAllowedSearchParams(next, { replace: true });
   }, [searchParams, setAllowedSearchParams]);
-
-  const getErrorMessage = (err: unknown, fallback: string) => {
-    if (err instanceof Error) return err.message;
-    if (err && typeof err === 'object' && 'message' in err) {
-      const message = (err as { message?: unknown }).message;
-      if (typeof message === 'string' && message) return message;
-    }
-    return fallback;
-  };
 
   const governance = selected ? governanceByProfile[selected.id] : undefined;
   const governanceBusy = selected ? !!governanceLoading[selected.id] : false;
@@ -729,7 +721,7 @@ export function AgentProfilesPage() {
       setCreatePanelOpen(false);
       toast.success('已生成智能体配置');
     } catch (err) {
-      toast.error(getErrorMessage(err, '生成失败'));
+      toast.error(extractErrorMessage(err, '生成失败'));
     } finally {
       setGeneratingDraft(false);
     }
@@ -789,7 +781,7 @@ export function AgentProfilesPage() {
         '已创建智能体；当前未绑定工作区，Session 与 Memory 均和 CKQClaw 隔离',
       );
     } catch (err) {
-      toast.error(getErrorMessage(err, '创建失败'));
+      toast.error(extractErrorMessage(err, '创建失败'));
     } finally {
       setCreating(false);
     }
@@ -831,7 +823,7 @@ export function AgentProfilesPage() {
       if (selected && asApiError(err)?.body?.persisted === true) {
         void loadProfileGovernance(selected.id).catch(() => undefined);
       }
-      toast.error(getErrorMessage(err, '保存失败'));
+      toast.error(extractErrorMessage(err, '保存失败'));
     } finally {
       setSaving(false);
     }
@@ -943,7 +935,7 @@ export function AgentProfilesPage() {
           setHostSkillsMode(confirmed.mode);
           setHostSkillIds([...confirmed.ids]);
           setHostSkillsSaveStatus('error');
-          toast.error(getErrorMessage(err, '宿主机 Skills 保存失败'));
+          toast.error(extractErrorMessage(err, '宿主机 Skills 保存失败'));
         }
       }
     } finally {
@@ -965,7 +957,7 @@ export function AgentProfilesPage() {
     } catch (err) {
       if (selectedIdRef.current === profileId) {
         setHostSkillsSaveStatus('warning');
-        toast.error(getErrorMessage(err, '工作区运行时清理失败'));
+        toast.error(extractErrorMessage(err, '工作区运行时清理失败'));
       }
     } finally {
       setRuntimeCleanupRepairing(false);
@@ -1039,7 +1031,7 @@ export function AgentProfilesPage() {
       setAvatarUrl(profile.avatar_url);
       toast.success('智能体头像已更新');
     } catch (error) {
-      toast.error(getErrorMessage(error, '上传头像失败'));
+      toast.error(extractErrorMessage(error, '上传头像失败'));
     } finally {
       setUploadingAvatar(false);
     }
@@ -1066,7 +1058,7 @@ export function AgentProfilesPage() {
       setAvatarStyleOpen(false);
       toast.success('已改为继承主 CKQClaw 头像');
     } catch (error) {
-      toast.error(getErrorMessage(error, '恢复主头像失败'));
+      toast.error(extractErrorMessage(error, '恢复主头像失败'));
     } finally {
       setUploadingAvatar(false);
     }
@@ -1106,7 +1098,7 @@ export function AgentProfilesPage() {
         return next;
       });
     } catch (err) {
-      toast.error(getErrorMessage(err, '迁移工作区失败'));
+      toast.error(extractErrorMessage(err, '迁移工作区失败'));
     } finally {
       setMovingWorkspaceJid(null);
     }
@@ -1152,7 +1144,7 @@ export function AgentProfilesPage() {
       if (!confirm(`确认删除智能体「${selected.name}」？`)) return;
       await deleteSelectedProfile();
     } catch (err) {
-      toast.error(getErrorMessage(err, '删除失败'));
+      toast.error(extractErrorMessage(err, '删除失败'));
     } finally {
       setDeleting(false);
     }
@@ -1169,7 +1161,7 @@ export function AgentProfilesPage() {
       setDeleteDialogOpen(false);
     } catch (err) {
       toast.error(
-        getErrorMessage(
+        extractErrorMessage(
           err,
           '迁移或删除失败；已完成的工作区迁移会保留，可重试剩余操作',
         ),

@@ -6,7 +6,6 @@ import { toast } from 'sonner';
 import { api } from '../../api/client';
 import { useAuthStore } from '../../stores/auth';
 import { useChatStore } from '../../stores/chat';
-import { useGroupsStore } from '../../stores/groups';
 import { useTasksStore } from '../../stores/tasks';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -520,9 +519,10 @@ export function HostIntegrationSettingsSection({
         draft,
       );
       if (adminHostOnlyModeChanged) {
+        // ISSUE-11 B3：chat store 的 loadGroups 已委托 groups store 的唯一
+        // loader 并镜像结果，双 loadGroups 收敛为单次调用。
         await Promise.allSettled([
           useChatStore.getState().loadGroups(),
-          useGroupsStore.getState().loadGroups(),
           useTasksStore.getState().loadTasks(),
         ]);
       }

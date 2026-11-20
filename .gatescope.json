@@ -1,6 +1,6 @@
 {
-  "task": "issue09-dead-code-batch2-billing-and-db - billing残留代码删除与DB死表死列v77迁移（docs/issue09-dead-code-batch2-billing-and-db-plan.md）；用户2026-11-20拍板：turn_runs.heartbeat_at/correlation_id保留、usage_events+usage_records.billed_cost_usd彻底下线",
-  "base": "5d76afb",
+  "task": "issue09-dead-code-batch2-billing-and-db - billing残留代码删除与DB死表死列v77迁移（docs/issue09-dead-code-batch2-billing-and-db-plan.md）；用户2026-11-20拍板：turn_runs.heartbeat_at/correlation_id保留、usage_events+usage_records.billed_cost_usd彻底下线；合main（80ba541 ISSUE-11四笔）时base按ISSUE-02先例更新为合入前main tip，范围diff仍只含本任务分支改动",
+  "base": "80ba541",
   "allow": [
     "src/runtime-config.ts",
     "src/db.ts",

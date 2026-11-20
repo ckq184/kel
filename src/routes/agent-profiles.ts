@@ -1,7 +1,4 @@
 import { Hono } from 'hono';
-import fs from 'node:fs';
-import path from 'node:path';
-import { randomBytes } from 'node:crypto';
 import type { Variables } from '../web-context.js';
 import { getWebDeps } from '../web-context.js';
 import { authMiddleware } from '../middleware/auth.js';
@@ -18,12 +15,9 @@ import {
   refineAgentProfilePrompt,
 } from '../agent-profile-generator.js';
 import { logger } from '../logger.js';
-import { DATA_DIR } from '../config.js';
 import { buildAgentCapabilityPreview } from '../agent-capability-preview.js';
-import {
-  avatarUploadBodyLimit,
-  AVATAR_MAX_FILE_BYTES,
-} from '../http-upload-policy.js';
+import { avatarUploadBodyLimit } from '../http-upload-policy.js';
+import { reapAvatarFiles, storeAvatarUpload } from '../avatar-upload.js';
 import {
   getWorkspaceRuntimeJids,
   listWorkspaceGroupsForAgentProfile,
@@ -72,22 +66,8 @@ import {
 import { getDefaultProviderId, getProviders } from '../runtime-config.js';
 
 const agentProfileRoutes = new Hono<{ Variables: Variables }>();
-const AVATARS_DIR = path.join(DATA_DIR, 'avatars');
-const AVATAR_EXTENSIONS: Record<string, string> = {
-  'image/jpeg': '.jpg',
-  'image/png': '.png',
-  'image/gif': '.gif',
-  'image/webp': '.webp',
-};
-
-function removeProfileAvatarFiles(profileId: string, keep?: string): void {
-  if (!fs.existsSync(AVATARS_DIR)) return;
-  const prefix = `agent-profile-${profileId}-`;
-  for (const filename of fs.readdirSync(AVATARS_DIR)) {
-    if (!filename.startsWith(prefix) || filename === keep) continue;
-    fs.rmSync(path.join(AVATARS_DIR, filename), { force: true });
-  }
-}
+const AVATAR_PROFILE_PREFIX = (profileId: string) =>
+  `agent-profile-${profileId}-`;
 
 function usesFourPartPromptPayload(input: {
   prompt_schema_version?: 2;
@@ -347,35 +327,20 @@ agentProfileRoutes.post(
         400,
       );
     }
-    if (!(c.req.header('content-type') || '').includes('multipart/form-data')) {
-      return c.json({ error: 'Expected multipart/form-data' }, 400);
+    // Shared validation + write pipeline (ISSUE-11 B9); this route keeps the
+    // profile ownership auth, profile-scoped filename prefix and reap policy.
+    const stored = await storeAvatarUpload(c.req, AVATAR_PROFILE_PREFIX(id));
+    if (!stored.ok) {
+      return c.json({ error: stored.error }, stored.status);
     }
-    const formData = await c.req.formData();
-    const file = formData.get('avatar');
-    if (!file || !(file instanceof File)) {
-      return c.json({ error: 'No avatar file provided' }, 400);
-    }
-    if (file.size > AVATAR_MAX_FILE_BYTES) {
-      return c.json({ error: 'File too large (max 3MB)' }, 413);
-    }
-    const extension = AVATAR_EXTENSIONS[file.type];
-    if (!extension) {
-      return c.json(
-        { error: 'Unsupported image type. Use jpg, png, gif or webp' },
-        400,
-      );
-    }
-
-    fs.mkdirSync(AVATARS_DIR, { recursive: true });
-    const filename = `agent-profile-${id}-${randomBytes(4).toString('hex')}${extension}`;
-    const destination = path.join(AVATARS_DIR, filename);
-    const temporary = `${destination}.tmp`;
-    fs.writeFileSync(temporary, Buffer.from(await file.arrayBuffer()));
-    fs.renameSync(temporary, destination);
-    const avatarUrl = `/api/auth/avatars/${filename}`;
-    const updated = updateAgentProfile(id, user.id, { avatarUrl });
-    removeProfileAvatarFiles(id, filename);
-    return c.json({ profile: updated, avatarUrl });
+    const updated = updateAgentProfile(id, user.id, {
+      avatarUrl: stored.avatarUrl,
+    });
+    reapAvatarFiles({
+      prefix: AVATAR_PROFILE_PREFIX(id),
+      keep: [stored.filename],
+    });
+    return c.json({ profile: updated, avatarUrl: stored.avatarUrl });
   },
 );
 
@@ -391,7 +356,7 @@ agentProfileRoutes.delete('/:id/avatar', authMiddleware, (c) => {
     );
   }
   const updated = updateAgentProfile(id, user.id, { avatarUrl: null });
-  removeProfileAvatarFiles(id);
+  reapAvatarFiles({ prefix: AVATAR_PROFILE_PREFIX(id) });
   return c.json({ profile: updated });
 });
 

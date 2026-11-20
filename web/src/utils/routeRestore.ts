@@ -2,6 +2,8 @@
 // land on the user's previous location instead of the manifest start_url.
 // Disabled by default; toggled from Settings → Profile.
 
+import { safeStorage } from './safe-storage';
+
 const STORAGE_KEY_ENABLED = 'ckqclaw-pwa-restore-enabled';
 const STORAGE_KEY_ROUTE = 'ckqclaw-pwa-last-route';
 
@@ -13,14 +15,6 @@ const BLACKLIST_PATTERNS: RegExp[] = [
 
 function isBlacklisted(path: string): boolean {
   return BLACKLIST_PATTERNS.some((re) => re.test(path));
-}
-
-function safeStorage(): Storage | null {
-  try {
-    return typeof localStorage === 'undefined' ? null : localStorage;
-  } catch {
-    return null;
-  }
 }
 
 export function isRouteRestoreEnabled(): boolean {
