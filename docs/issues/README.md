@@ -50,7 +50,7 @@
 | [ISSUE-10](ISSUE-10-dead-code-batch3-legacy-consumers.md)       | 死代码批 3：Claude SDK 遗留消费端与无人消费的链路        | P2     | 02、03、04          | 部分               | 待领取 |
 | [ISSUE-11](ISSUE-11-compat-and-duplicate-convergence.md)        | 兼容层下线与重复实现收敛                                 | P3     | 06                  | **是**             | 待领取 |
 | [ISSUE-12](ISSUE-12-structural-refactor.md)                     | 结构重构：镜像函数收敛与巨型函数拆分                     | P3     | 02、03、05、08、10  | **是**（拆分方案） | 待领取 |
-| [ISSUE-13](ISSUE-13-docs-drift-and-regression-contracts.md)     | 文档漂移修正与防回归契约测试                             | P3     | 04（仅文档部分）    | 否                 | 进行中 |
+| [ISSUE-13](ISSUE-13-docs-drift-and-regression-contracts.md)     | 文档漂移修正与防回归契约测试                             | P3     | 04（仅文档部分）    | 否                 | 已完成 |
 
 状态取值：待领取、进行中、待用户决策、已完成、已取消。
 
