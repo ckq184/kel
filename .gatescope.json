@@ -1,9 +1,33 @@
 {
-  "task": "issue01-p0-runtime-confirmation - ISSUE-01 P0 实机确认（只读诊断：4 项 P0 推断的静态链核对+Pi 包源码凭据核验+生产同款 runner 实机事件捕获+DB/会话历史取证，结论回填 issue，不改任何代码；开工基线 b08a3b8，合入前按任务池流程 rebase 至 4e9dd61——ISSUE-05/08 已先入 main）",
-  "base": "4e9dd61",
+  "task": "issue06-frontend-dropped-logic - 前端掉线逻辑修复六项：group_created改刷chat store、侧栏自定义智能体分组接能力深链入口（用户拍板a）、已配对聊天rename下线（用户拍板b）、agent_reply警告notice标记+前端订阅展示、monitor/files/users加载失败提示、MonitorPage无效providers请求与ChatGroupItem.lastMessage死属性清理（docs/frontend-dropped-logic-plan.md）",
+  "base": "2493eab",
   "allow": [
-    "docs/issues/ISSUE-01-p0-runtime-confirmation.md",
-    "docs/issues/README.md",
-    "docs/issue01-p0-runtime-confirmation-plan.md"
+    "src/types.ts",
+    "src/web.ts",
+    "src/index.ts",
+    "web/src/components/layout/AppLayout.tsx",
+    "web/src/components/layout/AgentWorkspaceGroup.tsx",
+    "web/src/components/layout/UnifiedSidebar.tsx",
+    "web/src/components/chat/ChatGroupItem.tsx",
+    "web/src/components/chat/FilePanel.tsx",
+    "web/src/components/settings/hooks/usePairedChats.ts",
+    "web/src/components/settings/PairingSection.tsx",
+    "web/src/components/monitor/ProviderSwitcher.tsx",
+    "web/src/components/monitor/GroupStatusCard.tsx",
+    "web/src/pages/MonitorPage.tsx",
+    "web/src/pages/ChatPage.tsx",
+    "web/src/pages/UsersPage.tsx",
+    "web/src/stores/chat.ts",
+    "tests/frontend-sidebar-refresh-contract.test.ts",
+    "tests/frontend-agent-capabilities-entry.test.ts",
+    "tests/frontend-paired-chat-rename-removal.test.ts",
+    "tests/agent-notice-broadcast-contract.test.ts",
+    "tests/frontend-load-error-visibility.test.ts",
+    "tests/frontend-monitor-provider-request-removal.test.ts",
+    "tests/frontend-chat-group-item-props.test.ts",
+    "tests/wechat-pairing-dialog-dom.test.tsx",
+    "docs/frontend-dropped-logic-plan.md",
+    "docs/issues/ISSUE-06-frontend-dropped-logic.md",
+    "docs/issues/README.md"
   ]
 }
