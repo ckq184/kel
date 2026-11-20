@@ -44,7 +44,7 @@
 | [ISSUE-04](ISSUE-04-pi-runtime-settings-and-credentials.md)     | Pi 运行时设置与凭据（6 项“设置不生效”）                  | P0     | 01（仅 OAuth 一项） | **是**             | 待领取 |
 | [ISSUE-05](ISSUE-05-behavior-small-fixes.md)                    | 行为级小修：孤儿结果文件、溢出标记、/pair 正则、safeRoot | P1     | 无                  | 部分               | 进行中 |
 | [ISSUE-06](ISSUE-06-frontend-dropped-logic.md)                  | 前端掉线逻辑修复                                         | P1     | 无                  | 部分               | 待领取 |
-| [ISSUE-07](ISSUE-07-backend-dropped-logic-decisions.md)         | 后端掉线逻辑与意图项：决策与落地                         | P1     | 无                  | **是**             | 待领取 |
+| [ISSUE-07](ISSUE-07-backend-dropped-logic-decisions.md)         | 后端掉线逻辑与意图项：决策与落地                         | P1     | 无                  | **是**             | 进行中 |
 | [ISSUE-08](ISSUE-08-dead-code-batch1-orphans.md)                | 死代码批 1：孤儿函数、局部死代码、类成员（不涉及 DB）    | P2     | 无                  | 否                 | 待领取 |
 | [ISSUE-09](ISSUE-09-dead-code-batch2-billing-and-db.md)         | 死代码批 2：billing 残留与 DB 死表死列迁移               | P2     | 07（仅 3 个列）     | 部分               | 待领取 |
 | [ISSUE-10](ISSUE-10-dead-code-batch3-legacy-consumers.md)       | 死代码批 3：Claude SDK 遗留消费端与无人消费的链路        | P2     | 02、03、04          | 部分               | 待领取 |
