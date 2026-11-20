@@ -12,7 +12,7 @@ import { z } from 'zod';
 import fs from 'fs';
 import path from 'path';
 import { CronExpressionParser } from 'cron-parser';
-import { formatIsoLocal } from './utils.js';
+import { formatIsoLocal, isPathWithinWorkspaceRoot } from './utils.js';
 import {
   normalizeChannelTurnContext,
   type ChannelTurnContext,
@@ -841,10 +841,7 @@ export function createMcpTools(ctx: McpContext): McpToolDefinition<any>[] {
         // Security: ensure path is within workspace
         // Use path.sep suffix to prevent prefix-bypass (e.g. /ws/group1 matching /ws/group10/evil.png)
         const resolved = path.resolve(absPath);
-        const safeRoot = ctx.workspaceGroup.endsWith(path.sep)
-          ? ctx.workspaceGroup
-          : ctx.workspaceGroup + path.sep;
-        if (resolved !== ctx.workspaceGroup && !resolved.startsWith(safeRoot)) {
+        if (!isPathWithinWorkspaceRoot(resolved, ctx.workspaceGroup)) {
           return {
             content: [
               {
@@ -972,13 +969,7 @@ The actual file types and size limit are enforced by the selected provider.`,
         if (path.isAbsolute(args.filePath)) {
           // Absolute path provided - validate and convert to relative
           resolvedPath = path.resolve(args.filePath);
-          const safeRoot = ctx.workspaceGroup.endsWith(path.sep)
-            ? ctx.workspaceGroup
-            : ctx.workspaceGroup + path.sep;
-          if (
-            resolvedPath !== ctx.workspaceGroup &&
-            !resolvedPath.startsWith(safeRoot)
-          ) {
+          if (!isPathWithinWorkspaceRoot(resolvedPath, ctx.workspaceGroup)) {
             return {
               content: [
                 {
@@ -996,13 +987,7 @@ The actual file types and size limit are enforced by the selected provider.`,
           relativePath = args.filePath;
           resolvedPath = path.resolve(ctx.workspaceGroup, args.filePath);
           // Validate resolved path is still within workspace
-          const safeRoot = ctx.workspaceGroup.endsWith(path.sep)
-            ? ctx.workspaceGroup
-            : ctx.workspaceGroup + path.sep;
-          if (
-            resolvedPath !== ctx.workspaceGroup &&
-            !resolvedPath.startsWith(safeRoot)
-          ) {
+          if (!isPathWithinWorkspaceRoot(resolvedPath, ctx.workspaceGroup)) {
             return {
               content: [
                 {

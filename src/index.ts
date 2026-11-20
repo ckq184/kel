@@ -10843,7 +10843,11 @@ function startIpcWatcher(): void {
           withFileTypes: true,
         });
 
-        // 清理孤儿结果文件（容器崩溃或超时后残留，超过 10 分钟自动删除）
+        // 清理孤儿结果文件（容器崩溃或超时后残留，超过 10 分钟自动删除）。
+        // 名单必须覆盖 writeTaskResult 的全部写入 type（文件名 = `${type}_result_`
+        // _${requestId}.json），漏一项就会让该类回执落进 !isResultFile 分支被当作
+        // 任务请求处理、引发伪任务告警——由
+        // tests/result-file-prefixes-consistency.test.ts 源码一致性测试锁定。
         const RESULT_FILE_PREFIXES = [
           'install_skill_result_',
           'uninstall_skill_result_',
@@ -10867,6 +10871,7 @@ function startIpcWatcher(): void {
           'agent_profile_discard_result_',
           'workspace_memory_result_',
           'ckqclaw_owner_profile_result_',
+          'feishu_capability_result_',
         ];
         const isResultFile = (name: string) =>
           RESULT_FILE_PREFIXES.some((p) => name.startsWith(p));

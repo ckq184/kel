@@ -4,6 +4,8 @@
  * Pure utility functions with no side effects or state dependencies.
  */
 
+import path from 'path';
+
 /**
  * Shorten a string to maxLen, appending "..." if truncated.
  */
@@ -431,4 +433,22 @@ export function formatIsoLocal(iso: string | null | undefined): string {
   const tz = currentTimeZone();
   const { date, time, offset } = localDateTimeParts(d, tz);
   return `${date} ${time} (${offset})`;
+}
+
+/**
+ * 判断已解析的绝对路径是否位于工作区根目录内（含根目录本身）。
+ *
+ * mcp-tools 的文件类工具（send_image / upload_file）统一用它做路径包含
+ * 检查。语义：纯字符串前缀比较——调用方需先 `path.resolve`；不做 realpath /
+ * 符号链接解析（符号链接按其字符串路径判定，见
+ * tests/mcp-tools-path-containment.test.ts 记录的当前行为）。尾分隔符补齐
+ * 用于防前缀绕过（如 /ws/group1 不能匹配 /ws/group10/x）。
+ */
+export function isPathWithinWorkspaceRoot(
+  resolved: string,
+  root: string,
+): boolean {
+  if (resolved === root) return true;
+  const safeRoot = root.endsWith(path.sep) ? root : root + path.sep;
+  return resolved.startsWith(safeRoot);
 }

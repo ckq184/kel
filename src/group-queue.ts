@@ -232,7 +232,6 @@ export class GroupQueue {
   private nextMutationPauseTokenId = 1;
   private mutationPreserveStopJids = new Set<string>();
   private mutationStoppedFolders = new Set<string>();
-  private contextOverflowGroups = new Set<string>(); // 跟踪发生上下文溢出的 group
   // 记录最近一次 stopGroup 的时间戳（毫秒）。runForGroup finally 块会用它来
   // 决定是否跳过自动 drainGroup —— stopGroup 中清空 pendingMessages 之后，
   // hasIpcInjectedMessages 重新置 pendingMessages=true，会让用户的 'stop' 之后
@@ -609,7 +608,6 @@ export class GroupQueue {
 
   /** 本轮失败后队列是否还会再次重试（决定错误提示发本轮还是等最终失败）。 */
   willRetryAfterFailure(groupJid: string): boolean {
-    if (this.contextOverflowGroups.has(groupJid)) return false;
     return (this.groups.get(groupJid)?.retryCount ?? 0) < MAX_RETRIES;
   }
 
@@ -777,17 +775,6 @@ export class GroupQueue {
     fn: (receipt: IpcDeliveryReceipt) => boolean,
   ): void {
     this.isIpcDeliveryCommitEligibleFn = fn;
-  }
-
-  /**
-   * 标记 group 发生了上下文溢出错误，跳过指数退避重试
-   */
-  markContextOverflow(groupJid: string): void {
-    this.contextOverflowGroups.add(groupJid);
-    logger.warn(
-      { groupJid },
-      'Marked group as context overflow - will skip retry backoff',
-    );
   }
 
   /**
@@ -2668,18 +2655,6 @@ export class GroupQueue {
     }
     state.retryTask = null;
 
-    // 检查是否为上下文溢出错误，如果是则跳过重试
-    if (this.contextOverflowGroups.has(groupJid)) {
-      logger.warn(
-        { groupJid },
-        'Skipping retry for context overflow error (agent already retried 3 times)',
-      );
-      state.retryCount = 0;
-      state.retryTask = null;
-      this.contextOverflowGroups.delete(groupJid); // 清除标记
-      return;
-    }
-
     state.retryCount++;
     if (state.retryCount > MAX_RETRIES) {
       logger.error(
@@ -2806,7 +2781,6 @@ export class GroupQueue {
         !this.waitingGroups.has(groupJid)
       ) {
         this.groups.delete(groupJid);
-        this.contextOverflowGroups.delete(groupJid);
         // fall through to drainWaiting so other waiting groups still get a slot
       }
     }

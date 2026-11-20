@@ -8,6 +8,7 @@
     "src/wechat.ts",
     "src/channel-admission.ts",
     "container/agent-runner/src/mcp-tools.ts",
+    "container/agent-runner/src/utils.ts",
     "tests/result-file-prefixes-consistency.test.ts",
     "tests/group-queue-context-overflow-removal.test.ts",
     "tests/channel-pairing-uniform.test.ts",

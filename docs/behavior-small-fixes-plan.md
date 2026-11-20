@@ -42,25 +42,37 @@
 
 ## 修改文件范围
 
-| 文件                                                         | 改动                                                                                         |
-| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
-| `src/index.ts`                                               | 第 1 项：`RESULT_FILE_PREFIXES` 补 `feishu_capability_result_`，抽为模块级导出常量供测试引用 |
-| `src/group-queue.ts`                                         | 第 2 项：删 `markContextOverflow`、`contextOverflowGroups` 及三处读取                        |
-| `src/qq.ts`                                                  | 第 3 项：两处内联正则改为 `parseChannelPairingCode`                                          |
-| `src/wechat.ts`                                              | 第 3 项：一处内联正则改为 `parseChannelPairingCode`                                          |
-| `src/channel-admission.ts`                                   | 预期不改（共享函数已正确）；仅在必要时补 JSDoc                                               |
-| `container/agent-runner/src/mcp-tools.ts`                    | 第 4 项：三处内联检查收敛为一个纯函数                                                        |
-| `tests/result-file-prefixes-consistency.test.ts`（新增）     | 第 1 项测试                                                                                  |
-| `tests/group-queue-context-overflow-removal.test.ts`（新增） | 第 2 项测试                                                                                  |
-| `tests/channel-pairing-uniform.test.ts`（新增）              | 第 3 项测试                                                                                  |
-| `tests/mcp-tools-path-containment.test.ts`（新增）           | 第 4 项测试                                                                                  |
+| 文件                                                         | 改动                                                                                     |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| `src/index.ts`                                               | 第 1 项：`RESULT_FILE_PREFIXES` 补 `feishu_capability_result_`（就地补齐，见偏差记录 ①） |
+| `src/group-queue.ts`                                         | 第 2 项：删 `markContextOverflow`、`contextOverflowGroups` 及三处读取                    |
+| `src/qq.ts`                                                  | 第 3 项：两处内联正则改为 `parseChannelPairingCode`                                      |
+| `src/wechat.ts`                                              | 第 3 项：一处内联正则改为 `parseChannelPairingCode`                                      |
+| `src/channel-admission.ts`                                   | 不改（共享函数已正确；最终未补 JSDoc）                                                   |
+| `container/agent-runner/src/mcp-tools.ts`                    | 第 4 项：三处内联检查改为调用收敛函数                                                    |
+| `container/agent-runner/src/utils.ts`                        | 第 4 项：新增 `isPathWithinWorkspaceRoot` 纯函数（范围扩宽，见偏差记录 ②）               |
+| `tests/result-file-prefixes-consistency.test.ts`（新增）     | 第 1 项测试                                                                              |
+| `tests/group-queue-context-overflow-removal.test.ts`（新增） | 第 2 项测试                                                                              |
+| `tests/channel-pairing-uniform.test.ts`（新增）              | 第 3 项测试                                                                              |
+| `tests/mcp-tools-path-containment.test.ts`（新增）           | 第 4 项测试                                                                              |
+
+### 实现偏差记录（相对本 plan 初稿，供立项批准者复核）
+
+1. **第 1 项未把 `RESULT_FILE_PREFIXES` 抽为模块级导出常量**：`src/index.ts` 是主服务
+   入口（import 即启动监听），导出常量没有可导入的消费方，测试改走源码文本提取
+   （`tests/result-file-prefixes-consistency.test.ts`），搬动常量位置属无关重构，
+   按最小范围原则就地补齐。
+2. **第 4 项收敛函数落在 `container/agent-runner/src/utils.ts`**（初稿只写了
+   mcp-tools.ts）：utils.ts 是既有纯函数模块（文件头注释即"Pure utility
+   functions"）、已被 mcp-tools.ts 引用，且测试可直接导入；mcp-tools.ts 重依赖
+   zod/pi SDK，新函数放那里无法被测试导入。此为 `.gatescope.json` 相对立项提交
+   的范围扩宽，随实现提交说明。
 
 ## 方案与测试设计
 
 ### 第 1 项：结果文件前缀
 
-- `RESULT_FILE_PREFIXES` 从函数体内抽为模块级导出常量（`export const RESULT_FILE_PREFIXES`），
-  补 `feishu_capability_result_`。
+- `RESULT_FILE_PREFIXES` 就地补 `feishu_capability_result_`（偏差记录 ①）。
 - 测试（源码一致性，项目已有先例 `tests/provider-auth-error.test.ts` 的源码断言模式）：
   - 读取 `src/index.ts` 源码，正则提取所有字面量调用
     `writeTaskResult(tasksDir, '<type>', …`，断言 `'<type>_result_'` 均在名单内；
@@ -97,8 +109,8 @@
 
 ### 第 4 项：safeRoot 收敛
 
-- 抽纯函数（放 `mcp-tools.ts` 内，或同文件已有合适位置）：
-  `isPathWithinRoot(resolved: string, root: string): boolean`——语义与现有三处完全
+- 抽纯函数 `isPathWithinWorkspaceRoot(resolved: string, root: string): boolean`，
+  落在 `container/agent-runner/src/utils.ts`（偏差记录 ②）——语义与现有三处完全
   一致：`resolved === root || resolved.startsWith(root.endsWith(path.sep) ? root : root + path.sep)`。
 - 三处调用点替换，错误文案不变。
 - 测试覆盖（issue 要求四类）：

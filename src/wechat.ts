@@ -27,7 +27,10 @@ import {
   createDedupCache,
 } from './im-utils.js';
 import { weChatIlinkHeaders } from './wechat-onboarding.js';
-import { resolveAdmittedChannelRoute } from './channel-admission.js';
+import {
+  parseChannelPairingCode,
+  resolveAdmittedChannelRoute,
+} from './channel-admission.js';
 import { createWeChatHttpDispatcher } from './wechat-http.js';
 
 // ─── Constants ──────────────────────────────────────────────────
@@ -823,10 +826,12 @@ export function createWeChatConnection(
       // Pairing and admission must run before registration, workspace lookup,
       // file downloads, or message persistence. QR authorization authenticates
       // the bot account; it does not authorize every person who can message it.
-      const pairMatch = content.match(/^\/pair\s+(\S+)/i);
-      if (pairMatch && opts.onPairAttempt) {
+      // 统一走共享解析（严格语义：拒绝 /pair abc extra 这类多余参数），与 QQ
+      // 及 channel-admission 共享语义保持一致。
+      const pairCode = parseChannelPairingCode(content);
+      if (pairCode !== null && opts.onPairAttempt) {
         try {
-          const success = await opts.onPairAttempt(jid, chatName, pairMatch[1]);
+          const success = await opts.onPairAttempt(jid, chatName, pairCode);
           if (msg.context_token) {
             await sendMessageApi(
               fromUserId,

@@ -22,6 +22,7 @@ import {
 } from './db.js';
 import { notifyNewImMessage } from './message-notifier.js';
 import { broadcastNewMessage } from './web.js';
+import { parseChannelPairingCode } from './channel-admission.js';
 import { logger } from './logger.js';
 import { saveDownloadedFile, MAX_FILE_SIZE } from './im-downloader.js';
 import { detectImageMimeTypeStrict } from './image-detector.js';
@@ -1557,11 +1558,12 @@ export function createQQConnection(config: QQConnectionConfig): QQConnection {
         let content = (data.content || '').trim();
 
         // ── /pair <code> command ──
-        const pairMatch = content.match(/^\/pair\s+(\S+)/i);
-        if (pairMatch && opts.onPairAttempt) {
-          const code = pairMatch[1];
+        // 统一走共享解析（严格语义：拒绝 /pair abc extra 这类多余参数），
+        // 与微信及 channel-admission 共享语义保持一致。
+        const pairCode = parseChannelPairingCode(content);
+        if (pairCode !== null && opts.onPairAttempt) {
           try {
-            const success = await opts.onPairAttempt(jid, chatName, code);
+            const success = await opts.onPairAttempt(jid, chatName, pairCode);
             const reply = success
               ? '配对成功！此聊天已连接到你的账号。'
               : '配对码无效或已过期，请在 Web 设置页重新生成。';
@@ -1773,11 +1775,11 @@ export function createQQConnection(config: QQConnectionConfig): QQConnection {
         let content = (data.content || '').replace(/<@!\w+>/g, '').trim();
 
         // ── /pair <code> command ──
-        const pairMatch = content.match(/^\/pair\s+(\S+)/i);
-        if (pairMatch && opts.onPairAttempt) {
-          const code = pairMatch[1];
+        // 同 c2c 分支：共享解析的严格语义（拒绝多余参数）。
+        const pairCode = parseChannelPairingCode(content);
+        if (pairCode !== null && opts.onPairAttempt) {
           try {
-            const success = await opts.onPairAttempt(jid, chatName, code);
+            const success = await opts.onPairAttempt(jid, chatName, pairCode);
             const reply = success
               ? '配对成功！此群聊已连接。'
               : '配对码无效或已过期，请在 Web 设置页重新生成。';
