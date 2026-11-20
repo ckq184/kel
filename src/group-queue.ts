@@ -999,7 +999,8 @@ export class GroupQueue {
   /**
    * Returns true if the active runner for this group (or its serialization
    * sibling) is currently executing a scheduled task rather than user messages.
-   * Used by the message loop to avoid prematurely interrupting task containers.
+   * Currently has no callers (repo-wide grep, 2026-11); pending the ISSUE-08
+   * dead-accessor cleanup decision.
    */
   isActiveRunnerTask(groupJid: string): boolean {
     const state = this.resolveActiveState(groupJid);

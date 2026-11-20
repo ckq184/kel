@@ -235,7 +235,7 @@ npm run desktop:package
 | `CKQCLAW_RENDERER_URL`    | Electron 要加载的 Renderer 地址，适合本地 Vite 开发 | 与 Server URL 相同            |
 | `CKQCLAW_CONTAINER_IMAGE` | Agent Runner 使用的容器镜像                         | `ckq184/ckqclaw-agent:latest` |
 | `CONTAINER_IMAGE`         | 容器镜像的兼容覆盖项                                | 同上                          |
-| `WEB_PORT`                | Makefile 启动 Backend 使用的端口                    | `3000`                        |
+| `WEB_PORT`                | Makefile 启动 Backend 使用的端口                    | `3001`                        |
 
 不要把 API Key、Session Cookie 或其他凭证写入命令行历史、截图或提交到仓库。远程部署时使用 HTTPS/WSS，并为反向代理、Cookie 和访问控制配置独立的安全边界。
 

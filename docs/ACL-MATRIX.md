@@ -113,6 +113,9 @@ Home Workspace 永远不可删除。其他工作区必须通过 Modify，删除�
 3. 删除数据库、文件和绑定状态。
 4. 仅在提交成功后丢弃被暂停的旧工作；失败则恢复。
 
+删除前可先调用 `GET /api/groups/:jid/delete-impact` 查看渠道绑定与任务影响面；
+该接口与删除本身使用同一 Delete 权限，且仅接受 `web:` 工作区。
+
 自定义 AgentProfile 创建后默认不拥有 Workspace，因此也没有可访问的 Session 或
 Workspace Memory。只有 owner 显式新建/迁移非 Home Workspace 才建立归属；迁移时
 Memory 随 Workspace 保留，不跨 Workspace 复制。

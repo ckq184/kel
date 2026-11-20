@@ -62,6 +62,8 @@ Public：
 
 - `GET|POST /api/groups`
 - `PATCH|DELETE /api/groups/:jid`
+- `GET /api/groups/:jid/delete-impact`，删除前影响面检查（渠道绑定、任务与
+  运行状态），要求与删除相同的权限，且仅接受 `web:` 工作区
 - `PATCH /api/groups/:jid/agent-profile`
 - `POST /api/groups/:jid/stop`
 - `POST /api/groups/:jid/interrupt`
@@ -181,9 +183,13 @@ HTTP 状态为 409；请求不会停止现有 Runner，也不会修改绑定。
 - `GET /api/agent-profiles/:id/prompt-versions`
 - `POST /api/agent-profiles/:id/prompt-versions/:version/restore`
 - `POST /api/agent-profiles/:id/effective-capabilities`
+- `POST /api/agent-profiles/:id/runtime-cleanup`
 
 `effective-capabilities` 返回 PromptPlan、Skill/MCP Manifest、上下文预算和最近一次
 脱敏运行快照，用于对比“配置预期”与“SDK 实际加载”。
+
+`runtime-cleanup` 重试 Agent 配置变更后遗留的运行时清理：quiesce 失败时返回可
+重试错误并置 `runtime_cleanup_pending`，前端据此提示用户重试。
 
 `POST /api/agent-profiles` 只创建隔离的 AgentProfile。它不会隐式创建 Workspace、
 Session 或 Memory，也不会绑定/复制 Home Workspace。用户必须在创建 Workspace 时
@@ -198,7 +204,10 @@ Session 或 Memory，也不会绑定/复制 Home Workspace。用户必须在创�
 - `GET /api/workspaces/:jid/runtime-sessions`
 - `GET /api/workspaces/:jid/channel-mounts`
 
-这些接口是 `registered_groups` 兼容存储之上的只读产品投影。
+这些接口是 `registered_groups` 兼容存储之上的只读产品投影。其中
+`/:jid/runtime-sessions` 与 `/:jid/channel-mounts` 是治理/运维清单（仅工作区
+owner/管理员可查，403 拒绝非治理视角），当前 Web UI 未调用这两个独立清单接口
+（`GET /:jid` 详情已内联同样的数据），保留给运维与外部调用方使用。
 
 ### CKQClaw Owner Profile
 
@@ -279,6 +288,8 @@ Provider：
 - `GET /api/config/claude/providers/health`
 - `GET /api/config/claude/providers/:id/usage`
 - `PUT /api/config/claude/balancing`
+- `PUT /api/config/claude/default`，设置所有继承型 Agent 使用的默认模型配置；
+  切换会停稳受影响 Runner，停稳失败返回 503 并携带 `persisted` 标记
 - `POST /api/config/claude/apply`
 - `POST /api/config/claude/oauth/start`
 - `POST /api/config/claude/oauth/callback`
@@ -315,6 +326,8 @@ Legacy 渠道 facade 位于 `/api/config/user-im/*`，涵盖飞书、QQ 和微�
 - `GET /api/tasks/:id/logs`，旧日志入口
 - `POST /api/tasks/ai`
 - `POST /api/tasks/parse`
+- `POST /api/tasks/purge`，回收站任务批量永久删除（revision CAS；script 任务
+  仅 admin 可永久删除；存在活跃 run 时返回 409 `TASK_HAS_ACTIVE_RUN`）
 
 写入使用 revision 或 idempotency key 防止并发覆盖和重复运行。运行状态与通知状态
 分开持久化；通知失败不会重新执行任务主体。

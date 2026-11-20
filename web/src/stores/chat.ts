@@ -1873,10 +1873,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     followUpBehavior: FollowUpMode = 'queue',
   ) => {
     try {
-      // streaming 状态由以下 3 条路径正确清理，sendMessage 不应无条件清空：
+      // streaming 状态由以下 2 条路径正确清理，sendMessage 不应无条件清空：
       // 1. handleWsNewMessage 收到 is_from_me 消息时
-      // 2. agent_reply WebSocket 事件时
-      // 3. status:interrupted 事件时
+      // 2. status:interrupted 事件时（冻结）→ interrupt_partial（转正）
+      // （服务端仍会广播 agent_reply 事件，但 Web 客户端当前不订阅它）
 
       const body: {
         chatJid: string;

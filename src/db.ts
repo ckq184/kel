@@ -6687,7 +6687,7 @@ export function claimNextTaskRunNotification(
   return claimTaskRunNotification(owner, leaseMs);
 }
 
-/** Claim notification work for one known run (used by targeted recovery/tests). */
+/** Claim notification work for one known run (tests target a specific run with it; no production caller). */
 export function claimTaskRunNotificationById(
   runId: string,
   owner: string,
