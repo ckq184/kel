@@ -2,7 +2,7 @@
 
 | 字段          | 值                                                                                                                                                                                                                                                                                                                                                                                        |
 | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 状态          | 进行中                                                                                                                                                                                                                                                                                                                                                                                    |
+| 状态          | 已完成                                                                                                                                                                                                                                                                                                                                                                                    |
 | 领取人 / 分支 | issue-09-dead-code-batch2-billing-and-db                                                                                                                                                                                                                                                                                                                                                  |
 | 优先级        | P2                                                                                                                                                                                                                                                                                                                                                                                        |
 | 类型          | 删除死代码，并做一次数据库迁移（**本任务池中风险最高的一项**）                                                                                                                                                                                                                                                                                                                            |
@@ -61,4 +61,26 @@
 
 ## 交付记录
 
-（领取后填写）
+**交付提交**：`c33526e`（立项/领取登记）→ `faefc37`（实现，24 文件 +422/−547）→ 交付落档提交（本提交，docs）。
+
+**用户拍板（2026-11-20 需求采访）**：
+
+- ① `turn_runs.heartbeat_at`、`correlation_id`：**保留**（状态机设计词汇，人工对账可查，零改动）。
+- ② `usage_events.billed_cost_usd`、`usage_records.billed_cost_usd`：**彻底下线**（镜像恒等于估算值；CSV 导出少 `billedCostUSD` 一列——thesis-lite 交付记录已备案过此预期）。
+
+**交付内容与验收对照**：
+
+- 范围 A billing 代码残留：runtime-config 5 设置与 `BILLING_*` 回退、db.ts `getUserGroupCount`/`safeParseJsonArray`/`UserBalance` import/空段注释、types 7 类型、`BillingPlanCreateSchema`、`/api/usage/stats` 的 `totalMessages`/`totalActiveDays`/`billedCostUSD` 与 breakdown `cost_usd`/`billed_cost_usd`（tests/routes-usage.test.ts 断言同步）、usage-service billed 镜像、前端 usage store 旧别名——全部落地；legacy 归一化机制（`??` 回退、RawUsage\* 键、off-by-one 修剪及其专门测试）按 README「意图信号默认保留」口径未动。
+- 范围 B v77 迁移：`CURRENT_SCHEMA_VERSION` 76→77，trim 段 DROP `usage_daily_summary` + 13 死列（照 v76 先例：门控/事务/PRAGMA 防重入）；写入路径先行全部下线（含 v28/v51 回填改直写估算值 + `hasColumn` 门控保 fresh 可启动、`assertSchema` pin 同步、v55→v56 死表 ensureColumn 移除）；`tests/db-upgrade-safety.test.ts` head pin 同提交更新 + 新增 v77 升级用例（fresh 不建死表死列 / 伪造 v76 哨兵 / 存活数据完好 / 幂等复启）。
+- `npm run verify` 六步全绿 33.9s（338 文件 2705 用例）；`check-scope` 27 路径全在声明内。
+- 真实库副本演练：生产库只读连接 `VACUUM INTO` 快照（v76）→ 原地升级 v77 成功，`migration-backups/` 生成 `messages-v76-to-v77-*.db`，死表死列消失、7 表行数完好（usage_records/usage_events/messages/users/registered_groups/channel_accounts/turn_runs），二次启动幂等。
+- 冒烟：`/api/health` healthy；登录后 `/api/usage/stats` 返回真实数据且 billing 镜像字段全部消失；CSV 导出无 `billedCostUSD` 列；`/usage` SPA 壳与静态资源 200。浏览器可视化验证因本会话 browser MCP 不可用（"Request workspace is not owned by this CLI"）未能执行，页面渲染以 SPA 壳+资源+数据 API+前端 store 契约测试（frontend-usage-experience 等绿）覆盖，留待用户实机点验。
+- 独立代理双重审查：规格符合性通过（无阻塞、无越界、拍板①核实 turn_runs 零改动）、代码质量通过（Critical 0 / Major 0 / Minor 4 登记），详见 `docs/审查记录.md` ISSUE-09 节。
+
+**与 issue 描述的偏差 / 登记项**：
+
+- 预计改动路径中 `src/channel-reliability-store.ts` 因拍板①保留 turn_runs 两列而**零改动**；`tests/task-usage-routing.test.ts`、`tests/usage-display-formatting.test.ts`、`tests/channel-mounts-db.test.ts`、`tests/session-workflows.test.ts`、`tests/schema-v75-channel-trim.test.ts`、`tests/frontend-usage-experience.test.ts`、`tests/channel-account-routing.test.ts` 未改动即绿（声明范围内零 diff）。
+- 范围扩宽两路径（.gatescope.json 声明同步）：`web/src/components/settings/ProfileSection.tsx`（`uploadAvatar` 唯一调用方随签名收窄去 `,'user'` 参数）、`tests/task-continuation-scheduler.test.ts`（v76 版本 pin 漏列，全量测试暴露后同步 77——issue「其他相应 tests/\*\*」条款覆盖）。
+- 行为变化（宪法第 2 条已随 issue+拍板明示）：`/api/auth/profile` 用户对象去 ai\_\* 4 字段；`POST /api/auth/avatar` 无 target 从「写 AI 头像」改「写用户头像」、未知 target 改 400（AI 头像走 `/api/config/appearance/avatar`）；`/api/usage/stats` 去 3 billing 字段；CSV 少一列。
+- 连带无害清理：`tests/usage-accounting.test.ts` 删除 `trackBillingUsage` 死 fixture 键；三个测试的 `getSystemSettings` 桩与两处「钱包」注释改为中性表述（桩保留以隔离宿主机真实设置文件）。
+- Minor 遗留（见审查记录）：auth 路由既有零测试欠账（建议后续补 /avatar 400 负向用例）、reap 连带清理遗留 `-ai-*` 孤儿头像文件（注释已说明）、frontend fixture 历史形状注释建议。
