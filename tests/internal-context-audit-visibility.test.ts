@@ -17,7 +17,10 @@ function section(source: string, start: string, end: string): string {
 
 describe('internal context audit visibility contract', () => {
   test('keeps context diagnostics internal to the service', () => {
-    const im = read('src/index.ts');
+    // ISSUE-03: the IM card event mapping moved verbatim from src/index.ts to
+    // src/stream-card-feeder.ts (index.ts boots main() on import); the anchor
+    // follows the moved section.
+    const im = read('src/stream-card-feeder.ts');
     const web = read('src/web.ts');
 
     // IM cards log warnings instead of turning them into conversation events.

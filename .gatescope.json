@@ -1,5 +1,5 @@
 {
-  "task": "issue03-pi-subagent-and-tool-card - Pi事件契约（二）：子代理与工具卡（docs/issue03-pi-subagent-and-tool-card-plan.md）",
+  "task": "issue03-pi-subagent-and-tool-card - Pi事件契约（二）：子代理与工具卡（docs/issue03-pi-subagent-and-tool-card-plan.md）；范围扩宽：新增src/stream-card-feeder.ts（自index.ts原位抽取feedStreamEventToCard，index.ts顶层main()使该函数不可机测，行为零变化、index原位re-export，锚点测试internal-context-audit-visibility随之指向新模块），shared信封新增isError字段随make sync-types同步三副本",
   "base": "cfae147",
   "allow": [
     "container/agent-runner/src/runtime/pi/pi-runner.ts",
@@ -7,10 +7,12 @@
     "src/stream-event.types.ts",
     "web/src/stream-event.types.ts",
     "container/agent-runner/src/stream-event.types.ts",
+    "src/stream-card-feeder.ts",
     "src/index.ts",
     "web/src/stores/chat.ts",
     "tests/pi-subagent-tool-contract.test.ts",
     "tests/stream-event-producer-contract.test.ts",
+    "tests/internal-context-audit-visibility.test.ts",
     "docs/issue03-pi-subagent-and-tool-card-plan.md",
     "docs/issues/ISSUE-03-pi-subagent-and-tool-card.md",
     "docs/issues/README.md"

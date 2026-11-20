@@ -469,6 +469,9 @@ export interface StreamEvent {
    *  `tool_result` events so the card/Web can surface what a tool returned,
    *  aligning the trace with what Claude Code shows. */
   toolResult?: string;
+  /** Tool execution ended in error (carried on `tool_use_end`): cards/Web
+   *  render the failure lane instead of a success ✅ (ISSUE-03). */
+  isError?: boolean;
   /** 已耗时（秒）。 */
   elapsedSeconds?: number;
   /** Hook 名称。 */
