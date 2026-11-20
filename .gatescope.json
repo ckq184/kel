@@ -1,20 +1,19 @@
 {
-  "task": "issue05-behavior-small-fixes - 行为级小修四项：孤儿结果文件前缀补齐与一致性测试、markContextOverflow连同读取端下线、/pair配对码解析统一严格语义、mcp-tools路径包含检查收敛（docs/behavior-small-fixes-plan.md）",
-  "base": "b08a3b8",
+  "task": "issue13-docs-drift-contracts - 文档漂移修正与防回归契约测试：API.md补4条路由+投影接口标注用途、WEB_PORT统一3001、11个环境变量补文档、三处过时注释修正、三个契约测试（StreamEvent生产者/IPC双向/路由调用方双向，白名单逐条挂issue号）（docs/docs-drift-and-regression-contracts-plan.md）",
+  "base": "eb1768c",
   "allow": [
-    "src/index.ts",
+    "CLAUDE.md",
+    "README.md",
+    "docs/API.md",
+    "docs/ACL-MATRIX.md",
     "src/group-queue.ts",
-    "src/qq.ts",
-    "src/wechat.ts",
-    "src/channel-admission.ts",
-    "container/agent-runner/src/mcp-tools.ts",
-    "container/agent-runner/src/utils.ts",
-    "tests/result-file-prefixes-consistency.test.ts",
-    "tests/group-queue-context-overflow-removal.test.ts",
-    "tests/channel-pairing-uniform.test.ts",
-    "tests/mcp-tools-path-containment.test.ts",
-    "docs/behavior-small-fixes-plan.md",
-    "docs/issues/ISSUE-05-behavior-small-fixes.md",
+    "src/db.ts",
+    "web/src/stores/chat.ts",
+    "tests/stream-event-producer-contract.test.ts",
+    "tests/ipc-type-bidirectional-contract.test.ts",
+    "tests/api-route-caller-contract.test.ts",
+    "docs/docs-drift-and-regression-contracts-plan.md",
+    "docs/issues/ISSUE-13-docs-drift-and-regression-contracts.md",
     "docs/issues/README.md"
   ]
 }
