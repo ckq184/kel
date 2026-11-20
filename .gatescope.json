@@ -1,5 +1,19 @@
 {
-  "task": "dead-code-review-r2 - 死代码与臃肿审查R2只读报告（含与另一份审查的交叉对照）及13个可领取工作包issue（docs/issues），不改任何代码",
-  "base": "3f34cf7",
-  "allow": ["docs/dead-code-review-r2.md", "docs/issues/**"]
+  "task": "issue05-behavior-small-fixes - 行为级小修四项：孤儿结果文件前缀补齐与一致性测试、markContextOverflow连同读取端下线、/pair配对码解析统一严格语义、mcp-tools路径包含检查收敛（docs/behavior-small-fixes-plan.md）",
+  "base": "b08a3b8",
+  "allow": [
+    "src/index.ts",
+    "src/group-queue.ts",
+    "src/qq.ts",
+    "src/wechat.ts",
+    "src/channel-admission.ts",
+    "container/agent-runner/src/mcp-tools.ts",
+    "tests/result-file-prefixes-consistency.test.ts",
+    "tests/group-queue-context-overflow-removal.test.ts",
+    "tests/channel-pairing-uniform.test.ts",
+    "tests/mcp-tools-path-containment.test.ts",
+    "docs/behavior-small-fixes-plan.md",
+    "docs/issues/ISSUE-05-behavior-small-fixes.md",
+    "docs/issues/README.md"
+  ]
 }
