@@ -2,7 +2,7 @@
 
 | 字段          | 值                                                                                                                                                                                                                                                                                   |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 状态          | 进行中                                                                                                                                                                                                                                                                               |
+| 状态          | 已完成（实机复测项待用户验收，见交付记录）                                                                                                                                                                                                                                           |
 | 领取人 / 分支 | issue-02-pi-stream-stamping-and-message-boundary（ZCode 会话，2026-11-20 领取）                                                                                                                                                                                                      |
 | 优先级        | P0                                                                                                                                                                                                                                                                                   |
 | 类型          | 缺陷修复（掉线逻辑：消费端在，生产端随旧 runner 删除）                                                                                                                                                                                                                               |
@@ -64,4 +64,10 @@
 
 ## 交付记录
 
-（领取后填写）
+- **提交**：立项 `6f58824`（领取登记 + 计划与范围声明落档，base=`4e9dd61`）、实现 `ea49a9c`（本收尾提交前）。
+- **方案**：消息边界按用户决策 (a1)——runner 复活与旧 stream-processor 逐字段等价的 `raw_sdk_event` 边界事件，宿主零改动；流式盖章在 `pi-index.ts` emit 包装处经新增 `stream-stamp.ts` 统一补 `turnId`/`queryRunId`（`??` 语义，interrupted 事件自带身份不覆盖）。
+- **验证**：`npm run verify` 六步全绿（320 测试文件 / 2602 用例通过，含新增 `tests/pi-stream-stamping-and-boundary.test.ts` 12 用例）；`node scripts/check-scope.mjs` 通过（10 路径全在声明内）。12 用例全部以 Pi 原生事件序列驱动真实映射链（fake AgentSession → 真实 `PiRuntimeSession` → 真实 `runPiQueryAttempt`），覆盖 issue 要求的四场景：run 进行期盖章事件全过栅栏（observeExact）、工具调用后宿主协调器 `visibleAnswerText` 恢复续写、中断时投影非空（interrupt_partial 前提）、旧 run 迟到事件被拒且 fail-closed 未放宽；另锁定 pi-index 接线源码契约与非 assistant 角色不产边界。
+- **独立规格审查**（实现会话之外的代理执行）：**通过、零阻塞**。非阻塞建议 4 条已登记：①场景③为"投影非空 + 中断事件身份"两测合成，无单测在中断时刻联合断言（宿主读链 `index.ts:6859-6861→7022-7036` 使合成成立）；②场景①止步于栅栏 dispatch 表达式（栅栏是唯一丢弃点，WS 全链由实机验收兜底）；③interrupted 事件 warm 场景 turnId 语义为既有例外（`containerInput.turnId` ≠ `activeInputTurnId`），ISSUE-03/10 清理时留意；④测试夹具 `as never` 豁免不随 Pi SDK 事件面升级自动报警。
+- **偏差（相对 issue 描述）**：①改动路径比"预计改动路径"窄——`src/turn-output-coordinator.ts`、`shared/stream-event.ts` 及三副本、`src/web.ts` 均零改动（方案 a1 宿主零改动使然，plan §4 已声明为非目标）；②边界事件 `messageUuid` 不设——Pi `AssistantMessage` 无 uuid/id 字段，宿主协调器本就有 `implicit-N` 回退（旧契约 uuid 缺失时同样走该回退），plan §3.2 已声明；③ISSUE-01 结论以引用方式采纳（其分支 `issue-01-p0-runtime-confirmation` 提交 `0a35a47` 未合入 main）。
+- **下游登记**：`raw_sdk_event` 的 `message_start/stop` 切片因本方案存活——ISSUE-10 清理消费端时保留该分支；ISSUE-03 需在同一事件映射函数上串行开工（本 issue 已把 `mapPiEvent`/`toStreamEvent` 扩出 `message_boundary` 分支）。
+- **待用户实机验收**（issue 验收标准的实机部分，需运行中服务与已绑定飞书群）：Web 运行期实时流、重连后快照完整、飞书卡片工具调用后继续续写、按 ISSUE-01 确认方法复测 P0-1/P0-2 不再出现。机制级与事件级行为已由上述 12 用例真实链锁定。
