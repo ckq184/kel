@@ -1,9 +1,8 @@
 {
-  "task": "issue01-p0-runtime-confirmation - ISSUE-01 P0 实机确认（只读诊断：4 项 P0 推断的静态链核对+Pi 包源码凭据核验+生产同款 runner 实机事件捕获+DB/会话历史取证，结论回填 issue，不改任何代码；开工基线 b08a3b8，合入前按任务池流程 rebase 至 4e9dd61——ISSUE-05/08 已先入 main）",
-  "base": "4e9dd61",
+  "task": "issue06-status-sync - ISSUE-06状态与README索引行同步至main线（issue状态改已完成、交付记录自分支f5bee2d落档；实现四笔提交fdadd6d/68ed290/4a45d25/f5bee2d仍在issue-06-frontend-dropped-logic分支、未合入main，合入时机由用户另行明示）",
+  "base": "438c648",
   "allow": [
-    "docs/issues/ISSUE-01-p0-runtime-confirmation.md",
-    "docs/issues/README.md",
-    "docs/issue01-p0-runtime-confirmation-plan.md"
+    "docs/issues/ISSUE-06-frontend-dropped-logic.md",
+    "docs/issues/README.md"
   ]
 }
