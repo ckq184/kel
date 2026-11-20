@@ -25,7 +25,7 @@ import Database from './sqlite-compat.js';
 import fs from 'fs';
 import path from 'path';
 
-import { STORE_DIR, GROUPS_DIR } from './config.js';
+import { STORE_DIR } from './config.js';
 import { normalizeAgentEffort } from './agent-effort.js';
 import { logger } from './logger.js';
 import {
@@ -148,9 +148,9 @@ function stmts() {
       storeMessageInsert: db.prepare(
         `INSERT OR REPLACE INTO messages (
           id, chat_jid, source_jid, sender, sender_name, content, timestamp, is_from_me,
-          attachments, token_usage, channel_context, turn_id, session_id, sdk_message_uuid, source_kind, finalization_reason, task_id,
+          attachments, token_usage, channel_context, turn_id, session_id, source_kind, finalization_reason, task_id,
           delivery_mode, delivery_status, delivery_run_id, delivery_priority, delivery_updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ),
       insertUsageInsert: db.prepare(
         `INSERT INTO usage_records (id, event_id, user_id, group_folder, agent_id, message_id, model,
@@ -252,7 +252,6 @@ function getNewMessagesStmt(jidCount: number): any {
 interface StoredMessageMeta {
   turnId?: string | null;
   sessionId?: string | null;
-  sdkMessageUuid?: string | null;
   sourceKind?: MessageSourceKind | null;
   finalizationReason?: MessageFinalizationReason | null;
   deliveryMode?: FollowUpMode | null;
@@ -2819,7 +2818,6 @@ export function storeMessageDirect(
     channelContext ? JSON.stringify(channelContext) : null,
     meta?.turnId ?? null,
     meta?.sessionId ?? null,
-    meta?.sdkMessageUuid ?? null,
     meta?.sourceKind ?? null,
     meta?.finalizationReason ?? null,
     meta?.taskId ?? null,
@@ -5693,7 +5691,6 @@ export interface StoreScheduledGroupWorkspaceResultInput {
   messageMeta?: {
     turnId?: string;
     sessionId?: string;
-    sdkMessageUuid?: string;
     sourceKind?: MessageSourceKind;
     finalizationReason?: MessageFinalizationReason;
   };
@@ -11208,7 +11205,7 @@ export function getMessagesPage(
   const sql = before
     ? `
       SELECT id, chat_jid, source_jid, sender, sender_name, content, timestamp, is_from_me, attachments, token_usage, channel_context,
-             turn_id, session_id, sdk_message_uuid, source_kind, finalization_reason,
+             turn_id, session_id, source_kind, finalization_reason,
              delivery_mode, delivery_status, delivery_run_id, delivery_priority, delivery_updated_at
       FROM messages
       WHERE chat_jid = ? AND timestamp < ?
@@ -11217,7 +11214,7 @@ export function getMessagesPage(
     `
     : `
       SELECT id, chat_jid, source_jid, sender, sender_name, content, timestamp, is_from_me, attachments, token_usage, channel_context,
-             turn_id, session_id, sdk_message_uuid, source_kind, finalization_reason,
+             turn_id, session_id, source_kind, finalization_reason,
              delivery_mode, delivery_status, delivery_run_id, delivery_priority, delivery_updated_at
       FROM messages
       WHERE chat_jid = ?
@@ -11245,7 +11242,7 @@ export function getMessagesAfter(
   const rows = db
     .prepare(
       `SELECT id, chat_jid, source_jid, sender, sender_name, content, timestamp, is_from_me, attachments, token_usage, channel_context,
-              turn_id, session_id, sdk_message_uuid, source_kind, finalization_reason,
+              turn_id, session_id, source_kind, finalization_reason,
               delivery_mode, delivery_status, delivery_run_id, delivery_priority, delivery_updated_at
        FROM messages
        WHERE chat_jid = ? AND timestamp > ?
@@ -11310,14 +11307,14 @@ export function getMessagesPageMulti(
   const placeholders = chatJids.map(() => '?').join(',');
   const sql = before
     ? `SELECT id, chat_jid, source_jid, sender, sender_name, content, timestamp, is_from_me, attachments, token_usage, channel_context,
-              turn_id, session_id, sdk_message_uuid, source_kind, finalization_reason,
+              turn_id, session_id, source_kind, finalization_reason,
               delivery_mode, delivery_status, delivery_run_id, delivery_priority, delivery_updated_at
        FROM messages
        WHERE chat_jid IN (${placeholders}) AND timestamp < ?
        ORDER BY timestamp DESC
        LIMIT ?`
     : `SELECT id, chat_jid, source_jid, sender, sender_name, content, timestamp, is_from_me, attachments, token_usage, channel_context,
-              turn_id, session_id, sdk_message_uuid, source_kind, finalization_reason,
+              turn_id, session_id, source_kind, finalization_reason,
               delivery_mode, delivery_status, delivery_run_id, delivery_priority, delivery_updated_at
        FROM messages
        WHERE chat_jid IN (${placeholders})
@@ -11347,7 +11344,7 @@ export function getMessagesAfterMulti(
   const rows = db
     .prepare(
       `SELECT id, chat_jid, source_jid, sender, sender_name, content, timestamp, is_from_me, attachments, token_usage, channel_context,
-              turn_id, session_id, sdk_message_uuid, source_kind, finalization_reason,
+              turn_id, session_id, source_kind, finalization_reason,
               delivery_mode, delivery_status, delivery_run_id, delivery_priority, delivery_updated_at
        FROM messages
        WHERE chat_jid IN (${placeholders}) AND timestamp > ?
@@ -12266,10 +12263,6 @@ export function queryAuthAuditLogs(
   }));
 
   return { logs, total, limit, offset };
-}
-
-export function getAuthAuditLogs(limit = 100, offset = 0): AuthAuditLog[] {
-  return queryAuthAuditLogs({ limit, offset }).logs;
 }
 
 // ===================== Sub-Agent CRUD =====================

@@ -22,7 +22,6 @@ import {
 } from './container-runner.js';
 import { PROVIDER_FAILURE_USER_NOTICE } from './provider-failure.js';
 import {
-  advanceSkippedTask,
   cancelDeliveredGroupTaskRunWithWorkspaceIntent,
   cancelTaskRun,
   claimNextTaskRunNotification,
@@ -40,10 +39,8 @@ import {
   getAllTasks,
   cleanupOldTaskRunLogs,
   cleanupStaleRunningLogs,
-  clearStaleTaskLeases,
   claimTaskForRun,
   deleteGroupData,
-  getDueTasks,
   getDueTaskDefinitionsV2,
   getNextScheduledTaskWakeAt,
   getNextTaskRunWakeAt,
@@ -474,7 +471,6 @@ function cleanupIsolatedTaskRun(
 
 export interface SchedulerDependencies {
   registeredGroups: () => Record<string, RegisteredGroup>;
-  getSessions: () => Record<string, string>;
   queue: GroupQueue;
   onProcess: (
     groupJid: string,
@@ -491,12 +487,6 @@ export interface SchedulerDependencies {
     options?: { source?: string },
   ) => Promise<string | undefined | void>;
   broadcastStreamEvent?: (chatJid: string, event: StreamEvent) => void;
-  onWorkspaceCreated?: (
-    jid: string,
-    folder: string,
-    name: string,
-    userId?: string,
-  ) => void;
   /** Store task prompt as a user-visible message in the workspace chat */
   storePromptMessage?: (
     chatJid: string,

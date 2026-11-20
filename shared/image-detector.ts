@@ -107,10 +107,3 @@ export function detectImageMimeTypeFromBase64Strict(
     return null;
   }
 }
-
-/**
- * Detect image MIME type from base64 payload with fallback.
- */
-export function detectImageMimeTypeFromBase64(base64Data: string): string {
-  return detectImageMimeTypeFromBase64Strict(base64Data) || 'image/jpeg';
-}

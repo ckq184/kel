@@ -909,13 +909,6 @@ class FlushController {
     // else: timer already running, will pick up pendingFlush
   }
 
-  /** Force flush immediately (for complete/abort) */
-  async forceFlush(flushFn: () => Promise<void>): Promise<void> {
-    this.clearTimer();
-    this.pendingFlush = flushFn;
-    await this.executeFlush();
-  }
-
   private async executeFlush(): Promise<void> {
     const fn = this.pendingFlush;
     this.pendingFlush = null;
@@ -1171,8 +1164,6 @@ class StreamingModeBackend {
   /** Highest provider-acknowledged sequence exposed to durable lifecycle. */
   private acknowledgedSequence = 0;
   private lastMainHash = '';
-  private lastAuxBeforeHash = '';
-  private lastAuxAfterHash = '';
   private readonly richSlotHashes = new Map<string, string>();
   private readonly client: lark.Client;
   /**
@@ -1249,10 +1240,6 @@ class StreamingModeBackend {
     this.acknowledgedSequence = 1;
     collectElementContentHashes(cardJson, this.richSlotHashes);
     this.lastMainHash = this.richSlotHashes.get(ELEMENT_IDS.MAIN_CONTENT) ?? '';
-    this.lastAuxBeforeHash =
-      this.richSlotHashes.get(ELEMENT_IDS.AUX_BEFORE) ?? '';
-    this.lastAuxAfterHash =
-      this.richSlotHashes.get(ELEMENT_IDS.AUX_AFTER) ?? '';
     logger.debug({ cardId }, 'Streaming mode card created');
     return cardId;
   }
@@ -1357,44 +1344,6 @@ class StreamingModeBackend {
           throw err;
         }
       }
-    });
-  }
-
-  /**
-   * Update an auxiliary element via cardElement.update() — instant replacement.
-   */
-  async updateAuxiliary(
-    elementId: typeof ELEMENT_IDS.AUX_BEFORE | typeof ELEMENT_IDS.AUX_AFTER,
-    content: string,
-  ): Promise<void> {
-    if (!this.cardId) return;
-
-    return this.enqueue(async () => {
-      const hash = quickHash(content);
-      const hashField =
-        elementId === ELEMENT_IDS.AUX_BEFORE
-          ? 'lastAuxBeforeHash'
-          : 'lastAuxAfterHash';
-      if (hash === this[hashField]) return;
-
-      const element = JSON.stringify({
-        tag: 'markdown',
-        content,
-        element_id: elementId,
-        text_size: 'notation',
-      });
-
-      const mutation = this.mutationIdentity(
-        `cardElement.update:${elementId}`,
-        hash,
-      );
-      const response = await this.client.cardkit.v1.cardElement.update({
-        path: { card_id: this.cardId!, element_id: elementId },
-        data: { element, ...mutation },
-      });
-      assertCardKitAcknowledged(response, 'cardElement.update');
-      this.acknowledgedSequence = mutation.sequence;
-      this[hashField] = hash;
     });
   }
 
@@ -1540,30 +1489,6 @@ class StreamingModeBackend {
     });
   }
 
-  /**
-   * Replace a whole element (structure + content) via cardElement.update().
-   * Used to toggle collapsible_panel expanded state mid-stream.
-   */
-  async replaceElement(elementId: string, elementJson: object): Promise<void> {
-    if (!this.cardId) return;
-    return this.enqueue(async () => {
-      const element = JSON.stringify(elementJson);
-      const mutation = this.mutationIdentity(
-        `cardElement.update:${elementId}`,
-        quickHash(element),
-      );
-      const response = await this.client.cardkit.v1.cardElement.update({
-        path: { card_id: this.cardId!, element_id: elementId },
-        data: {
-          element,
-          ...mutation,
-        },
-      });
-      assertCardKitAcknowledged(response, 'cardElement.update');
-      this.acknowledgedSequence = mutation.sequence;
-    });
-  }
-
   /** Enable streaming mode via card.settings() — chain-internal raw call. */
   private async enableStreamingModeRaw(): Promise<void> {
     if (!this.cardId) return;
@@ -1586,14 +1511,6 @@ class StreamingModeBackend {
     });
     assertCardKitAcknowledged(response, 'card.settings enable');
     this.acknowledgedSequence = mutation.sequence;
-  }
-
-  /**
-   * Enable streaming mode via card.settings().
-   */
-  async enableStreamingMode(): Promise<void> {
-    if (!this.cardId) return;
-    return this.enqueue(() => this.enableStreamingModeRaw());
   }
 
   /**
@@ -2177,12 +2094,6 @@ export class StreamingCardController {
 
   get currentState(): StreamingState {
     return this.state;
-  }
-
-  get currentMessageId(): string | null {
-    if (this.streamingBackend) return this.streamingBackend.messageId;
-    if (this.multiCard) return this.multiCard.getLatestMessageId();
-    return this.messageId;
   }
 
   isActive(): boolean {

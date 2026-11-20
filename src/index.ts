@@ -37,7 +37,6 @@ import {
   DATA_DIR,
   GROUPS_DIR,
   STORE_DIR,
-  MAIN_GROUP_FOLDER,
   CONVERSATION_AGENT_ARCHIVE_DAYS,
   POLL_INTERVAL,
   TIMEZONE,
@@ -123,7 +122,6 @@ import {
   createTask,
   deleteExpiredSessions,
   getExpiredSessionIds,
-  deleteTask,
   ensureChatExists,
   ensureUserHomeGroup,
   getAllChats,
@@ -136,7 +134,6 @@ import {
   getJidsByFolder,
   getLastGroupSync,
   getRegisteredGroup,
-  listChannelMountsByWorkspace,
   getAgentBuilderInputMessage,
   getMessageChannelTurnContext,
   getMessage,
@@ -150,13 +147,10 @@ import {
   getTaskById,
   getTaskRunById,
   getActiveTaskRunForTask,
-  getTaskRunsForTask,
   finalizeDeliveredGroupTaskRun,
   recordGroupWorkspaceProjectionFailureAndFinalize,
   recordTaskRunNotificationReceipt,
   finalizeTaskRunNotificationIfPending,
-  type TaskRunAtomicNotificationPayload,
-  type TaskRunNotificationPayload,
   type TaskRunNotificationReceipt,
   getUserHomeGroup,
   forceActiveAdminRuntimesToHost,
@@ -299,7 +293,6 @@ import { ChannelTurnRuntime } from './channel-turn-runtime.js';
 import { resolveStickyChannelOwner } from './channel-session-owner.js';
 import {
   getChannelType,
-  extractChatId,
   type StreamingSession,
   type ChannelMessageDeliveryOptions,
 } from './im-channel.js';
@@ -414,7 +407,6 @@ import {
 import {
   loadChannelAccountSecret,
   saveChannelAccountSecret,
-  type ChannelAccountSecret,
 } from './channel-account-secrets.js';
 import {
   ensureLegacyDefaultChannelAccount,
@@ -439,7 +431,7 @@ import {
   saveUserFeishuConfig,
   saveFeishuOwnerOpenId,
   saveUserWeChatConfig,
-  updateAllSessionCredentials,
+  createUserContainerConcurrencyChecker,
 } from './runtime-config.js';
 import {
   MAX_TASK_PROMPT_LENGTH,
@@ -482,7 +474,6 @@ import {
 } from './script-task-policy.js';
 import { recordUsageEvent } from './usage-service.js';
 import {
-  AgentStatus,
   AgentProfile,
   ChannelMessageMeta,
   ChannelTurnContext,
@@ -544,7 +535,6 @@ import {
   broadcastAgentStatus,
   broadcastAgentRemoved,
   broadcastTitleGenerating,
-  broadcastGroupCreated,
   broadcastChannelAccountStatus,
   shutdownTerminals,
   shutdownWebServer,
@@ -3225,16 +3215,6 @@ async function settleAndRecordTaskIpcDeliveries(
   return { accepted: true, receipt: outcome.receipt };
 }
 
-/** Fire-and-forget wrapper for sendImWithRetry (used in non-await contexts). */
-function sendImWithFailTracking(
-  imJid: string,
-  text: string,
-  localImagePaths: string[],
-  outbox?: ChannelOutboxDeliveryRef,
-): void {
-  sendImWithRetry(imJid, text, localImagePaths, outbox).catch(() => {});
-}
-
 export function isCursorAfter(
   candidate: MessageCursor,
   base: MessageCursor,
@@ -4611,7 +4591,6 @@ interface SendMessageOptions {
   messageMeta?: {
     turnId?: string;
     sessionId?: string;
-    sdkMessageUuid?: string;
     sourceKind?: MessageSourceKind;
     finalizationReason?: MessageFinalizationReason;
   };
@@ -6382,7 +6361,6 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     effectiveGroup.folder,
     async (newSourceJid, inputTurnId, inputCursor) => {
       let acceptedNewInput = false;
-      let previousSessionForRotation: typeof streamingSession;
       let durableLifecycleForInput: typeof activeDurableCardLifecycle;
       const admittedInput = inputTurnId
         ? admittedWarmMainInputs.get(inputTurnId)
@@ -6439,23 +6417,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       // 用户新消息注入：挂起中的卡片先定稿轮换——IM 时间线上旧卡在用户消息
       // 之前，新 turn 的回复不能长在旧卡里。route updater 在所有用户消息
       // 注入点（index.ts 消息循环 / web.ts）都会被调用，是天然的挂钩位置。
-      if (previousSessionForRotation) {
-        const previousText = heldCardParts.join(HELD_TURN_DIVIDER);
-        heldCardParts = [];
-        heldCardUsage = null;
-        heldDbTurnId = null;
-        try {
-          if (previousSessionForRotation.isActive()) {
-            if (previousText) {
-              await previousSessionForRotation.complete(previousText);
-            } else {
-              await previousSessionForRotation.abort('新消息已开始');
-            }
-          }
-        } finally {
-          previousSessionForRotation.dispose();
-        }
-      } else if (!acceptedNewInput)
+      if (!acceptedNewInput)
         await finalizeHeldCardForNewMessage().catch((err) => {
           logger.warn(
             { err, chatJid },
@@ -7511,7 +7473,6 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
               inputTurnCompleted: result.inputTurnCompleted,
               finalizationReason: result.finalizationReason,
               pendingBgTasks: result.pendingBgTasks,
-              sdkMessageUuid: result.sdkMessageUuid,
               primaryAlreadyProjected:
                 genuineReplyDeliveredByInput.get(resultInputTurnId) === true,
               anyReplyProjected:
@@ -7849,13 +7810,11 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
                       .digest('hex')
                       .slice(0, 32)}`
                   : undefined;
-              const durableOutputIdentity =
-                result.sdkMessageUuid ||
-                crypto
-                  .createHash('sha256')
-                  .update(text)
-                  .digest('hex')
-                  .slice(0, 24);
+              const durableOutputIdentity = crypto
+                .createHash('sha256')
+                .update(text)
+                .digest('hex')
+                .slice(0, 24);
 
               const replySendOutcome = await sendMessageWithOutcome(
                 chatJid,
@@ -7878,7 +7837,6 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
                   messageMeta: {
                     turnId: turnIdForDb,
                     sessionId: result.sessionId || activeSessionId,
-                    sdkMessageUuid: result.sdkMessageUuid,
                     sourceKind:
                       scheduledGroupRuns.length > 0
                         ? 'scheduled_task_result'
@@ -9426,7 +9384,6 @@ async function sendMessageWithOutcome(
         is_from_me: true,
         turn_id: options.messageMeta?.turnId ?? null,
         session_id: options.messageMeta?.sessionId ?? null,
-        sdk_message_uuid: options.messageMeta?.sdkMessageUuid ?? null,
         source_kind: options.messageMeta?.sourceKind ?? null,
         finalization_reason: options.messageMeta?.finalizationReason ?? null,
         workflow_runs: options.workflowRuns,
@@ -10592,7 +10549,9 @@ function startIpcWatcher(): void {
                       const failMsg = durableScopedImage
                         ? `⚠️ 图片 "${fileName || caption || 'image'}" 的投递结果待确认，系统不会自动重发，以免产生重复图片。`
                         : `⚠️ 图片 "${fileName || caption || 'image'}" 发送失败（IM 通道发送失败），请稍后重试。`;
-                      broadcastToWebClients(sourceGroup, failMsg);
+                      broadcastToWebClients(sourceGroup, failMsg, {
+                        notice: true,
+                      });
                     }
                   } else if (!isTaskIpcImage) {
                     logger.debug(
@@ -10603,6 +10562,9 @@ function startIpcWatcher(): void {
                     broadcastToWebClients(
                       data.chatJid ?? sourceGroup,
                       skipImgMsg,
+                      {
+                        notice: true,
+                      },
                     );
                   }
 
@@ -10654,7 +10616,6 @@ function startIpcWatcher(): void {
                     is_from_me: true,
                     turn_id: null,
                     session_id: null,
-                    sdk_message_uuid: null,
                     source_kind: 'sdk_send_message',
                     finalization_reason: null,
                   });
@@ -12984,30 +12945,6 @@ async function processTaskIpc(
       break;
     }
 
-    case 'refresh_groups':
-      // Only admin home group can request a refresh
-      if (isAdminHome) {
-        logger.info(
-          { sourceGroup },
-          'Group metadata refresh requested via IPC',
-        );
-        await syncGroupMetadata(true);
-        // Write updated snapshot immediately
-        const availableGroups = getAvailableGroups();
-        writeGroupsSnapshot(
-          sourceGroup,
-          true,
-          availableGroups,
-          new Set(Object.keys(registeredGroups)),
-        );
-      } else {
-        logger.warn(
-          { sourceGroup },
-          'Unauthorized refresh_groups attempt blocked',
-        );
-      }
-      break;
-
     case 'register_group':
       // Only admin home group can register new groups
       if (!isAdminHome) {
@@ -13275,7 +13212,7 @@ async function processTaskIpc(
               resolvedPath = foundPath;
             } else {
               const warnMsg = `⚠️ 文件 "${data.fileName}" 未找到（路径 "${data.filePath}" 不存在）。请引导用户确认正确的文件路径，或使用 'send_file' 时提供正确的相对路径。`;
-              broadcastToWebClients(sourceGroup, warnMsg);
+              broadcastToWebClients(sourceGroup, warnMsg, { notice: true });
               // Also notify via IM channel for conversation agents bound to IM
               const imRoute = resolveImRoute({
                 ipcAgentId,
@@ -13382,6 +13319,9 @@ async function processTaskIpc(
                 broadcastToWebClients(
                   sourceGroup,
                   `⚠️ 文件 "${data.fileName}" 发送失败，请稍后重试。`,
+                  {
+                    notice: true,
+                  },
                 );
               }
               finishSendFile(
@@ -13464,7 +13404,7 @@ async function processTaskIpc(
                 const failMsg = durableScopedFile
                   ? `⚠️ 文件 "${data.fileName}" 的投递结果待确认，系统不会自动重发，以免产生重复文件。`
                   : `⚠️ 文件 "${data.fileName}" 发送失败，请稍后重试。`;
-                broadcastToWebClients(sourceGroup, failMsg);
+                broadcastToWebClients(sourceGroup, failMsg, { notice: true });
                 if (!durableScopedFile) {
                   try {
                     await imManager.sendMessage(regularFileImRoute, failMsg);
@@ -13501,7 +13441,9 @@ async function processTaskIpc(
             );
             // Notify the user that file delivery to IM was skipped
             const skipMsg = `⚠️ 文件 "${data.fileName}" 未发送到 IM 通道（当前会话无 IM 路由绑定，文件仅保存在工作区）。`;
-            broadcastToWebClients(data.chatJid ?? sourceGroup, skipMsg);
+            broadcastToWebClients(data.chatJid ?? sourceGroup, skipMsg, {
+              notice: true,
+            });
             finishSendFile(
               false,
               'No IM route is available for file delivery.',
@@ -14174,7 +14116,6 @@ async function processAgentConversation(
           is_from_me: true,
           turn_id: tid,
           session_id: currentAgentSessionId,
-          sdk_message_uuid: null,
           source_kind: 'sdk_final',
           finalization_reason: reason,
         },
@@ -14997,7 +14938,6 @@ async function processAgentConversation(
                   turn_id: output.streamEvent.turnId || lastProcessed.id,
                   session_id:
                     output.streamEvent.sessionId || currentAgentSessionId,
-                  sdk_message_uuid: null,
                   source_kind: 'interrupt_partial',
                   finalization_reason: 'interrupted',
                 },
@@ -15202,7 +15142,6 @@ async function processAgentConversation(
         inputTurnCompleted: output.inputTurnCompleted,
         finalizationReason: output.finalizationReason,
         pendingBgTasks: output.pendingBgTasks,
-        sdkMessageUuid: output.sdkMessageUuid,
         primaryAlreadyProjected:
           agentGenuineReplyDeliveredByInput.get(resultInputTurnId) === true,
         anyReplyProjected:
@@ -15352,7 +15291,6 @@ async function processAgentConversation(
             meta: {
               turnId: dbTurnId,
               sessionId: output.sessionId || currentAgentSessionId,
-              sdkMessageUuid: output.sdkMessageUuid,
               sourceKind: output.sourceKind || 'sdk_final',
               finalizationReason: output.finalizationReason || 'completed',
             },
@@ -15377,7 +15315,6 @@ async function processAgentConversation(
             is_from_me: true,
             turn_id: dbTurnId,
             session_id: output.sessionId || currentAgentSessionId,
-            sdk_message_uuid: output.sdkMessageUuid ?? null,
             source_kind: output.sourceKind || 'sdk_final',
             finalization_reason: output.finalizationReason || 'completed',
             workflow_runs: holdReason
@@ -15565,7 +15502,7 @@ async function processAgentConversation(
               ? {
                   scopeKey: channelTurnScope(effectiveGroup.folder, agentId),
                   scopeToken: outputAgentScope.scope.token,
-                  operationKey: `agent:${agentId}:${lastProcessed.id}:${output.sdkMessageUuid || crypto.createHash('sha256').update(text).digest('hex').slice(0, 24)}`,
+                  operationKey: `agent:${agentId}:${lastProcessed.id}:${crypto.createHash('sha256').update(text).digest('hex').slice(0, 24)}`,
                 }
               : undefined,
           );
@@ -15647,7 +15584,7 @@ async function processAgentConversation(
             {
               scopeKey: agentAdmissionKey,
               scopeToken: mirrorScope.token,
-              operationKey: `agent-mirror:${agentId}:${outputAgentScope.inputId}:${imJid}:${output.sdkMessageUuid || crypto.createHash('sha256').update(text).digest('hex').slice(0, 24)}`,
+              operationKey: `agent-mirror:${agentId}:${outputAgentScope.inputId}:${imJid}:${crypto.createHash('sha256').update(text).digest('hex').slice(0, 24)}`,
               ordinalSlot: `mirror:${imJid}`,
             },
           );
@@ -16258,7 +16195,6 @@ async function processAgentConversation(
               is_from_me: true,
               turn_id: lastProcessed.id,
               session_id: currentAgentSessionId,
-              sdk_message_uuid: null,
               source_kind: 'interrupt_partial',
               finalization_reason: 'interrupted',
             },
@@ -16314,7 +16250,6 @@ async function processAgentConversation(
             is_from_me: true,
             turn_id: lastProcessed.id,
             session_id: currentAgentSessionId,
-            sdk_message_uuid: null,
             source_kind: 'interrupt_partial',
             finalization_reason: 'error',
           },
@@ -19473,6 +19408,26 @@ async function main(): Promise<void> {
       }
     },
   );
+  // 用户级容器并发上限（ISSUE-07 批次B 项1）：原实现随 billing 订阅体系在
+  // 20febca 删除；现按系统设置 maxConcurrentContainersPerUser 恢复（null =
+  // 不启用），与 billing 彻底解耦。每次判定时即时读设置，热更新即时生效
+  // （对齐 maxConcurrentContainers 在 hasCapacityFor 里的读取方式）。
+  // 判定逻辑在 runtime-config 的 createUserContainerConcurrencyChecker，
+  // 与 tests/group-queue-user-concurrency.test.ts 共用同一实现。
+  queue.setUserConcurrentLimitChecker(
+    createUserContainerConcurrencyChecker({
+      getLimit: () => getSystemSettings().maxConcurrentContainersPerUser,
+      getGroup: (baseJid) => registeredGroups[baseJid],
+      getUserById,
+      getOwnedJids: (ownerId) =>
+        Object.entries(registeredGroups)
+          .filter(([, group]) => group.created_by === ownerId)
+          .map(([jid]) => jid),
+      hasDirectActiveRunner: (jid) => queue.hasDirectActiveRunner(jid),
+      countActiveTaskRunners: (baseJid) =>
+        queue.countActiveTaskRunners(baseJid),
+    }),
+  );
   // Recovery: when agent process exits with unconsumed IPC messages,
   // re-enqueue processAgentConversation to pick them up. See issue #240.
   queue.setOnUnconsumedAgentIpc((groupJid: string, agentId: string) => {
@@ -19540,7 +19495,6 @@ async function main(): Promise<void> {
   recoverDurableFollowUps();
   const schedulerDeps: import('./task-scheduler.js').SchedulerDependencies = {
     registeredGroups: () => registeredGroups,
-    getSessions: () => sessions,
     queue,
     onProcess: (
       groupJid,
@@ -19566,7 +19520,6 @@ async function main(): Promise<void> {
       return outcome.messageId;
     },
     broadcastStreamEvent,
-    onWorkspaceCreated: broadcastGroupCreated,
     storePromptMessage: (
       chatJid,
       senderId,

@@ -56,7 +56,6 @@ export interface Message {
   workflow_runs?: import('../stream-event.types').WorkflowRunSnapshot[];
   turn_id?: string | null;
   session_id?: string | null;
-  sdk_message_uuid?: string | null;
   source_kind?:
     | 'sdk_final'
     | 'sdk_send_message'
@@ -241,7 +240,6 @@ function mergeMessagesChronologically(
         JSON.stringify(m.workflow_runs ?? []) ||
       old.turn_id !== m.turn_id ||
       old.session_id !== m.session_id ||
-      old.sdk_message_uuid !== m.sdk_message_uuid ||
       old.source_kind !== m.source_kind ||
       old.finalization_reason !== m.finalization_reason ||
       old.delivery_mode !== m.delivery_mode ||
@@ -386,7 +384,6 @@ interface ChatState {
     expectedRunId?: string | null,
     content?: string,
   ) => Promise<boolean>;
-  stopGroup: (jid: string) => Promise<boolean>;
   interruptQuery: (jid: string) => Promise<boolean>;
   resetSession: (jid: string, agentId?: string) => Promise<boolean>;
   clearHistory: (jid: string) => Promise<boolean>;
@@ -418,6 +415,9 @@ interface ChatState {
     agentId?: string,
     source?: string,
   ) => void;
+  /** agent_reply WS 事件中 notice=true 的 ⚠️ 运行时警告（投递失败/文件未找到等）：
+   * 以本地 __system__ 消息追加进对应会话展示；非当前会话时另弹 toast。 */
+  handleAgentNotice: (chatJid: string, text: string) => void;
   handleAgentStatus: (
     chatJid: string,
     agentId: string,
@@ -1875,8 +1875,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       // streaming 状态由以下 2 条路径正确清理，sendMessage 不应无条件清空：
       // 1. handleWsNewMessage 收到 is_from_me 消息时
-      // 2. status:interrupted 事件时（冻结）→ interrupt_partial（转正）
-      // （服务端仍会广播 agent_reply 事件，但 Web 客户端当前不订阅它）
+      // 2. status:interrupted 事件时（interrupt_partial 冻结转正的两阶段）
+      // （历史注：早期由 agent_reply 事件清理；该事件的完整回复广播已不由前端
+      // 消费，前端只处理其中 notice=true 的 ⚠️ 警告，见 handleAgentNotice。）
 
       const body: {
         chatJid: string;
@@ -2056,27 +2057,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
           : '操作失败，请稍后重试';
       showToast('操作未执行', message);
       await get().loadFollowUps(chatJid);
-      return false;
-    }
-  },
-
-  stopGroup: async (jid: string) => {
-    try {
-      await api.post<{ success: boolean }>(
-        `/api/groups/${encodeURIComponent(jid)}/stop`,
-      );
-      cancelPendingDeltaForRuntime(jid);
-      get().clearStreaming(jid, { preserveThinking: false });
-      set((s) => {
-        const next = { ...s.waiting };
-        delete next[jid];
-        const activeRuns = { ...s.activeRuns };
-        delete activeRuns[jid];
-        return { waiting: next, activeRuns };
-      });
-      return true;
-    } catch (err) {
-      set({ error: err instanceof Error ? err.message : String(err) });
       return false;
     }
   },
@@ -3062,7 +3042,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         completedWorkflowRuns.length > 0 ? completedWorkflowRuns : undefined,
       turn_id: wsMsg.turn_id ?? null,
       session_id: wsMsg.session_id ?? null,
-      sdk_message_uuid: wsMsg.sdk_message_uuid ?? null,
       source_kind: wsMsg.source_kind ?? null,
       finalization_reason: wsMsg.finalization_reason ?? null,
       delivery_mode: wsMsg.delivery_mode ?? null,
@@ -3348,6 +3327,29 @@ export const useChatStore = create<ChatState>((set, get) => ({
           });
         }
       }, 20_000);
+    }
+  },
+
+  // agent_reply(notice) 警告：仅做本地展示，不落库、不参与流式/等待状态清理。
+  // MessageList 对未知 __system__ 内容按 divider 样式原样渲染文本。
+  handleAgentNotice: (chatJid, text) => {
+    const notice: Message = {
+      id: `local-notice-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      chat_jid: chatJid,
+      sender: '__system__',
+      sender_name: '系统',
+      content: text,
+      timestamp: new Date().toISOString(),
+      is_from_me: false,
+    };
+    set((s) => ({
+      messages: {
+        ...s.messages,
+        [chatJid]: [...(s.messages[chatJid] || []), notice],
+      },
+    }));
+    if (get().currentGroup !== chatJid) {
+      showToast('系统提示', text);
     }
   },
 

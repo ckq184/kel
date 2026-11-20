@@ -6,7 +6,6 @@ import {
   PROACTIVE_TAIL_INTERRUPTION_NOTICE,
   buildInteractionTextOutboxPayload,
   isProactiveControlPlaneSuccess,
-  isInteractionTurnSettled,
   publishesFrameworkAnswer,
   resolveFrozenIpcInteractionMode,
   resolveRuntimeInteractionMode,
@@ -264,54 +263,6 @@ describe('workspace interaction runtime policy', () => {
         eventType: 'tool_use_start',
       }),
     ).toBe(true);
-  });
-
-  test('proactive permits healthy silence and treats a delivered utterance as irreversible', () => {
-    expect(
-      isInteractionTurnSettled({
-        mode: 'proactive',
-        healthyInputTurnCompleted: true,
-        utteranceDelivered: false,
-      }),
-    ).toBe(true);
-    expect(
-      isInteractionTurnSettled({
-        mode: 'proactive',
-        healthyInputTurnCompleted: false,
-        utteranceDelivered: true,
-      }),
-    ).toBe(true);
-    expect(
-      isInteractionTurnSettled({
-        mode: 'proactive',
-        healthyInputTurnCompleted: false,
-        utteranceDelivered: false,
-      }),
-    ).toBe(false);
-  });
-
-  test('assistant retains healthy-terminal plus physical-reply requirements', () => {
-    expect(
-      isInteractionTurnSettled({
-        mode: 'assistant',
-        healthyInputTurnCompleted: true,
-        utteranceDelivered: true,
-      }),
-    ).toBe(true);
-    expect(
-      isInteractionTurnSettled({
-        mode: 'assistant',
-        healthyInputTurnCompleted: true,
-        utteranceDelivered: false,
-      }),
-    ).toBe(false);
-    expect(
-      isInteractionTurnSettled({
-        mode: 'assistant',
-        healthyInputTurnCompleted: false,
-        utteranceDelivered: true,
-      }),
-    ).toBe(false);
   });
 
   test('proactive tail errors stop replay and require an incomplete-result notice', () => {

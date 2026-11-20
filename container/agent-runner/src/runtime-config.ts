@@ -18,6 +18,6 @@ export function resolveAgentRuntimeKind(
   if (configured === 'claude') return 'claude';
   if (configured === 'pi') return 'pi';
   throw new Error(
-    `Unsupported ${AGENT_RUNTIME_ENV}=${configured}; expected claude or pi`,
+    `Unsupported ${AGENT_RUNTIME_ENV}=${configured}; expected pi`,
   );
 }

@@ -32,13 +32,10 @@ import { resolveFeishuCliBoundAccountId } from './feishu-cli-runtime.js';
 import {
   type WebDeps,
   type Variables,
-  type WsClientInfo,
   setWebDeps,
-  getWebDeps,
   wsClients,
   lastActiveCache,
   LAST_ACTIVE_DEBOUNCE_MS,
-  parseCookie,
   isHostExecutionGroup,
   hasHostExecutionPermission,
   canAccessGroup,
@@ -96,11 +93,9 @@ import {
   deleteUserSession,
   updateSessionLastActive,
   getAgent,
-  getUserById,
   updateAgentContextInfo,
   updateChatName,
   listQueuedFollowUps,
-  setMessageFollowUp,
 } from './db.js';
 import { getGroupAllowedUserIds } from './group-broadcast-acl.js';
 import {
@@ -114,13 +109,11 @@ import type {
   NewMessage,
   FollowUpMode,
   FollowUpTransition,
-  QueuedFollowUp,
   WsMessageOut,
   WsMessageIn,
   AuthUser,
   StreamEvent,
   UserRole,
-  MessageCursor,
   RunFinishReason,
 } from './types.js';
 import {
@@ -1919,12 +1912,22 @@ function normalizeRuntimeJid(chatJid: string): string {
   return `${normalizeHomeJid(baseJid)}${chatJid.slice(markerIndex)}`;
 }
 
-export function broadcastToWebClients(chatJid: string, text: string): void {
+export function broadcastToWebClients(
+  chatJid: string,
+  text: string,
+  options?: { notice?: boolean },
+): void {
   const timestamp = new Date().toISOString();
   const jid = normalizeHomeJid(chatJid);
   const allowedUserIds = getGroupAllowedUserIds(chatJid);
   safeBroadcast(
-    { type: 'agent_reply', chatJid: jid, text, timestamp },
+    {
+      type: 'agent_reply',
+      chatJid: jid,
+      text,
+      timestamp,
+      notice: options?.notice,
+    },
     isHostGroupJid(chatJid),
     allowedUserIds,
   );

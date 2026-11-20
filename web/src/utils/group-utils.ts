@@ -1,7 +1,6 @@
 import type { GroupInfo } from '../types';
 
 export type GroupEntry = GroupInfo & { jid: string };
-export type DateSection = { label: string; items: GroupEntry[] };
 
 /** Sort comparator: newest activity first. */
 export function compareByLastActivity(a: GroupEntry, b: GroupEntry): number {

@@ -13,13 +13,11 @@ import { describe, expect, test } from 'vitest';
  * 删除后端路由时必须同步处理 Web 调用方，或登记白名单挂 issue 号。
  *
  * 静态扫描的已知盲区（登记备查，不设断言）：
- * - `web/src/components/settings/hooks/usePairedChats.ts` 的调用走
- *   `${endpoint}` 变量拼接，静态扫描不可见。该 hook 本身有活跃组件调用链
- *   （ChannelAccountsManager 的 AccountPairingSection），未接线的是 rename
- *   路径：其调用的 `PUT /api/channel-accounts/:id/paired-chats/:jid` 后端
- *   并无路由，由 ISSUE-06 第 3 项持有修复决定，并已按 `no-route` 方向登记
- *   进下方 KNOWN_GAPS（后端补上路由时防腐化断言会报红提醒删除条目）。
- * - 动态拼接的 apiFetch/api 调用（首参非字面量）同样不在扫描范围内。
+ * - 首参为变量拼接（如 `${endpoint}/...`）的 api 调用不在扫描范围内。
+ *   历史案例：usePairedChats 的 rename 路径曾调用后端不存在的
+ *   `PUT /api/channel-accounts/:id/paired-chats/:jid`——ISSUE-06 第 3 项经
+ *   用户拍板 b（连消费端一起下线）已删除该路径，盲区缺口随之消失，对应
+ *   KNOWN_GAPS 条目已按机制删除。
  */
 
 const repoRoot = path.resolve(
@@ -35,13 +33,8 @@ const KNOWN_GAPS: Array<{
   issue: string;
   gap: 'no-route' | 'no-caller-no-doc';
 }> = [
-  {
-    method: 'put',
-    path: '/api/channel-accounts/:id/paired-chats/:jid',
-    issue:
-      'ISSUE-06 第 3 项（盲区缺口：调用方 usePairedChats rename 走 ${endpoint} 拼接不可静态扫描；后端补上路由或删除该路径后删本条目）',
-    gap: 'no-route',
-  },
+  // 当前无条目。历史条目：paired-chats PUT（no-route，ISSUE-06 第 3 项）已随
+  // ISSUE-06 落地（rename 消费端下线）删除。新增时必须注明 issue 号。
 ];
 
 interface RouteEntry {

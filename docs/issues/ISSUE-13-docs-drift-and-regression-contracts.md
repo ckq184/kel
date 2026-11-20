@@ -68,3 +68,9 @@
   2. **B.3 双向断言实际未发现任何"调用方无路由"缺口**（170 个静态调用全部有路由；221 条路由全部有调用方或 API.md 声明），审查报告所述 4 条未文档化路由已在本次 API.md 补录后归零——白名单因此只承载 paired-chats 一条盲区缺口（该调用走 `${endpoint}` 变量拼接，静态扫描不可达，详见 B.3 测试头注释）。
   3. **`/api/config/feishu` 兼容声明**：API.md 已有"系统级 /api/config/feishu 也只保留兼容用途"散文声明，按 B.3 文档判定口径（反引号路径声明视为已声明）未重复补录条目。
 - **行为影响**：源码仅三行注释修正（`src/group-queue.ts` isActiveRunnerTask、`src/db.ts` claimTaskRunNotificationById、`web/src/stores/chat.ts` streaming 清理路径），零行为变化；`scripts/verify.mjs` 与 `shared/stream-event.ts` 未触碰。
+- **合入 main 时的偏差追记**（2026-11-20，main 自 base `eb1768c` 前进 16 提交：ISSUE-01/06/07/08 已完成合入）：
+  1. **`isActiveRunnerTask` 注释修正悬空被弃**：ISSUE-08 实现提交 `e244bd2` 先行删除了该死方法，本任务对该注释的修正失去对象——合并冲突取 main 侧（方法已删），属时间差偏差而非判断错误。
+  2. **`chat.ts` streaming 清理注释取 main 侧**：ISSUE-06 实现（`68ed290`，agent_reply 警告 notice 标记 + 前端订阅展示）在合并侧已给出更准确的同位置注释（"完整回复广播已不由前端消费，前端只处理 notice=true 的 ⚠️ 警告"），本任务原修正("前端不订阅")已被其取代。
+  3. **B.2 白名单 `refresh_groups` 条目按 ISSUE-07 结果删除**：第 8 项经用户拍板连处理分支一起下线（宿主 `case 'refresh_groups'` 已不在合并树上），"处理端在、发送方无"的前提消失——白名单机制按设计执行清理，条目留历史注记。
+  4. **B.3 白名单 paired-chats 条目按 ISSUE-06 结果删除**：第 3 项经用户拍板 b（rename 连消费端一起下线），`usePairedChats` 的 rename 路径已删，盲区缺口不复存在；条目留历史注记。
+  5. **README 索引冲突**：ISSUE-13 行取本侧"已完成"，main 侧新增的 ISSUE-14 行保留；`.gatescope.json` 取本任务声明、base 更新为合入前 main tip `7324345`（同 ISSUE-06 合入先例）。

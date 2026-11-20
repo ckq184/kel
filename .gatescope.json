@@ -1,6 +1,6 @@
 {
-  "task": "issue13-docs-drift-contracts - 文档漂移修正与防回归契约测试：API.md补4条路由+投影接口标注用途、WEB_PORT统一3001、11个环境变量补文档、三处过时注释修正、三个契约测试（StreamEvent生产者/IPC双向/路由调用方双向，白名单逐条挂issue号）（docs/docs-drift-and-regression-contracts-plan.md）",
-  "base": "eb1768c",
+  "task": "issue13-docs-drift-contracts - 文档漂移修正与防回归契约测试：API.md补4条路由+投影接口标注用途、WEB_PORT统一3001、11个环境变量补文档、三处过时注释修正、三个契约测试（StreamEvent生产者/IPC双向/路由调用方双向，白名单逐条挂issue号）（docs/docs-drift-and-regression-contracts-plan.md）；base随合入main更新7324345（合入前main tip）",
+  "base": "7324345",
   "allow": [
     "CLAUDE.md",
     "README.md",

@@ -23,16 +23,14 @@ const repoRoot = path.resolve(
  * 已知缺口白名单。gap 方向：
  * - `no-sender`：宿主有处理分支、runner 无发送方；
  * - `no-handler`：runner 有发送方、宿主无处理分支。
+ *
+ * 历史条目：refresh_groups（no-sender，ISSUE-07 第 8 项）已随 ISSUE-07 落地
+ * 删除——宿主处理分支已下线，条目不再描述现实。
  */
 const KNOWN_GAPS: Record<
   string,
   { issue: string; gap: 'no-sender' | 'no-handler' }
-> = {
-  refresh_groups: {
-    issue: 'ISSUE-07 第 8 项（旧容器镜像滚动升级兼容候选，去留待用户拍板）',
-    gap: 'no-sender',
-  },
-};
+> = {};
 
 const mcpToolsSource = readFileSync(
   path.join(repoRoot, 'container/agent-runner/src/mcp-tools.ts'),

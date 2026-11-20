@@ -318,7 +318,6 @@ export interface ContainerOutput {
   readonly inputTurnId?: string;
   turnId?: string;
   sessionId?: string;
-  sdkMessageUuid?: string;
   sourceKind?:
     | 'sdk_final'
     | 'sdk_send_message'
@@ -353,48 +352,4 @@ export interface ContainerOutput {
     }>;
     cursor: { timestamp: string; id: string; sourceJid?: string };
   }>;
-}
-
-export interface SessionEntry {
-  sessionId: string;
-  fullPath: string;
-  summary: string;
-  firstPrompt: string;
-}
-
-export interface SessionsIndex {
-  entries: SessionEntry[];
-}
-
-export type ImageMediaType =
-  | 'image/jpeg'
-  | 'image/png'
-  | 'image/gif'
-  | 'image/webp';
-
-export interface SDKUserMessage {
-  type: 'user';
-  message: {
-    role: 'user';
-    content:
-      | string
-      | Array<
-          | { type: 'text'; text: string }
-          | {
-              type: 'image';
-              source: {
-                type: 'base64';
-                media_type: ImageMediaType;
-                data: string;
-              };
-            }
-        >;
-  };
-  parent_tool_use_id: null;
-  session_id: string;
-}
-
-export interface ParsedMessage {
-  role: 'user' | 'assistant';
-  content: string;
 }

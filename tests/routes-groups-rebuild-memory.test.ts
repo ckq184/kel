@@ -283,11 +283,13 @@ describe('POST /:jid/clear-history workspace rebuild', () => {
                SELECT id FROM workspace_memory_items WHERE workspace_jid = ?
              )) AS provenance,
           (SELECT COUNT(*) FROM workspace_memory_tombstones WHERE workspace_jid = ?) AS tombstones,
-          (SELECT COUNT(*) FROM workspace_memory_outbox WHERE workspace_jid = ?) AS outbox,
+          (SELECT COUNT(*) FROM sqlite_master
+             WHERE type = 'table' AND name = 'workspace_memory_outbox') AS outbox,
           (SELECT COUNT(*) FROM workspace_memory_audit_events WHERE workspace_jid = ?) AS audits,
           (SELECT COUNT(*) FROM workspace_memory_fts WHERE workspace_jid = ?) AS fts`,
       )
-      .get(JID, JID, JID, JID, JID, JID, JID, JID);
+      // ISSUE-07 项7：outbox 停写停建后，outbox 计数断言改为“表不存在”。
+      .get(JID, JID, JID, JID, JID, JID, JID);
     expect(counts).toEqual({
       stores: 1,
       items: 0,

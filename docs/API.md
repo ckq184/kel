@@ -76,7 +76,9 @@ Public：
 - `GET /api/groups/:jid/messages`
 - `DELETE /api/groups/:jid/messages/:messageId`
 - `GET|PUT /api/groups/:jid/env`
-- `GET|PUT /api/groups/:jid/mcp`，仅兼容旧客户端
+- `GET|PUT /api/groups/:jid/mcp`，已下线（410）：该路由从未真正持久化工作区
+  MCP 配置（数据库始终写 `inherit`），请改用用户级 MCP 配置
+  （`/api/mcp-servers`）
 - `POST /api/messages`
 - `GET /api/follow-ups`
 - `POST /api/follow-ups/:messageId/action`
@@ -550,6 +552,12 @@ Agent 镜像只由 `main` 分支的 GitHub Actions 构建并发布。该接口�
 确认后放行。`resolve` 使用 `expectedRevision` 做 compare-and-set，取值为
 `delivered`（需要 `providerMessageId`）或 `failed`；revision 过期返回 409，
 调用方必须重新读取后再决定，不能盲目重试。列表不返回 payload。
+
+另需注意现状：服务重启后处于 `retry_wait` 的 outbox 记录不会被自动重投。启动时只把
+投递租约已过期的 pre-send 行翻转为 `retry_wait`，重投依赖对应 Turn 被新入站消息
+重驱（同一幂等键再次进入投递流程），否则一直滞留，与 `uncertain` 一样需等待 Turn
+重跑或人工处理（自动重投 worker 登记于
+[ISSUE-14](issues/ISSUE-14-channel-outbox-worker.md)）。
 
 问题报告：
 

@@ -5,7 +5,6 @@ import {
   LAST_ACTIVE_DEBOUNCE_MS,
   getCachedSessionWithUser,
   invalidateSessionCache,
-  type Variables,
 } from '../web-context.js';
 import { updateSessionLastActive, deleteUserSession } from '../db.js';
 import {
@@ -154,21 +153,6 @@ export const requirePermission =
     const user = c.get('user') as AuthUser;
     if (!hasPermission(user, permission)) {
       return c.json({ error: `Forbidden: ${permission} required` }, 403);
-    }
-    await next();
-  };
-
-export const requireAnyPermission =
-  (permissions: Permission[]) => async (c: any, next: any) => {
-    const user = c.get('user') as AuthUser;
-    const ok = permissions.some((permission) =>
-      hasPermission(user, permission),
-    );
-    if (!ok) {
-      return c.json(
-        { error: `Forbidden: one of [${permissions.join(', ')}] required` },
-        403,
-      );
     }
     await next();
   };

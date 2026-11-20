@@ -137,19 +137,22 @@ describe('CKQClaw owner preferred-address facade', () => {
     const canonicalAfterCreate = reservedRows(raw, workspaceJid);
     expect(canonicalAfterCreate).toHaveLength(1);
     const firstItemId = canonicalAfterCreate[0].id;
+    // ISSUE-07 项7：outbox 已停写停建；outbox 计数断言改为“表已不存在”，
+    // 因此连一行都无法产生（比数行更强的负向断言）。
     const countsAfterCreate = raw
       .prepare(
         `SELECT
           (SELECT COUNT(*) FROM workspace_memory_versions WHERE item_id = ?) AS versions,
           (SELECT COUNT(*) FROM workspace_memory_audit_events WHERE item_id = ?) AS audits,
-          (SELECT COUNT(*) FROM workspace_memory_outbox WHERE item_id = ?) AS outbox`,
+          (SELECT COUNT(*) FROM sqlite_master
+             WHERE type = 'table' AND name = 'workspace_memory_outbox') AS outbox`,
       )
-      .get(firstItemId, firstItemId, firstItemId) as {
+      .get(firstItemId, firstItemId) as {
       versions: number;
       audits: number;
       outbox: number;
     };
-    expect(countsAfterCreate).toEqual({ versions: 1, audits: 1, outbox: 1 });
+    expect(countsAfterCreate).toEqual({ versions: 1, audits: 1, outbox: 0 });
 
     const noOp = ownerProfile.setCkqclawOwnerPreferredAddress({
       workspaceJid,
@@ -899,9 +902,10 @@ describe('v66 owner-profile migration boundary', () => {
           `SELECT
             (SELECT COUNT(*) FROM workspace_memory_versions WHERE item_id = ?) AS versions,
             (SELECT COUNT(*) FROM workspace_memory_audit_events WHERE item_id = ?) AS audits,
-            (SELECT COUNT(*) FROM workspace_memory_outbox WHERE item_id = ?) AS outbox`,
+            (SELECT COUNT(*) FROM sqlite_master
+               WHERE type = 'table' AND name = 'workspace_memory_outbox') AS outbox`,
         )
-        .get(item.id, item.id, item.id),
+        .get(item.id, item.id),
     };
     migrated.close();
 
@@ -936,9 +940,10 @@ describe('v66 owner-profile migration boundary', () => {
           `SELECT
             (SELECT COUNT(*) FROM workspace_memory_versions WHERE item_id = ?) AS versions,
             (SELECT COUNT(*) FROM workspace_memory_audit_events WHERE item_id = ?) AS audits,
-            (SELECT COUNT(*) FROM workspace_memory_outbox WHERE item_id = ?) AS outbox`,
+            (SELECT COUNT(*) FROM sqlite_master
+               WHERE type = 'table' AND name = 'workspace_memory_outbox') AS outbox`,
         )
-        .get(item.id, item.id, item.id),
+        .get(item.id, item.id),
     }).toEqual(onceOnlySnapshot);
     restarted.close();
   });
@@ -1269,9 +1274,10 @@ describe('reserved canonical-key integrity', () => {
           `SELECT
             (SELECT COUNT(*) FROM workspace_memory_versions WHERE item_id = ?) AS versions,
             (SELECT COUNT(*) FROM workspace_memory_audit_events WHERE item_id = ?) AS audits,
-            (SELECT COUNT(*) FROM workspace_memory_outbox WHERE item_id = ?) AS outbox`,
+            (SELECT COUNT(*) FROM sqlite_master
+               WHERE type = 'table' AND name = 'workspace_memory_outbox') AS outbox`,
         )
-        .get(duplicateId, duplicateId, duplicateId),
+        .get(duplicateId, duplicateId),
     };
     verified.close();
 
@@ -1298,9 +1304,10 @@ describe('reserved canonical-key integrity', () => {
           `SELECT
             (SELECT COUNT(*) FROM workspace_memory_versions WHERE item_id = ?) AS versions,
             (SELECT COUNT(*) FROM workspace_memory_audit_events WHERE item_id = ?) AS audits,
-            (SELECT COUNT(*) FROM workspace_memory_outbox WHERE item_id = ?) AS outbox`,
+            (SELECT COUNT(*) FROM sqlite_master
+               WHERE type = 'table' AND name = 'workspace_memory_outbox') AS outbox`,
         )
-        .get(duplicateId, duplicateId, duplicateId),
+        .get(duplicateId, duplicateId),
     }).toEqual(onceOnlySnapshot);
     restarted.close();
   });
