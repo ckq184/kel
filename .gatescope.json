@@ -13,6 +13,8 @@
     "src/memory-store.ts",
     "web/src/stores/usage.ts",
     "web/src/stores/auth.ts",
+    "web/src/components/settings/ProfileSection.tsx",
+    "tests/task-continuation-scheduler.test.ts",
     "tests/db-upgrade-safety.test.ts",
     "tests/routes-usage.test.ts",
     "tests/usage-accounting.test.ts",

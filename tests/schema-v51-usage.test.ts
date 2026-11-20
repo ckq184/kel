@@ -33,14 +33,22 @@ describe('schema v51 usage event migration', () => {
          '2026-07-01T00:00:00.000Z', 'real-owner', 0)`,
       )
       .run();
+    // ISSUE-09 (v77): the head schema no longer creates cost_usd — a genuine
+    // v50 database still carries it, so fabricate the retired column to keep
+    // exercising the v51 reconciliation while the column exists.
+    raw
+      .prepare(
+        'ALTER TABLE usage_records ADD COLUMN cost_usd REAL NOT NULL DEFAULT 0',
+      )
+      .run();
     raw
       .prepare(
         `INSERT INTO usage_records (
         id, event_id, user_id, group_folder, model, input_tokens,
         output_tokens, cache_read_input_tokens, cache_creation_input_tokens,
-        cost_usd, provider_estimated_cost_usd, billed_cost_usd,
+        cost_usd, provider_estimated_cost_usd,
         duration_ms, num_turns, source, created_at
-      ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 1, 'agent', ?)`,
+      ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 1, 'agent', ?)`,
       )
       .run(
         'old-row',

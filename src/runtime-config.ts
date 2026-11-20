@@ -2900,12 +2900,6 @@ export interface SystemSettings {
   maxConcurrentContainersPerUser: number | null;
   maxLoginAttempts: number;
   loginLockoutMinutes: number;
-  // Billing
-  billingEnabled: boolean;
-  billingMode: 'wallet_first';
-  billingMinStartBalanceUsd: number;
-  billingCurrency: string;
-  billingCurrencyRate: number;
   // External Claude directory (admin only)
   externalClaudeDir: string;
   // 管理员纯宿主机模式：开启后，所有 active admin 拥有的 Workspace/任务
@@ -2942,11 +2936,6 @@ const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
   maxConcurrentContainersPerUser: null,
   maxLoginAttempts: 5,
   loginLockoutMinutes: 15,
-  billingEnabled: false,
-  billingMode: 'wallet_first',
-  billingMinStartBalanceUsd: 0.01,
-  billingCurrency: 'USD',
-  billingCurrencyRate: 1,
   externalClaudeDir: '',
   adminHostOnlyMode: false,
   mainAgentContextSource: 'host_claude',
@@ -3078,19 +3067,6 @@ function normalizeSystemSettings(
     }
   }
 
-  let billingCurrency = DEFAULT_SYSTEM_SETTINGS.billingCurrency;
-  if (raw.billingCurrency !== undefined) {
-    if (
-      typeof raw.billingCurrency === 'string' &&
-      raw.billingCurrency.trim().length >= 1 &&
-      raw.billingCurrency.trim().length <= 10
-    ) {
-      billingCurrency = raw.billingCurrency.trim();
-    } else {
-      invalidFields.add('billingCurrency');
-    }
-  }
-
   let externalClaudeDir = DEFAULT_SYSTEM_SETTINGS.externalClaudeDir;
   if (raw.externalClaudeDir !== undefined) {
     if (typeof raw.externalClaudeDir !== 'string') {
@@ -3170,26 +3146,6 @@ function normalizeSystemSettings(
       1,
       MAX_LOGIN_LOCKOUT_MINUTES,
     ),
-    billingEnabled: booleanField(
-      'billingEnabled',
-      DEFAULT_SYSTEM_SETTINGS.billingEnabled,
-    ),
-    billingMode: 'wallet_first',
-    billingMinStartBalanceUsd: numberField(
-      'billingMinStartBalanceUsd',
-      DEFAULT_SYSTEM_SETTINGS.billingMinStartBalanceUsd,
-      0,
-      1_000_000,
-      false,
-    ),
-    billingCurrency,
-    billingCurrencyRate: numberField(
-      'billingCurrencyRate',
-      DEFAULT_SYSTEM_SETTINGS.billingCurrencyRate,
-      0.0001,
-      1_000_000,
-      false,
-    ),
     externalClaudeDir,
     adminHostOnlyMode: booleanField(
       'adminHostOnlyMode',
@@ -3239,10 +3195,6 @@ function buildEnvFallbackSettings(): SystemSettings {
         process.env.MAX_CONCURRENT_CONTAINERS_PER_USER || undefined,
       maxLoginAttempts: process.env.MAX_LOGIN_ATTEMPTS,
       loginLockoutMinutes: process.env.LOGIN_LOCKOUT_MINUTES,
-      billingEnabled: process.env.BILLING_ENABLED,
-      billingMinStartBalanceUsd: process.env.BILLING_MIN_START_BALANCE_USD,
-      billingCurrency: process.env.BILLING_CURRENCY,
-      billingCurrencyRate: process.env.BILLING_CURRENCY_RATE,
       externalClaudeDir: process.env.EXTERNAL_CLAUDE_DIR,
       adminHostOnlyMode: process.env.ADMIN_HOST_ONLY_MODE,
       mainAgentContextSource: process.env.MAIN_AGENT_CONTEXT_SOURCE,

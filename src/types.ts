@@ -249,7 +249,6 @@ export interface ChannelAccount {
     | 'reconnecting'
     | 'connected'
     | 'error';
-  default_agent_profile_id: string | null;
   default_workspace_jid: string | null;
   last_error: string | null;
   connected_at: string | null;
@@ -259,7 +258,7 @@ export interface ChannelAccount {
 
 export interface ChannelAccountPublic extends Omit<
   ChannelAccount,
-  'secret_ref' | 'default_agent_profile_id'
+  'secret_ref'
 > {
   has_credentials: boolean;
   options?: {
@@ -688,10 +687,6 @@ export interface User {
   avatar_emoji: string | null;
   avatar_color: string | null;
   avatar_url: string | null;
-  ai_name: string | null;
-  ai_avatar_emoji: string | null;
-  ai_avatar_color: string | null;
-  ai_avatar_url: string | null;
   /**
    * Per-user default for require_mention on auto-registered IM group chats.
    * When true, newly auto-registered Feishu/QQ/etc groups start with
@@ -719,10 +714,6 @@ export interface UserPublic {
   avatar_emoji: string | null;
   avatar_color: string | null;
   avatar_url: string | null;
-  ai_name: string | null;
-  ai_avatar_emoji: string | null;
-  ai_avatar_color: string | null;
-  ai_avatar_url: string | null;
   default_require_mention: boolean;
   created_at: string;
   last_login_at: string | null;
@@ -1051,66 +1042,3 @@ export type WsMessageIn =
 // --- Streaming event types (canonical source: shared/stream-event.ts) ---
 export type { StreamEventType } from './stream-event.types.js';
 export type { StreamEvent };
-
-// --- Billing types ---
-
-export interface UserBalance {
-  user_id: string;
-  balance_usd: number;
-  total_deposited_usd: number;
-  total_consumed_usd: number;
-  updated_at: string;
-}
-
-export type BalanceTransactionType =
-  | 'deposit'
-  | 'deduction'
-  | 'refund'
-  | 'adjustment'
-  | 'redeem';
-export type BalanceTransactionSource =
-  | 'admin_manual_recharge'
-  | 'admin_manual_deduct'
-  | 'usage_charge'
-  | 'redeem_code'
-  | 'migration_opening'
-  | 'refund'
-  | 'subscription_renewal'
-  | 'system_adjustment';
-export type BalanceReferenceType =
-  | 'message'
-  | 'usage_event'
-  | 'task'
-  | 'subscription'
-  | 'redeem_code'
-  | 'admin_adjust';
-
-export type RedeemCodeType = 'balance' | 'subscription' | 'trial';
-
-export type BillingAuditEventType =
-  | 'plan_created'
-  | 'plan_updated'
-  | 'plan_deleted'
-  | 'subscription_assigned'
-  | 'subscription_cancelled'
-  | 'subscription_expired'
-  | 'balance_adjusted'
-  | 'manual_recharge'
-  | 'manual_deduct'
-  | 'balance_deducted'
-  | 'code_created'
-  | 'code_redeemed'
-  | 'code_deleted'
-  | 'wallet_blocked'
-  | 'wallet_unblocked'
-  | 'quota_exceeded'
-  | 'billing_settings_updated';
-
-export interface DailyUsage {
-  user_id: string;
-  date: string; // YYYY-MM-DD
-  total_input_tokens: number;
-  total_output_tokens: number;
-  total_cost_usd: number;
-  message_count: number;
-}

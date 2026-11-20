@@ -76,7 +76,7 @@ export function ProfileSection() {
 
     setUploading(true);
     try {
-      setAvatarUrl(await uploadAvatar(file, 'user'));
+      setAvatarUrl(await uploadAvatar(file));
       toast.success('头像已上传');
     } catch (error) {
       toast.error(getErrorMessage(error, '上传头像失败'));

@@ -166,7 +166,6 @@ describe('unique-folder rebuild migration ordering', () => {
         'created_by',
         'is_home',
         'avatar_url',
-        'selected_skills',
         'target_agent_id',
         'target_main_jid',
         'reply_policy',

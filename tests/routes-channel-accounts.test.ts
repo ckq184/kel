@@ -168,10 +168,12 @@ describe('channel account routes', () => {
     });
     expect(response.status).toBe(201);
     const body = (await response.json()) as any;
+    // ISSUE-09 (v77): the deprecated column was dropped outright, so both the
+    // public API and the raw row must not carry the ignored request field.
     expect(body.account).not.toHaveProperty('default_agent_profile_id');
-    expect(db.getChannelAccount(body.account.id)).toMatchObject({
-      default_agent_profile_id: null,
-    });
+    expect(db.getChannelAccount(body.account.id)).not.toHaveProperty(
+      'default_agent_profile_id',
+    );
   });
 
   test('delete is blocked while an account-scoped group is bound', async () => {

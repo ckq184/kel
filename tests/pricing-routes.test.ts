@@ -19,8 +19,8 @@ vi.mock('../src/config.js', async (importOriginal) => ({
 
 vi.mock('../src/runtime-config.js', async (importOriginal) => ({
   ...((await importOriginal()) as Record<string, unknown>),
-  // 计价与路由测试只关心规则解析与落库；钱包路径不在本文件范围。
-  getSystemSettings: () => ({ billingEnabled: false }),
+  // 隔离宿主机的真实系统设置文件；本文件只关心规则解析与落库。
+  getSystemSettings: () => ({}),
 }));
 
 vi.mock('../src/logger.js', () => ({
@@ -69,13 +69,13 @@ describe('custom_model_pricing migration (v73)', () => {
   test('creates the idempotent table and partial unique indexes at v73', () => {
     db.initDatabase();
 
-    expect(db.CURRENT_SCHEMA_VERSION).toBe(76);
+    expect(db.CURRENT_SCHEMA_VERSION).toBe(77);
     const probe = openProbe();
     try {
       const version = probe
         .prepare('SELECT value FROM router_state WHERE key = ?')
         .get('schema_version') as { value: string } | undefined;
-      expect(version?.value).toBe('76');
+      expect(version?.value).toBe('77');
 
       const objects = probe
         .prepare(
@@ -107,7 +107,7 @@ describe('custom_model_pricing migration (v73)', () => {
       const version = probe
         .prepare('SELECT value FROM router_state WHERE key = ?')
         .get('schema_version') as { value: string } | undefined;
-      expect(version?.value).toBe('76');
+      expect(version?.value).toBe('77');
     } finally {
       probe.close();
     }

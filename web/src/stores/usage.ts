@@ -13,13 +13,6 @@ export interface UsageSummary {
   modelCallCount: number;
   activeDays: number;
   averageCostPerRunUSD: number;
-  // Legacy aliases are kept so older callers do not silently change meaning.
-  totalInputTokens: number;
-  totalOutputTokens: number;
-  totalCacheReadTokens: number;
-  totalCacheCreationTokens: number;
-  totalReasoningTokens: number;
-  totalCostUSD: number;
 }
 
 export interface UsageBreakdown {
@@ -39,9 +32,6 @@ export interface UsageBreakdown {
   provider_estimated_cost_usd: number;
   run_count: number;
   model_call_count: number;
-  // Legacy aliases from usage_daily_summary.
-  cost_usd: number;
-  request_count: number;
 }
 
 export interface UsageDailyBucket {
@@ -211,10 +201,6 @@ function fallbackWindow(days: number, now: Date): UsageWindow {
 }
 
 function normalizeBreakdown(row: RawUsageBreakdown): UsageBreakdown {
-  const estimatedCost = finiteNumber(
-    row.provider_estimated_cost_usd ?? row.cost_usd,
-  );
-  const runCount = finiteNumber(row.run_count ?? row.request_count);
   return {
     date: row.date,
     model: row.model || 'unknown',
@@ -229,11 +215,11 @@ function normalizeBreakdown(row: RawUsageBreakdown): UsageBreakdown {
     cache_read_tokens: finiteNumber(row.cache_read_tokens),
     cache_creation_tokens: finiteNumber(row.cache_creation_tokens),
     reasoning_tokens: finiteNumber(row.reasoning_tokens),
-    provider_estimated_cost_usd: estimatedCost,
-    run_count: runCount,
+    provider_estimated_cost_usd: finiteNumber(
+      row.provider_estimated_cost_usd ?? row.cost_usd,
+    ),
+    run_count: finiteNumber(row.run_count ?? row.request_count),
     model_call_count: finiteNumber(row.model_call_count ?? row.request_count),
-    cost_usd: estimatedCost,
-    request_count: runCount,
   };
 }
 
@@ -375,12 +361,6 @@ function aggregateSummary(
     modelCallCount,
     activeDays: totals.dates.size,
     averageCostPerRunUSD: runCount > 0 ? totals.estimatedCost / runCount : 0,
-    totalInputTokens: totals.input,
-    totalOutputTokens: totals.output,
-    totalCacheReadTokens: totals.cacheRead,
-    totalCacheCreationTokens: totals.cacheCreation,
-    totalReasoningTokens: totals.reasoning,
-    totalCostUSD: totals.estimatedCost,
   };
 }
 
