@@ -62,7 +62,7 @@
 
 ## 交付记录
 
-- **提交**：立项 `c1daf86`（计划 `docs/frontend-dropped-logic-plan.md` + 范围声明，base=2493eab）；实现 `4b9b397`（24 文件，+619/−136，含 7 个新测试文件）。分支 `issue-06-frontend-dropped-logic`，未合入 main，合入由用户决定。
+- **提交**：立项 `fdadd6d`（计划 `docs/frontend-dropped-logic-plan.md` + 范围声明，开工基线 2493eab）；实现 `68ed290`（24 文件，+619/−136，含 7 个新测试文件）；交付 `4a45d25`。分支 `issue-06-frontend-dropped-logic`，提交号为 rebase 后（原号与追记见下）。
 - **验证**：`npm run verify` 六步全绿（第 4 步 322 个测试文件 / 2596 用例通过、23 skipped）；`node scripts/check-scope.mjs` 28 个路径全在声明范围内；pre-commit secret 扫描与格式检查通过。
 - **用户决策执行**：第 2 项按 (a) 在 `AgentWorkspaceGroup`"更多操作"菜单接"管理能力"入口（custom 分区专用，`__default__` 哨兵排除）；第 3 项按 (b) 删除 `usePairedChats.rename`/`renamingJid` 及 `PairingSection` 类型占位。
 - **独立规格审查**：通过（无阻塞问题；3 条非阻塞建议均已在下述偏差与登记中处理）。
@@ -71,5 +71,6 @@
   2. 第 6b 项 issue 称后端 `lastMessage`"前端从不渲染"——交叉核实发现存活消费者：`ChatView.tsx:778` 将其作为会话侧栏主行 meta 渲染（`tests/frontend-session-sidebar-copy.test.ts:17` 契约锁定）。故**后端字段保留**，只删前端 `ChatGroupItem` 的死 prop 链（4 处传参点）。
   3. 第 6a 项实现比 plan 字面更彻底：`ProviderSwitcher` 中的 `SimpleProvider` 类型定义一并删除（全仓已无引用，测试锁定不存在），避免遗留新死代码。
 - **范围外登记**：
-  - `web/src/stores/agent-profiles.ts` 的孤儿 `error` 字段（加载失败已由 `profilesError` 展示于 `AgentProfilesPage`，该字段无人读取）——死代码，归 **ISSUE-08** 处置，本任务未动。
+  - `web/src/stores/agent-profiles.ts` 的孤儿 `error` 字段（加载失败已由 `profilesError` 展示于 `AgentProfilesPage`，该字段无人读取）——死代码，原登记归 **ISSUE-08** 处置，但 ISSUE-08 收尾（e244bd2）未含此项、需另行立项，本任务未动。
   - `agent_reply` 完整回复冗余广播（9444/10666 行，内容已由 `new_message` 承载）的存废属掉线逻辑决策，归 **ISSUE-07/10** 统筹，本任务保持原状仅加注释。
+- **rebase 追记（2026-11-20，合入 main 线前）**：本 issue 交付后 main 线继续前进（ISSUE-05 实现 `83d59f2`、ISSUE-08 实现 `e244bd2`、ISSUE-01 诊断 `860f77a` + 收尾 `438c648`）；按仓库惯例 rebase 至 `438c648`，冲突两处——`.gatescope.json` 取本任务声明、`docs/issues/README.md` 索引行两侧合并（ISSUE-05 行取 main 已完成、ISSUE-06 行取本任务状态）。原提交 `c1daf86`/`4b9b397`/`3cac83e` 改号为 `fdadd6d`/`68ed290`/`4a45d25`，`.gatescope.json` base 同步 `438c648`。合并树复跑门禁：verify 六步全绿（第 4 步 326 个测试文件 / 2612 用例通过、23 skipped）、scope 核对 28 路径全在声明内。fast-forward 合入经用户指示暂缓：2026-11-20 曾短暂合入 main 后即按用户指示复位（main 回到 438c648），合入时机由用户另行明示；push 仍由用户发起。

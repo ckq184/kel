@@ -1,6 +1,6 @@
 {
   "task": "issue06-frontend-dropped-logic - 前端掉线逻辑修复六项：group_created改刷chat store、侧栏自定义智能体分组接能力深链入口（用户拍板a）、已配对聊天rename下线（用户拍板b）、agent_reply警告notice标记+前端订阅展示、monitor/files/users加载失败提示、MonitorPage无效providers请求与ChatGroupItem.lastMessage死属性清理（docs/frontend-dropped-logic-plan.md）",
-  "base": "2493eab",
+  "base": "438c648",
   "allow": [
     "src/types.ts",
     "src/web.ts",
