@@ -3,6 +3,7 @@ import type {
   ContainerOutput,
   StreamEvent,
 } from '../../types.js';
+import { extractSkillName, summarizeToolInput } from '../../utils.js';
 import type { McpContext } from '../../mcp-tools.js';
 import {
   IpcTurnDeliveryTracker,
@@ -97,6 +98,22 @@ function stringify(value: unknown): string {
   }
 }
 
+/**
+ * Reverse of pi-runtime's toolAliases (ISSUE-03 decision A): events leave the
+ * runner speaking the product vocabulary — Task/TaskOutput/TaskStop — so the
+ * host DB row creation, Web virtual tabs, and card lanes keep their
+ * Claude-Code-shaped identification contract without per-consumer changes.
+ */
+const TOOL_NAME_ALIASES: Record<string, string> = {
+  Agent: 'Task',
+  get_subagent_result: 'TaskOutput',
+  steer_subagent: 'TaskStop',
+};
+
+function normalizeToolName(toolName: string): string {
+  return TOOL_NAME_ALIASES[toolName] ?? toolName;
+}
+
 function toRuntimeInput(
   text: string,
   images?: Array<{ data: string; mimeType?: string }>,
@@ -149,25 +166,32 @@ function toStreamEvent(
         text: event.delta,
         sessionId: event.sessionId,
       };
-    case 'tool_start':
+    case 'tool_start': {
+      // ISSUE-03: normalized product tool name + the display metadata the
+      // host cards and Web tool lanes consume (summary redacted by the util).
+      const toolInputSummary = summarizeToolInput(event.input);
+      const skillName = extractSkillName(event.toolName, event.input);
       return {
         eventType: 'tool_use_start',
         agentScope: event.toolName.startsWith('mcp__') ? 'main' : 'main',
         displayLevel: 'detail',
-        toolName: event.toolName,
+        toolName: normalizeToolName(event.toolName),
         toolUseId: event.toolCallId,
+        ...(toolInputSummary ? { toolInputSummary } : {}),
+        ...(skillName ? { skillName } : {}),
         toolInput:
           event.input && typeof event.input === 'object'
             ? (event.input as Record<string, unknown>)
             : undefined,
         sessionId: event.sessionId,
       };
+    }
     case 'tool_update':
       return {
         eventType: 'tool_progress',
         agentScope: 'main',
         displayLevel: 'detail',
-        toolName: event.toolName,
+        toolName: normalizeToolName(event.toolName),
         toolUseId: event.toolCallId,
         detail:
           event.result === undefined ? undefined : stringify(event.result),
@@ -178,10 +202,11 @@ function toStreamEvent(
         eventType: 'tool_use_end',
         agentScope: 'main',
         displayLevel: 'detail',
-        toolName: event.toolName,
+        toolName: normalizeToolName(event.toolName),
         toolUseId: event.toolCallId,
         toolResult:
           event.result === undefined ? undefined : stringify(event.result),
+        ...(event.isError ? { isError: true } : {}),
         sessionId: event.sessionId,
       };
     case 'usage':
@@ -227,13 +252,24 @@ function toStreamEvent(
         detail: event.error || event.reason,
         sessionId: event.sessionId,
       };
-    case 'subagent':
+    case 'subagent': {
+      // ISSUE-03: the pi-subagents broadcast carries the description the card
+      // uses for its task title; lift it from `details` onto the event.
+      const details =
+        event.details && typeof event.details === 'object'
+          ? (event.details as { description?: unknown })
+          : undefined;
+      const taskDescription =
+        typeof details?.description === 'string' && details.description
+          ? details.description
+          : undefined;
       return {
         eventType: 'task_progress',
         agentScope: 'subagent',
         displayLevel: 'detail',
         taskId: event.agentId,
         taskStatus: event.lifecycle,
+        ...(taskDescription ? { taskDescription } : {}),
         taskSummary: event.result || event.error,
         rawEvent:
           event.details && typeof event.details === 'object'
@@ -241,6 +277,7 @@ function toStreamEvent(
             : undefined,
         sessionId: event.sessionId,
       };
+    }
     case 'session':
       return {
         eventType: 'status',

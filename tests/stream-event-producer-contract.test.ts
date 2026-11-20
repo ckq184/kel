@@ -24,11 +24,18 @@ const KNOWN_GAPS: Record<string, string> = {
   // raw_sdk_event 条目已随 ISSUE-02 完成（方案 a1 消息边界复用）删除：
   // 生产者=pi-runner 的 message_boundary 映射；message_start/stop 之外
   // rawType 的消费端去留仍归 ISSUE-10。
+  // ISSUE-03 已完成（方案 A 事件层归一）：以下四类走等价实现路径、不新增
+  // 生产者——识别归一在 tool_use_start、终态在 task_progress、工具结果直接
+  // 读 tool_use_end.toolResult、完成摘要落库走 task_progress 终态分支。
+  // 类型本身仍无生产者，消费分支下线统一归 ISSUE-10。
   tool_result:
-    'ISSUE-03（Pi 结果在 tool_use_end.toolResult，补读取或下线分支）',
-  task_start: 'ISSUE-03（子代理识别与工具卡修复）',
-  task_updated: 'ISSUE-03（子代理识别与工具卡修复）',
-  task_notification: 'ISSUE-03（完成摘要落库等价实现）',
+    'ISSUE-10（ISSUE-03 已完成：宿主改在 tool_use_end 读 toolResult，本分支待下线）',
+  task_start:
+    'ISSUE-10（ISSUE-03 已完成：识别走 tool_use_start 归一，本分支待下线）',
+  task_updated:
+    'ISSUE-10（ISSUE-03 已完成：终态走 task_progress，本分支待下线）',
+  task_notification:
+    'ISSUE-10（ISSUE-03 已完成：落库等价在 task_progress 终态分支，本分支待下线）',
   context_audit: 'ISSUE-07 第 5 项（宿主直用快照或下线，ISSUE-10 执行）',
   hook_started: 'ISSUE-10（Pi 无 hook 概念，消费分支待下线）',
   hook_progress: 'ISSUE-10（同上）',

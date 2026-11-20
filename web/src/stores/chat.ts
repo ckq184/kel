@@ -1239,7 +1239,14 @@ function updateTaskRuntime(
       MAX_TASK_TAIL,
     );
   } else if (event.eventType === 'task_progress') {
-    task.status = 'running';
+    // ISSUE-03: the subagent lifecycle broadcast marks completed/failed —
+    // honor the terminal status instead of pinning every update to running.
+    task.status =
+      event.taskStatus === 'completed'
+        ? 'completed'
+        : event.taskStatus === 'failed'
+          ? 'error'
+          : 'running';
     task.latestSummary =
       event.summary ||
       event.taskSummary ||
@@ -1417,10 +1424,13 @@ function applyStreamEvent(
           const label = isSkill
             ? `技能 ${ended.skillName || 'unknown'}`
             : `工具 ${ended.toolName}`;
+          // ISSUE-03: the runner passes the tool's own error flag — failed
+          // tools surface the failure lane instead of a success checkmark.
+          const mark = event.isError === true ? '✗' : '✓';
           next.recentEvents = pushEvent(
             prev.recentEvents,
             isSkill ? 'skill' : 'tool',
-            `✓ ${label} (${elapsedSec}s)`,
+            `${mark} ${label} (${elapsedSec}s)`,
           );
         }
       }
@@ -2749,6 +2759,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const resolvedTaskId = resolveOrBindTaskId(
         event.toolUseId || event.taskId!,
       );
+      // ISSUE-03: terminal subagent lifecycle broadcast — finalize the bound
+      // virtual tab exactly like the legacy task_notification lane did.
+      if (event.taskStatus === 'completed' || event.taskStatus === 'failed') {
+        finalizeSdkTask(
+          resolvedTaskId,
+          event.taskStatus === 'completed' ? 'completed' : 'error',
+          event.summary || event.taskSummary,
+        );
+      }
       set((s) => {
         const existing = s.sdkTasks[resolvedTaskId];
         if (!existing) return {};
@@ -2853,7 +2872,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (task && task.status === 'running') {
         finalizeSdkTask(
           resolvedToolUseId,
-          'completed',
+          // ISSUE-03: the Task tool call itself ends in error when the
+          // subagent failed — converge the tab to error, not fake success.
+          event.isError === true ? 'error' : 'completed',
           task.summary,
           SDK_TASK_TOOL_END_FALLBACK_CLOSE_MS,
         );
