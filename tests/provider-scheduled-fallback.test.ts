@@ -67,7 +67,6 @@ describe('scheduled provider fallback', () => {
           isDefault: false,
           identityHash: 'identity',
           identityPrompt: '',
-          includeClaudePreset: true,
           modelConfigId: 'provider-a',
         },
       },

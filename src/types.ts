@@ -265,7 +265,6 @@ export interface ChannelAccountPublic extends Omit<
   options?: {
     bypassProxy?: boolean;
     streamingMode?: 'card' | 'text' | 'edit' | 'off';
-    phoneNumber?: string;
   };
 }
 
@@ -971,7 +970,6 @@ export type WsMessageOut =
       consecutiveFailures?: number;
       nextRetryMs?: number;
     }
-  | { type: 'ws_error'; error: string; chatJid?: string }
   | {
       type: 'stream_snapshot';
       chatJid: string;
@@ -1035,14 +1033,6 @@ export type WsMessageOut =
     };
 
 export type WsMessageIn =
-  | {
-      type: 'send_message';
-      chatJid: string;
-      content: string;
-      attachments?: MessageAttachment[];
-      agentId?: string;
-      followUpBehavior?: FollowUpMode;
-    }
   | { type: 'terminal_start'; chatJid: string; cols: number; rows: number }
   | { type: 'terminal_input'; chatJid: string; data: string }
   | { type: 'terminal_resize'; chatJid: string; cols: number; rows: number }

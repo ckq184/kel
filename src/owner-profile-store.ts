@@ -9,6 +9,7 @@ import {
   reconcileCkqclawOwnerAddressCanonicalKey,
   type WorkspaceMemoryMutationContext,
 } from './memory-store.js';
+import { nowIso, requireDatabase } from './store-helpers.js';
 
 interface SqliteRunResult {
   changes: number;
@@ -104,15 +105,6 @@ export class OwnerProfileStoreError extends Error {
   }
 }
 
-function requireDatabase(): SqliteDatabase {
-  if (!database) throw new Error('Owner Profile store is not initialized');
-  return database;
-}
-
-function nowIso(): string {
-  return new Date().toISOString();
-}
-
 function normalizeAddress(value: string): string {
   const normalized = value.trim().replace(/\s+/g, ' ');
   if (!normalized || [...normalized].length > 200) {
@@ -125,7 +117,7 @@ function normalizeAddress(value: string): string {
 }
 
 function requireHomeWorkspace(workspaceJid: string): void {
-  const row = requireDatabase()
+  const row = requireDatabase(database, 'Owner Profile')
     .prepare(
       `SELECT 1 FROM workspaces
        WHERE jid = ? AND is_home = 1 AND status = 'active'
@@ -142,7 +134,7 @@ function requireHomeWorkspace(workspaceJid: string): void {
 
 function onboardingRow(workspaceJid: string): OnboardingRow | null {
   return (
-    (requireDatabase()
+    (requireDatabase(database, 'Owner Profile')
       .prepare(
         `SELECT * FROM workspace_onboarding_states
          WHERE workspace_jid = ? AND flow_key = ?`,
@@ -154,7 +146,7 @@ function onboardingRow(workspaceJid: string): OnboardingRow | null {
 }
 
 function ensureOnboardingRow(workspaceJid: string, at: string): OnboardingRow {
-  const db = requireDatabase();
+  const db = requireDatabase(database, 'Owner Profile');
   db.prepare(
     `INSERT OR IGNORE INTO workspace_onboarding_states (
       workspace_jid, flow_key, state, revision, lease_owner, lease_token,
@@ -283,7 +275,7 @@ export function getCkqclawOwnerProfileProjection(
 function completeIntroduction(workspaceJid: string, at: string): void {
   const row = ensureOnboardingRow(workspaceJid, at);
   if (row.state === 'completed') return;
-  requireDatabase()
+  requireDatabase(database, 'Owner Profile')
     .prepare(
       `UPDATE workspace_onboarding_states
        SET state = 'completed', revision = revision + 1,
@@ -307,7 +299,7 @@ export function setCkqclawOwnerPreferredAddress(input: {
 } {
   requireHomeWorkspace(input.workspaceJid);
   const preferredAddress = normalizeAddress(input.preferredAddress);
-  const db = requireDatabase();
+  const db = requireDatabase(database, 'Owner Profile');
   try {
     return db.transaction(() => {
       const mutation = mutateCkqclawOwnerAddressMemory({
@@ -344,7 +336,7 @@ export function clearCkqclawOwnerPreferredAddress(input: {
   changed: boolean;
 } {
   requireHomeWorkspace(input.workspaceJid);
-  const db = requireDatabase();
+  const db = requireDatabase(database, 'Owner Profile');
   try {
     return db.transaction(() => {
       const mutation = mutateCkqclawOwnerAddressMemory({
@@ -409,7 +401,7 @@ export function claimCkqclawOwnerIntroduction(input: {
     3_600_000,
   );
   const expiresAt = new Date(atMs + leaseMs).toISOString();
-  const db = requireDatabase();
+  const db = requireDatabase(database, 'Owner Profile');
   return db.transaction(() => {
     const profile = getCkqclawOwnerAddressMemoryItem(input.workspaceJid);
     if (profile.item?.status === 'active') {
@@ -550,7 +542,7 @@ export function acknowledgeCkqclawOwnerIntroduction(input: {
       'Owner introduction acknowledgement timestamp is invalid',
     );
   }
-  const db = requireDatabase();
+  const db = requireDatabase(database, 'Owner Profile');
   return db.transaction(() => {
     const row = ensureOnboardingRow(input.workspaceJid, at);
     if (
@@ -608,7 +600,7 @@ export function releaseCkqclawOwnerIntroductionLease(
 ): number {
   const normalized = leaseOwner.trim();
   if (!normalized) return 0;
-  const result = requireDatabase()
+  const result = requireDatabase(database, 'Owner Profile')
     .prepare(
       `UPDATE workspace_onboarding_states
        SET state = 'pending', revision = revision + 1,
@@ -628,7 +620,7 @@ export function skipCkqclawOwnerIntroduction(input: {
   changed: boolean;
 } {
   requireHomeWorkspace(input.workspaceJid);
-  const db = requireDatabase();
+  const db = requireDatabase(database, 'Owner Profile');
   return db.transaction(() => {
     const at = nowIso();
     const profile = getCkqclawOwnerAddressMemoryItem(input.workspaceJid);
@@ -683,7 +675,7 @@ export function reconcileLegacyOwnerProfileMemory(): {
   workspaces: number;
   retiredItems: number;
 } {
-  const db = requireDatabase();
+  const db = requireDatabase(database, 'Owner Profile');
   return db.transaction(() => {
     const reconciled = reconcileCkqclawOwnerAddressCanonicalKey();
     const homes = db

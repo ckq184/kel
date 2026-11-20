@@ -3,24 +3,16 @@
 import { randomBytes, createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import QRCode from 'qrcode';
 import { Hono } from 'hono';
-import { DATA_DIR } from '../config.js';
-import {
-  avatarUploadBodyLimit,
-  AVATAR_MAX_FILE_BYTES,
-} from '../http-upload-policy.js';
+import { avatarUploadBodyLimit } from '../http-upload-policy.js';
+import { reapAvatarFiles, storeAvatarUpload } from '../avatar-upload.js';
 import type { Variables } from '../web-context.js';
-import { canAccessGroup, canModifyGroup, getWebDeps } from '../web-context.js';
-import { extractChatId, getChannelType } from '../im-channel.js';
+import { canAccessGroup, canModifyGroup } from '../web-context.js';
+import { getChannelType } from '../im-channel.js';
 import {
-  deleteRegisteredGroup,
-  deleteChatHistory,
   getRegisteredGroup,
   getAllRegisteredGroups,
   forceActiveAdminRuntimesToHost,
-  setRegisteredGroup,
-  updateChatName,
   getAgent,
   getAgentProfileForWorkspace,
   getUserById,
@@ -34,33 +26,17 @@ import {
   deleteRouterState,
   isDatabaseInitialized,
   VALID_ACTIVATION_MODES,
-  getLegacyChannelAccount,
-  getChannelAccount,
-  getGroupsByTargetAgent,
-  updateAgentLastImJid,
   countAgentProfilesByModelConfigId,
 } from '../db.js';
-import {
-  channelConversationJid,
-  parseChannelAddress,
-} from '../channel-address.js';
 import { isMentionActivationMode } from '../feishu-conversation-policy.js';
 import { normalizeLegacyOwnerMention } from '../im-audience-policy.js';
-import {
-  conversationBindingPolicyError,
-  resolveChannelConversationKind,
-  type ChannelConversationKind,
-} from '../channel-conversation-kind.js';
+import { conversationBindingPolicyError } from '../channel-conversation-kind.js';
 import {
   adminRoleMiddleware,
   authMiddleware,
   systemConfigMiddleware,
 } from '../middleware/auth.js';
 import {
-  ClaudeCustomEnvSchema,
-  FeishuConfigSchema,
-  QQConfigSchema,
-  WeChatConfigSchema,
   RegistrationConfigSchema,
   AppearanceConfigSchema,
   HostIntegrationSettingsSchema,
@@ -71,8 +47,6 @@ import {
   BalancingConfigSchema,
 } from '../schemas.js';
 import {
-  getClaudeProviderConfig,
-  toPublicClaudeProviderConfig,
   appendClaudeConfigAudit,
   getProviders,
   getEnabledProviders,
@@ -87,10 +61,6 @@ import {
   deleteProvider,
   providerToConfig,
   toPublicProvider,
-  getFeishuProviderConfig,
-  getFeishuProviderConfigWithSource,
-  toPublicFeishuProviderConfig,
-  saveFeishuProviderConfig,
   getRegistrationConfig,
   saveRegistrationConfig,
   getAppearanceConfig,
@@ -99,14 +69,7 @@ import {
   getEffectiveExternalDir,
   getContainerEnvConfig,
   saveSystemSettings,
-  getUserFeishuConfig,
-  saveUserFeishuConfig,
-  getUserQQConfig,
-  saveUserQQConfig,
-  getUserWeChatConfig,
-  saveUserWeChatConfig,
   updateAllSessionCredentials,
-  appendImConfigAudit,
 } from '../runtime-config.js';
 import type {
   ClaudeOAuthCredentials,
@@ -116,18 +79,21 @@ import type {
 import { parseOAuthUsageBucket } from '../runtime-config.js';
 import type { AudienceMode, AuthUser, RegisteredGroup } from '../types.js';
 import { logger } from '../logger.js';
-import { testFeishuCredentials } from '../feishu-connectivity.js';
 import {
   buildSessionMountUpdate,
-  buildDetachedWorkspaceUpdate,
   buildWorkspaceMountUpdate,
   commitChannelMountUpdate,
-  hasRemainingThreadMapMount,
+  detachThreadMapWorkspaceIfLast,
+  fetchLiveChatInfo,
+  getConversationKind,
+  hasConsistentChannelAccount,
   hasSessionMountConflict,
   hasWorkspaceMountConflict,
   isNativeContextContainer,
+  markNativeContextWorkspace,
+  refreshAgentLastImJid,
   restoreDefaultChannelMount,
-  type NativeContextMetadata,
+  type ChannelChatInfo,
 } from '../channel-mount-service.js';
 import { providerPool } from '../provider-pool.js';
 import { getClientIp } from '../utils.js';
@@ -771,16 +737,6 @@ async function fetchOAuthUsage(providerId: string): Promise<CachedOAuthUsage> {
 }
 
 // --- Routes ---
-
-// ─── GET /claude — 兼容：返回第一个启用供应商的公开配置 ─────
-configRoutes.get('/claude', authMiddleware, systemConfigMiddleware, (c) => {
-  try {
-    return c.json(toPublicClaudeProviderConfig(getClaudeProviderConfig()));
-  } catch (err) {
-    logger.error({ err }, 'Failed to load Claude config');
-    return c.json({ error: 'Failed to load Claude config' }, 500);
-  }
-});
 
 // ─── GET /claude/providers — 列出所有供应商 + 健康 + 负载均衡配置 ─────
 configRoutes.get(
@@ -1587,187 +1543,19 @@ configRoutes.post(
   },
 );
 
-// ─── PUT /claude/custom-env — 更新当前启用供应商的自定义环境变量 ─────
-configRoutes.put(
-  '/claude/custom-env',
-  authMiddleware,
-  systemConfigMiddleware,
-  async (c) => {
-    const body = await c.req.json().catch(() => ({}));
-    const validation = ClaudeCustomEnvSchema.safeParse(body);
-    if (!validation.success) {
-      return c.json(
-        { error: 'Invalid request body', details: validation.error.format() },
-        400,
-      );
-    }
-
-    try {
-      // Find first enabled provider and update its customEnv
-      const enabled = getEnabledProviders();
-      if (enabled.length === 0) {
-        return c.json({ error: '没有启用的供应商' }, 400);
-      }
-
-      const updated = updateProvider(enabled[0].id, {
-        customEnv: validation.data.customEnv,
-      });
-      return c.json({ customEnv: updated.customEnv });
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Invalid custom env payload';
-      logger.warn({ err }, 'Invalid Claude custom env payload');
-      return c.json({ error: message }, 400);
-    }
-  },
-);
-
 // ─── Helpers ────────────────────────────────────────────────────
-
-const _deprecationLogged = new Set<string>();
-function logDeprecationOnce(endpoint: string, replacement: string): void {
-  if (_deprecationLogged.has(endpoint)) return;
-  logger.warn(`Deprecated: ${endpoint} — use ${replacement} instead`);
-  _deprecationLogged.add(endpoint);
-}
 
 /** Persist a RegisteredGroup update and sync to the in-memory cache. */
 function applyBindingUpdate(imJid: string, updated: RegisteredGroup): void {
   commitChannelMountUpdate(imJid, updated);
 }
 
-function applyRegisteredGroupUpdate(
-  jid: string,
-  updated: RegisteredGroup,
-): void {
-  setRegisteredGroup(jid, updated);
-  const webDeps = getWebDeps();
-  if (webDeps) {
-    const groups = webDeps.getRegisteredGroups();
-    if (groups[jid]) groups[jid] = updated;
-  }
-}
-
-function hasConsistentChannelAccount(
-  userId: string,
-  imJid: string,
-  group: RegisteredGroup,
-): boolean {
-  const encodedAccountId = parseChannelAddress(imJid)?.channelAccountId ?? null;
-  const storedAccountId = group.channel_account_id ?? null;
-  if (encodedAccountId !== storedAccountId) {
-    if (!encodedAccountId && storedAccountId) {
-      const account = getChannelAccount(storedAccountId);
-      return (
-        account?.is_legacy_default === true && account.owner_user_id === userId
-      );
-    }
-    return false;
-  }
-  if (!storedAccountId) return true;
-  return getChannelAccount(storedAccountId)?.owner_user_id === userId;
-}
-
-function refreshAgentLastImJid(agentId: string): void {
-  const agent = getAgent(agentId);
-  if (!agent) return;
-  const remaining = getGroupsByTargetAgent(agentId);
-  const current = agent.last_im_jid
-    ? channelConversationJid(agent.last_im_jid)
-    : null;
-  if (current && remaining.some(({ jid }) => jid === current)) return;
-  remaining.sort((a, b) => {
-    const dateDiff =
-      Date.parse(b.group.added_at) - Date.parse(a.group.added_at);
-    if (Number.isFinite(dateDiff) && dateDiff !== 0) return dateDiff;
-    return a.jid.localeCompare(b.jid);
-  });
-  updateAgentLastImJid(agentId, remaining[0]?.jid ?? null);
-}
-
-type ChannelChatInfo = NativeContextMetadata & {
-  avatar?: string;
-  name?: string;
-  user_count?: string;
-};
-
-function getConversationKind(
-  imJid: string,
-  group: Pick<RegisteredGroup, 'feishu_chat_mode'>,
-  chatInfo?: ChannelChatInfo | null,
-): ChannelConversationKind {
-  return resolveChannelConversationKind(imJid, {
-    feishu_chat_mode: group.feishu_chat_mode,
-    chat_mode: chatInfo?.chat_mode,
-  });
-}
-
-// Only fetches live chat metadata — does NOT compute threadCapable. That
-// decision must be (re-)computed by the caller against a freshly re-read
-// imGroup taken AFTER this await, never against the pre-await snapshot —
-// see the identical helper's doc comment in routes/agents.ts for why.
-async function fetchLiveChatInfo(
-  userId: string,
-  imJid: string,
-): Promise<{ chatInfo?: ChannelChatInfo | null }> {
-  const channelType = getChannelType(imJid);
-  if (!channelType) return {};
-  const webDeps = getWebDeps();
-  const chatInfo = webDeps?.getChannelChatInfo
-    ? ((await webDeps.getChannelChatInfo(imJid)) as ChannelChatInfo | null)
-    : channelType === 'feishu' && webDeps?.getFeishuChatInfo
-      ? await webDeps.getFeishuChatInfo(userId, extractChatId(imJid))
-      : null;
-  return { chatInfo };
-}
-
-function resolveWorkspaceForBinding(
-  targetMainJid: string,
-): { jid: string; group: RegisteredGroup } | null {
-  const direct = getRegisteredGroup(targetMainJid);
-  if (direct) return { jid: targetMainJid, group: direct };
-  if (!targetMainJid.startsWith('web:')) return null;
-
-  const folder = targetMainJid.slice(4);
-  for (const [jid, group] of Object.entries(getAllRegisteredGroups())) {
-    if (jid.startsWith('web:') && group.folder === folder) {
-      return { jid, group };
-    }
-  }
-  return null;
-}
-
-function detachThreadMapWorkspaceIfLast(
-  targetMainJid: string | undefined,
-  excludingImJid: string,
-  nextWorkspaceJid?: string,
-  nextRoutingMode?: 'single_session' | 'thread_map',
-): void {
-  if (!targetMainJid) return;
-  const workspace = resolveWorkspaceForBinding(targetMainJid);
-  if (!workspace) return;
-  const nextWorkspace =
-    nextRoutingMode === 'thread_map' && nextWorkspaceJid
-      ? resolveWorkspaceForBinding(nextWorkspaceJid)
-      : null;
-  if (nextWorkspace?.jid === workspace.jid) return;
-  if (hasRemainingThreadMapMount(workspace.jid, excludingImJid)) return;
-
-  applyRegisteredGroupUpdate(
-    workspace.jid,
-    buildDetachedWorkspaceUpdate(workspace.group),
-  );
-}
-
-function markNativeContextWorkspace(targetMainJid: string): void {
-  const workspace = resolveWorkspaceForBinding(targetMainJid);
-  if (!workspace) return;
-  applyRegisteredGroupUpdate(workspace.jid, {
-    ...workspace.group,
-    conversation_source: 'native_thread',
-    conversation_nav_mode: 'vertical_threads',
-  });
-}
+// Group-binding helpers (applyRegisteredGroupUpdate /
+// resolveWorkspaceForBinding / markNativeContextWorkspace /
+// detachThreadMapWorkspaceIfLast / hasConsistentChannelAccount /
+// refreshAgentLastImJid / getConversationKind / fetchLiveChatInfo) are
+// shared with routes/agents.ts via ../channel-mount-service.js
+// (ISSUE-11 B1) — no local copies remain in this file.
 
 function restoreDefaultChannelError(restored: { reason: string }): string {
   if (restored.reason === 'account_mismatch') {
@@ -1775,80 +1563,6 @@ function restoreDefaultChannelError(restored: { reason: string }): string {
   }
   return 'Channel account has no default or owner home workspace';
 }
-
-configRoutes.get('/feishu', authMiddleware, systemConfigMiddleware, (c) => {
-  logDeprecationOnce(
-    'GET /api/config/feishu',
-    'GET /api/config/user-im/feishu',
-  );
-  try {
-    const { config, source } = getFeishuProviderConfigWithSource();
-    const pub = toPublicFeishuProviderConfig(config, source);
-    const connected = deps?.isFeishuConnected?.() ?? false;
-    return c.json({ ...pub, connected });
-  } catch (err) {
-    logger.error({ err }, 'Failed to load Feishu config');
-    return c.json({ error: 'Failed to load Feishu config' }, 500);
-  }
-});
-
-configRoutes.put(
-  '/feishu',
-  authMiddleware,
-  systemConfigMiddleware,
-  async (c) => {
-    const body = await c.req.json().catch(() => ({}));
-    const validation = FeishuConfigSchema.safeParse(body);
-    if (!validation.success) {
-      return c.json(
-        { error: 'Invalid request body', details: validation.error.format() },
-        400,
-      );
-    }
-
-    const current = getFeishuProviderConfig();
-    const next = { ...current };
-    if (typeof validation.data.appId === 'string') {
-      next.appId = validation.data.appId;
-    }
-    if (typeof validation.data.appSecret === 'string') {
-      next.appSecret = validation.data.appSecret;
-    } else if (validation.data.clearAppSecret === true) {
-      next.appSecret = '';
-    }
-    if (typeof validation.data.enabled === 'boolean') {
-      next.enabled = validation.data.enabled;
-    }
-
-    try {
-      const saved = saveFeishuProviderConfig({
-        appId: next.appId,
-        appSecret: next.appSecret,
-        enabled: next.enabled,
-      });
-
-      // Hot-reload: reconnect/disconnect Feishu channel
-      let connected = false;
-      if (deps?.reloadFeishuConnection) {
-        try {
-          connected = await deps.reloadFeishuConnection(saved);
-        } catch (err: unknown) {
-          logger.warn({ err }, 'Failed to reload Feishu connection');
-        }
-      }
-
-      return c.json({
-        ...toPublicFeishuProviderConfig(saved, 'runtime'),
-        connected,
-      });
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Invalid Feishu config payload';
-      logger.warn({ err }, 'Invalid Feishu config payload');
-      return c.json({ error: message }, 400);
-    }
-  },
-);
 
 // ─── Registration config ─────────────────────────────────────────
 
@@ -1901,23 +1615,7 @@ configRoutes.put(
 
 // ─── Appearance config ────────────────────────────────────────────
 
-const SYSTEM_AGENT_AVATARS_DIR = path.join(DATA_DIR, 'avatars');
 const SYSTEM_AGENT_AVATAR_PREFIX = 'system-agent-';
-const SYSTEM_AGENT_AVATAR_EXTENSIONS: Record<string, string> = {
-  'image/jpeg': '.jpg',
-  'image/png': '.png',
-  'image/gif': '.gif',
-  'image/webp': '.webp',
-};
-
-function removeStaleSystemAgentAvatars(keep?: string): void {
-  if (!fs.existsSync(SYSTEM_AGENT_AVATARS_DIR)) return;
-  for (const filename of fs.readdirSync(SYSTEM_AGENT_AVATARS_DIR)) {
-    if (!filename.startsWith(SYSTEM_AGENT_AVATAR_PREFIX) || filename === keep)
-      continue;
-    fs.rmSync(path.join(SYSTEM_AGENT_AVATARS_DIR, filename), { force: true });
-  }
-}
 
 configRoutes.get('/appearance', authMiddleware, systemConfigMiddleware, (c) => {
   try {
@@ -1962,34 +1660,18 @@ configRoutes.post(
   adminRoleMiddleware,
   avatarUploadBodyLimit,
   async (c) => {
-    if (!(c.req.header('content-type') || '').includes('multipart/form-data')) {
-      return c.json({ error: 'Expected multipart/form-data' }, 400);
+    // Shared validation + write pipeline (ISSUE-11 B9); this route keeps the
+    // admin auth, appearance persistence and system-agent reap policy.
+    const stored = await storeAvatarUpload(c.req, SYSTEM_AGENT_AVATAR_PREFIX);
+    if (!stored.ok) {
+      return c.json({ error: stored.error }, stored.status);
     }
-    const formData = await c.req.formData();
-    const file = formData.get('avatar');
-    if (!file || !(file instanceof File)) {
-      return c.json({ error: 'No avatar file provided' }, 400);
-    }
-    if (file.size > AVATAR_MAX_FILE_BYTES) {
-      return c.json({ error: 'File too large (max 3MB)' }, 413);
-    }
-    const extension = SYSTEM_AGENT_AVATAR_EXTENSIONS[file.type];
-    if (!extension) {
-      return c.json(
-        { error: 'Unsupported image type. Use jpg, png, gif or webp' },
-        400,
-      );
-    }
-
-    fs.mkdirSync(SYSTEM_AGENT_AVATARS_DIR, { recursive: true });
-    const filename = `${SYSTEM_AGENT_AVATAR_PREFIX}${randomBytes(4).toString('hex')}${extension}`;
-    const destination = path.join(SYSTEM_AGENT_AVATARS_DIR, filename);
-    const temporary = `${destination}.tmp`;
-    fs.writeFileSync(temporary, Buffer.from(await file.arrayBuffer()));
-    fs.renameSync(temporary, destination);
-    const aiAvatarUrl = `/api/auth/avatars/${filename}`;
+    const aiAvatarUrl = stored.avatarUrl;
     const appearance = saveAppearanceConfig({ aiAvatarUrl });
-    removeStaleSystemAgentAvatars(filename);
+    reapAvatarFiles({
+      prefix: SYSTEM_AGENT_AVATAR_PREFIX,
+      keep: [stored.filename],
+    });
     return c.json({ appearance, avatarUrl: aiAvatarUrl });
   },
 );
@@ -2003,7 +1685,7 @@ configRoutes.delete(
       aiAvatarUrl: null,
       aiAvatarMode: 'emoji',
     });
-    removeStaleSystemAgentAvatars();
+    reapAvatarFiles({ prefix: SYSTEM_AGENT_AVATAR_PREFIX });
     return c.json({ appearance });
   },
 );
@@ -2494,779 +2176,6 @@ configRoutes.get(
   },
 );
 
-// ─── Per-user IM connection status ──────────────────────────────────
-
-configRoutes.get('/user-im/status', authMiddleware, (c) => {
-  const user = c.get('user') as AuthUser;
-  return c.json({
-    feishu: deps?.isUserFeishuConnected?.(user.id) ?? false,
-    qq: deps?.isUserQQConnected?.(user.id) ?? false,
-    wechat: deps?.isUserWeChatConnected?.(user.id) ?? false,
-  });
-});
-
-// ─── Per-user IM config (all logged-in users) ─────────────────────
-
-configRoutes.get('/user-im/feishu', authMiddleware, (c) => {
-  const user = c.get('user') as AuthUser;
-  try {
-    const config = getUserFeishuConfig(user.id);
-    const connected = deps?.isUserFeishuConnected?.(user.id) ?? false;
-    if (!config) {
-      return c.json({
-        appId: '',
-        hasAppSecret: false,
-        appSecretMasked: null,
-        enabled: false,
-        updatedAt: null,
-        connected,
-        autoIsolateContext: false,
-      });
-    }
-    return c.json({
-      ...toPublicFeishuProviderConfig(config, 'runtime'),
-      connected,
-      autoIsolateContext: config.autoIsolateContext ?? false,
-    });
-  } catch (err) {
-    logger.error({ err }, 'Failed to load user Feishu config');
-    return c.json({ error: 'Failed to load user Feishu config' }, 500);
-  }
-});
-
-configRoutes.put('/user-im/feishu', authMiddleware, async (c) => {
-  const user = c.get('user') as AuthUser;
-  const body = await c.req.json().catch(() => ({}));
-  const validation = FeishuConfigSchema.safeParse(body);
-  if (!validation.success) {
-    return c.json(
-      { error: 'Invalid request body', details: validation.error.format() },
-      400,
-    );
-  }
-
-  const current = getUserFeishuConfig(user.id);
-  const next: Record<string, unknown> = {
-    appId: current?.appId || '',
-    appSecret: current?.appSecret || '',
-    enabled: current?.enabled ?? true,
-    updatedAt: current?.updatedAt || null,
-    autoIsolateContext: current?.autoIsolateContext ?? false,
-    // Preserve the auto-learned owner open_id — saveUserFeishuConfig does a full
-    // rewrite, so omitting it here would wipe the owner_mentioned activation and
-    // sender_allowlist seed on every settings save.
-    ownerOpenId: current?.ownerOpenId,
-  };
-  if (typeof validation.data.appId === 'string') {
-    const appId = validation.data.appId.trim();
-    if (appId) next.appId = appId;
-  }
-  if (typeof validation.data.appSecret === 'string') {
-    const appSecret = validation.data.appSecret.trim();
-    if (appSecret) next.appSecret = appSecret;
-  } else if (validation.data.clearAppSecret === true) {
-    next.appSecret = '';
-  }
-  if (typeof validation.data.enabled === 'boolean') {
-    next.enabled = validation.data.enabled;
-  } else if (!current && (next.appId || next.appSecret)) {
-    // First-time config with credentials should connect immediately.
-    next.enabled = true;
-  }
-  if (typeof validation.data.autoIsolateContext === 'boolean') {
-    next.autoIsolateContext = validation.data.autoIsolateContext;
-  }
-
-  // Pre-save connectivity test: 启用且有完整凭据,且 (appId 或 appSecret 跟当前
-  // 持久化值不一致) 时,先调一次 tenant_access_token 接口验证凭据真能换出 token。
-  //
-  // 凭据变更守卫(per PR #572 review):仅 autoIsolateContext / enabled 这类与
-  // 凭据无关的设置变更不应触发 8s 飞书 API 测试;否则飞书抖动期间用户改个无关
-  // 开关都会被 400 阻塞。current 在上方已 decrypt 持有明文 appSecret,可直接比较。
-  //
-  // 不可达 / timeout 不强行阻塞:既然连飞书都连不上,自动重连阶段也会失败,
-  // 此时把错误暴露给用户比"成功保存但实际拿不到 token"更体面。
-  const credentialsChanged =
-    next.appId !== (current?.appId ?? '') ||
-    next.appSecret !== (current?.appSecret ?? '');
-  if (
-    next.enabled === true &&
-    typeof next.appId === 'string' &&
-    typeof next.appSecret === 'string' &&
-    next.appId &&
-    next.appSecret &&
-    credentialsChanged
-  ) {
-    const test = await testFeishuCredentials(
-      next.appId as string,
-      next.appSecret as string,
-    );
-    if (!test.ok) {
-      logger.warn(
-        {
-          userId: user.id,
-          appId: next.appId,
-          errorCode: test.errorCode,
-          errorMessage: test.errorMessage,
-        },
-        'Feishu credentials verification failed before save',
-      );
-      return c.json(
-        {
-          error: 'Feishu credentials verification failed',
-          details: {
-            code: test.errorCode,
-            message: test.errorMessage,
-            hint: 'Check appId/appSecret on the Lark/Feishu developer console',
-          },
-        },
-        400,
-      );
-    }
-  }
-
-  try {
-    const saved = saveUserFeishuConfig(user.id, {
-      appId: next.appId as string,
-      appSecret: next.appSecret as string,
-      enabled: next.enabled as boolean | undefined,
-      autoIsolateContext: next.autoIsolateContext as boolean | undefined,
-      ownerOpenId: next.ownerOpenId as string | undefined,
-    });
-    appendImConfigAudit(
-      user.username,
-      'feishu',
-      'update',
-      Object.keys(validation.data),
-      {
-        userId: user.id,
-      },
-    );
-
-    // Migrate existing Feishu chats when autoIsolateContext toggle changes
-    const oldAutoIsolate = current?.autoIsolateContext ?? false;
-    const newAutoIsolate = saved.autoIsolateContext ?? false;
-    if (oldAutoIsolate !== newAutoIsolate && deps?.applyAutoIsolateContext) {
-      const migrated = deps.applyAutoIsolateContext(user.id, newAutoIsolate);
-      logger.info(
-        { userId: user.id, enable: newAutoIsolate, migrated },
-        'Applied autoIsolateContext to existing Feishu chats',
-      );
-    }
-
-    // Hot-reload: reconnect user's Feishu channel
-    if (deps?.reloadUserIMConfig) {
-      try {
-        await deps.reloadUserIMConfig(user.id, 'feishu');
-      } catch (err) {
-        logger.warn(
-          { err, userId: user.id },
-          'Failed to hot-reload user Feishu connection',
-        );
-      }
-    }
-
-    const connected = deps?.isUserFeishuConnected?.(user.id) ?? false;
-    return c.json({
-      ...toPublicFeishuProviderConfig(saved, 'runtime'),
-      connected,
-      autoIsolateContext: saved.autoIsolateContext ?? false,
-    });
-  } catch (err) {
-    const message =
-      err instanceof Error ? err.message : 'Invalid Feishu config payload';
-    logger.warn({ err }, 'Invalid user Feishu config payload');
-    return c.json({ error: message }, 400);
-  }
-});
-
-function maskQQAppSecret(secret: string): string | null {
-  if (!secret) return null;
-  if (secret.length <= 8) return '***';
-  return secret.slice(0, 4) + '***' + secret.slice(-4);
-}
-
-configRoutes.get('/user-im/qq', authMiddleware, (c) => {
-  const user = c.get('user') as AuthUser;
-  try {
-    const config = getUserQQConfig(user.id);
-    const connected = deps?.isUserQQConnected?.(user.id) ?? false;
-    if (!config) {
-      return c.json({
-        appId: '',
-        hasAppSecret: false,
-        appSecretMasked: null,
-        enabled: false,
-        updatedAt: null,
-        connected,
-      });
-    }
-    return c.json({
-      appId: config.appId,
-      hasAppSecret: !!config.appSecret,
-      appSecretMasked: maskQQAppSecret(config.appSecret),
-      enabled: config.enabled ?? false,
-      updatedAt: config.updatedAt,
-      connected,
-    });
-  } catch (err) {
-    logger.error({ err }, 'Failed to load user QQ config');
-    return c.json({ error: 'Failed to load user QQ config' }, 500);
-  }
-});
-
-configRoutes.put('/user-im/qq', authMiddleware, async (c) => {
-  const user = c.get('user') as AuthUser;
-  const body = await c.req.json().catch(() => ({}));
-  const validation = QQConfigSchema.safeParse(body);
-  if (!validation.success) {
-    return c.json(
-      { error: 'Invalid request body', details: validation.error.format() },
-      400,
-    );
-  }
-
-  const current = getUserQQConfig(user.id);
-  const next = {
-    appId: current?.appId || '',
-    appSecret: current?.appSecret || '',
-    enabled: current?.enabled ?? true,
-  };
-  if (typeof validation.data.appId === 'string') {
-    next.appId = validation.data.appId.trim();
-  }
-  if (typeof validation.data.appSecret === 'string') {
-    const appSecret = validation.data.appSecret.trim();
-    if (appSecret) next.appSecret = appSecret;
-  } else if (validation.data.clearAppSecret === true) {
-    next.appSecret = '';
-  }
-  if (typeof validation.data.enabled === 'boolean') {
-    next.enabled = validation.data.enabled;
-  } else if (!current && next.appId && next.appSecret) {
-    next.enabled = true;
-  }
-
-  try {
-    const saved = saveUserQQConfig(user.id, {
-      appId: next.appId,
-      appSecret: next.appSecret,
-      enabled: next.enabled,
-    });
-    appendImConfigAudit(
-      user.username,
-      'qq',
-      'update',
-      Object.keys(validation.data),
-      { userId: user.id },
-    );
-
-    // Hot-reload: reconnect user's QQ channel
-    if (deps?.reloadUserIMConfig) {
-      try {
-        await deps.reloadUserIMConfig(user.id, 'qq');
-      } catch (err) {
-        logger.warn(
-          { err, userId: user.id },
-          'Failed to hot-reload user QQ connection',
-        );
-      }
-    }
-
-    const connected = deps?.isUserQQConnected?.(user.id) ?? false;
-    return c.json({
-      appId: saved.appId,
-      hasAppSecret: !!saved.appSecret,
-      appSecretMasked: maskQQAppSecret(saved.appSecret),
-      enabled: saved.enabled ?? false,
-      updatedAt: saved.updatedAt,
-      connected,
-    });
-  } catch (err) {
-    const message =
-      err instanceof Error ? err.message : 'Invalid QQ config payload';
-    logger.warn({ err }, 'Invalid user QQ config payload');
-    return c.json({ error: message }, 400);
-  }
-});
-
-configRoutes.post('/user-im/qq/test', authMiddleware, async (c) => {
-  const user = c.get('user') as AuthUser;
-  const config = getUserQQConfig(user.id);
-  if (!config?.appId || !config?.appSecret) {
-    return c.json({ error: 'QQ App ID and App Secret not configured' }, 400);
-  }
-
-  try {
-    // Test by fetching access token
-    const https = await import('node:https');
-    const body = JSON.stringify({
-      appId: config.appId,
-      clientSecret: config.appSecret,
-    });
-
-    const result = await new Promise<{
-      access_token?: string;
-      expires_in?: number;
-    }>((resolve, reject) => {
-      const url = new URL('https://bots.qq.com/app/getAppAccessToken');
-      const req = https.request(
-        {
-          hostname: url.hostname,
-          path: url.pathname,
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Content-Length': String(Buffer.byteLength(body)),
-          },
-          timeout: 15000,
-        },
-        (res) => {
-          const chunks: Buffer[] = [];
-          res.on('data', (chunk: Buffer) => chunks.push(chunk));
-          res.on('end', () => {
-            try {
-              resolve(JSON.parse(Buffer.concat(chunks).toString('utf-8')));
-            } catch (err) {
-              reject(err);
-            }
-          });
-          res.on('error', reject);
-        },
-      );
-      req.on('error', reject);
-      req.on('timeout', () => {
-        req.destroy(new Error('Request timeout'));
-      });
-      req.write(body);
-      req.end();
-    });
-
-    if (!result.access_token) {
-      return c.json(
-        {
-          error:
-            'Failed to obtain access token. Please check App ID and App Secret.',
-        },
-        400,
-      );
-    }
-
-    return c.json({
-      success: true,
-      expires_in: result.expires_in,
-    });
-  } catch (err) {
-    const message =
-      err instanceof Error ? err.message : 'Failed to connect to QQ';
-    logger.warn({ err }, 'Failed to test user QQ connection');
-    return c.json({ error: message }, 400);
-  }
-});
-
-configRoutes.post('/user-im/qq/pairing-code', authMiddleware, async (c) => {
-  const user = c.get('user') as AuthUser;
-  const config = getUserQQConfig(user.id);
-  if (!config?.appId || !config?.appSecret) {
-    return c.json({ error: 'QQ App ID and App Secret not configured' }, 400);
-  }
-
-  try {
-    const { generatePairingCode } = await import('../channel-pairing.js');
-    const result = generatePairingCode(user.id);
-    return c.json(result);
-  } catch (err) {
-    const message =
-      err instanceof Error ? err.message : 'Failed to generate pairing code';
-    logger.warn({ err }, 'Failed to generate QQ pairing code');
-    return c.json({ error: message }, 500);
-  }
-});
-
-// List QQ paired chats for the current user
-configRoutes.get('/user-im/qq/paired-chats', authMiddleware, (c) => {
-  const user = c.get('user') as AuthUser;
-  const groups = (deps?.getRegisteredGroups() ?? {}) as Record<
-    string,
-    {
-      name: string;
-      added_at: string;
-      created_by?: string;
-      channel_account_id?: string | null;
-    }
-  >;
-  const legacy = getLegacyChannelAccount(user.id, 'qq');
-  const chats: Array<{ jid: string; name: string; addedAt: string }> = [];
-  for (const [jid, group] of Object.entries(groups)) {
-    const address = parseChannelAddress(jid);
-    if (
-      address?.provider === 'qq' &&
-      group.created_by === user.id &&
-      (address.legacy || group.channel_account_id === legacy?.id)
-    ) {
-      chats.push({ jid, name: group.name, addedAt: group.added_at });
-    }
-  }
-  return c.json({ chats });
-});
-
-// Rename a QQ paired chat
-configRoutes.put('/user-im/qq/paired-chats/:jid', authMiddleware, async (c) => {
-  const user = c.get('user') as AuthUser;
-  const jid = decodeURIComponent(c.req.param('jid'));
-
-  if (!jid.startsWith('qq:')) {
-    return c.json({ error: 'Invalid QQ chat JID' }, 400);
-  }
-
-  const groups = deps?.getRegisteredGroups() ?? {};
-  const group = groups[jid];
-  if (!group) {
-    return c.json({ error: 'Chat not found' }, 404);
-  }
-  if (group.created_by !== user.id) {
-    return c.json({ error: 'Not authorized to rename this chat' }, 403);
-  }
-  const legacy = getLegacyChannelAccount(user.id, 'qq');
-  const address = parseChannelAddress(jid);
-  if (!address?.legacy && group.channel_account_id !== legacy?.id) {
-    return c.json({ error: 'Not authorized to rename this chat' }, 403);
-  }
-
-  const body = await c.req
-    .json<{ name?: unknown }>()
-    .catch(() => ({}) as { name?: unknown });
-  const rawName = typeof body.name === 'string' ? body.name : '';
-  const name = rawName.trim();
-  if (!name) {
-    return c.json({ error: 'Name is required' }, 400);
-  }
-  if (name.length > 256) {
-    return c.json({ error: 'Name too long (max 256 chars)' }, 400);
-  }
-
-  group.name = name;
-  setRegisteredGroup(jid, group);
-  updateChatName(jid, name);
-  logger.info({ jid, name, userId: user.id }, 'QQ chat renamed');
-  return c.json({ success: true });
-});
-
-// Remove (unpair) a QQ chat
-configRoutes.delete('/user-im/qq/paired-chats/:jid', authMiddleware, (c) => {
-  const user = c.get('user') as AuthUser;
-  const jid = decodeURIComponent(c.req.param('jid'));
-
-  if (!jid.startsWith('qq:')) {
-    return c.json({ error: 'Invalid QQ chat JID' }, 400);
-  }
-
-  const groups = deps?.getRegisteredGroups() ?? {};
-  const group = groups[jid];
-  if (!group) {
-    return c.json({ error: 'Chat not found' }, 404);
-  }
-  if (group.created_by !== user.id) {
-    return c.json({ error: 'Not authorized to remove this chat' }, 403);
-  }
-  const legacy = getLegacyChannelAccount(user.id, 'qq');
-  const address = parseChannelAddress(jid);
-  if (!address?.legacy && group.channel_account_id !== legacy?.id) {
-    return c.json({ error: 'Not authorized to remove this chat' }, 403);
-  }
-
-  deleteRegisteredGroup(jid);
-  deleteChatHistory(jid);
-  delete groups[jid];
-  logger.info({ jid, userId: user.id }, 'QQ chat unpaired');
-  return c.json({ success: true });
-});
-
-// ─── Per-user WeChat IM config ──────────────────────────────────
-
-const WECHAT_API_BASE = 'https://ilinkai.weixin.qq.com';
-const WECHAT_QR_BOT_TYPE = '3';
-
-function maskBotToken(token: string | undefined): string | null {
-  if (!token) return null;
-  if (token.length <= 8) return '***';
-  return token.slice(0, 4) + '***' + token.slice(-4);
-}
-
-configRoutes.get('/user-im/wechat', authMiddleware, (c) => {
-  const user = c.get('user') as AuthUser;
-  try {
-    const config = getUserWeChatConfig(user.id);
-    const connected = deps?.isUserWeChatConnected?.(user.id) ?? false;
-    if (!config) {
-      return c.json({
-        ilinkBotId: '',
-        hasBotToken: false,
-        botTokenMasked: null,
-        bypassProxy: true,
-        enabled: false,
-        updatedAt: null,
-        connected,
-      });
-    }
-    return c.json({
-      ilinkBotId: config.ilinkBotId || '',
-      hasBotToken: !!config.botToken,
-      botTokenMasked: maskBotToken(config.botToken),
-      bypassProxy: config.bypassProxy ?? true,
-      enabled: config.enabled ?? false,
-      updatedAt: config.updatedAt,
-      connected,
-    });
-  } catch (err) {
-    logger.error({ err }, 'Failed to load user WeChat config');
-    return c.json({ error: 'Failed to load user WeChat config' }, 500);
-  }
-});
-
-configRoutes.put('/user-im/wechat', authMiddleware, async (c) => {
-  const user = c.get('user') as AuthUser;
-  const body = await c.req.json().catch(() => ({}));
-  const validation = WeChatConfigSchema.safeParse(body);
-  if (!validation.success) {
-    return c.json(
-      { error: 'Invalid request body', details: validation.error.format() },
-      400,
-    );
-  }
-
-  const current = getUserWeChatConfig(user.id);
-  const next = {
-    botToken: current?.botToken || '',
-    ilinkBotId: current?.ilinkBotId || '',
-    baseUrl: current?.baseUrl,
-    cdnBaseUrl: current?.cdnBaseUrl,
-    getUpdatesBuf: current?.getUpdatesBuf,
-    bypassProxy: current?.bypassProxy ?? true,
-    enabled: current?.enabled ?? false,
-  };
-
-  if (validation.data.clearBotToken === true) {
-    next.botToken = '';
-    next.ilinkBotId = '';
-  }
-  if (typeof validation.data.enabled === 'boolean') {
-    next.enabled = validation.data.enabled;
-  }
-  if (typeof validation.data.bypassProxy === 'boolean') {
-    next.bypassProxy = validation.data.bypassProxy;
-  }
-
-  try {
-    const saved = saveUserWeChatConfig(user.id, next);
-    appendImConfigAudit(
-      user.username,
-      'wechat',
-      'update',
-      Object.keys(validation.data),
-      { userId: user.id },
-    );
-
-    // Hot-reload: reconnect user's WeChat channel
-    if (deps?.reloadUserIMConfig) {
-      try {
-        await deps.reloadUserIMConfig(user.id, 'wechat');
-      } catch (err) {
-        logger.warn(
-          { err, userId: user.id },
-          'Failed to hot-reload user WeChat connection',
-        );
-      }
-    }
-
-    const connected = deps?.isUserWeChatConnected?.(user.id) ?? false;
-    return c.json({
-      ilinkBotId: saved.ilinkBotId || '',
-      hasBotToken: !!saved.botToken,
-      botTokenMasked: maskBotToken(saved.botToken),
-      bypassProxy: saved.bypassProxy ?? true,
-      enabled: saved.enabled ?? false,
-      updatedAt: saved.updatedAt,
-      connected,
-    });
-  } catch (err) {
-    const message =
-      err instanceof Error ? err.message : 'Invalid WeChat config payload';
-    logger.warn({ err }, 'Invalid user WeChat config payload');
-    return c.json({ error: message }, 400);
-  }
-});
-
-// Generate QR code for WeChat iLink login
-configRoutes.post('/user-im/wechat/qrcode', authMiddleware, async (c) => {
-  try {
-    const url = `${WECHAT_API_BASE}/ilink/bot/get_bot_qrcode?bot_type=${encodeURIComponent(WECHAT_QR_BOT_TYPE)}`;
-    const res = await fetch(url);
-    if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      logger.error({ status: res.status, body }, 'WeChat QR code fetch failed');
-      return c.json({ error: `Failed to fetch QR code: ${res.status}` }, 502);
-    }
-    const data = (await res.json()) as {
-      qrcode?: string;
-      qrcode_img_content?: string;
-    };
-    if (!data.qrcode) {
-      return c.json({ error: 'No QR code in response' }, 502);
-    }
-
-    // qrcode_img_content is a URL string (WeChat deep link) to be encoded
-    // INTO a QR code image, not an image URL itself.
-    let qrcodeDataUri = '';
-    if (data.qrcode_img_content) {
-      try {
-        qrcodeDataUri = await QRCode.toDataURL(data.qrcode_img_content, {
-          width: 512,
-          margin: 2,
-          color: { dark: '#000000', light: '#ffffff' },
-        });
-      } catch (qrErr) {
-        logger.warn({ err: qrErr }, 'Failed to generate QR code image');
-      }
-    }
-
-    return c.json({
-      qrcode: data.qrcode,
-      qrcodeUrl: qrcodeDataUri,
-    });
-  } catch (err) {
-    const message =
-      err instanceof Error ? err.message : 'Failed to generate QR code';
-    logger.error({ err }, 'WeChat QR code generation failed');
-    return c.json({ error: message }, 500);
-  }
-});
-
-// Poll QR code scan status
-configRoutes.get('/user-im/wechat/qrcode-status', authMiddleware, async (c) => {
-  const user = c.get('user') as AuthUser;
-  const qrcode = c.req.query('qrcode');
-  if (!qrcode) {
-    return c.json({ error: 'qrcode query parameter required' }, 400);
-  }
-
-  try {
-    const url = `${WECHAT_API_BASE}/ilink/bot/get_qrcode_status?qrcode=${encodeURIComponent(qrcode)}`;
-    const headers: Record<string, string> = {
-      'iLink-App-ClientVersion': '1',
-    };
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 35000);
-    let res: Response;
-    try {
-      res = await fetch(url, { headers, signal: controller.signal });
-      clearTimeout(timer);
-    } catch (err) {
-      clearTimeout(timer);
-      if (err instanceof Error && err.name === 'AbortError') {
-        return c.json({ status: 'wait' });
-      }
-      throw err;
-    }
-
-    if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      return c.json(
-        { error: `QR status poll failed: ${res.status}`, body },
-        502,
-      );
-    }
-
-    const data = (await res.json()) as {
-      status?: 'wait' | 'scaned' | 'confirmed' | 'expired';
-      bot_token?: string;
-      ilink_bot_id?: string;
-      baseurl?: string;
-      ilink_user_id?: string;
-    };
-
-    if (data.status === 'confirmed' && data.bot_token && data.ilink_bot_id) {
-      // Auto-save credentials and connect
-      const saved = saveUserWeChatConfig(user.id, {
-        botToken: data.bot_token,
-        ilinkBotId: data.ilink_bot_id.replace(/[^a-zA-Z0-9@._-]/g, ''),
-        baseUrl: data.baseurl || undefined,
-        enabled: true,
-      });
-      appendImConfigAudit(
-        user.username,
-        'wechat',
-        'oauth_qr_confirmed',
-        ['botToken', 'ilinkBotId', 'baseUrl', 'enabled'],
-        { userId: user.id },
-      );
-
-      // Note: ilink_user_id (the QR scanner) is NOT auto-paired here.
-      // The scanner needs to send a message to the bot and use /pair <code>
-      // to complete pairing, same as the QQ flow.
-      // This ensures proper group registration via buildOnNewChat/registerGroup.
-
-      // Hot-reload: connect WeChat
-      if (deps?.reloadUserIMConfig) {
-        try {
-          await deps.reloadUserIMConfig(user.id, 'wechat');
-        } catch (err) {
-          logger.warn(
-            { err, userId: user.id },
-            'Failed to hot-reload WeChat after QR login',
-          );
-        }
-      }
-
-      return c.json({
-        status: 'confirmed',
-        ilinkBotId: saved.ilinkBotId,
-      });
-    }
-
-    return c.json({
-      status: data.status || 'wait',
-    });
-  } catch (err) {
-    const message =
-      err instanceof Error ? err.message : 'QR status poll failed';
-    logger.error({ err }, 'WeChat QR status poll failed');
-    return c.json({ error: message }, 500);
-  }
-});
-
-// Disconnect WeChat and clear token
-configRoutes.post('/user-im/wechat/disconnect', authMiddleware, async (c) => {
-  const user = c.get('user') as AuthUser;
-  try {
-    const current = getUserWeChatConfig(user.id);
-    if (current) {
-      saveUserWeChatConfig(user.id, {
-        botToken: '',
-        ilinkBotId: '',
-        enabled: false,
-        getUpdatesBuf: current.getUpdatesBuf,
-      });
-    }
-
-    // Disconnect
-    if (deps?.reloadUserIMConfig) {
-      try {
-        await deps.reloadUserIMConfig(user.id, 'wechat');
-      } catch (err) {
-        logger.warn({ err, userId: user.id }, 'Failed to disconnect WeChat');
-      }
-    }
-
-    return c.json({ success: true });
-  } catch (err) {
-    const message =
-      err instanceof Error ? err.message : 'Failed to disconnect WeChat';
-    logger.error({ err }, 'WeChat disconnect failed');
-    return c.json({ error: message }, 500);
-  }
-});
-
 // ─── IM Binding management (bindings panoramic page) ────────────
 
 configRoutes.put('/user-im/bindings/:imJid', authMiddleware, async (c) => {
@@ -3322,7 +2231,6 @@ configRoutes.put('/user-im/bindings/:imJid', authMiddleware, async (c) => {
       return c.json({ error: 'Invalid or inaccessible channel account' }, 400);
     }
     const previousTargetAgentId = freshImGroup.target_agent_id;
-    const previousTargetMainJid = freshImGroup.target_main_jid;
     const wasThreadMap = freshImGroup.binding_mode === 'thread_map';
     const restored = restoreDefaultChannelMount(
       imJid,
@@ -3335,7 +2243,7 @@ configRoutes.put('/user-im/bindings/:imJid', authMiddleware, async (c) => {
     }
     if (wasThreadMap) {
       detachThreadMapWorkspaceIfLast(
-        previousTargetMainJid,
+        freshImGroup,
         imJid,
         restored.workspaceJid,
         restored.routingMode,
@@ -3469,7 +2377,7 @@ configRoutes.put('/user-im/bindings/:imJid', authMiddleware, async (c) => {
     );
     applyBindingUpdate(imJid, updated);
     if (freshImGroup.binding_mode === 'thread_map') {
-      detachThreadMapWorkspaceIfLast(freshImGroup.target_main_jid, imJid);
+      detachThreadMapWorkspaceIfLast(freshImGroup, imJid);
     }
     logger.info(
       { imJid, sessionId, userId: user.id },
@@ -3602,7 +2510,7 @@ configRoutes.put('/user-im/bindings/:imJid', authMiddleware, async (c) => {
     applyBindingUpdate(imJid, updated);
     if (freshImGroup.binding_mode === 'thread_map') {
       detachThreadMapWorkspaceIfLast(
-        freshImGroup.target_main_jid,
+        freshImGroup,
         imJid,
         targetMainJid,
         threadCapable ? 'thread_map' : 'single_session',
@@ -3669,7 +2577,7 @@ configRoutes.put('/user-im/bindings/:imJid', authMiddleware, async (c) => {
       : candidate;
     applyBindingUpdate(imJid, updated);
     if (imGroup.binding_mode === 'thread_map' && !threadCapable) {
-      detachThreadMapWorkspaceIfLast(imGroup.target_main_jid, imJid);
+      detachThreadMapWorkspaceIfLast(imGroup, imJid);
     }
     if (threadCapable && updated.target_main_jid) {
       markNativeContextWorkspace(updated.target_main_jid);

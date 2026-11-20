@@ -1,5 +1,7 @@
 import crypto from 'node:crypto';
 
+import { nowIso, requireDatabase } from './store-helpers.js';
+
 interface SqliteRunResult {
   changes: number;
   lastInsertRowid?: number | bigint;
@@ -158,19 +160,8 @@ export class WorkspaceMemoryStoreError extends Error {
   }
 }
 
-function requireDatabase(): SqliteDatabase {
-  if (!database) {
-    throw new Error('Workspace memory store is not initialized');
-  }
-  return database;
-}
-
 function newId(prefix: string): string {
   return `${prefix}_${crypto.randomUUID()}`;
-}
-
-function nowIso(): string {
-  return new Date().toISOString();
 }
 
 function normalizeNullable(value: string | null | undefined): string | null {
@@ -253,7 +244,7 @@ function storeRow(workspaceJid: string): {
   updated_at: string;
 } | null {
   return (
-    (requireDatabase()
+    (requireDatabase(database, 'Workspace memory')
       .prepare(
         `SELECT id, workspace_jid, revision, created_at, updated_at
          FROM workspace_memory_stores WHERE workspace_jid = ?`,
@@ -295,7 +286,7 @@ const ITEM_SELECT = `
 
 function itemRow(storeId: string, itemId: string): MemoryItemRow | null {
   return (
-    (requireDatabase()
+    (requireDatabase(database, 'Workspace memory')
       .prepare(`${ITEM_SELECT} WHERE i.store_id = ? AND i.id = ?`)
       .get(storeId, itemId) as MemoryItemRow | undefined) ?? null
   );
@@ -324,7 +315,7 @@ function requireItem(
 function isReservedMemoryItem(item: WorkspaceMemoryItem): boolean {
   if (isReservedCanonicalKey(item.canonicalKey)) return true;
   return Boolean(
-    requireDatabase()
+    requireDatabase(database, 'Workspace memory')
       .prepare(
         `SELECT 1
          FROM workspace_memory_platform_items
@@ -340,7 +331,7 @@ function isReservedMemoryItem(item: WorkspaceMemoryItem): boolean {
 }
 
 function markPlatformMemoryItem(itemId: string, at: string): void {
-  requireDatabase()
+  requireDatabase(database, 'Workspace memory')
     .prepare(
       `INSERT OR IGNORE INTO workspace_memory_platform_items (
         item_id, namespace, created_at
@@ -363,7 +354,7 @@ function appendVersion(
   context: WorkspaceMemoryMutationContext,
   at: string,
 ): void {
-  const db = requireDatabase();
+  const db = requireDatabase(database, 'Workspace memory');
   db.prepare(
     `INSERT INTO workspace_memory_versions (
       item_id, revision, workspace_jid, kind, title, content, canonical_key,
@@ -418,7 +409,7 @@ function appendAuditEvent(
   context: WorkspaceMemoryMutationContext,
   at: string,
 ): void {
-  const db = requireDatabase();
+  const db = requireDatabase(database, 'Workspace memory');
   db.prepare(
     `INSERT INTO workspace_memory_audit_events (
       id, workspace_jid, store_id, item_id, item_revision, store_revision,
@@ -441,7 +432,7 @@ function appendAuditEvent(
 }
 
 function replaceFts(item: WorkspaceMemoryItem): void {
-  const db = requireDatabase();
+  const db = requireDatabase(database, 'Workspace memory');
   db.prepare('DELETE FROM workspace_memory_fts WHERE item_id = ?').run(item.id);
   if (item.status !== 'active' || isReservedMemoryItem(item)) {
     return;
@@ -460,7 +451,7 @@ function replaceFts(item: WorkspaceMemoryItem): void {
 }
 
 function bumpStore(storeId: string, at: string): WorkspaceMemoryStore {
-  const db = requireDatabase();
+  const db = requireDatabase(database, 'Workspace memory');
   db.prepare(
     `UPDATE workspace_memory_stores
      SET revision = revision + 1, updated_at = ?
@@ -676,7 +667,7 @@ export function reconcileCkqclawOwnerAddressCanonicalKey(): {
   workspaces: number;
   retiredItems: number;
 } {
-  const db = requireDatabase();
+  const db = requireDatabase(database, 'Workspace memory');
   return db.transaction(() => {
     const duplicateStores = db
       .prepare(
@@ -766,7 +757,7 @@ export function reconcileCkqclawOwnerAddressCanonicalKey(): {
  * duplicates and would otherwise fail before the migration can repair them.
  */
 export function enforceCkqclawOwnerAddressCanonicalInvariant(): void {
-  requireDatabase()
+  requireDatabase(database, 'Workspace memory')
     .prepare(
       `DELETE FROM workspace_memory_fts
        WHERE item_id IN (
@@ -780,7 +771,7 @@ export function enforceCkqclawOwnerAddressCanonicalInvariant(): void {
       CKQCLAW_OWNER_PREFERRED_ADDRESS_CANONICAL_KEY,
       CKQCLAW_OWNER_PROFILE_MEMORY_NAMESPACE,
     );
-  requireDatabase().exec(`
+  requireDatabase(database, 'Workspace memory').exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_workspace_memory_owner_address_unique
       ON workspace_memory_items(store_id, canonical_key)
       WHERE canonical_key = 'ckqclaw.owner.preferred_address';
@@ -796,7 +787,7 @@ export function enforceCkqclawOwnerAddressCanonicalInvariant(): void {
  * workspace that reuses the same JID inherit another owner's memory.
  */
 export function deleteWorkspaceMemoryData(workspaceJid: string): void {
-  const db = requireDatabase();
+  const db = requireDatabase(database, 'Workspace memory');
   const store = storeRow(workspaceJid);
   if (!store) return;
   db.prepare('DELETE FROM workspace_memory_fts WHERE workspace_jid = ?').run(
@@ -844,7 +835,7 @@ export function deleteWorkspaceMemoryData(workspaceJid: string): void {
 export function resetWorkspaceMemoryData(
   workspaceJid: string,
 ): WorkspaceMemoryStore {
-  const db = requireDatabase();
+  const db = requireDatabase(database, 'Workspace memory');
   return db.transaction(() => {
     const workspace = db
       .prepare('SELECT 1 FROM workspaces WHERE jid = ?')
@@ -881,7 +872,7 @@ export function hasRecallableWorkspaceMemoryCanonicalKey(
 ): boolean {
   const store = storeRow(workspaceJid);
   if (!store) return false;
-  const row = requireDatabase()
+  const row = requireDatabase(database, 'Workspace memory')
     .prepare(
       `SELECT 1
        FROM workspace_memory_items
@@ -939,7 +930,7 @@ export function getCkqclawOwnerAddressMemoryItem(workspaceJid: string): {
   item: WorkspaceMemoryItem | null;
 } {
   const store = requireStore(workspaceJid);
-  const row = requireDatabase()
+  const row = requireDatabase(database, 'Workspace memory')
     .prepare(
       `${ITEM_SELECT}
        WHERE i.store_id = ?
@@ -966,7 +957,7 @@ function reservedRequestReplay(
 ): ReservedWorkspaceMemoryMutationResult | null {
   const idempotencyKey = normalizeNullable(input.idempotencyKey);
   if (!idempotencyKey) return null;
-  const replay = requireDatabase()
+  const replay = requireDatabase(database, 'Workspace memory')
     .prepare(
       `SELECT operation, item_id, request_hash, response_json
        FROM workspace_memory_mutation_requests
@@ -1022,7 +1013,7 @@ export function mutateCkqclawOwnerAddressMemory(input: {
   idempotencyKey?: string | null;
   requestHash?: string | null;
 }): ReservedWorkspaceMemoryMutationResult {
-  const db = requireDatabase();
+  const db = requireDatabase(database, 'Workspace memory');
   return db.transaction(() => {
     const { store: initialStore, item: current } =
       getCkqclawOwnerAddressMemoryItem(input.workspaceJid);
@@ -1270,7 +1261,7 @@ export function createWorkspaceMemoryItem(input: {
   replayed: boolean;
 } {
   rejectReservedCanonicalKey(input.value.canonicalKey);
-  const db = requireDatabase();
+  const db = requireDatabase(database, 'Workspace memory');
   return db.transaction(() => {
     const initialStore = requireStore(input.workspaceJid);
     const idempotencyKey = normalizeNullable(input.idempotencyKey);
@@ -1357,7 +1348,7 @@ export function updateWorkspaceMemoryItem(input: {
   item: WorkspaceMemoryItem;
   replayed: boolean;
 } {
-  const db = requireDatabase();
+  const db = requireDatabase(database, 'Workspace memory');
   return db.transaction(() => {
     const initialStore = requireStore(input.workspaceJid);
     const current = requireItem(initialStore, input.itemId);
@@ -1514,7 +1505,7 @@ export function forgetWorkspaceMemoryItem(input: {
   item: WorkspaceMemoryItem;
   replayed: boolean;
 } {
-  const db = requireDatabase();
+  const db = requireDatabase(database, 'Workspace memory');
   return db.transaction(() => {
     const initialStore = requireStore(input.workspaceJid);
     const current = requireItem(initialStore, input.itemId);
@@ -1669,7 +1660,7 @@ export function listWorkspaceMemoryItems(input: {
     );
   }
   params.push(input.limit);
-  const rows = requireDatabase()
+  const rows = requireDatabase(database, 'Workspace memory')
     .prepare(
       `${ITEM_SELECT}
        WHERE ${clauses.join(' AND ')}
@@ -1698,7 +1689,7 @@ export function listRecallableWorkspaceMemoryItems(input: {
     ...(input.kind ? [input.kind] : []),
     input.limit,
   ];
-  const rows = requireDatabase()
+  const rows = requireDatabase(database, 'Workspace memory')
     .prepare(
       `${ITEM_SELECT}
        WHERE i.store_id = ?
@@ -1733,7 +1724,7 @@ export function searchWorkspaceMemoryItems(input: {
   store: WorkspaceMemoryStore;
   hits: Array<{ item: WorkspaceMemoryItem; rank: number; snippet: string }>;
 } {
-  const db = requireDatabase();
+  const db = requireDatabase(database, 'Workspace memory');
   const store = requireStore(input.workspaceJid);
   const now = input.now ?? nowIso();
   const query = input.query.trim();
@@ -1847,7 +1838,7 @@ export function listWorkspaceMemoryVersions(input: {
     params.push(input.beforeRevision);
   }
   params.push(input.limit);
-  const rows = requireDatabase()
+  const rows = requireDatabase(database, 'Workspace memory')
     .prepare(
       `SELECT
         v.item_id AS id, v.workspace_jid, v.kind, v.title, v.content,

@@ -1,13 +1,16 @@
 /**
- * Verifies Sub-Agent CRUD (create / rename / delete) requires workspace
- * ownership (canModifyGroup).
+ * Verifies workspace session CRUD (create / rename / delete) requires
+ * workspace ownership (canModifyGroup).
  *
  * Coverage matrix:
- *   - owner        → POST creates a conversation (200)
+ *   - owner        → POST creates a session (200)
  *   - non-owner → routes return 404 (group hidden by canAccessGroup)
  *
  * Mirrors tests/routes-workspace-config-acl.test.ts. web.js's broadcast is
  * mocked so the success path doesn't pull in the full Hono app / WebSocket.
+ *
+ * The /:jid/agents write aliases were removed by ISSUE-11 (A3) — write cases
+ * run against the formal /:jid/sessions routes; GET /:jid/agents stays.
  */
 import fs from 'fs';
 import os from 'os';
@@ -118,20 +121,6 @@ afterEach(() => {
   delete process.env.CKQCLAW_TEST_USER_ROLE;
 });
 
-async function postAgent(
-  body: unknown,
-): Promise<{ status: number; body: any }> {
-  const res = await agentRoutes.request(
-    `/${encodeURIComponent(GROUP_JID)}/agents`,
-    {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    },
-  );
-  return { status: res.status, body: await res.json().catch(() => ({})) };
-}
-
 async function postSession(
   body: unknown,
 ): Promise<{ status: number; body: any }> {
@@ -156,27 +145,17 @@ async function deleteSessionRoute(
   return { status: res.status, body: await res.json().catch(() => ({})) };
 }
 
-async function patchAgent(
-  agentId: string,
+async function patchSession(
+  sessionId: string,
   body: unknown,
 ): Promise<{ status: number; body: any }> {
   const res = await agentRoutes.request(
-    `/${encodeURIComponent(GROUP_JID)}/agents/${agentId}`,
+    `/${encodeURIComponent(GROUP_JID)}/sessions/${sessionId}`,
     {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
     },
-  );
-  return { status: res.status, body: await res.json().catch(() => ({})) };
-}
-
-async function deleteAgent(
-  agentId: string,
-): Promise<{ status: number; body: any }> {
-  const res = await agentRoutes.request(
-    `/${encodeURIComponent(GROUP_JID)}/agents/${agentId}`,
-    { method: 'DELETE' },
   );
   return { status: res.status, body: await res.json().catch(() => ({})) };
 }
@@ -189,22 +168,24 @@ async function getAgents(): Promise<{ status: number; body: any }> {
   return { status: res.status, body: await res.json().catch(() => ({})) };
 }
 
-describe('agents CRUD ACL', () => {
-  test('owner can POST (create) a conversation', async () => {
+describe('session create ACL (formal /sessions API)', () => {
+  test('owner can POST (create) a conversation session', async () => {
     seedTestGroup();
     asUser(OWNER_ID);
 
-    const { status, body } = await postAgent({ name: 'My conversation' });
+    const { status, body } = await postSession({ name: 'My conversation' });
     expect(status).toBe(200);
-    expect(body.agent?.id).toBeTruthy();
-    expect(body.agent?.name).toBe('My conversation');
+    // Sessions API responds with the {session, agent} double key.
+    expect(body.session?.id).toBeTruthy();
+    expect(body.session?.name).toBe('My conversation');
+    expect(body.agent?.id).toBe(body.session?.id);
   });
 
   test('non-member returns 404 on POST (group hidden)', async () => {
     seedTestGroup();
     asUser(OUTSIDER_ID);
 
-    const { status, body } = await postAgent({ name: 'Nope' });
+    const { status, body } = await postSession({ name: 'Nope' });
     expect(status).toBe(404);
     expect(body.error).toMatch(/not found/i);
   });
@@ -251,7 +232,10 @@ describe('formal sessions API', () => {
     });
   });
 
-  test('legacy conversation creation also coexists with native topics', async () => {
+  test('Web session creation also coexists with feishu_thread native topics', async () => {
+    // Migrated from the removed POST /:jid/agents alias (ISSUE-11 A3): the
+    // formal sessions API must keep allowing independent Web sessions next
+    // to feishu_thread-sourced native topics.
     seedTestGroup();
     asUser(OWNER_ID);
     db.setRegisteredGroup(GROUP_JID, {
@@ -260,11 +244,11 @@ describe('formal sessions API', () => {
       conversation_nav_mode: 'vertical_threads',
     });
 
-    const { status, body } = await postAgent({ name: 'Legacy Web session' });
+    const { status, body } = await postSession({ name: 'Web session' });
 
     expect(status, JSON.stringify(body)).toBe(200);
-    expect(body.agent).toMatchObject({
-      name: 'Legacy Web session',
+    expect(body.session).toMatchObject({
+      name: 'Web session',
       source_kind: 'manual',
     });
   });
@@ -312,7 +296,7 @@ describe('formal sessions API', () => {
       title_source: 'native_root',
     });
 
-    const rename = await patchAgent(sessionId, { name: 'Do not rename' });
+    const rename = await patchSession(sessionId, { name: 'Do not rename' });
     expect(rename.status, JSON.stringify(rename.body)).toBe(400);
     expect(rename.body.error).toMatch(/read-only/i);
 

@@ -5,6 +5,7 @@ import os from 'os';
 
 import { ASSISTANT_NAME, DATA_DIR } from './config.js';
 import { logger } from './logger.js';
+import { stripOneMillionSuffix } from './model-suffix.js';
 import { stripVirtualJidSuffix } from './utils.js';
 
 const MAX_FIELD_LENGTH = 2000;
@@ -142,18 +143,10 @@ function isOneMillionContextModel(model: string): boolean {
   return /\[1m\]$/i.test(model.trim());
 }
 
-/**
- * 任务AL：剥离模型名尾部的 [1m] 后缀。Pi 迁移后该后缀已无协议作用，第三方
- * Anthropic 兼容端点会因模型名带后缀直接 400；与 runner context-window.ts
- * 的 stripOneMillionSuffix 保持同款正则（宿主与 runner 分属两个 npm 项目，
- * 无法共享模块，改动需双侧同步）。
- */
-function stripOneMillionSuffix(model: string): string {
-  return model
-    .trim()
-    .replace(/(\[1m\])+$/i, '')
-    .trim();
-}
+// stripOneMillionSuffix（任务AL：剥离模型名尾部的 [1m] 后缀，Pi 迁移后该
+// 后缀已无协议作用，第三方 Anthropic 兼容端点会因模型名带后缀直接 400）
+// 自 ISSUE-11 B10 起经 shared/model-suffix.ts 的 sync 机制与 runner 侧
+// 保持单一实现（本文件原先自带逐字副本）。
 
 /**
  * 任务AL：宿主侧认定的有效窗口（声明 > [1m] 启发式 > 200k），用于预填
@@ -3395,11 +3388,8 @@ export function createUserContainerConcurrencyChecker(
 }
 
 // ─── OAuth Usage Types ─────────────────────────────────────────────────────
-
-export interface OAuthUsageBucket {
-  utilization: number;
-  resets_at: string;
-}
+// OAuthUsageBucket 本段曾重复声明一次（接口合并掩盖冗余）；ISSUE-11 B7 删此份，
+// 保留文件前部带注释的唯一声明。
 
 /**
  * 解析 OAuth usage bucket 对象

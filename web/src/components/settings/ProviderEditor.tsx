@@ -36,23 +36,15 @@ import {
   resolveProviderContextWindow,
   type ContextWindowPreset,
 } from '../../utils/provider-model';
+import {
+  buildCustomEnv,
+  DEFAULTED_THIRD_PARTY_ENV_KEYS,
+} from '../../utils/custom-env';
 import type { ProviderWithHealth, EnvRow } from './types';
 import { getErrorMessage } from './types';
 
 type ProviderType = 'official' | 'third_party';
 type OfficialAuthTab = 'oauth' | 'setup_token' | 'api_key';
-
-const RESERVED_ENV_KEYS = new Set([
-  'ANTHROPIC_BASE_URL',
-  'ANTHROPIC_AUTH_TOKEN',
-  'ANTHROPIC_API_KEY',
-  'CLAUDE_CODE_OAUTH_TOKEN',
-  'ANTHROPIC_MODEL',
-]);
-
-const DEFAULTED_THIRD_PARTY_ENV_KEYS = new Set(
-  buildDefaultProviderEnv('', 'auto').map((row) => row.key),
-);
 
 const MANAGED_ENV_SOURCE_LABELS = {
   model: '跟随模型',
@@ -60,46 +52,17 @@ const MANAGED_ENV_SOURCE_LABELS = {
   default: '系统默认',
 } as const;
 
-function buildCustomEnv(
-  rows: EnvRow[],
-  manageThirdPartyDefaults: boolean,
-): {
-  customEnv: Record<string, string>;
-  error: string | null;
-} {
-  const customEnv: Record<string, string> = {};
-
-  for (const [idx, row] of rows.entries()) {
-    const key = row.key.trim();
-    const value = row.value;
-
-    if (!key && !value.trim()) continue;
-
-    if (!key) {
-      return { customEnv: {}, error: `第 ${idx + 1} 行环境变量 Key 不能为空` };
-    }
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
-      return {
-        customEnv: {},
-        error: `环境变量 Key "${key}" 格式无效（需匹配 [A-Za-z_][A-Za-z0-9_]*）`,
-      };
-    }
-    if (
-      RESERVED_ENV_KEYS.has(key) ||
-      (manageThirdPartyDefaults && DEFAULTED_THIRD_PARTY_ENV_KEYS.has(key))
-    ) {
-      return {
-        customEnv: {},
-        error: `${key} 已在系统预填列表中，请直接修改对应值`,
-      };
-    }
-    if (customEnv[key] !== undefined) {
-      return { customEnv: {}, error: `环境变量 Key "${key}" 重复` };
-    }
-    customEnv[key] = value;
-  }
-
-  return { customEnv, error: null };
+/**
+ * ISSUE-11 B5：EnvRow 行编辑器 → KEY=value 逐行文本（key/value 均空的占位
+ * 行序列化为空行，交给共享 buildCustomEnv 的空行跳过逻辑）；校验严格化
+ * 见 utils/custom-env.ts（拍板 #7，存量已存数据不动）。
+ */
+function envRowsToText(rows: EnvRow[]): string {
+  return rows
+    .map((row) =>
+      row.key === '' && row.value === '' ? '' : `${row.key}=${row.value}`,
+    )
+    .join('\n');
 }
 
 interface ProviderEditorProps {
@@ -339,10 +302,9 @@ export function ProviderEditor({
       return;
     }
 
-    const envResult = buildCustomEnv(
-      customEnvRows,
-      providerType === 'third_party',
-    );
+    const envResult = buildCustomEnv(envRowsToText(customEnvRows), {
+      manageThirdPartyDefaults: providerType === 'third_party',
+    });
     if (envResult.error) {
       setError(envResult.error);
       return;

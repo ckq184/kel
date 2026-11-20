@@ -88,7 +88,13 @@ Radix UI。路由以 `web/src/App.tsx` 为准：
 | `/monitor`                | 运行状态，需要 `manage_system_config` |
 | `/users`                  | 用户、邀请和审计管理                  |
 
-`/groups`、`/skills` 和 `/mcp-servers` 是兼容重定向，不应新增独立页面。
+兼容重定向不应新增独立页面，共两层：路由级（`web/src/App.tsx`）`/groups`→`/chat`、
+`/skills`→`/capabilities/skills`、`/mcp-servers`→`/capabilities/mcp`；`/settings` 旧
+tab 级（`web/src/pages/SettingsPage.tsx` 的 `LEGACY_TAB_ROUTES` + automation 特判）
+共 8 处：`groups`→`/chat`、`agent-profiles`→`/agent-profiles`、`memory`→`/memory`、
+`skills`→`/capabilities/skills`、`mcp-servers`→`/capabilities/mcp`、`bindings`→
+`/settings?tab=my-channels&view=bindings`、`usage`→`/usage`，以及 `automation`→
+`system` 隐式特判。
 
 ### 3.3 Agent Runner
 

@@ -1,27 +1,11 @@
 import { createHmac } from 'node:crypto';
 
+import { normalizeForCanonicalJson } from './canonical-json.js';
+
 export interface WorkspaceMemoryMutationNamespace {
   groupFolder: string;
   agentId?: string | null;
   taskRunId?: string | null;
-}
-
-function normalizeForCanonicalJson(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map((item) =>
-      item === undefined ? null : normalizeForCanonicalJson(item),
-    );
-  }
-  if (value && typeof value === 'object') {
-    const source = value as Record<string, unknown>;
-    return Object.fromEntries(
-      Object.keys(source)
-        .sort()
-        .filter((key) => source[key] !== undefined)
-        .map((key) => [key, normalizeForCanonicalJson(source[key])]),
-    );
-  }
-  return value;
 }
 
 /**

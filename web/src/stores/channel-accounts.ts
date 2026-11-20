@@ -53,7 +53,6 @@ export interface ChannelOnboardingState {
   error?: string;
   meJid?: string;
   meName?: string;
-  phoneNumber?: string;
 }
 
 export interface ChannelAccount {
@@ -81,7 +80,6 @@ export interface ChannelAccount {
   options?: {
     bypassProxy?: boolean;
     streamingMode?: 'card' | 'text' | 'edit' | 'off';
-    phoneNumber?: string;
   };
 }
 

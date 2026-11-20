@@ -18,6 +18,7 @@ import {
   type ChannelAccount,
   type ChannelOnboardingState,
 } from '../../../stores/channel-accounts';
+import { extractErrorMessage } from '../../../utils/error';
 
 interface QrOnboardingPanelProps {
   account: ChannelAccount;
@@ -53,7 +54,7 @@ export function QrOnboardingPanel({
       setError(result.onboarding.error ?? null);
       return result.onboarding;
     } catch (err) {
-      setError(getApiMessage(err, '无法获取扫码状态，请稍后重试'));
+      setError(extractErrorMessage(err, '无法获取扫码状态，请稍后重试'));
       return null;
     } finally {
       setLoading(false);
@@ -78,7 +79,7 @@ export function QrOnboardingPanel({
         toast.info('授权有效，已开始连接消息服务');
       }
     } catch (err) {
-      const message = getApiMessage(err, '无法发起扫码连接，请稍后重试');
+      const message = extractErrorMessage(err, '无法发起扫码连接，请稍后重试');
       setError(message);
       toast.error(message);
     } finally {
@@ -158,7 +159,7 @@ export function QrOnboardingPanel({
       setOnboarding(result.onboarding);
       toast.success('连接已断开，授权信息已保留');
     } catch (err) {
-      const message = getApiMessage(err, '断开连接失败');
+      const message = extractErrorMessage(err, '断开连接失败');
       setError(message);
       toast.error(message);
     } finally {
@@ -180,7 +181,7 @@ export function QrOnboardingPanel({
       setOnboarding(result.onboarding);
       toast.success('验证码已提交，请在微信中继续确认');
     } catch (err) {
-      const message = getApiMessage(err, '验证码提交失败，请检查后重试');
+      const message = extractErrorMessage(err, '验证码提交失败，请检查后重试');
       setError(message);
       toast.error(message);
     } finally {
@@ -202,7 +203,7 @@ export function QrOnboardingPanel({
       setOnboarding(result.onboarding);
       toast.success('已退出登录并清除本地授权');
     } catch (err) {
-      const message = getApiMessage(err, '退出登录失败');
+      const message = extractErrorMessage(err, '退出登录失败');
       setError(message);
       toast.error(message);
     } finally {
@@ -483,15 +484,4 @@ function onboardingHelp(state: ChannelOnboardingState) {
     return '二维码由 CKQClaw 向微信申请，扫码结果会自动保存。';
   if (state.auth_status === 'revoked') return '本地授权已清除，需要重新扫码。';
   return '点击“扫码连接”获取微信登录二维码。';
-}
-
-function getApiMessage(error: unknown, fallback: string) {
-  if (
-    error &&
-    typeof error === 'object' &&
-    'message' in error &&
-    typeof error.message === 'string'
-  )
-    return error.message;
-  return fallback;
 }

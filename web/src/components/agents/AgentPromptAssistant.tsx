@@ -13,6 +13,7 @@ import {
   type AgentPromptParts,
   type AgentPromptSection,
 } from '../../utils/agent-prompts';
+import { extractErrorMessage } from '../../utils/error';
 
 interface PromptAssistantMessage extends AgentPromptChatMessage {
   id: number;
@@ -36,15 +37,6 @@ const QUICK_REQUESTS = [
   '补充工作边界，避免擅自假设',
   '强化风险意识和执行前检查',
 ];
-
-function getErrorMessage(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  if (err && typeof err === 'object' && 'message' in err) {
-    const message = (err as { message?: unknown }).message;
-    if (typeof message === 'string' && message) return message;
-  }
-  return 'AI 调整失败，请稍后重试';
-}
 
 export function AgentPromptAssistant({
   profileId,
@@ -132,7 +124,7 @@ export function AgentPromptAssistant({
     } catch (err) {
       if (activeProfileId.current !== requestProfileId) return;
       setInput((current) => current || message);
-      toast.error(getErrorMessage(err));
+      toast.error(extractErrorMessage(err, 'AI 调整失败，请稍后重试'));
     } finally {
       if (activeProfileId.current === requestProfileId) setSending(false);
     }

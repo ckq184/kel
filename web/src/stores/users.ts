@@ -8,6 +8,7 @@
  */
 import { create } from 'zustand';
 import { api } from '../api/client';
+import { extractErrorMessage } from '../utils/error';
 import type { Permission, UserPublic } from './auth';
 
 export type PermissionTemplateKey =
@@ -114,15 +115,6 @@ interface UsersState {
   fetchAuditLogs: (query?: AuditQuery) => Promise<void>;
 }
 
-function asMessage(err: unknown, fallback: string): string {
-  if (err instanceof Error && err.message) return err.message;
-  if (typeof err === 'object' && err !== null && 'message' in err) {
-    const message = (err as { message?: unknown }).message;
-    if (typeof message === 'string' && message.trim()) return message;
-  }
-  return fallback;
-}
-
 function toQueryString(
   params: Record<string, string | number | undefined>,
 ): string {
@@ -155,7 +147,9 @@ export const useUsersStore = create<UsersState>((set) => ({
       }>('/api/admin/permission-templates');
       set({ permissions: data.permissions, templates: data.templates });
     } catch (err) {
-      set({ error: asMessage(err, 'Failed to load permission metadata') });
+      set({
+        error: extractErrorMessage(err, 'Failed to load permission metadata'),
+      });
     }
   },
 
@@ -184,7 +178,10 @@ export const useUsersStore = create<UsersState>((set) => ({
         loading: false,
       });
     } catch (err) {
-      set({ error: asMessage(err, 'Failed to fetch users'), loading: false });
+      set({
+        error: extractErrorMessage(err, 'Failed to fetch users'),
+        loading: false,
+      });
     }
   },
 
@@ -216,7 +213,10 @@ export const useUsersStore = create<UsersState>((set) => ({
       );
       set({ invites: data.invites, loading: false });
     } catch (err) {
-      set({ error: asMessage(err, 'Failed to fetch invites'), loading: false });
+      set({
+        error: extractErrorMessage(err, 'Failed to fetch invites'),
+        loading: false,
+      });
     }
   },
 
@@ -251,7 +251,7 @@ export const useUsersStore = create<UsersState>((set) => ({
       set({ auditLogs: data.logs, loading: false });
     } catch (err) {
       set({
-        error: asMessage(err, 'Failed to fetch audit logs'),
+        error: extractErrorMessage(err, 'Failed to fetch audit logs'),
         loading: false,
       });
     }

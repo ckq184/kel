@@ -56,6 +56,7 @@ import { usePairedChats } from './hooks/usePairedChats';
 import { usePairingCode } from './hooks/usePairingCode';
 import { ProviderConnectionFields } from './channel-accounts/ProviderConnectionFields';
 import { QrOnboardingPanel } from './channel-accounts/QrOnboardingPanel';
+import { extractErrorMessage } from '../../utils/error';
 
 type WorkspaceOption = { jid: string; name: string };
 
@@ -128,7 +129,7 @@ export function ChannelAccountsManager() {
       else toast.error(result.error || '连接测试失败，请检查凭证和网络');
       await loadAccounts();
     } catch (err) {
-      toast.error(getApiMessage(err, '连接测试失败，请检查凭证和网络'));
+      toast.error(extractErrorMessage(err, '连接测试失败，请检查凭证和网络'));
       await loadAccounts().catch(() => undefined);
     } finally {
       setActionId(null);
@@ -145,7 +146,7 @@ export function ChannelAccountsManager() {
           : '账号已启用，正在恢复连接',
       );
     } catch (err) {
-      toast.error(getApiMessage(err, '更新账号状态失败'));
+      toast.error(extractErrorMessage(err, '更新账号状态失败'));
     } finally {
       setActionId(null);
     }
@@ -168,7 +169,7 @@ export function ChannelAccountsManager() {
       toast.error(
         count
           ? `该账号仍有 ${count} 个工作区或会话绑定，请先换绑或解绑`
-          : getApiMessage(err, '删除渠道账号失败'),
+          : extractErrorMessage(err, '删除渠道账号失败'),
       );
     } finally {
       setActionId(null);
@@ -494,7 +495,7 @@ function CreateChannelAccountDialog({
     try {
       await onCreate(values);
     } catch (err) {
-      setFormError(getApiMessage(err, '创建渠道账号失败'));
+      setFormError(extractErrorMessage(err, '创建渠道账号失败'));
     } finally {
       setSaving(false);
     }
@@ -656,7 +657,7 @@ function AccountSettingsDialog({
       toast.success('默认接入规则已保存');
       onClose();
     } catch (err) {
-      setError(getApiMessage(err, '保存默认接入规则失败'));
+      setError(extractErrorMessage(err, '保存默认接入规则失败'));
     } finally {
       setSaving(false);
     }
@@ -773,7 +774,7 @@ export function AccountConnectionDialog({
       setCredentials(defaultCredentials(account.provider));
       toast.success('连接凭证已更新');
     } catch (err) {
-      setError(getApiMessage(err, '更新连接凭证失败'));
+      setError(extractErrorMessage(err, '更新连接凭证失败'));
     } finally {
       setSaving(false);
     }
@@ -786,7 +787,7 @@ export function AccountConnectionDialog({
       await updateAccount(account.id, { credentials: options });
       toast.success('连接选项已保存');
     } catch (err) {
-      setError(getApiMessage(err, '保存连接选项失败'));
+      setError(extractErrorMessage(err, '保存连接选项失败'));
     } finally {
       setSaving(false);
     }
@@ -802,7 +803,7 @@ export function AccountConnectionDialog({
       toast.success('连接凭证已清除，账号已停用');
       setReplacing(true);
     } catch (err) {
-      setError(getApiMessage(err, '清除连接凭证失败'));
+      setError(extractErrorMessage(err, '清除连接凭证失败'));
     } finally {
       setSaving(false);
     }
@@ -1141,15 +1142,4 @@ function defaultTargetLabel(
   if (account.default_workspace_jid)
     return `默认去向：${workspaces.find((item) => item.jid === account.default_workspace_jid)?.name ?? '已删除工作区'}`;
   return '默认去向：个人主页';
-}
-
-function getApiMessage(error: unknown, fallback: string) {
-  if (
-    error &&
-    typeof error === 'object' &&
-    'message' in error &&
-    typeof error.message === 'string'
-  )
-    return error.message;
-  return fallback;
 }

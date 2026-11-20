@@ -1,12 +1,10 @@
 import type { Permission } from '../../stores/auth';
 
-export function getErrorMessage(err: unknown, fallback: string): string {
-  if (typeof err === 'object' && err !== null && 'message' in err) {
-    const msg = (err as { message?: unknown }).message;
-    if (typeof msg === 'string' && msg.trim()) return msg;
-  }
-  return fallback;
-}
+// ISSUE-11 B4：本地 getErrorMessage 副本收敛为共享 extractErrorMessage 的
+// 重导出别名（消费面 AuditLogTab / InviteCodesTab / UserListTab 的 import
+// 不动）。行为统一基准：Error.message → 对象 .message → String(err)，
+// 不 trim；fallback 仅在提取结果为空时生效。
+export { extractErrorMessage as getErrorMessage } from '../../utils/error';
 
 export function samePermissions(
   left: Permission[],

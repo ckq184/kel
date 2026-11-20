@@ -155,11 +155,6 @@ export interface WebDeps {
     runIds: string[],
     timeoutMs?: number,
   ) => Promise<boolean>;
-  handleSpawnCommand?: (
-    chatJid: string,
-    message: string,
-    sourceImJid?: string,
-  ) => Promise<string>;
   applyAutoIsolateContext?: (userId: string, enable: boolean) => number;
   /**
    * Resolve a registered group to its effective sibling-aware form. For non-home

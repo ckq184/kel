@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, apiFetch } from '../api/client';
+import { extractErrorMessage } from '../utils/error';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { createUnsavedNavigationGuard } from '@/utils/unsaved-navigation';
 import { Badge } from '@/components/ui/badge';
@@ -122,14 +123,6 @@ const CHANGE_TYPE_LABELS: Record<string, string> = {
   update: '更新',
   forget: '忘记',
 };
-
-function getErrorMessage(error: unknown, fallback: string): string {
-  if (error && typeof error === 'object' && 'message' in error) {
-    const message = (error as { message?: unknown }).message;
-    if (typeof message === 'string' && message.trim()) return message;
-  }
-  return fallback;
-}
 
 function formatTime(value: string | null | undefined): string {
   if (!value) return '未记录';
@@ -437,7 +430,7 @@ export function MemoryPage() {
       })
       .catch((error) => {
         if (!cancelled) {
-          setWorkspaceError(getErrorMessage(error, '工作区加载失败'));
+          setWorkspaceError(extractErrorMessage(error, '工作区加载失败'));
         }
       })
       .finally(() => {
@@ -492,7 +485,7 @@ export function MemoryPage() {
         ) {
           return;
         }
-        setListError(getErrorMessage(error, '工作区记忆加载失败'));
+        setListError(extractErrorMessage(error, '工作区记忆加载失败'));
       } finally {
         if (
           isCurrentWorkspace(workspaceJid, workspaceEpoch) &&
@@ -550,7 +543,7 @@ export function MemoryPage() {
           return;
         }
         setSearchHits([]);
-        toast.error(getErrorMessage(error, '搜索工作区记忆失败'));
+        toast.error(extractErrorMessage(error, '搜索工作区记忆失败'));
       } finally {
         if (
           isCurrentWorkspace(workspaceJid, workspaceEpoch) &&
@@ -649,7 +642,7 @@ export function MemoryPage() {
         ) {
           return;
         }
-        toast.error(getErrorMessage(error, '记忆详情加载失败'));
+        toast.error(extractErrorMessage(error, '记忆详情加载失败'));
       } finally {
         if (
           isCurrentWorkspace(workspaceJid, workspaceEpoch) &&
@@ -704,7 +697,7 @@ export function MemoryPage() {
       ) {
         return;
       }
-      toast.error(getErrorMessage(error, '修订记录加载失败'));
+      toast.error(extractErrorMessage(error, '修订记录加载失败'));
     } finally {
       if (
         isCurrentWorkspace(workspaceJid, workspaceEpoch) &&
@@ -789,7 +782,7 @@ export function MemoryPage() {
       ) {
         return;
       }
-      toast.error(getErrorMessage(error, '创建工作区记忆失败'));
+      toast.error(extractErrorMessage(error, '创建工作区记忆失败'));
     } finally {
       if (createGenerationRef.current === requestGeneration) {
         setCreating(false);
@@ -850,7 +843,7 @@ export function MemoryPage() {
       if (nextConflict) {
         setConflict(nextConflict);
       } else {
-        toast.error(getErrorMessage(error, '保存工作区记忆失败'));
+        toast.error(extractErrorMessage(error, '保存工作区记忆失败'));
       }
     } finally {
       if (saveGenerationRef.current === requestGeneration) {
@@ -907,7 +900,7 @@ export function MemoryPage() {
         setForgetOpen(false);
         setConflict(nextConflict);
       } else {
-        toast.error(getErrorMessage(error, '忘记工作区记忆失败'));
+        toast.error(extractErrorMessage(error, '忘记工作区记忆失败'));
       }
     } finally {
       if (forgetGenerationRef.current === requestGeneration) {
