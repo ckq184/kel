@@ -21,7 +21,9 @@ const repoRoot = path.resolve(
 
 /** 已知缺口白名单：类型 → 挂靠的 issue（完成后删除条目）。 */
 const KNOWN_GAPS: Record<string, string> = {
-  raw_sdk_event: 'ISSUE-02（消息边界复用）/ ISSUE-10（若不复用则下线）',
+  // raw_sdk_event 条目已随 ISSUE-02 完成（方案 a1 消息边界复用）删除：
+  // 生产者=pi-runner 的 message_boundary 映射；message_start/stop 之外
+  // rawType 的消费端去留仍归 ISSUE-10。
   tool_result:
     'ISSUE-03（Pi 结果在 tool_use_end.toolResult，补读取或下线分支）',
   task_start: 'ISSUE-03（子代理识别与工具卡修复）',

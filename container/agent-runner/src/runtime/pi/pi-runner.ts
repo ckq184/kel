@@ -115,6 +115,24 @@ function toStreamEvent(
   containerInput: ContainerInput,
 ): StreamEvent | undefined {
   switch (event.type) {
+    case 'message_boundary':
+      // Contract-equivalent rebirth of the deleted Claude stream-processor's
+      // message_start/message_stop raw events (64d6d7b): the host answer
+      // reducer keys its narration-vs-final split on exactly these rawTypes.
+      // Pi AssistantMessages carry no uuid, so messageUuid stays unset and
+      // the host falls back to its implicit-N counter (ISSUE-02 P0-2).
+      return {
+        eventType: 'raw_sdk_event',
+        agentScope: 'main',
+        rawType: `stream_event/message_${event.boundary}`,
+        title:
+          event.boundary === 'start'
+            ? 'Assistant message started'
+            : 'Assistant message completed',
+        parentToolUseId: null,
+        displayLevel: 'debug',
+        sessionId: event.sessionId,
+      };
     case 'text_delta':
       return {
         eventType: 'text_delta',

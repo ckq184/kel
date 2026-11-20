@@ -63,6 +63,13 @@ export type RuntimeEvent =
       sessionId: string;
     }
   | {
+      /** One assistant message began/finished. The host answer reducer splits
+       *  narration vs final answer on these boundaries (ISSUE-02 P0-2). */
+      type: 'message_boundary';
+      boundary: 'start' | 'stop';
+      sessionId: string;
+    }
+  | {
       type: 'tool_start' | 'tool_update' | 'tool_end';
       sessionId: string;
       toolName: string;
