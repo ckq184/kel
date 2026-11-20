@@ -101,7 +101,7 @@ task_progress(agentScope=subagent): taskStatus = created → started → complet
 
 ## 交付记录
 
-- **提交**：分支 `issue-01-p0-runtime-confirmation`（基线 `b08a3b8`），提交信息 `docs: ISSUE-01 - P0实机确认四项全成立`；提交号以本分支 git log / 合入 main 的记录为准。
+- **提交**：`860f77a`（分支 `issue-01-p0-runtime-confirmation`，开工基线 `b08a3b8`，合入前按任务池流程 rebase 至 `4e9dd61`——ISSUE-05/08 已先入 main）；提交信息 `docs: ISSUE-01 - P0实机确认四项全成立`。本行为交付收尾提交补落档（与 ISSUE-05/08 收尾提交同式）。
 - **验证**：`npm run verify` 6/6 步全绿（40.2s）；`node scripts/check-scope.mjs` 通过（4 路径全在声明范围内，`.gatescope.json` 声明随本提交落档）。
 - **与 issue 描述的偏差**：
   1. P0-2 未在真实飞书群复现卡片级症状（外发消息属用户侧外部可见动作，本诊断未执行）——以机制级证据（实机事件流无 `raw_sdk_event` + coordinator 全链静态核对）替代定论，卡片复现建议并入 ISSUE-02 修复后的验证；
