@@ -12,7 +12,6 @@ export interface ChatGroupItemProps {
   jid: string;
   name: string;
   folder: string;
-  lastMessage?: string;
 
   isActive: boolean;
   isHome: boolean;

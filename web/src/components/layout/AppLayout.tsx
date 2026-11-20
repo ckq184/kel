@@ -85,10 +85,12 @@ export function AppLayout() {
     };
   }, []);
 
-  // 监听 group_created（定时任务工作区创建），刷新侧边栏和任务列表
+  // 监听 group_created（定时任务工作区创建），刷新侧边栏和任务列表。
+  // 侧栏工作区列表读的是 chat store（UnifiedSidebar 读 s.groups），刷新必须
+  // 落在同一 store 上；groups store 的双份加载收敛见 ISSUE-11。
   useEffect(() => {
     const unsub = wsManager.on('group_created', () => {
-      useGroupsStore.getState().loadGroups();
+      useChatStore.getState().loadGroups();
       // Also refresh tasks — workspace_folder may have been populated
       import('../../stores/tasks').then((m) =>
         m.useTasksStore.getState().loadTasks(),
@@ -125,6 +127,23 @@ export function AppLayout() {
             data.kind,
             data.titleGenerating,
           );
+      }
+    });
+    return () => {
+      unsub();
+    };
+  }, []);
+
+  // 全局监听 agent_reply 的 ⚠️ 警告（notice=true：图片/文件投递失败等）。
+  // 未标记的完整回复广播由 new_message 承载，前端不在此消费。
+  useEffect(() => {
+    const unsub = wsManager.on('agent_reply', (data: any) => {
+      if (
+        data.notice === true &&
+        data.chatJid &&
+        typeof data.text === 'string'
+      ) {
+        useChatStore.getState().handleAgentNotice(data.chatJid, data.text);
       }
     });
     return () => {

@@ -25,10 +25,8 @@ interface PairingSectionProps {
     loading: boolean;
     error?: string | null;
     removingJid: string | null;
-    renamingJid?: string | null;
     load: () => void;
     remove: (jid: string) => void;
-    rename?: (jid: string, name: string) => void;
   };
 }
 

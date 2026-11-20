@@ -878,6 +878,9 @@ export type WsMessageOut =
       text: string;
       timestamp: string;
       agentId?: string;
+      /** true = ⚠️ 运行时警告（投递失败/文件未找到等），前端以系统提示展示；
+       * 未标记 = 完整回复冗余广播，内容由 new_message 承载，前端无需消费。 */
+      notice?: boolean;
     }
   | { type: 'typing'; chatJid: string; isTyping: boolean; agentId?: string }
   | {
