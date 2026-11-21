@@ -399,7 +399,7 @@ interface CachedFeishuChatInfo {
   groupMessageType?: string;
 }
 
-export const FEISHU_CHANNEL_CAPABILITIES = [
+const FEISHU_CHANNEL_CAPABILITIES = [
   'get_channel_context',
   'send_message',
   'send_image',

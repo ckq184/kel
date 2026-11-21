@@ -258,9 +258,7 @@ export interface CachedOAuthUsage {
 }
 
 /** 任务AL：provider 级上下文窗口预设档位（合法声明值）。 */
-export const CONTEXT_WINDOW_PRESETS = [
-  128_000, 256_000, 512_000, 1_000_000,
-] as const;
+const CONTEXT_WINDOW_PRESETS = [128_000, 256_000, 512_000, 1_000_000] as const;
 type DeclaredContextWindow = (typeof CONTEXT_WINDOW_PRESETS)[number];
 /** `auto` = 现行为（[1m] 启发式 → 1M，否则 200k）。 */
 export type ContextWindowPreset = 'auto' | DeclaredContextWindow;

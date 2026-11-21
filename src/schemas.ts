@@ -6,7 +6,7 @@ import { ALL_PERMISSIONS } from './permissions.js';
 import type { Permission } from './types.js';
 import { MAX_GROUP_NAME_LEN } from './web-context.js';
 
-export const ChannelProviderSchema = z.enum(['feishu', 'qq', 'wechat']);
+const ChannelProviderSchema = z.enum(['feishu', 'qq', 'wechat']);
 
 const ChannelCredentialsSchema = z
   .record(z.string(), z.string().max(8192))
@@ -191,7 +191,7 @@ export const TaskCreateSchema = z
 // 单张图片附件上限 5MB（base64 编码后约 6.67MB）
 const MAX_IMAGE_BASE64_LENGTH = (5 * 1024 * 1024 * 4) / 3; // ~6.67M chars
 
-export const MessageAttachmentSchema = z.object({
+const MessageAttachmentSchema = z.object({
   type: z.literal('image'),
   data: z.string().min(1).max(MAX_IMAGE_BASE64_LENGTH),
   mimeType: z
@@ -233,7 +233,7 @@ const InteractionModeSchema = z
   .enum(['assistant', 'proactive', 'persona'])
   .transform((mode) => (mode === 'persona' ? 'proactive' : mode));
 
-export const AdditionalMountCreateSchema = z
+const AdditionalMountCreateSchema = z
   .object({
     host_path: z.string().trim().min(1).max(4096),
     container_path: z.string().trim().min(1).max(512),
@@ -729,7 +729,7 @@ export const ProfileUpdateSchema = z.object({
   default_require_mention: z.boolean().optional(),
 });
 
-export const PermissionValueSchema = z
+const PermissionValueSchema = z
   .string()
   .refine(
     (value): value is Permission =>
@@ -778,7 +778,7 @@ export const InviteCreateSchema = z.object({
   expires_in_hours: z.number().int().min(1).max(8760).optional(),
 });
 
-export const ClaudeOAuthCredentialsSchema = z.object({
+const ClaudeOAuthCredentialsSchema = z.object({
   accessToken: z.string().min(1),
   refreshToken: z.string().min(1),
   expiresAt: z.number(),

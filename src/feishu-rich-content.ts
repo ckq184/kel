@@ -40,7 +40,7 @@ interface FeishuRichContentLimits {
   maxImageKeys: number;
 }
 
-export const DEFAULT_FEISHU_RICH_CONTENT_LIMITS: FeishuRichContentLimits = {
+const DEFAULT_FEISHU_RICH_CONTENT_LIMITS: FeishuRichContentLimits = {
   requestTimeoutMs: 1_500,
   totalTimeoutMs: 4_000,
   maxForwardItems: 20,

@@ -20,8 +20,8 @@ import type {
   MountAllowlist,
 } from './types.js';
 
-export const MAX_ADDITIONAL_MOUNTS = 8;
-export const ADDITIONAL_MOUNT_CONTAINER_ROOT = '/workspace/extra';
+const MAX_ADDITIONAL_MOUNTS = 8;
+const ADDITIONAL_MOUNT_CONTAINER_ROOT = '/workspace/extra';
 
 const DEFAULT_BLOCKED_PATTERNS = [
   '.ssh',

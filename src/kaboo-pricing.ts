@@ -99,7 +99,7 @@ const price = (
  * and 000034. Other providers intentionally use Kaboo's Sonnet-class fallback
  * until their tables can be versioned and verified independently.
  */
-export const KABOO_MODEL_PRICING: readonly KabooModelPricing[] = Object.freeze([
+const KABOO_MODEL_PRICING: readonly KabooModelPricing[] = Object.freeze([
   // Anthropic legacy/broad rules. Migration 000030 prices reasoning as output;
   // migration 000034 prices cache writes at 1.25x input.
   price(

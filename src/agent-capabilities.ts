@@ -29,7 +29,7 @@ interface AgentCapability {
   installHint: string;
 }
 
-export const AGENT_CAPABILITIES: AgentCapability[] = [
+const AGENT_CAPABILITIES: AgentCapability[] = [
   {
     name: 'node',
     binary: 'node',

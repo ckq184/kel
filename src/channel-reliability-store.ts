@@ -1125,7 +1125,7 @@ export function getChannelTurnRun(id: string): ChannelTurnRun | undefined {
   return row ? mapTurn(row) : undefined;
 }
 
-export const MANUAL_RECONCILIATION_ERROR_PREFIX = '[manual_reconciliation] ';
+const MANUAL_RECONCILIATION_ERROR_PREFIX = '[manual_reconciliation] ';
 
 export function manualReconciliationError(reason: string): string {
   const normalized = reason.trim();
@@ -1145,7 +1145,7 @@ export function requiresManualReconciliation(
   );
 }
 
-export const DELIVERED_EFFECT_RECONCILIATION_REASON = manualReconciliationError(
+const DELIVERED_EFFECT_RECONCILIATION_REASON = manualReconciliationError(
   'A channel side effect was already delivered before Turn completion; manual reconciliation required',
 );
 
