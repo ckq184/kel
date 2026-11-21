@@ -59,7 +59,6 @@ import {
   type IpcReplyTurnTracker,
 } from './reply-delivery.js';
 import {
-  ActiveTurnOutputRegistry,
   TurnOutputCoordinator,
   type TurnMessageDeliveryRole,
 } from './turn-output-coordinator.js';
@@ -277,7 +276,6 @@ import {
   reconcileChannelOutboxDeliveries,
 } from './channel-outbox-delivery.js';
 import {
-  ActiveChannelOutboxScopeRegistry,
   semanticChannelOutboxIdentity,
   stableChannelOutboxOrdinal,
   syntheticChannelProviderAck,
@@ -375,7 +373,6 @@ import {
 } from './web-context.js';
 import { resolveEffectiveAgentProfile } from './agent-profile-runtime.js';
 import {
-  AgentBuilderTurnRegistry,
   agentBuilderTurnScope,
   getAgentBuilderRuntimeRejection,
   isAgentBuilderOwnerInput,
@@ -384,10 +381,15 @@ import {
   ownerImIdFromDirectConversationJid,
   resolveTrustedDirectOwnerUpgrade,
 } from './agent-builder-turn-auth.js';
+import { channelTurnScope } from './channel-turn-registry.js';
 import {
-  ActiveChannelTurnRegistry,
-  channelTurnScope,
-} from './channel-turn-registry.js';
+  activeAgentBuilderTurns,
+  activeChannelOutboxScopes,
+  activeChannelTurns,
+  activeIpcReplyTurnTrackers,
+  activeTurnOutputs,
+  canDeliverTurnUtterance,
+} from './host-state.js';
 import type {
   FeishuCapabilityOperation,
   FeishuCapabilityRequest,
@@ -1065,55 +1067,11 @@ function invokeActiveRouteUpdater(
 // outputs to the correct IM channel (the running session holds the truth).
 const activeImReplyRoutes = new Map<string, string | null>();
 
-// Exact active-turn trackers shared with the independent IPC watcher. Keeping
-// only the currently running object avoids stale timestamps/message-id reuse
-// across later turns and sibling JIDs that share one folder.
-const activeIpcReplyTurnTrackers = new Map<string, IpcReplyTurnTracker>();
-
-// Foreground send_message(progress/final) joins the one host-owned primary
-// reply instead of creating an independent provider message. Bindings are
-// exact to (workspace/agent scope, immutable input turn).
-// Internal runaway-loop fuse, deliberately not configurable. It is a process
-// safety invariant rather than a product policy or quota for the model to spend.
-const MAX_REPLIES_PER_TURN = 20;
-const activeTurnOutputs = new ActiveTurnOutputRegistry(MAX_REPLIES_PER_TURN);
-
-/**
- * Per-turn reply fuse shared by every user-visible IPC delivery path.
- *
- * `send_message`, `send_image`, `send_file` and `feishu_send_card` all spend
- * the same budget through `recordDeliveredUtterance`, so they must all consult
- * it before delivering. Gating only one of them lets the unchecked paths drain
- * the budget silently and then refuse the single path that does check.
- *
- * A delivery without an `inputTurnId` is never blocked: it is not recorded
- * against a turn either, so it spends nothing.
- */
-function canDeliverTurnUtterance(
-  sourceGroup: string,
-  ipcAgentId: string | null | undefined,
-  inputTurnId: unknown,
-): boolean {
-  if (typeof inputTurnId !== 'string' || !inputTurnId) return true;
-  return activeTurnOutputs.canDeliverUtterance({
-    scopeKey: channelTurnScope(sourceGroup, ipcAgentId),
-    inputTurnId,
-  });
-}
-
-// Host-owned current-turn registry. Agent Builder authorization never trusts
-// turn/chat/task claims from the runner's writable IPC JSON.
-const activeAgentBuilderTurns = new AgentBuilderTurnRegistry();
-
-// Exact credential-free provider context for the user input currently being
-// answered. Feishu broker IPC is authorized against this host-owned registry;
-// runner-supplied chat/account claims are never trusted.
-const activeChannelTurns = new ActiveChannelTurnRegistry();
-
-// Durable output identity for the currently executing channel turn. Runtime
-// keys match the IPC routing keys; exact route matching inside the registry
-// prevents one thread/account from borrowing another thread's outbox.
-const activeChannelOutboxScopes = new ActiveChannelOutboxScopeRegistry();
+// turn 级注册表五连（activeIpcReplyTurnTrackers / activeTurnOutputs /
+// activeAgentBuilderTurns / activeChannelTurns / activeChannelOutboxScopes）
+// 与 canDeliverTurnUtterance、MAX_REPLIES_PER_TURN 已随 ISSUE-12 单元 4.1
+// 外迁至 ./host-state.ts（防 ipc/* 正向 import 成环）；此处经同名 import
+// 引用，全部调用点不变。
 
 // ── usage 账本批合并工具 ──
 // Ledger 分片事件（ISSUE-10 前的挂起合并语义已随截断链下线）按批累计合并，
