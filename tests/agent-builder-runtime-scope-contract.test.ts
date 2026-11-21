@@ -31,6 +31,10 @@ describe('Agent Builder runtime scope contract', () => {
   test('derives capability from the effective profile for main and runtime sessions', () => {
     const host = read('src/index.ts');
     const web = read('src/web.ts');
+    // ISSUE-12 波 4 单元 4.8：requireAgentBuilderActor 构建器已迁
+    // src/ipc/memory-owner-ops.ts（原文搬运，闭包局部量转显式参数），
+    // actorGate 切片改读新模块内构建器边界，断言语义不变。
+    const memoryOwnerOps = read('src/ipc/memory-owner-ops.ts');
 
     expect(host.match(/agentBuilderEnabled:/g)?.length).toBeGreaterThanOrEqual(
       3,
@@ -43,9 +47,9 @@ describe('Agent Builder runtime scope contract', () => {
     );
 
     const actorGate = section(
-      host,
-      'const requireAgentBuilderActor =',
-      "case 'agent_profile_list':",
+      memoryOwnerOps,
+      'export function requireAgentBuilderActorImpl',
+      'export function requireOwnerProfileActorImpl',
     );
     expect(actorGate).toMatch(/getAgentBuilderRuntimeRejection/);
     expect(actorGate).toMatch(

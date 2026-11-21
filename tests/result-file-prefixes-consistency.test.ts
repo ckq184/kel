@@ -26,6 +26,16 @@ const builderOpsSource = readFileSync(
   path.join(repoRoot, 'src/ipc/builder-ops.ts'),
   'utf-8',
 );
+// ISSUE-12 波 4 单元 4.6/4.7/4.8/4.9/4.11：字面量 writeTaskResult 调用随
+// 各 case 族迁入五个 ipc 模块，字面量扫描面扩至五模块合计（index.ts 已无
+// 字面量调用），计数与断言语义不变。
+const literalCallSources = [
+  'src/ipc/task-ops.ts',
+  'src/ipc/file-delivery.ts',
+  'src/ipc/memory-owner-ops.ts',
+  'src/ipc/feishu-capability-ops.ts',
+  'src/ipc/skill-registry-ops.ts',
+].map((rel) => readFileSync(path.join(repoRoot, rel), 'utf-8'));
 
 /** 从源码提取 RESULT_FILE_PREFIXES 数组的字面量成员。 */
 function extractResultFilePrefixes(source: string): string[] {
@@ -76,7 +86,9 @@ describe('orphan result file cleanup prefix consistency (ISSUE-05 §1)', () => {
   });
 
   test('every literal writeTaskResult type has its prefix in the list', () => {
-    const literalTypes = extractLiteralWriteTypes(mainSource);
+    const literalTypes = literalCallSources.flatMap((source) =>
+      extractLiteralWriteTypes(source),
+    );
     expect(literalTypes.length).toBeGreaterThan(0);
     const missing = literalTypes.filter(
       (type) => !prefixes.includes(`${type}_result_`),
