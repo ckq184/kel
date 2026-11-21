@@ -49,8 +49,11 @@ describe('attachment routing is fail-closed before business side effects', () =>
   });
 
   test('WeChat resolves before chat registration and media processing', () => {
+    // ISSUE-12 单元 2.20：微信入站管线随 processMessage 自 src/wechat.ts
+    // 原文搬至 src/wechat-inbound.ts，路由顺序契约等强改锚新模块的
+    // processMessage 切片——gate 与双副作用断言文本逐字不变。
     expectRouteBefore(
-      section(read('src/wechat.ts'), 'async function processMessage('),
+      section(read('src/wechat-inbound.ts'), 'async function processMessage('),
       ['storeChatMetadata(jid', 'processImageItem('],
       'isChatAuthorized?.(jid)',
     );

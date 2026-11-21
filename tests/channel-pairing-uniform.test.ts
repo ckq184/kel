@@ -27,6 +27,14 @@ const wechatSource = readFileSync(
   path.join(repoRoot, 'src/wechat.ts'),
   'utf-8',
 );
+// ISSUE-12 单元 2.20：微信 /pair 接线随入站管线自 src/wechat.ts 原文搬至
+// src/wechat-inbound.ts——宽松正则禁令与共享解析接线断言等强改锚新模块，
+// 断言文本逐字不变，wechat.ts 与 wechat-inbound.ts 双文件均受宽松正则
+// 禁令约束。
+const wechatInboundSource = readFileSync(
+  path.join(repoRoot, 'src/wechat-inbound.ts'),
+  'utf-8',
+);
 
 describe('uniform /pair parsing across channels (ISSUE-05 §3)', () => {
   test('shared parser rejects trailing extra tokens (strict semantics)', () => {
@@ -53,12 +61,19 @@ describe('uniform /pair parsing across channels (ISSUE-05 §3)', () => {
   });
 
   test('WeChat no longer inlines the loose pairing regex', () => {
+    // ISSUE-12 单元 2.20：/pair 接线随入站管线迁至 src/wechat-inbound.ts，
+    // import 与调用形断言改锚新模块（断言文本逐字不变）；wechat.ts 与
+    // wechat-inbound.ts 双文件均不得内联宽松正则。
     expect(
       wechatSource,
       'wechat.ts 应改调 parseChannelPairingCode，不得内联无尾部锚点的宽松正则',
     ).not.toMatch(/\/\^\\\/pair\\s\+\(\\S\+\)\/i/);
-    expect(wechatSource).toContain("from './channel-admission.js'");
-    expect(wechatSource).toContain('parseChannelPairingCode(');
+    expect(
+      wechatInboundSource,
+      'wechat-inbound.ts 应改调 parseChannelPairingCode，不得内联无尾部锚点的宽松正则',
+    ).not.toMatch(/\/\^\\\/pair\\s\+\(\\S\+\)\/i/);
+    expect(wechatInboundSource).toContain("from './channel-admission.js'");
+    expect(wechatInboundSource).toContain('parseChannelPairingCode(');
   });
 
   test('every inline /pair match site in QQ and WeChat routes through the shared parser', () => {
@@ -70,6 +85,8 @@ describe('uniform /pair parsing across channels (ISSUE-05 §3)', () => {
       // ISSUE-12 单元 2.15：/pair 唯一解析入口随镜像合一迁入新模块。
       ['qq-inbound.ts', qqInboundSource],
       ['wechat.ts', wechatSource],
+      // ISSUE-12 单元 2.20：微信 /pair 唯一解析入口随入站管线迁入新模块。
+      ['wechat-inbound.ts', wechatInboundSource],
     ] as const) {
       expect(source, `${name} 不应再出现 /pair 正则字面量`).not.toContain(
         '\\/pair',
