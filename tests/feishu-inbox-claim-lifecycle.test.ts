@@ -38,6 +38,18 @@ import { describe, expect, test } from 'vitest';
 // 新模块切片等强收口（行文本 + marker 双双随体迁移，另锁定义/守卫相对
 // 位置）；主管道侧仅余一次委托调用与 text / attachmentsJson /
 // referencedMessages 解构回接，无新增 return、无新增终态调用。
+//
+// 2.10 改锚说明：斜杠指令段（含 /queue /steer follow-up 模式与四态 durable
+// 命令检查点状态机）搬至 src/feishu-command-dispatch.ts，段内 12 条 return
+// （六处 lost-lease 弃权白名单、checkpoint-mismatch / interrupted 两 fail、
+// reply_acknowledged / 请在用法提示 / 已知命令三 complete、三分支 fail）
+// 随体迁出主管道——20 行表减为 9 条 return + 1 条落尾收尾，12 行在下方
+// 2.10 describe 块的新模块切片表等强收口：marker、via 终态计数、lost-lease
+// 白名单约束逐行保留，行文本随「段内出口经返回值表达」的机械替换统一为
+// return { handled: true };（仍逐行钉死防错位），另加第 13 行穿透出口锁
+// handled:false 回接形。主管道新增唯一一条 delegated 回接 return（前驱段
+// 恰一次委托调用、零终态零心跳调用）；段内终态记账与心跳停搏随搬运体经
+// 参数注入触发，语义不删不弱。
 
 const source = fs.readFileSync('src/feishu.ts', 'utf8');
 const inboxModuleSource = fs.existsSync('src/feishu-inbox.ts')
@@ -51,6 +63,9 @@ const attachmentsModuleSource = fs.existsSync(
   'src/feishu-inbound-attachments.ts',
 )
   ? fs.readFileSync('src/feishu-inbound-attachments.ts', 'utf8')
+  : '';
+const commandModuleSource = fs.existsSync('src/feishu-command-dispatch.ts')
+  ? fs.readFileSync('src/feishu-command-dispatch.ts', 'utf8')
   : '';
 
 // ─── 工具 ────────────────────────────────────────────────────────────────
@@ -97,6 +112,32 @@ function sliceClaimPipeline(): string {
 const pipelineBody = sliceClaimPipeline();
 const pipelineLines = pipelineBody.split('\n');
 
+/** 花括号深度扫描切出 dispatchFeishuCommand 完整函数体（单元 2.10 搬迁锚）。 */
+function sliceCommandDispatch(): string {
+  const marker = 'export async function dispatchFeishuCommand(';
+  const start = commandModuleSource.indexOf(marker);
+  expect(start).toBeGreaterThanOrEqual(0);
+  let depth = 0;
+  let cursor = commandModuleSource.indexOf('{', start);
+  for (; cursor < commandModuleSource.length; cursor += 1) {
+    const ch = commandModuleSource[cursor];
+    if (ch === '{') depth += 1;
+    else if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) break;
+    }
+  }
+  expect(cursor).toBeLessThan(commandModuleSource.length);
+  const bodyText = commandModuleSource.slice(start, cursor + 1);
+  // 防误切自检：切出的必须是完整斜杠段（follow-up 用法提示与已知命令拦截）。
+  expect(bodyText).toContain('请在 /');
+  expect(bodyText).toContain('已知命令，拦截');
+  return bodyText;
+}
+
+const commandDispatchBody = sliceCommandDispatch();
+const commandDispatchLines = commandDispatchBody.split('\n');
+
 interface ClaimedReturn {
   /** 去注释、trim 后的 return 行原文。 */
   text: string;
@@ -104,16 +145,16 @@ interface ClaimedReturn {
   segment: string;
 }
 
-function enumerateClaimedReturns(): ClaimedReturn[] {
+function enumerateReturns(lines: string[]): ClaimedReturn[] {
   const found: ClaimedReturn[] = [];
   let previousLine = 0;
-  for (let index = 0; index < pipelineLines.length; index += 1) {
-    const line = pipelineLines[index];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
     if (line.trim().startsWith('//')) continue;
     if (!/\breturn\b/.test(line)) continue;
     found.push({
       text: stripTrailingComment(line),
-      segment: pipelineLines.slice(previousLine, index).join('\n'),
+      segment: lines.slice(previousLine, index).join('\n'),
     });
     previousLine = index + 1;
   }
@@ -134,8 +175,13 @@ interface ClaimReturnRow {
    *   与日志，不得出现任何终态调用（行已不归本实例所有）。
    * nested = 管道体内嵌套函数（箭头回调）的 return，不是管道出口，
    *   仅钉行文本防错位。
+   * delegated = 2.10 委托回接出口：段体整体在新模块（marker 即调用形），
+   *   前驱段恰一次委托调用、零终态零心跳调用——段内全部 return 的终态
+   *   计数语义由新模块切片表（COMMAND_RETURN_CONTRACT）等强锁定。
+   * passthrough = 2.10 非终态穿透出口（未知命令 / follow-up 模式请求）：
+   *   不得触任何终态或心跳调用，handled:false 回接形由行文本钉死。
    */
-  scope: 'pipeline' | 'lost-lease' | 'nested';
+  scope: 'pipeline' | 'lost-lease' | 'nested' | 'delegated' | 'passthrough';
   via?: ClaimTerminalKind;
   /** 前驱段内必须出现的定位片段（诊断锚 + 防错位）。 */
   marker: string;
@@ -147,7 +193,10 @@ interface ClaimReturnRow {
 // 的 return 为 verdict 分支出口（决策体在 src/feishu-inbound-admission.ts，
 // 见下方 describe 块）；2.9 后附件段 nested 行随段迁出（守卫 return 在
 // src/feishu-inbound-attachments.ts，见下方 2.9 describe 块），表减为 20 条
-// return + 1 条落尾收尾。改动主管道时随提交更新本表。
+// return + 1 条落尾收尾；2.10 后斜杠段 12 条 return 随段迁出（终态计数
+// 语义在 src/feishu-command-dispatch.ts 切片表等强锁定，见下方 2.10
+// describe 块），表减为 9 条 return + 1 条落尾收尾，并新增唯一一条
+// delegated 回接行。改动主管道时随提交更新本表。
 const CLAIM_RETURN_CONTRACT: ClaimReturnRow[] = [
   {
     // 恢复门：shouldDeferInbound 未开即 fail（retry=true 走恢复调度）
@@ -177,74 +226,14 @@ const CLAIM_RETURN_CONTRACT: ClaimReturnRow[] = [
     marker: "'audience_rejected'",
   },
   {
+    // 2.10：斜杠指令段（含 follow-up 模式与 durable 重排队）整体迁入
+    // src/feishu-command-dispatch.ts，段内 12 条 return 等强改锚至下方
+    // COMMAND_RETURN_CONTRACT；主管道此 return 为 handled 回接出口，前驱
+    // 段恰一次委托调用、零终态零心跳调用（终态记账在搬运体内按注入依赖
+    // 原样触发）。
     line: 'return;',
-    scope: 'pipeline',
-    via: 'complete',
-    marker: '请在 /',
-  },
-  {
-    line: 'return;',
-    scope: 'pipeline',
-    via: 'fail',
-    marker:
-      'Durable Feishu slash-command checkpoint does not match the recovered input',
-  },
-  {
-    line: 'return;',
-    scope: 'pipeline',
-    via: 'fail',
-    marker: 'interruptedWhileSending',
-  },
-  {
-    line: 'return;',
-    scope: 'pipeline',
-    via: 'complete',
-    marker: 'reply_acknowledged',
-  },
-  {
-    line: 'return;',
-    scope: 'lost-lease',
-    marker: 'Lost Feishu Inbox lease before command execution checkpoint',
-  },
-  {
-    line: 'return;',
-    scope: 'lost-lease',
-    marker: 'Lost Feishu Inbox lease before command result checkpoint',
-  },
-  {
-    line: 'return;',
-    scope: 'lost-lease',
-    marker:
-      'Lost Feishu Inbox lease while clearing an unknown command checkpoint',
-  },
-  {
-    line: 'return;',
-    scope: 'lost-lease',
-    marker: 'Lost Feishu Inbox lease before command reply send checkpoint',
-  },
-  {
-    line: 'return;',
-    scope: 'lost-lease',
-    marker: 'Lost Feishu Inbox lease after command reply ACK',
-  },
-  {
-    line: 'return;',
-    scope: 'pipeline',
-    via: 'complete',
-    marker: 'completeClaimedInbound(claim, payload);',
-  },
-  {
-    line: 'return;',
-    scope: 'lost-lease',
-    marker: 'Could not restore rejected slash-command reply checkpoint',
-  },
-  {
-    line: 'return;',
-    scope: 'pipeline',
-    via: 'fail',
-    // 三分支（retryable 拒收 / 投递不确定 / 执行失败）每路径恰一次 fail
-    marker: 'delivery outcome is uncertain and requires manual reconciliation',
-    calls: 3,
+    scope: 'delegated',
+    marker: 'await dispatchFeishuCommand(',
   },
   {
     // 2.8：mention 门决策体在 feishu-inbound-admission.ts；此 return 为
@@ -276,63 +265,196 @@ const CLAIM_RETURN_CONTRACT: ClaimReturnRow[] = [
   },
 ];
 
+// ─── 单元 2.10：斜杠段 return 新模块切片表（主管道 20 行表的斜杠 12 行
+// 等强迁入；行文本随「段内出口经返回值表达」的机械替换由 return; 统一为
+// return { handled: true };，marker / via / calls / lost-lease 约束逐行保留；
+// 第 13 行为新增穿透出口——非终态，锁 handled:false 回接形）。
+
+const COMMAND_RETURN_CONTRACT: ClaimReturnRow[] = [
+  {
+    // follow-up 模式用法提示：/queue|/steer 缺正文 → 提示后 complete
+    line: 'return { handled: true };',
+    scope: 'pipeline',
+    via: 'complete',
+    marker: '请在 /',
+  },
+  {
+    line: 'return { handled: true };',
+    scope: 'pipeline',
+    via: 'fail',
+    marker:
+      'Durable Feishu slash-command checkpoint does not match the recovered input',
+  },
+  {
+    line: 'return { handled: true };',
+    scope: 'pipeline',
+    via: 'fail',
+    marker: 'interruptedWhileSending',
+  },
+  {
+    line: 'return { handled: true };',
+    scope: 'pipeline',
+    via: 'complete',
+    marker: 'reply_acknowledged',
+  },
+  {
+    line: 'return { handled: true };',
+    scope: 'lost-lease',
+    marker: 'Lost Feishu Inbox lease before command execution checkpoint',
+  },
+  {
+    line: 'return { handled: true };',
+    scope: 'lost-lease',
+    marker: 'Lost Feishu Inbox lease before command result checkpoint',
+  },
+  {
+    line: 'return { handled: true };',
+    scope: 'lost-lease',
+    marker:
+      'Lost Feishu Inbox lease while clearing an unknown command checkpoint',
+  },
+  {
+    line: 'return { handled: true };',
+    scope: 'lost-lease',
+    marker: 'Lost Feishu Inbox lease before command reply send checkpoint',
+  },
+  {
+    line: 'return { handled: true };',
+    scope: 'lost-lease',
+    marker: 'Lost Feishu Inbox lease after command reply ACK',
+  },
+  {
+    line: 'return { handled: true };',
+    scope: 'pipeline',
+    via: 'complete',
+    marker: 'completeClaimedInbound(claim, payload);',
+  },
+  {
+    line: 'return { handled: true };',
+    scope: 'lost-lease',
+    marker: 'Could not restore rejected slash-command reply checkpoint',
+  },
+  {
+    line: 'return { handled: true };',
+    scope: 'pipeline',
+    via: 'fail',
+    // 三分支（retryable 拒收 / 投递不确定 / 执行失败）每路径恰一次 fail
+    marker: 'delivery outcome is uncertain and requires manual reconciliation',
+    calls: 3,
+  },
+  {
+    // 未知命令（reply 为 null）或 follow-up 模式请求：非终态穿透，回接
+    // text 与 requestedFollowUpMode 由行文本钉死
+    line: 'return { handled: false, text, requestedFollowUpMode };',
+    scope: 'passthrough',
+    marker: '回接主管道普通消息流',
+  },
+];
+
 const TERMINAL_CALL: Record<ClaimTerminalKind, string> = {
   complete: 'completeClaimedInbound(',
   ignore: 'ignoreClaimedInbound(',
   fail: 'failClaimedInbound(',
 };
 
+/** 主管道表与 2.10 新模块切片表共用的逐行 return 契约断言。 */
+function expectClaimReturnContract(
+  returns: ClaimedReturn[],
+  contract: ClaimReturnRow[],
+): void {
+  expect(returns).toHaveLength(contract.length);
+
+  contract.forEach((row, index) => {
+    const found = returns[index];
+    // 行文本钉死，防止表与实际 return 错位对齐
+    expect({ index, line: found.text }).toEqual({ index, line: row.line });
+
+    if (row.scope === 'nested') {
+      // 嵌套函数 return 不是管道出口，前驱段断言不适用
+      expect(found.segment).toContain(row.marker);
+      return;
+    }
+
+    expect({
+      index,
+      markerPresent: found.segment.includes(row.marker),
+    }).toEqual({ index, markerPresent: true });
+
+    if (row.scope === 'lost-lease') {
+      // 弃权路径：只停搏心跳，不得再触任何终态转换
+      expect(found.segment).toContain('stopInboxHeartbeat(claim);');
+      for (const call of Object.values(TERMINAL_CALL)) {
+        expect({
+          index,
+          call,
+          count: countOccurrences(found.segment, call),
+        }).toEqual({ index, call, count: 0 });
+      }
+      return;
+    }
+
+    if (row.scope === 'delegated') {
+      // 2.10 委托回接出口：段体整体在新模块，前驱段恰一次委托调用
+      // （marker 即调用形）、零终态零心跳调用——段内 return 的终态计数
+      // 语义由 COMMAND_RETURN_CONTRACT 等强锁定
+      expect({
+        index,
+        dispatchCalls: countOccurrences(found.segment, row.marker),
+      }).toEqual({ index, dispatchCalls: 1 });
+      for (const call of [
+        ...Object.values(TERMINAL_CALL),
+        'stopInboxHeartbeat(claim);',
+      ]) {
+        expect({
+          index,
+          call,
+          count: countOccurrences(found.segment, call),
+        }).toEqual({ index, call, count: 0 });
+      }
+      return;
+    }
+
+    if (row.scope === 'passthrough') {
+      // 2.10 穿透出口：非终态（未知命令 / follow-up 模式请求），不得触
+      // 任何终态或心跳调用；handled:false 回接形由行文本钉死
+      for (const call of [
+        ...Object.values(TERMINAL_CALL),
+        'stopInboxHeartbeat(claim);',
+      ]) {
+        expect({
+          index,
+          call,
+          count: countOccurrences(found.segment, call),
+        }).toEqual({ index, call, count: 0 });
+      }
+      return;
+    }
+
+    // pipeline：via 终态恰好 calls 次，其他终态零次
+    const viaCall = TERMINAL_CALL[row.via as ClaimTerminalKind];
+    expect({
+      index,
+      via: row.via,
+      count: countOccurrences(found.segment, viaCall),
+    }).toEqual({ index, via: row.via, count: row.calls ?? 1 });
+    for (const [kind, call] of Object.entries(TERMINAL_CALL)) {
+      if (kind !== row.via) {
+        expect({
+          index,
+          kind,
+          count: countOccurrences(found.segment, call),
+        }).toEqual({ index, kind, count: 0 });
+      }
+    }
+  });
+}
+
 describe('Feishu durable Inbox claim lifecycle contract', () => {
-  test('每条提前 return 恰命中一种终态（或落入 lost-lease 弃权白名单），条数与表锁定', () => {
-    const returns = enumerateClaimedReturns();
-    expect(returns).toHaveLength(CLAIM_RETURN_CONTRACT.length);
-
-    CLAIM_RETURN_CONTRACT.forEach((row, index) => {
-      const found = returns[index];
-      // 行文本钉死，防止表与实际 return 错位对齐
-      expect({ index, line: found.text }).toEqual({ index, line: row.line });
-
-      if (row.scope === 'nested') {
-        // 嵌套函数 return 不是管道出口，前驱段断言不适用
-        expect(found.segment).toContain(row.marker);
-        return;
-      }
-
-      expect({
-        index,
-        markerPresent: found.segment.includes(row.marker),
-      }).toEqual({ index, markerPresent: true });
-
-      if (row.scope === 'lost-lease') {
-        // 弃权路径：只停搏心跳，不得再触任何终态转换
-        expect(found.segment).toContain('stopInboxHeartbeat(claim);');
-        for (const call of Object.values(TERMINAL_CALL)) {
-          expect({
-            index,
-            call,
-            count: countOccurrences(found.segment, call),
-          }).toEqual({ index, call, count: 0 });
-        }
-        return;
-      }
-
-      // pipeline：via 终态恰好 calls 次，其他终态零次
-      const viaCall = TERMINAL_CALL[row.via as ClaimTerminalKind];
-      expect({
-        index,
-        via: row.via,
-        count: countOccurrences(found.segment, viaCall),
-      }).toEqual({ index, via: row.via, count: row.calls ?? 1 });
-      for (const [kind, call] of Object.entries(TERMINAL_CALL)) {
-        if (kind !== row.via) {
-          expect({
-            index,
-            kind,
-            count: countOccurrences(found.segment, call),
-          }).toEqual({ index, kind, count: 0 });
-        }
-      }
-    });
+  test('每条提前 return 恰命中一种终态（或落入 lost-lease / 委托回接白名单），条数与表锁定', () => {
+    expectClaimReturnContract(
+      enumerateReturns(pipelineLines),
+      CLAIM_RETURN_CONTRACT,
+    );
   });
 
   test('落尾收尾：成功路径 complete、intake 异常路径 fail，无第三种终态', () => {
@@ -663,5 +785,75 @@ describe('Feishu 入站附件下载模块契约（单元 2.9 搬迁锚）', () =
       '} = await downloadFeishuInboundAttachments(',
     );
     expect(pipelineBody).toContain('text = inboundText;');
+  });
+});
+
+// ─── 单元 2.10：斜杠指令分发模块契约 ────────────────────────────────────────
+//
+// 斜杠段（含 /queue /steer follow-up 模式、四态 durable 命令检查点状态机、
+// 六处 lost-lease 弃权与三分支 fail 族）自 processClaimedIncomingMessage
+// 搬至 src/feishu-command-dispatch.ts 后：主管道 20 行表的斜杠 12 行在此
+// 等强改锚新模块切片——marker、via 终态计数、lost-lease 白名单约束（只停
+// 搏心跳、零终态调用）逐行保留；行文本随「段内出口经返回值表达」的机械
+// 替换统一为 return { handled: true };（仍逐行钉死防错位对齐）；另加第
+// 13 行穿透出口锁 handled:false 回接形。主管道侧仅余一次委托调用与
+// text / requestedFollowUpMode 回接，无残留段体。
+
+describe('Feishu 斜杠指令分发模块契约（单元 2.10 搬迁锚）', () => {
+  test('斜杠段搬运体只在新模块，主管道仅余一次委托调用', () => {
+    // 搬运体标志调用不得残留在主管道（防漏搬 / 双接线）
+    for (const body of [
+      'const slashMatch = textForSlash.match(',
+      'type FeishuSlashCommandCheckpoint =',
+      'function parseFeishuSlashCommandCheckpoint(',
+      "'Feishu slash command detected'",
+      'interruptedWhileSending',
+      'retryableReply',
+      "'Feishu slash command processed'",
+      "'Feishu slash command failed'",
+      '请在 /',
+      '已知命令，拦截',
+    ]) {
+      expect({ body, inPipeline: pipelineBody.includes(body) }).toEqual({
+        body,
+        inPipeline: false,
+      });
+      expect({
+        body,
+        inModule: commandModuleSource.includes(body),
+      }).toEqual({ body, inModule: true });
+    }
+    // 主管道侧恰一次委托调用（防重复接线或漏接）
+    const delegateCall = 'await dispatchFeishuCommand(';
+    expect({
+      call: delegateCall,
+      count: countOccurrences(pipelineBody, delegateCall),
+    }).toEqual({ call: delegateCall, count: 1 });
+  });
+
+  test('斜杠段 12 条 return 等强迁移 + 1 条穿透出口：条数、行文本、marker、终态计数与 lost-lease 白名单逐行锁定', () => {
+    expectClaimReturnContract(
+      enumerateReturns(commandDispatchLines),
+      COMMAND_RETURN_CONTRACT,
+    );
+  });
+
+  test('主管道回接：handled 穿透后 text 与 requestedFollowUpMode 沿原下游回接', () => {
+    expect(pipelineBody).toContain('if (commandDispatch.handled) {');
+    expect(pipelineBody).toContain('text = commandDispatch.text;');
+    expect(pipelineBody).toContain(
+      'const requestedFollowUpMode = commandDispatch.requestedFollowUpMode;',
+    );
+    // requestedFollowUpMode 的唯一主管道下游消费点（onFollowUpMessage 沿用）
+    expect(pipelineBody).toContain('requestedMode: requestedFollowUpMode,');
+    // 段位不变：受众门 verdict 之后、mention 门 verdict 之前（原段位）
+    const audienceIdx = pipelineBody.indexOf("'audience_rejected'");
+    const delegateIdx = pipelineBody.indexOf('await dispatchFeishuCommand(');
+    const mentionIdx = pipelineBody.indexOf(
+      "if (mentionAdmission.verdict === 'mention_gate') {",
+    );
+    expect(audienceIdx).toBeGreaterThan(-1);
+    expect(delegateIdx).toBeGreaterThan(audienceIdx);
+    expect(mentionIdx).toBeGreaterThan(delegateIdx);
   });
 });

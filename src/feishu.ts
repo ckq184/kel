@@ -34,6 +34,7 @@ import {
 } from './feishu-mention-gate.js';
 import { createFeishuInboundAdmission } from './feishu-inbound-admission.js';
 import { downloadFeishuInboundAttachments } from './feishu-inbound-attachments.js';
+import { dispatchFeishuCommand } from './feishu-command-dispatch.js';
 import {
   extractProviderTarget,
   parseChannelAddress,
@@ -227,49 +228,9 @@ class FeishuApiRejectedError extends Error {
   }
 }
 
-type FeishuSlashCommandCheckpoint =
-  | {
-      version: 1;
-      kind: 'feishu_slash_command';
-      state: 'executing';
-      command: string;
-      replyTarget: string;
-    }
-  | {
-      version: 1;
-      kind: 'feishu_slash_command';
-      state: 'pending_reply' | 'sending_reply' | 'reply_acknowledged';
-      command: string;
-      replyTarget: string;
-      replyText: string;
-    };
-
-function parseFeishuSlashCommandCheckpoint(
-  value: unknown,
-): FeishuSlashCommandCheckpoint | undefined {
-  if (!value || typeof value !== 'object') return undefined;
-  const checkpoint = value as Record<string, unknown>;
-  if (
-    checkpoint.version !== 1 ||
-    checkpoint.kind !== 'feishu_slash_command' ||
-    typeof checkpoint.command !== 'string' ||
-    !checkpoint.command ||
-    typeof checkpoint.replyTarget !== 'string' ||
-    !checkpoint.replyTarget ||
-    (checkpoint.state !== 'executing' &&
-      checkpoint.state !== 'pending_reply' &&
-      checkpoint.state !== 'sending_reply' &&
-      checkpoint.state !== 'reply_acknowledged')
-  ) {
-    return undefined;
-  }
-  if (checkpoint.state === 'executing') {
-    return checkpoint as FeishuSlashCommandCheckpoint;
-  }
-  return typeof checkpoint.replyText === 'string'
-    ? (checkpoint as FeishuSlashCommandCheckpoint)
-    : undefined;
-}
+// FeishuSlashCommandCheckpoint 类型与 parseFeishuSlashCommandCheckpoint
+// 校验纯函数（斜杠段专属）已随段体抽至 ./feishu-command-dispatch.ts
+// （ISSUE-12 单元 2.10 原文搬运）。
 
 interface CachedFeishuChatInfo {
   name?: string;
@@ -1292,276 +1253,33 @@ export function createFeishuConnection(
         return;
       }
 
-      // ── 斜杠指令：拦截已知 /xxx 命令，不进入消息流 ──
-      // 群聊中 @机器人 后跟斜杠命令，mention 替换后文本为 "@botname /cmd"，
-      // 需要先 strip 掉开头的 @mention 前缀再匹配
-      let textForSlash = text?.trim().replace(/^@\S+\s+/, '') ?? '';
-      let requestedFollowUpMode: FollowUpMode | undefined;
-      const followUpModeMatch = textForSlash.match(
-        /^\/(queue|steer)(?:\s+([\s\S]+))?$/i,
-      );
-      if (followUpModeMatch) {
-        const modeContent = followUpModeMatch[2]?.trim();
-        if (!modeContent) {
-          await sendTextToChat(
-            messageRouteTarget.raw,
-            `请在 /${followUpModeMatch[1].toLowerCase()} 后输入消息内容。`,
-          );
-          completeClaimedInbound(claim, payload);
-          return;
-        }
-        requestedFollowUpMode =
-          followUpModeMatch[1].toLowerCase() === 'steer' ? 'steer' : 'queue';
-        text = modeContent;
-        textForSlash = modeContent;
+      // ── 斜杠指令 + /queue /steer follow-up 模式：段体（含四态 durable
+      // 命令检查点、六处 lost-lease 弃权分支与三分支 fail 族）已抽至
+      // ./feishu-command-dispatch.ts（ISSUE-12 单元 2.10 原文搬运）；段内
+      // 终态记账与心跳停搏随搬运体经参数注入触发，主管道此处仅按
+      // handled 返回值回接控制流，等强改锚见
+      // tests/feishu-inbox-claim-lifecycle.test.ts 单元 2.10 describe 块。
+      const commandDispatch = await dispatchFeishuCommand({
+        claim,
+        payload,
+        chatJid,
+        messageId,
+        senderOpenId,
+        mentions,
+        messageRouteTarget,
+        onCommand,
+        text,
+        sendTextToChat,
+        completeClaimedInbound,
+        failClaimedInbound,
+        stopInboxHeartbeat,
+        FeishuTextDeliveryError,
+      });
+      if (commandDispatch.handled) {
+        return;
       }
-      const slashMatch = textForSlash.match(/^\/(\S+)(.*)$/);
-      if (slashMatch && onCommand && !requestedFollowUpMode) {
-        const cmdBody = (slashMatch[1] + slashMatch[2]).trim();
-        const persistedCommand = parseFeishuSlashCommandCheckpoint(
-          claim.normalizedPayload,
-        );
-        logger.info(
-          {
-            chatJid,
-            cmd: slashMatch[1],
-            cmdBody,
-            checkpointState: persistedCommand?.state,
-          },
-          'Feishu slash command detected',
-        );
-        if (persistedCommand && persistedCommand.command !== cmdBody) {
-          failClaimedInbound(
-            claim,
-            payload,
-            new Error(
-              'Durable Feishu slash-command checkpoint does not match the recovered input',
-            ),
-            false,
-          );
-          return;
-        }
-        if (
-          persistedCommand?.state === 'executing' ||
-          persistedCommand?.state === 'sending_reply'
-        ) {
-          // The prior process may have executed arbitrary command side
-          // effects or reached the provider before it died. Re-running either
-          // step is unsafe, so stop for manual reconciliation instead.
-          const interruptedWhileSending =
-            persistedCommand.state === 'sending_reply';
-          failClaimedInbound(
-            claim,
-            payload,
-            new Error(
-              interruptedWhileSending
-                ? 'Feishu slash command reply delivery was interrupted after send began; manual reconciliation required'
-                : 'Feishu slash command execution was interrupted before its result was persisted; manual reconciliation required',
-            ),
-            false,
-          );
-          try {
-            await sendTextToChat(
-              persistedCommand.replyTarget,
-              interruptedWhileSending
-                ? '⚠️ 上一次命令回复可能已经送达，但系统未能确认，请核对后再决定是否重试。'
-                : '⚠️ 上一次命令执行在结果落盘前中断，为避免重复执行，系统已停止自动重试，请人工核对。',
-            );
-          } catch (sendErr) {
-            logger.error(
-              { chatJid, messageId, sendErr },
-              'Failed to send interrupted slash-command reconciliation notice',
-            );
-          }
-          return;
-        }
-        if (persistedCommand?.state === 'reply_acknowledged') {
-          completeClaimedInbound(claim, payload);
-          return;
-        }
-        let retryableReply: FeishuSlashCommandCheckpoint | undefined;
-        try {
-          let reply: string | null;
-          let replyTarget: string;
-          if (persistedCommand?.state === 'pending_reply') {
-            reply = persistedCommand.replyText;
-            replyTarget = persistedCommand.replyTarget;
-            retryableReply = persistedCommand;
-          } else {
-            const executingCheckpoint: FeishuSlashCommandCheckpoint = {
-              version: 1,
-              kind: 'feishu_slash_command',
-              state: 'executing',
-              command: cmdBody,
-              replyTarget: messageRouteTarget.raw,
-            };
-            if (
-              !updateClaimedChannelInbox(claim, {
-                normalizedPayload: executingCheckpoint,
-              })
-            ) {
-              stopInboxHeartbeat(claim);
-              logger.warn(
-                { inboxId: claim.id, messageId, cmd: slashMatch[1] },
-                'Lost Feishu Inbox lease before command execution checkpoint',
-              );
-              return;
-            }
-            reply = await onCommand(chatJid, cmdBody, senderOpenId, mentions);
-            replyTarget = messageRouteTarget.raw;
-            if (reply) {
-              const pendingReply: FeishuSlashCommandCheckpoint = {
-                ...executingCheckpoint,
-                state: 'pending_reply',
-                replyText: reply,
-              };
-              if (
-                !updateClaimedChannelInbox(claim, {
-                  normalizedPayload: pendingReply,
-                })
-              ) {
-                stopInboxHeartbeat(claim);
-                logger.error(
-                  { inboxId: claim.id, messageId, cmd: slashMatch[1] },
-                  'Lost Feishu Inbox lease before command result checkpoint; refusing reply delivery',
-                );
-                return;
-              }
-              retryableReply = pendingReply;
-            } else if (
-              !updateClaimedChannelInbox(claim, { normalizedPayload: null })
-            ) {
-              stopInboxHeartbeat(claim);
-              logger.warn(
-                { inboxId: claim.id, messageId, cmd: slashMatch[1] },
-                'Lost Feishu Inbox lease while clearing an unknown command checkpoint',
-              );
-              return;
-            }
-          }
-          logger.info(
-            {
-              chatJid,
-              cmd: slashMatch[1],
-              hasReply: !!reply,
-              replyLen: reply?.length,
-            },
-            'Feishu slash command processed',
-          );
-          if (reply) {
-            const sendingReply: FeishuSlashCommandCheckpoint = {
-              version: 1,
-              kind: 'feishu_slash_command',
-              state: 'sending_reply',
-              command: cmdBody,
-              replyTarget,
-              replyText: reply,
-            };
-            if (
-              !updateClaimedChannelInbox(claim, {
-                normalizedPayload: sendingReply,
-              })
-            ) {
-              stopInboxHeartbeat(claim);
-              logger.error(
-                { inboxId: claim.id, messageId, cmd: slashMatch[1] },
-                'Lost Feishu Inbox lease before command reply send checkpoint',
-              );
-              return;
-            }
-            await sendTextToChat(replyTarget, reply);
-            const acknowledged: FeishuSlashCommandCheckpoint = {
-              version: 1,
-              kind: 'feishu_slash_command',
-              state: 'reply_acknowledged',
-              command: cmdBody,
-              replyTarget,
-              replyText: reply,
-            };
-            if (
-              !updateClaimedChannelInbox(claim, {
-                normalizedPayload: acknowledged,
-              })
-            ) {
-              stopInboxHeartbeat(claim);
-              logger.error(
-                { inboxId: claim.id, messageId, cmd: slashMatch[1] },
-                'Lost Feishu Inbox lease after command reply ACK; refusing an unfenced completion',
-              );
-              return;
-            }
-            completeClaimedInbound(claim, payload);
-            return; // 已知命令，拦截
-          }
-          // reply 为 null 表示未知命令，继续作为普通消息处理
-        } catch (err) {
-          const deliveryFailure = err instanceof FeishuTextDeliveryError;
-          const rejectedBeforeAcceptance =
-            deliveryFailure && err.outcome === 'rejected';
-          logger.error(
-            {
-              chatJid,
-              cmd: slashMatch[1],
-              err,
-              deliveryFailure,
-              rejectedBeforeAcceptance,
-            },
-            'Feishu slash command failed',
-          );
-          if (!deliveryFailure) {
-            try {
-              await sendTextToChat(
-                messageRouteTarget.raw,
-                '⚠️ 命令执行失败，请稍后重试',
-              );
-            } catch (sendErr) {
-              logger.error(
-                { chatJid, sendErr },
-                'Failed to send slash command error feedback',
-              );
-            }
-          }
-          if (rejectedBeforeAcceptance && retryableReply) {
-            const safelyRequeued = updateClaimedChannelInbox(claim, {
-              normalizedPayload: retryableReply,
-            });
-            if (!safelyRequeued) {
-              stopInboxHeartbeat(claim);
-              logger.error(
-                { inboxId: claim.id, messageId, cmd: slashMatch[1] },
-                'Could not restore rejected slash-command reply checkpoint',
-              );
-              return;
-            }
-            failClaimedInbound(claim, payload, err, true);
-          } else if (deliveryFailure) {
-            failClaimedInbound(
-              claim,
-              payload,
-              new Error(
-                `${err.message}; delivery outcome is uncertain and requires manual reconciliation`,
-              ),
-              false,
-            );
-            try {
-              await sendTextToChat(
-                messageRouteTarget.raw,
-                '⚠️ 命令回复的投递结果未知，为避免重复发送，系统已停止自动重试，请人工核对。',
-              );
-            } catch (sendErr) {
-              logger.error(
-                { chatJid, messageId, sendErr },
-                'Failed to send uncertain slash-command delivery notice',
-              );
-            }
-          } else {
-            // Command execution failures stay terminal because replaying
-            // arbitrary command side effects is not safe.
-            failClaimedInbound(claim, payload, err, false);
-          }
-          return;
-        }
-      }
+      text = commandDispatch.text;
+      const requestedFollowUpMode = commandDispatch.requestedFollowUpMode;
 
       // mention 门（fail-closed）：决策 / lazy refetch 自愈 / 节流告警在
       // ./feishu-inbound-admission.ts；终态模板按 verdict 沿用原文。
