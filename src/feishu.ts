@@ -32,6 +32,7 @@ import {
 } from './feishu-backfill.js';
 import { createFeishuSender } from './feishu-outbound.js';
 import { buildFeishuEventHandlers } from './feishu-events.js';
+import { createFeishuWsLifecycle } from './feishu-ws-lifecycle.js';
 import {
   buildAgentReplyCard,
   buildQueuedFollowUpCard,
@@ -219,10 +220,6 @@ export interface FeishuConnection {
 
 // Feishu card allows at most 5 markdown tables; beyond this, skip card and use post+md directly
 const CARD_TABLE_LIMIT = 5;
-const FEISHU_WS_READY_STATE_OPEN = 1;
-const WS_HEALTH_CHECK_INTERVAL_MS = 15_000;
-const WS_RECONNECT_CHECK_THRESHOLD = 4;
-const WS_RECONNECT_MIN_INTERVAL_MS = 30_000;
 const FEISHU_INBOX_LEASE_MS = 5 * 60 * 1000;
 const FEISHU_INBOX_HEARTBEAT_MS = 60 * 1000;
 const FEISHU_INBOX_RETRY_DELAY_MS = 5_000;
@@ -445,12 +442,6 @@ export function buildFeishuChannelTurnContext(input: {
     })),
     capabilities: [...FEISHU_CHANNEL_CAPABILITIES],
   };
-}
-
-interface WsConnectionState {
-  connected: boolean;
-  isConnecting: boolean;
-  nextConnectTime: number;
 }
 
 function toEpochMs(value: string | number | undefined): number {
@@ -1276,55 +1267,10 @@ export function createFeishuConnection(
     }
   }
 
-  /**
-   * 通过访问飞书 SDK 的私有属性（wsConfig、isConnecting）获取 WebSocket 连接状态。
-   *
-   * 注意事项：
-   * 1. 该函数依赖 @larksuiteoapi/node-sdk 内部未公开的属性结构，SDK 版本升级可能导致失效
-   * 2. 失效时函数会静默降级（捕获异常后返回 null），健康检查将跳过状态判断，不会触发误重连
-   * 3. 后续可考虑使用 SDK 公开 API getReconnectInfo() 替代私有属性访问
-   */
-  function getWsConnectionState(): WsConnectionState | null {
-    const rawClient = wsClient as unknown as {
-      wsConfig?: {
-        getWSInstance?: () => { readyState?: number } | undefined;
-      };
-      getReconnectInfo?: () => { nextConnectTime?: number };
-      isConnecting?: boolean;
-    };
-    try {
-      const wsInstance = rawClient.wsConfig?.getWSInstance?.();
-      const reconnectInfo = rawClient.getReconnectInfo?.() || {};
-      return {
-        connected: wsInstance?.readyState === FEISHU_WS_READY_STATE_OPEN,
-        isConnecting: rawClient.isConnecting === true,
-        nextConnectTime: Number(reconnectInfo.nextConnectTime || 0),
-      };
-    } catch (err) {
-      logger.debug({ err }, 'Failed to inspect Feishu WebSocket state');
-      return null;
-    }
-  }
-
-  function stopHealthMonitor(): void {
-    if (healthTimer) {
-      clearInterval(healthTimer);
-      healthTimer = null;
-    }
-  }
-
-  function startHealthMonitor(): void {
-    stopHealthMonitor();
-    healthTimer = setInterval(() => {
-      void checkConnectionHealth();
-      // 兜底：botOpenId 缺失时让健康检查顺手 lazy refetch；
-      // 启动期 retry 失败 / 飞书短暂抖动后能在几分钟内自动恢复 mention 守卫。
-      if (!botInfoRefresher.getOpenId()) {
-        void ensureBotOpenIdFresh('health-check');
-      }
-    }, WS_HEALTH_CHECK_INTERVAL_MS);
-    healthTimer.unref?.();
-  }
+  // WS 状态探查（getWsConnectionState，lark SDK 私有属性访问，探查失败
+  // 静默降级语义保留）与健康监控（startHealthMonitor / stopHealthMonitor）
+  // 已抽至 ./feishu-ws-lifecycle.ts（ISSUE-12 单元 2.6 原文搬运；探查函数
+  // 与重连逻辑同模块）；访问器注入与工厂接线见下方 createFeishuWsLifecycle。
 
   // bot open_id 拉取、指数退避与 lazy refetch 自愈已抽至 ./feishu-bot-info.ts
   // （ISSUE-12 单元 2.1 原文搬运）；外层 client 为可变 let，经访问器注入。
@@ -2618,92 +2564,54 @@ export function createFeishuConnection(
     }
   }
 
-  async function reconnectWebSocket(reason: string): Promise<void> {
-    if (reconnecting || !connectOptions) return;
-    reconnecting = true;
-    reconnectRequestedAt = Date.now();
-    disconnectedChecks = 0;
-
-    try {
-      if (!eventDispatcher) {
-        logger.warn(
-          { reason },
-          'Skip Feishu reconnect: event dispatcher is missing',
-        );
-        return;
-      }
-      if (wsClient) {
-        try {
-          await wsClient.close();
-        } catch (err) {
-          logger.debug(
-            { err },
-            'Error closing stale Feishu WS client before reconnect',
-          );
-        }
-      }
-
-      wsClient = new lark.WSClient({
-        appId: config.appId,
-        appSecret: config.appSecret,
-        loggerLevel: lark.LoggerLevel.info,
-      });
-      await wsClient.start({ eventDispatcher });
-
-      lastWsStateConnected = true;
-      logger.info({ reason }, 'Feishu WebSocket reconnected');
-      await recoverQueuedInbox('reconnect');
-      await runBackfill('reconnect');
-      connectOptions.onReady();
-    } catch (err) {
-      logger.error({ err, reason }, 'Feishu WebSocket reconnect failed');
-    } finally {
-      reconnecting = false;
-    }
-  }
-
-  async function checkConnectionHealth(): Promise<void> {
-    if (!wsClient || reconnecting) return;
-
-    // Inbox retry is independent from WS state. A provider connection can be
-    // healthy while one local admission/download attempt needs replay.
-    await recoverQueuedInbox('health-check');
-
-    const state = getWsConnectionState();
-    if (!state) return;
-
-    if (state.connected) {
-      disconnectedChecks = 0;
-      if (!lastWsStateConnected) {
-        logger.info('Feishu WebSocket is back online');
-        await recoverQueuedInbox('recovered');
-        await runBackfill('recovered');
-      }
-      lastWsStateConnected = true;
-      return;
-    }
-
-    if (lastWsStateConnected) {
-      logger.warn(
-        { isConnecting: state.isConnecting },
-        'Feishu WebSocket appears offline',
-      );
-    }
-    lastWsStateConnected = false;
-
-    const now = Date.now();
-    const reconnectWindowReady =
-      state.nextConnectTime <= 0 || state.nextConnectTime <= now;
-    if (!reconnectWindowReady) return;
-
-    disconnectedChecks++;
-    if (
-      disconnectedChecks >= WS_RECONNECT_CHECK_THRESHOLD &&
-      now - reconnectRequestedAt >= WS_RECONNECT_MIN_INTERVAL_MS
-    ) {
-      await reconnectWebSocket('health-check');
-    }
-  }
+  // ISSUE-12 单元 2.6：getWsConnectionState / startHealthMonitor /
+  // stopHealthMonitor / reconnectWebSocket / checkConnectionHealth 原文搬运
+  // 至 ./feishu-ws-lifecycle.ts。wsClient / eventDispatcher / connectOptions /
+  // reconnecting / reconnectRequestedAt / disconnectedChecks /
+  // lastWsStateConnected / healthTimer 均为本文件可变 let（上方状态装配区，
+  // connect()/stop() 的复位与清理行不变），经访问器注入；2.1
+  // botInfoRefresher（getOpenId 探测）与 ensureBotOpenIdFresh、durable Inbox
+  // 恢复 recoverQueuedInbox、2.3 runBackfill 经 deps 同名注入，搬运体内
+  // 调用点逐字节不变。getWsConnectionState 的唯一调用方
+  // checkConnectionHealth 已随迁，不进本文件绑定，经工厂返回面保留。
+  const {
+    startHealthMonitor,
+    stopHealthMonitor,
+    checkConnectionHealth,
+    reconnectWebSocket,
+  } = createFeishuWsLifecycle({
+    config,
+    getWsClient: () => wsClient,
+    setWsClient: (ws) => {
+      wsClient = ws;
+    },
+    getDispatcher: () => eventDispatcher,
+    getConnectOptions: () => connectOptions,
+    getReconnecting: () => reconnecting,
+    setReconnecting: (value) => {
+      reconnecting = value;
+    },
+    getReconnectRequestedAt: () => reconnectRequestedAt,
+    setReconnectRequestedAt: (at) => {
+      reconnectRequestedAt = at;
+    },
+    getDisconnectedChecks: () => disconnectedChecks,
+    setDisconnectedChecks: (checks) => {
+      disconnectedChecks = checks;
+    },
+    getLastWsStateConnected: () => lastWsStateConnected,
+    setLastWsStateConnected: (connected) => {
+      lastWsStateConnected = connected;
+    },
+    getHealthTimer: () => healthTimer,
+    setHealthTimer: (timer) => {
+      healthTimer = timer;
+    },
+    botInfoRefresher,
+    ensureBotOpenIdFresh,
+    recoverQueuedInbox,
+    runBackfill,
+  });
 
   const connection: FeishuConnection = {
     async connect(opts: ConnectOptions): Promise<boolean> {
