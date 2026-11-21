@@ -2,7 +2,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, test } from 'vitest';
 
-const makefile = fs.readFileSync(path.join(process.cwd(), 'Makefile'), 'utf8');
+// ISSUE-15：Windows（core.autocrlf=true）检出为 CRLF，'^…\\n…$' 正则里的 '.'
+// 不匹配 '\r'，读源先归一行尾（LF 环境零变化）。
+const makefile = fs
+  .readFileSync(path.join(process.cwd(), 'Makefile'), 'utf8')
+  .replace(/\r\n/g, '\n');
 
 describe('Makefile runtime contract', () => {
   test('uses make start as the single production startup path', () => {

@@ -64,8 +64,14 @@ export function validateDeclaration(raw) {
 
 // ─── 变更路径采集（base→工作树全量）──────────────────────────────────────
 export function collectChangedPaths(repoRoot, base) {
+  // ISSUE-15：quotepath=false——Windows 默认配置把非 ASCII 路径（如
+  // docs/审查记录.md）八进制转义，allow 明文命中即失效；脚本级关闭，
+  // 免去每个克隆手工配 git config。
   const git = (args) =>
-    execFileSync('git', args, { cwd: repoRoot, encoding: 'utf8' });
+    execFileSync('git', ['-c', 'core.quotepath=false', ...args], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+    });
   const paths = new Set();
   // --no-renames：增/删两侧路径都列出，删除同受范围约束
   for (const line of git(['diff', '--name-only', '--no-renames', base]).split(

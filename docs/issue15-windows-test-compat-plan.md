@@ -11,26 +11,28 @@
 - **约束**：测试侧归一优先，生产行为零改动；不重开 `.gitattributes` 全仓 eol 归一（历史裁决否决项）；非目标不做 CI 化。
 - **无需用户拍板项**：无行为取舍——所有修复均为表示层归一，被测语义逐平台保持。
 
-## 1. 根因与修复映射（21 例）
+## 1. 根因与修复映射（21 例 + 1 例顺带竞态）
 
-| #   | 文件                                             | 根因                                            | 修复                                                                                                | 例数 |
-| --- | ------------------------------------------------ | ----------------------------------------------- | --------------------------------------------------------------------------------------------------- | ---- |
-| A1  | `tests/no-duplicate-helpers-contract.test.ts`    | `listSourceFiles` 的 `path.join` 产出 `\`       | 清单构造改 `path.posix.join`（打开文件仍原生 `path.join`）                                            | 6    |
-| A2  | `tests/issue11-compat-and-duplicate-convergence.test.ts` | `listWebSources` 同 A1                   | 同 A1                                                                                                | 2    |
-| A3  | `tests/mcp-tools-path-containment.test.ts`       | POSIX 字面量夹具 vs `path.sep` 生产比较           | 夹具改 `parts.join(path.sep)` 逐平台原生构造；生产 `isPathWithinWorkspaceRoot` 不动                    | 3    |
-| B1  | `tests/turn-outcome.test.ts`                     | 锚点内嵌 `\n`，磁盘 CRLF                        | 读源归一 `replace(/\r\n/g, '\n')`（收敛为一处模块级辅助）                                             | 3    |
-| B2  | `tests/warm-channel-outbox-scope-correlation.test.ts` | `section()` 起止串/正则内嵌 `\n`            | `read()` 辅助归一                                                                                     | 3    |
-| B3  | `tests/channel-connector-failure-safety.test.ts` | `'\n      }\n    },'` indexOf                | `source()` 辅助归一                                                                                   | 1    |
-| B4  | `tests/graceful-shutdown-order.test.ts`          | `'queue\n        .shutdown(15_000)'` 等       | 读源归一                                                                                              | 1    |
-| B5  | `tests/makefile-runtime-contract.test.ts`        | `/^dev-backend:.*\n\t\$\(RUNNER\)$/m`（`.` 不匹配 `\r`） | 顶层 `makefile` 读取归一                                                                  | 1    |
-| B6  | `tests/workflow-card-contract.test.ts`           | `'if (!holdReason) {\n                clearStreamingSnapshot(chatJid)'` | 各 `readFileSync` 读点归一（收敛为一处辅助）                                          | 1    |
-| S   | `scripts/check-scope.mjs`                        | `git diff --name-only` 受 `core.quotepath` 转义中文路径 | `git` 调用前置 `-c core.quotepath=false`；`tests/scope-check-contract.test.ts` 复跑确认不破坏            | —    |
+| #   | 文件                                                     | 根因                                                                             | 修复                                                                                          | 例数 |
+| --- | -------------------------------------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ---- |
+| A1  | `tests/no-duplicate-helpers-contract.test.ts`            | `listSourceFiles` 的 `path.join` 产出 `\`                                        | 清单构造改 `path.posix.join`（打开文件仍原生 `path.join`）                                    | 6    |
+| A2  | `tests/issue11-compat-and-duplicate-convergence.test.ts` | `listWebSources` 同 A1                                                           | 同 A1                                                                                         | 2    |
+| A3  | `tests/mcp-tools-path-containment.test.ts`               | POSIX 字面量夹具 vs `path.sep` 生产比较                                          | 夹具改 `parts.join(path.sep)` 逐平台原生构造；生产 `isPathWithinWorkspaceRoot` 不动           | 3    |
+| B1  | `tests/turn-outcome.test.ts`                             | 锚点内嵌 `\n`，磁盘 CRLF                                                         | 读源归一 `replace(/\r\n/g, '\n')`（收敛为一处模块级辅助）                                     | 3    |
+| B2  | `tests/warm-channel-outbox-scope-correlation.test.ts`    | `section()` 起止串/正则内嵌 `\n`                                                 | `read()` 辅助归一                                                                             | 3    |
+| B3  | `tests/channel-connector-failure-safety.test.ts`         | `'\n      }\n    },'` indexOf                                                    | `source()` 辅助归一                                                                           | 1    |
+| B4  | `tests/graceful-shutdown-order.test.ts`                  | `'queue\n        .shutdown(15_000)'` 等                                          | 读源归一                                                                                      | 1    |
+| B5  | `tests/makefile-runtime-contract.test.ts`                | `/^dev-backend:.*\n\t\$\(RUNNER\)$/m`（`.` 不匹配 `\r`）                         | 顶层 `makefile` 读取归一                                                                      | 1    |
+| B6  | `tests/workflow-card-contract.test.ts`                   | `'if (!holdReason) {\n                clearStreamingSnapshot(chatJid)'`          | 各 `readFileSync` 读点归一（收敛为一处辅助）                                                  | 1    |
+| S   | `scripts/check-scope.mjs`                                | `git diff --name-only` 受 `core.quotepath` 转义中文路径                          | `git` 调用前置 `-c core.quotepath=false`；`tests/scope-check-contract.test.ts` 复跑确认不破坏 | —    |
+| S2  | `tests/no-duplicate-helpers-contract.test.ts`            | `nowIso()` 连调两次，毫秒跨界即红（1ms 竞态，本日满载轮两翻：'…387Z' ≠ '…388Z'） | 取值一次再验 round-trip 恒等，断言语义不变                                                    | —    |
 
 ## 2. 设计取舍
 
 1. **为什么修测试而不是改行尾策略**：`.gitattributes` 只锁 `*.sh`/`.githooks/*` 为 LF 属用户显式裁决（"轻量方案"，全仓归一曾被否决）；测试作为机门禁应当对宿主 checkout 形态鲁棒——LF 环境行为不变、CRLF 环境恢复匹配，是唯一不重开历史裁决的修法。
 2. **为什么 `isPathWithinWorkspaceRoot` 不动**：生产调用方传 `path.resolve` 产物，同平台内自洽；测试夹具改为按 `path.sep` 构造后，各平台都以其原生形态受测，ISSUE-05 §4 "纯字符串前缀比较、不做 realpath" 的既有语义原样保留。改生产为跨分隔符模糊匹配属安全语义变更，超出本任务（如需另行立项）。
 3. **归一只做 `\r\n → \n`**：不 trim、不折叠空白，避免影响任何空白敏感断言。
+4. **S2 竞态为何顺带修**：该用例位于本任务已声明的文件内，属"满载轮翻红"型时序竞态（本日两翻，与 CRLF/路径两类根因无关）；不修则 verify 全绿这一验收标准本身随机不成立。修复为单次取值 round-trip 恒等断言，测试侧、同文件、零生产行为，不属范围蔓延。
 
 ## 3. 测试方案
 
