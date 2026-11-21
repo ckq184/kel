@@ -398,6 +398,7 @@ import {
   unwatchIpcGroup,
   watchIpcGroup,
 } from './ipc/watcher.js';
+import { processIpcSendFile } from './ipc/file-delivery.js';
 import type {
   FeishuCapabilityOperation,
   FeishuCapabilityRequest,
@@ -9031,6 +9032,24 @@ function writeTaskResult(
   }
 }
 
+// ISSUE-12 波 4 单元 4.7：send_file case 的 index.ts 本地依赖注入对象
+// （防 src/ipc/file-delivery.ts ↔ index.ts import 环；模块级构造，
+// 全部为上方函数声明/常量，提升与先序均无碍）。后续 case 族同款。
+const ipcFileDeliveryDeps = {
+  writeTaskResult,
+  taskRunAcceptsLateIpcOutput,
+  getIpcDeliveryTargetGroup,
+  canSendCrossGroupMessage,
+  resolveImRoute,
+  channelOutboxRefForInput,
+  sendImWithRetry,
+  sendTaskFileWithRetry,
+  broadcastToOwnerIMChannels,
+  settleAndRecordTaskIpcDeliveries,
+  REPLY_LIMIT_REACHED_ERROR,
+  findFileInSubdirs,
+};
+
 async function processTaskIpc(
   data: {
     type: string;
@@ -11009,354 +11028,19 @@ async function processTaskIpc(
       break;
 
     case 'send_file':
-      const finishSendFile = (success: boolean, error?: string): void => {
-        writeTaskResult(tasksDir, 'send_file', data.requestId, {
-          success,
-          ...(error ? { error } : {}),
-        });
-      };
-      logger.debug(
-        { data, sourceGroup, isAdminHome, isHome },
-        'processTaskIpc send_file reached',
-      );
-      if (data.chatJid && data.filePath && data.fileName) {
-        if (
-          durableTaskRunId &&
-          !taskRunAcceptsLateIpcOutput(durableTaskRunId)
-        ) {
-          finishSendFile(false, 'Task run was cancelled before file delivery.');
-          break;
-        }
-        // Cross-group authorization check (same as send_message)
-        const targetGroup = getIpcDeliveryTargetGroup(data.chatJid);
-        if (
-          !canSendCrossGroupMessage(
-            isAdminHome,
-            isHome,
-            sourceGroup,
-            sourceGroupEntry,
-            targetGroup,
-          )
-        ) {
-          logger.warn(
-            { chatJid: data.chatJid, sourceGroup },
-            'Unauthorized IPC send_file attempt blocked',
-          );
-          finishSendFile(false, 'Unauthorized file delivery target.');
-          break;
-        }
-
-        try {
-          // Resolve against the workspace the runner actually operates in:
-          // host workspaces with a custom cwd deliver from that directory,
-          // not data/groups/<folder>. Relative paths mirror the runner spawn
-          // cwd; absolute paths are accepted only inside an allowed root.
-          const sendRoots = resolveSendFileRoots(
-            GROUPS_DIR,
-            sourceGroup,
-            sourceGroupEntry,
-          );
-          const resolution = resolveSendFilePath(sendRoots, data.filePath);
-
-          // Path traversal protection: ensure resolved path stays within the
-          // allowed roots (primary workspace + canonical group folder).
-          if (!resolution.ok) {
-            logger.warn(
-              {
-                sourceGroup,
-                filePath: data.filePath,
-                resolvedPath: resolution.candidate,
-              },
-              'Path traversal attempt blocked in send_file IPC',
-            );
-            finishSendFile(false, 'Invalid file path.');
-            break;
-          }
-          let resolvedPath = resolution.path;
-
-          if (!fs.existsSync(resolvedPath)) {
-            // Fallback: search in downloads subdirs (IM channel files land here)
-            const downloadsDir = path.join(
-              GROUPS_DIR,
-              sourceGroup,
-              'downloads',
-            );
-            const fileName = data.fileName || path.basename(data.filePath);
-            const foundPath = fs.existsSync(downloadsDir)
-              ? findFileInSubdirs(downloadsDir, fileName)
-              : null;
-            if (foundPath) {
-              logger.info(
-                { originalPath: resolvedPath, foundPath },
-                'send_file: fell back to downloads subdirectory',
-              );
-              resolvedPath = foundPath;
-            } else {
-              const warnMsg = `⚠️ 文件 "${data.fileName}" 未找到（路径 "${data.filePath}" 不存在）。请引导用户确认正确的文件路径，或使用 'send_file' 时提供正确的相对路径。`;
-              broadcastToWebClients(sourceGroup, warnMsg, { notice: true });
-              // Also notify via IM channel for conversation agents bound to IM
-              const imRoute = resolveImRoute({
-                ipcAgentId,
-                isHome,
-                chatJid: data.chatJid,
-                sourceGroup,
-              });
-              if (imRoute) {
-                try {
-                  const ref = channelOutboxRefForInput(
-                    channelTurnScope(sourceGroup, ipcAgentId),
-                    imRoute,
-                    data.inputTurnId,
-                    `ipc-file-not-found:${data.requestId ?? data.filePath}`,
-                  );
-                  if (ref) {
-                    await sendImWithRetry(imRoute, warnMsg, [], ref);
-                  } else if (ipcTaskId || data.isScheduledTask) {
-                    // Scheduled tasks use a separate durable receipt ledger;
-                    // retain the legacy notification until that branch records
-                    // its task-scoped failure below.
-                    await imManager.sendMessage(imRoute, warnMsg);
-                  } else {
-                    logger.error(
-                      { sourceGroup, agentId: ipcAgentId, imRoute },
-                      'Suppressed file-not-found warning without exact channel Turn scope',
-                    );
-                  }
-                } catch {
-                  // ignore
-                }
-              }
-              logger.warn(
-                { filePath: data.filePath, resolvedPath },
-                'send_file: file not found',
-              );
-              finishSendFile(false, 'File not found.');
-              break;
-            }
-          }
-
-          const fileRoutingDecision = ipcAgentId
-            ? { mode: 'none' as const }
-            : resolveTaskRoutingDecision(
-                data,
-                ipcTaskId,
-                !!sourceGroupEntry?.created_by,
-                { getTaskById, getChannelType },
-              );
-          const regularFileImRoute =
-            fileRoutingDecision.mode === 'none'
-              ? resolveImRoute({
-                  ipcAgentId,
-                  isHome,
-                  chatJid: data.chatJid,
-                  sourceGroup,
-                })
-              : null;
-          if (regularFileImRoute || fileRoutingDecision.mode !== 'none') {
-            // Symlink-escape protection: the lexical startsWith check above does
-            // not stop a symlink (inside the workspace) pointing at host/other-user
-            // files. Re-verify the final path (original OR downloads fallback)
-            // resolves inside an allowed root before reading it for delivery.
-            if (
-              !isRealpathInside(resolvedPath, [
-                sendRoots.primary,
-                sendRoots.workspace,
-              ])
-            ) {
-              logger.warn(
-                { sourceGroup, filePath: data.filePath, resolvedPath },
-                'Symlink traversal attempt blocked in send_file IPC',
-              );
-              finishSendFile(false, 'Invalid file path.');
-              break;
-            }
-            const imFileName = data.fileName || path.basename(resolvedPath);
-            if (fileRoutingDecision.mode === 'direct') {
-              const targetJid = fileRoutingDecision.taskChatJid;
-              const delivery = await settleAndRecordTaskIpcDeliveries(
-                durableTaskRunId,
-                [
-                  {
-                    channel: getChannelType(targetJid) ?? targetJid,
-                    payload: {
-                      kind: 'im_file',
-                      targetJid,
-                      workspaceFolder: sourceGroup,
-                      filePath: data.filePath,
-                      fileName: imFileName,
-                    },
-                    deliver: () =>
-                      sendTaskFileWithRetry(
-                        targetJid,
-                        resolvedPath,
-                        imFileName,
-                      ),
-                  },
-                ],
-              );
-              const sent =
-                delivery.accepted && delivery.receipt.status === 'success';
-              if (!sent) {
-                broadcastToWebClients(
-                  sourceGroup,
-                  `⚠️ 文件 "${data.fileName}" 发送失败，请稍后重试。`,
-                  {
-                    notice: true,
-                  },
-                );
-              }
-              finishSendFile(
-                sent,
-                sent
-                  ? undefined
-                  : delivery.receipt.error || 'File delivery failed.',
-              );
-            } else if (fileRoutingDecision.mode === 'broadcast') {
-              const attempts: TaskNotificationDeliveryAttempt[] = [];
-              broadcastToOwnerIMChannels(
-                sourceGroupEntry!.created_by!,
-                broadcastFolder,
-                new Set<string>(),
-                (jid) => {
-                  attempts.push({
-                    channel: getChannelType(jid) ?? jid,
-                    payload: {
-                      kind: 'im_file',
-                      targetJid: jid,
-                      workspaceFolder: sourceGroup,
-                      filePath: data.filePath!,
-                      fileName: imFileName,
-                    },
-                    deliver: () =>
-                      sendTaskFileWithRetry(jid, resolvedPath, imFileName),
-                  });
-                },
-                fileRoutingDecision.notifyChannels,
-              );
-              const delivery = await settleAndRecordTaskIpcDeliveries(
-                durableTaskRunId,
-                attempts,
-              );
-              const sent =
-                delivery.accepted &&
-                (delivery.receipt.status === 'success' ||
-                  delivery.receipt.status === 'skipped');
-              finishSendFile(
-                sent,
-                sent
-                  ? undefined
-                  : delivery.receipt.error || 'File delivery failed.',
-              );
-            } else if (
-              regularFileImRoute &&
-              !canDeliverTurnUtterance(
-                sourceGroup,
-                ipcAgentId,
-                data.inputTurnId,
-              )
-            ) {
-              // Runaway-loop fuse, sharing send_message's budget. A delivered
-              // file is user-visible speech and is recorded against the turn,
-              // so it must be gated by the same bound.
-              logger.warn(
-                {
-                  sourceGroup,
-                  agentId: ipcAgentId,
-                  inputTurnId: data.inputTurnId,
-                },
-                'Suppressed IPC send_file: per-turn reply limit reached',
-              );
-              finishSendFile(false, REPLY_LIMIT_REACHED_ERROR);
-            } else if (regularFileImRoute) {
-              const regularFileOutboxRef = channelOutboxRefForInput(
-                channelTurnScope(sourceGroup, ipcAgentId),
-                regularFileImRoute,
-                data.inputTurnId,
-                `ipc-file:${data.requestId ?? ipcTaskId ?? data.filePath}`,
-              );
-              const durableScopedFile = Boolean(regularFileOutboxRef);
-              const sent = await sendTaskFileWithRetry(
-                regularFileImRoute,
-                resolvedPath,
-                imFileName,
-                regularFileOutboxRef,
-              );
-              if (!sent) {
-                const failMsg = durableScopedFile
-                  ? `⚠️ 文件 "${data.fileName}" 的投递结果待确认，系统不会自动重发，以免产生重复文件。`
-                  : `⚠️ 文件 "${data.fileName}" 发送失败，请稍后重试。`;
-                broadcastToWebClients(sourceGroup, failMsg, { notice: true });
-                if (!durableScopedFile) {
-                  try {
-                    await imManager.sendMessage(regularFileImRoute, failMsg);
-                  } catch {
-                    // ignore — failure notification itself failing should not crash
-                  }
-                }
-              }
-              // A delivered file is user-visible speech; record it so the turn
-              // is not treated as silent and replayed.
-              if (
-                sent &&
-                typeof data.inputTurnId === 'string' &&
-                data.inputTurnId
-              ) {
-                activeTurnOutputs.recordDeliveredUtterance({
-                  scopeKey: channelTurnScope(sourceGroup, ipcAgentId),
-                  inputTurnId: data.inputTurnId,
-                });
-              }
-              finishSendFile(
-                sent,
-                sent
-                  ? undefined
-                  : durableScopedFile
-                    ? 'File delivery outcome is uncertain; do not retry automatically.'
-                    : 'File delivery failed.',
-              );
-            }
-          } else {
-            logger.debug(
-              { chatJid: data.chatJid, sourceGroup },
-              'No IM route for send_file, skipped IM delivery',
-            );
-            // Notify the user that file delivery to IM was skipped
-            const skipMsg = `⚠️ 文件 "${data.fileName}" 未发送到 IM 通道（当前会话无 IM 路由绑定，文件仅保存在工作区）。`;
-            broadcastToWebClients(data.chatJid ?? sourceGroup, skipMsg, {
-              notice: true,
-            });
-            finishSendFile(
-              false,
-              'No IM route is available for file delivery.',
-            );
-          }
-          logger.info(
-            {
-              sourceGroup,
-              chatJid: data.chatJid,
-              fileName: data.fileName,
-              imRoute:
-                fileRoutingDecision.mode === 'direct'
-                  ? fileRoutingDecision.taskChatJid
-                  : regularFileImRoute,
-              taskRoutingMode: fileRoutingDecision.mode,
-            },
-            'File sent via IPC',
-          );
-        } catch (err) {
-          logger.error({ err, data }, 'Failed to send file via IPC');
-          finishSendFile(
-            false,
-            err instanceof Error ? err.message : String(err),
-          );
-        }
-      } else {
-        logger.warn(
-          { data },
-          'Invalid send_file request - missing required fields',
-        );
-        finishSendFile(false, 'Invalid send_file request.');
-      }
+      await processIpcSendFile({
+        data,
+        sourceGroup,
+        isAdminHome,
+        isHome,
+        sourceGroupEntry,
+        tasksDir,
+        ipcAgentId,
+        ipcTaskId,
+        durableTaskRunId,
+        broadcastFolder,
+        ...ipcFileDeliveryDeps,
+      });
       break;
 
     default:

@@ -195,7 +195,12 @@ describe('resolveTurnOutcome', () => {
   });
 
   test('does not emit a second channel error after an uncertain durable file send', () => {
-    const main = readMain();
+    // ISSUE-12 波 4 单元 4.7：send_file 分支已迁 src/ipc/file-delivery.ts
+    // （原文搬运），锚随体迁、切片标记与断言文本不变。
+    const main = fs.readFileSync(
+      path.join(process.cwd(), 'src/ipc/file-delivery.ts'),
+      'utf8',
+    );
     const fileBranch = main.slice(
       main.indexOf('const regularFileOutboxRef'),
       main.indexOf("'No IM route for send_file, skipped IM delivery'"),
