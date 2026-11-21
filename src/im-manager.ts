@@ -49,7 +49,7 @@ import {
 } from './channel-address.js';
 import { ChannelRouteRejectedError } from './channel-admission.js';
 
-export interface UserIMConnection {
+interface UserIMConnection {
   userId: string;
   channels: Map<string, IMChannel>;
 }
@@ -76,7 +76,7 @@ export interface WeChatConnectConfig {
   enabled?: boolean;
 }
 
-export interface ConnectFeishuOptions {
+interface ConnectFeishuOptions {
   accountId?: string;
   scopeIncomingJids?: boolean;
   onCommand?: (

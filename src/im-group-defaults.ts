@@ -8,7 +8,7 @@
  * `buildOnNewChat` flow in index.ts and unit tests call this.
  */
 
-export interface ImGroupDefaultsInput {
+interface ImGroupDefaultsInput {
   /**
    * The owner user's per-user preference for require_mention on newly
    * auto-registered IM groups. Undefined when the user record cannot be
@@ -18,7 +18,7 @@ export interface ImGroupDefaultsInput {
   ownerDefaultRequireMention?: boolean | null;
 }
 
-export interface ImGroupDefaultsOutput {
+interface ImGroupDefaultsOutput {
   /** Final require_mention value to stamp on the newly registered group. */
   requireMention: boolean;
 }

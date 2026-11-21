@@ -14,7 +14,7 @@ import type {
   StuckRecoveryCandidate,
 } from './stuck-runner-recovery.js';
 import type { ChannelTurnContext } from './types.js';
-export type SendMessageResult = 'sent' | 'no_active';
+type SendMessageResult = 'sent' | 'no_active';
 interface IpcMessageCursor {
   timestamp: string;
   id: string;
@@ -44,7 +44,7 @@ export interface IpcPrePublishAdmission {
   /** Undo host-side Turn/Card/Outbox reservations if disk publish fails. */
   rollback?: () => void;
 }
-export interface RunnerMessageRequirements {
+interface RunnerMessageRequirements {
   /**
    * Bot identity whose App credentials must already be present in a Docker
    * runner. An explicit null means the request must run without an injected

@@ -25,18 +25,18 @@ export interface HostRunnerRegistryEntry {
   spawnedAt: number;
 }
 
-export type HostRunnerReapDecision =
+type HostRunnerReapDecision =
   | { action: 'kill'; reason: 'stale_boot_alive' }
   | { action: 'keep'; reason: 'current_boot' }
   | { action: 'drop-entry'; reason: 'process_dead' | 'pid_reuse_suspected' };
 
-export interface ReapLiveness {
+interface ReapLiveness {
   alive: boolean;
   /** Process creation time (epoch ms) when the platform can observe it. */
   processCreateTimeMs?: number | null;
 }
 
-export interface ReapOrphanOptions {
+interface ReapOrphanOptions {
   registryPath?: string;
   currentBootId?: string;
   platform?: NodeJS.Platform;
@@ -47,7 +47,7 @@ export interface ReapOrphanOptions {
   pidReuseToleranceMs?: number;
 }
 
-export interface ReapOrphanResult {
+interface ReapOrphanResult {
   killed: number[];
   dropped: number[];
   kept: number[];
