@@ -60,6 +60,16 @@
     "tests/chat-agent-messages.test.ts",
     "tests/makefile-runtime-contract.test.ts",
     "tests/pi-subagent-tool-contract.test.ts",
-    "tests/follow-up-web-product-contract.test.ts"
+    "tests/follow-up-web-product-contract.test.ts",
+    "src/feishu-cards/sections.ts",
+    "src/utils.ts",
+    "web/src/components/chat/MessageList.tsx",
+    "web/src/lib/message-presentation.ts",
+    "tests/feishu-card.test.ts",
+    "tests/frontend-product-terminology.test.ts",
+    "tests/frontend-run-context-explainability.test.ts",
+    "tests/pi-runtime-settings-and-credentials.test.ts",
+    "tests/web-refresh-lifecycle-contract.test.ts",
+    "tests/reply-delivery.test.ts"
   ]
 }
