@@ -19,12 +19,26 @@ import { describe, expect, test } from 'vitest';
 // （2.7 只搬 F2/F3/F4/F10/F13/F14 辅助群），因此本测试在重构前后均锚
 // feishu.ts、无需改锚；对已搬走的辅助群/恢复入口的结构断言，则在
 // feishu.ts ∪ feishu-inbox.ts（若存在）的联合文本上进行，重构前后同绿。
+//
+// 2.8 改锚说明：受众门 / mention 门 / 路由准入三段「决策体」（含拒绝侧
+// SILENT 反应、节流告警、lazy refetch 自愈、首条 P2P DM 自举、@bot 前缀
+// 归一）搬至 src/feishu-inbound-admission.ts，但每段的 claim 终态记账
+// （ignoreClaimedInbound 调用）与 return 控制流留在主管道按 verdict 分支
+// 沿用原文——因此 21 行表仍逐行锚 feishu.ts：条数、行文本、marker、
+// via 终态计数全部不变（三行 return 由原决策段出口改写为 verdict 分支
+// 出口，前驱段内终态调用仍恰 1 次）。被搬走的决策体与拒绝文案则以
+// 「新模块切片 + 主管道 verdict 分支」双锚收进下方 describe 块
+// （Feishu 入站三段准入决策模块契约），等强于原表行对该段可达的全部
+// 断言（原表只锁 marker + 终态计数，新 describe 另锁决策体结构与文案）。
 
 const source = fs.readFileSync('src/feishu.ts', 'utf8');
 const inboxModuleSource = fs.existsSync('src/feishu-inbox.ts')
   ? fs.readFileSync('src/feishu-inbox.ts', 'utf8')
   : '';
 const inboxFamily = `${source}\n${inboxModuleSource}`;
+const admissionModuleSource = fs.existsSync('src/feishu-inbound-admission.ts')
+  ? fs.readFileSync('src/feishu-inbound-admission.ts', 'utf8')
+  : '';
 
 // ─── 工具 ────────────────────────────────────────────────────────────────
 
@@ -116,7 +130,9 @@ interface ClaimReturnRow {
   calls?: number;
 }
 
-// HEAD（04d2765）逐行核账：21 条 return + 1 条落尾收尾。改动主管道时随提交更新本表。
+// HEAD（24ef334）逐行核账：21 条 return + 1 条落尾收尾；2.8 后受众门 /
+// mention 门 / 路由准入三行的 return 为 verdict 分支出口（决策体在
+// src/feishu-inbound-admission.ts，见下方 describe 块）。改动主管道时随提交更新本表。
 const CLAIM_RETURN_CONTRACT: ClaimReturnRow[] = [
   {
     // 恢复门：shouldDeferInbound 未开即 fail（retry=true 走恢复调度）
@@ -138,6 +154,8 @@ const CLAIM_RETURN_CONTRACT: ClaimReturnRow[] = [
     marker: "'empty_content'",
   },
   {
+    // 2.8：受众门决策体在 feishu-inbound-admission.ts；此 return 为
+    // verdict 分支出口，终态记账（ignore ×1）仍在主管道。
     line: 'return;',
     scope: 'pipeline',
     via: 'ignore',
@@ -214,12 +232,16 @@ const CLAIM_RETURN_CONTRACT: ClaimReturnRow[] = [
     calls: 3,
   },
   {
+    // 2.8：mention 门决策体在 feishu-inbound-admission.ts；此 return 为
+    // verdict 分支出口，终态模板 `mention_gate:${reason}` 仍在主管道。
     line: 'return;',
     scope: 'pipeline',
     via: 'ignore',
     marker: 'mention_gate:',
   },
   {
+    // 2.8：路由准入决策体在 feishu-inbound-admission.ts；此 return 为
+    // verdict 分支出口，终态记账（ignore ×1）仍在主管道。
     line: 'return;',
     scope: 'pipeline',
     via: 'ignore',
@@ -402,5 +424,165 @@ describe('Feishu durable Inbox claim lifecycle contract', () => {
     );
     expect(recoverSlice).toContain('await processClaimedIncomingMessage(');
     expect(inboxFamily).toContain('FEISHU_INBOX_RECOVERY_LIMIT');
+  });
+});
+
+// ─── 单元 2.8：入站三段准入决策模块契约 ───────────────────────────────────
+//
+// 受众门 / mention 门 / 路由准入三段决策体自 processClaimedIncomingMessage
+// 搬至 src/feishu-inbound-admission.ts 后，每个被搬走的分支在此双锚锁定：
+// 决策体结构与拒绝文案锚新模块切片，claim 终态记账与 verdict 分支锚主管道
+// 切片（21 行表仍锁调用侧，此处补锁被搬走的部分——等强迁移，无断言删除）。
+
+function admissionSlice(fromMarker: string, toMarker: string): string {
+  const start = admissionModuleSource.indexOf(fromMarker);
+  expect(start).toBeGreaterThanOrEqual(0);
+  const end = admissionModuleSource.indexOf(toMarker, start);
+  expect(end).toBeGreaterThan(start);
+  return admissionModuleSource.slice(start, end);
+}
+
+describe('Feishu 入站三段准入决策模块契约（单元 2.8 搬迁锚）', () => {
+  test('三段决策体在新模块唯一定义，主管道仅余委托调用与 verdict 分支', () => {
+    expect(admissionModuleSource).toContain(
+      'function evaluateAudienceAdmission(',
+    );
+    expect(admissionModuleSource).toContain(
+      'function evaluateMentionAdmission(',
+    );
+    expect(admissionModuleSource).toContain('function evaluateRouteAdmission(');
+    // 决策体标志调用只许出现在新模块，不得残留在主管道
+    for (const body of [
+      'evaluateMentionGate({',
+      'resolveAdmittedChannelRoute<FeishuMessageMeta>(',
+      "addReaction(messageId, 'SILENT')",
+      'text = stripLeadingBotMention(',
+    ]) {
+      expect({ body, inPipeline: pipelineBody.includes(body) }).toEqual({
+        body,
+        inPipeline: false,
+      });
+      expect({
+        body,
+        inModule: admissionModuleSource.includes(body),
+      }).toEqual({ body, inModule: true });
+    }
+    // 主管道侧恰三处委托调用（防重复接线或漏接）
+    for (const call of [
+      'evaluateAudienceAdmission({',
+      'evaluateMentionAdmission({',
+      'evaluateRouteAdmission({',
+    ]) {
+      expect({ call, count: countOccurrences(pipelineBody, call) }).toEqual({
+        call,
+        count: 1,
+      });
+    }
+  });
+
+  test('受众门分支：fail-closed 决策与 SILENT 反应/拒绝文案随模块，终态记账在主管道不变', () => {
+    const slice = admissionSlice(
+      'function evaluateAudienceAdmission(',
+      'function evaluateMentionAdmission(',
+    );
+    expect(slice).toContain('!isSenderAllowedInGroup(chatJid, senderOpenId)');
+    expect(slice).toContain("addReaction(messageId, 'SILENT').catch(() => {})");
+    expect(slice).toContain(
+      "'Dropped Feishu message: sender rejected by audience policy'",
+    );
+    expect(slice).toContain(
+      '// Audience is an identity boundary, independent from @/topic activation,',
+    );
+    // 终态记账与 return 留在主管道 verdict 分支（等强于原表行锚）
+    expect(pipelineBody).toContain(
+      "if (audienceAdmission.verdict === 'audience_rejected') {",
+    );
+    expect(pipelineBody).toContain(
+      "ignoreClaimedInbound(claim, payload, 'audience_rejected');",
+    );
+  });
+
+  test('mention 门分支：自愈与四态拒绝文案随模块，终态模板逐字节沿用', () => {
+    const slice = admissionSlice(
+      'function evaluateMentionAdmission(',
+      'function evaluateRouteAdmission(',
+    );
+    expect(slice).toContain(
+      "void ensureBotOpenIdFresh('mention-gate-fallback');",
+    );
+    expect(slice).toContain('BOT_INFO_MISSING_WARN_INTERVAL_MS');
+    expect(slice).toContain(
+      "'Dropping group messages: bot open_id unknown (fail-closed). Triggered lazy refetch.'",
+    );
+    expect(slice).toContain(
+      "'Dropped group message: bot open_id missing (warn throttled)'",
+    );
+    expect(slice).toContain(
+      "'Dropped group message: mention required but bot not mentioned'",
+    );
+    expect(slice).toContain(
+      "'Dropped group message: owner_mentioned mode, sender is not owner'",
+    );
+    expect(slice).toContain(
+      "'Dropped Feishu message: activation mode is disabled'",
+    );
+    // 节流计数为工厂闭包状态（随 2.8 自 feishu.ts 迁入，每连接一份）
+    expect(admissionModuleSource).toContain(
+      'let lastBotInfoMissingWarnAt = 0;',
+    );
+    expect(admissionModuleSource).toContain(
+      'let botInfoMissingDroppedSinceLastWarn = 0;',
+    );
+    // 终态模板在主管道 verdict 分支（decision → mentionAdmission 机械更名）
+    expect(pipelineBody).toContain(
+      "if (mentionAdmission.verdict === 'mention_gate') {",
+    );
+    expect(pipelineBody).toContain('`mention_gate:${mentionAdmission.reason}`');
+  });
+
+  test('路由准入分支：P2P 自举先于严格路由检查，strip 归一与 warn 文案随模块', () => {
+    const slice = admissionSlice(
+      'function evaluateRouteAdmission(',
+      '\n  return {',
+    );
+    expect(slice).toContain('text = stripLeadingBotMention(');
+    expect(slice).toContain(
+      "if (chatType === 'p2p' && resolveEffectiveChatJid) {",
+    );
+    expect(slice).toContain(
+      'if (!(err instanceof ChannelRouteRejectedError)) throw err;',
+    );
+    // 自举注册先于严格路由检查（feishu-route-safety 顺序锚的模块侧镜像）
+    const bootstrapIdx = slice.indexOf(
+      'onNewChat?.(chatJid, resolvedChatName)',
+    );
+    const routeCheckIdx = slice.indexOf(
+      'resolveAdmittedChannelRoute<FeishuMessageMeta>',
+    );
+    expect(bootstrapIdx).toBeGreaterThan(-1);
+    expect(routeCheckIdx).toBeGreaterThan(bootstrapIdx);
+    expect(slice).toContain(
+      "'Feishu binding resolver rejected route; dropping message'",
+    );
+    // 终态记账与路由结果回接在主管道 verdict 分支
+    expect(pipelineBody).toContain(
+      "if (routeAdmission.verdict === 'binding_rejected') {",
+    );
+    expect(pipelineBody).toContain(
+      "ignoreClaimedInbound(claim, payload, 'binding_rejected');",
+    );
+    expect(pipelineBody).toContain(
+      'const admittedRoute = routeAdmission.admittedRoute;',
+    );
+    expect(pipelineBody).toContain(
+      'const agentRouting = admittedRoute.routing;',
+    );
+    expect(pipelineBody).toContain('text = routeAdmission.strippedText;');
+    // admittedRoute 仍先于 enrich / 下载 / 持久化
+    // （channel-route-side-effect-order 锚的管道侧镜像，防回接错位）
+    const admittedIdx = pipelineBody.indexOf('const admittedRoute =');
+    const enrichIdx = pipelineBody.indexOf('await enrichFeishuInboundContent(');
+    expect(admittedIdx).toBeGreaterThan(-1);
+    expect(enrichIdx).toBeGreaterThan(admittedIdx);
   });
 });

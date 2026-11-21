@@ -35,15 +35,10 @@ import {
   buildQueuedFollowUpCard,
 } from './feishu-cards/builder.js';
 import {
-  evaluateMentionGate,
   isBotMentioned,
-  stripLeadingBotMention,
   type MentionGateMention,
 } from './feishu-mention-gate.js';
-import {
-  ChannelRouteRejectedError,
-  resolveAdmittedChannelRoute,
-} from './channel-admission.js';
+import { createFeishuInboundAdmission } from './feishu-inbound-admission.js';
 import {
   extractProviderTarget,
   parseChannelAddress,
@@ -215,8 +210,6 @@ export interface FeishuConnection {
 
 // Feishu card allows at most 5 markdown tables; beyond this, skip card and use post+md directly
 const CARD_TABLE_LIMIT = 5;
-// "因 botOpenId 缺失而丢消息" 的 warn 节流间隔，避免日志刷屏
-const BOT_INFO_MISSING_WARN_INTERVAL_MS = 5 * 60 * 1000;
 
 class FeishuTextDeliveryError extends Error {
   readonly outcome: 'rejected' | 'uncertain';
@@ -1032,9 +1025,6 @@ export function createFeishuConnection(
   let disconnectedChecks = 0;
   let healthTimer: NodeJS.Timeout | null = null;
   let inboxRecoveryTimer: NodeJS.Timeout | null = null;
-  // mention gate fail-closed 的 warn 节流：避免 botOpenId 长时间缺失时日志洪水
-  let lastBotInfoMissingWarnAt = 0;
-  let botInfoMissingDroppedSinceLastWarn = 0;
 
   // durable Inbox 辅助群（F2 进度 / F3 心跳与恢复调度 / F4 游标恢复 / F10
   // handleIncomingMessage / F13 信封解析 / F14 恢复循环）已抽至
@@ -1077,6 +1067,21 @@ export function createFeishuConnection(
   const botInfoRefresher = createFeishuBotInfoRefresher(() => client);
   const { fetchBotOpenIdOnce, fetchBotOpenIdWithRetry, ensureBotOpenIdFresh } =
     botInfoRefresher;
+
+  // 入站三段准入决策（受众门 / mention 门 fail-closed / 路由准入 + 首条 P2P
+  // DM 自举 + 群聊 @bot 前缀归一）已抽至 ./feishu-inbound-admission.ts
+  // （ISSUE-12 单元 2.8 原文搬运）。botInfoRefresher.getOpenId 与
+  // ensureBotOpenIdFresh 经工厂 deps 注入；mention 门 warn 节流计数（原为
+  // 本工厂 let 闭包）随决策体迁入新模块，每连接一份、生命周期不变；claim
+  // 终态记账按 verdict 分支留在 processClaimedIncomingMessage。
+  const {
+    evaluateAudienceAdmission,
+    evaluateMentionAdmission,
+    evaluateRouteAdmission,
+  } = createFeishuInboundAdmission({
+    botInfoRefresher,
+    ensureBotOpenIdFresh,
+  });
 
   // 图片/文件下载（downloadFeishuImage / downloadFeishuFileToDisk）与头部媒体纯函数
   // （readFeishuResourceBuffer / withFeishuHardTimeout）已抽至 ./feishu-media.ts
@@ -1273,20 +1278,21 @@ export function createFeishuConnection(
       const resolvedChatName =
         cachedChatInfo?.name || (chatType === 'p2p' ? '飞书私聊' : '飞书群聊');
 
-      // Audience is an identity boundary, independent from @/topic activation,
-      // and therefore runs before commands and before the mention gate. This
-      // also applies to p2p chats and already-active topics.
-      if (
-        isSenderAllowedInGroup &&
-        !isSenderAllowedInGroup(chatJid, senderOpenId)
-      ) {
-        if (chatType === 'group' && mentionedBot) {
-          addReaction(messageId, 'SILENT').catch(() => {});
-        }
-        logger.debug(
-          { chatJid, messageId, senderOpenId, chatType },
-          'Dropped Feishu message: sender rejected by audience policy',
-        );
+      // 受众门 / mention 门 / 路由准入三段决策体已抽至
+      // ./feishu-inbound-admission.ts（ISSUE-12 单元 2.8 原文搬运；拒绝侧的
+      // SILENT 反应、节流告警、lazy refetch 自愈、首条 P2P DM 自举与群聊
+      // @bot 前缀归一随决策体同模块）。claim 终态记账与 return 控制流按
+      // verdict 分支留守本函数，调用侧表达式与文案逐字节沿用原文。
+      const audienceAdmission = evaluateAudienceAdmission({
+        isSenderAllowedInGroup,
+        chatJid,
+        senderOpenId,
+        chatType,
+        mentionedBot,
+        messageId,
+        addReaction,
+      });
+      if (audienceAdmission.verdict === 'audience_rejected') {
         ignoreClaimedInbound(claim, payload, 'audience_rejected');
         return;
       }
@@ -1562,153 +1568,55 @@ export function createFeishuConnection(
         }
       }
 
-      // ── 群聊 Mention 过滤：require_mention / owner_mentioned 模式下过滤 ──
-      // 决策由 evaluateMentionGate（src/feishu-mention-gate.ts）以纯函数形式给出，
-      // 历史上这里曾因 botOpenId 缺失而 fail-open 静默失效；新版 fail-closed，
-      // 并通过 ensureBotOpenIdFresh() 触发后台 lazy refetch 自愈。
-      {
-        const decision = evaluateMentionGate({
-          chatType: normalizedChatType,
-          botOpenId: botInfoRefresher.getOpenId(),
-          mentions: mentions as MentionGateMention[] | undefined,
-          chatJid,
-          senderOpenId,
-          shouldProcessGroupMessage,
-          isGroupOwnerMessage,
-          conversationPlan,
-        });
-        if (!decision.allow) {
-          if (decision.reason === 'bot_open_id_missing') {
-            // 触发后台 lazy refetch（节流由函数内部保证），不阻塞当前消息
-            void ensureBotOpenIdFresh('mention-gate-fallback');
-            // warn 日志按 5 分钟节流，避免 botOpenId 长时间缺失时刷屏
-            const now = Date.now();
-            botInfoMissingDroppedSinceLastWarn++;
-            if (
-              now - lastBotInfoMissingWarnAt >=
-              BOT_INFO_MISSING_WARN_INTERVAL_MS
-            ) {
-              logger.warn(
-                {
-                  chatJid,
-                  messageId,
-                  droppedSinceLastWarn: botInfoMissingDroppedSinceLastWarn,
-                },
-                'Dropping group messages: bot open_id unknown (fail-closed). Triggered lazy refetch.',
-              );
-              lastBotInfoMissingWarnAt = now;
-              botInfoMissingDroppedSinceLastWarn = 0;
-            } else {
-              logger.debug(
-                { chatJid, messageId },
-                'Dropped group message: bot open_id missing (warn throttled)',
-              );
-            }
-          } else if (decision.reason === 'not_mentioned') {
-            logger.debug(
-              { chatJid, messageId },
-              'Dropped group message: mention required but bot not mentioned',
-            );
-          } else if (decision.reason === 'not_owner') {
-            logger.debug(
-              { chatJid, messageId, senderOpenId },
-              'Dropped group message: owner_mentioned mode, sender is not owner',
-            );
-          } else {
-            logger.debug(
-              { chatJid, messageId },
-              'Dropped Feishu message: activation mode is disabled',
-            );
-          }
-          ignoreClaimedInbound(
-            claim,
-            payload,
-            `mention_gate:${decision.reason}`,
-          );
-          return;
-        }
-      }
-
-      // Feishu requires @bot in mention-gated groups, but the durable human
-      // text should contain the actual request. Strip only the leading bot
-      // token proven by Feishu mention metadata; other @mentions remain.
-      if (chatType === 'group') {
-        text = stripLeadingBotMention(
-          text,
-          botInfoRefresher.getOpenId(),
-          mentions as MentionGateMention[] | undefined,
-        );
-      }
-
-      // Validate the binding before registration, owner learning, metadata or
-      // attachment downloads. The title/context metadata available here is
-      // sufficient for native-thread routing; downloaded paths are payload.
-      //
-      // Group chats get an external ownership signal before their first
-      // message can ever arrive here (im.chat.member.bot.added_v1 →
-      // onBotAddedToGroup, wired to the same onNewChat below), so the route
-      // check below can safely fail-closed on an unregistered group chat —
-      // it should never actually be unregistered by the time a message
-      // shows up. P2P chats have no equivalent bootstrap event: the first
-      // DM IS the "bot added" signal (mirrors the "/pair establishes
-      // ownership before routing" contract other channels use — see
-      // channel-admission.ts). Without this, resolveAdmittedChannelRoute
-      // would fail-closed on every message from a brand-new P2P chat
-      // forever, since registration (below) never gets a chance to run.
-      // onNewChat/onP2pSender are idempotent no-ops once already
-      // registered, so calling them again in their normal position below
-      // is safe and keeps this bootstrap narrowly scoped to P2P.
-      //
-      // The resolver wired in by IMConnectionManager (scopeConnectOpts) does
-      // not return null for an unresolved route: it throws
-      // ChannelRouteRejectedError, which for this probe means exactly "not
-      // registered yet". Treat only that error as the bootstrap signal; any
-      // other failure must still surface. The strict route check below keeps
-      // rejecting legitimately rejected routes.
-      if (chatType === 'p2p' && resolveEffectiveChatJid) {
-        let routeResolved = true;
-        try {
-          routeResolved = !!resolveEffectiveChatJid(chatJid);
-        } catch (err) {
-          if (!(err instanceof ChannelRouteRejectedError)) throw err;
-          routeResolved = false;
-        }
-        if (!routeResolved) {
-          onNewChat?.(chatJid, resolvedChatName);
-          if (senderOpenId && onP2pSender) {
-            onP2pSender(senderOpenId);
-          }
-        }
-      }
-
-      const admittedRoute = resolveAdmittedChannelRoute<FeishuMessageMeta>(
+      // mention 门（fail-closed）：决策 / lazy refetch 自愈 / 节流告警在
+      // ./feishu-inbound-admission.ts；终态模板按 verdict 沿用原文。
+      const mentionAdmission = evaluateMentionAdmission({
+        normalizedChatType,
+        mentions,
         chatJid,
-        resolveEffectiveChatJid,
-        {
-          provider: 'feishu',
-          chatType: normalizedChatType,
-          mentionedBot,
-          nativeContextType:
-            conversationPlan?.independentContext ||
-            (!conversationPlan && !!threadId)
-              ? 'thread'
-              : undefined,
-          contextId: conversationPlan?.contextId || threadId,
-          threadId,
-          rootId: conversationPlan?.rootMessageId || rootId,
-          parentId,
-          messageId,
-          text,
-        },
-      );
-      if (!admittedRoute) {
-        logger.warn(
-          { chatJid, messageId, source },
-          'Feishu binding resolver rejected route; dropping message',
+        senderOpenId,
+        messageId,
+        shouldProcessGroupMessage,
+        isGroupOwnerMessage,
+        conversationPlan,
+      });
+      if (mentionAdmission.verdict === 'mention_gate') {
+        ignoreClaimedInbound(
+          claim,
+          payload,
+          `mention_gate:${mentionAdmission.reason}`,
         );
+        return;
+      }
+
+      // 路由准入 + 首条 P2P DM 自举：决策体（含群聊 @bot 前缀 strip 归一，
+      // 归一后文本经 strippedText 回传）在 ./feishu-inbound-admission.ts；
+      // 终态记账按 verdict 沿用原文。
+      const routeAdmission = evaluateRouteAdmission({
+        chatType,
+        normalizedChatType,
+        chatJid,
+        text,
+        mentionedBot,
+        mentions,
+        messageId,
+        senderOpenId,
+        threadId,
+        rootId,
+        parentId,
+        conversationPlan,
+        source,
+        resolveEffectiveChatJid,
+        onNewChat,
+        onP2pSender,
+        resolvedChatName,
+      });
+      if (routeAdmission.verdict === 'binding_rejected') {
         ignoreClaimedInbound(claim, payload, 'binding_rejected');
         return;
       }
+      text = routeAdmission.strippedText;
+      const admittedRoute = routeAdmission.admittedRoute;
       const agentRouting = admittedRoute.routing;
 
       // Event payloads intentionally contain only a lossy placeholder for
