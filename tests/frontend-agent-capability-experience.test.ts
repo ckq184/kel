@@ -103,7 +103,11 @@ describe('Agent prompt and capability frontend contract', () => {
       'web/src/components/settings/SystemSettingsSection.tsx',
     );
 
-    expect(profiles).toMatch(
+    // ISSUE-12 波 5 单元 5.7：宿主机配置开关说明（CKQClaw MCP 与宿主机
+    // Skills 独立控制注记）已随身份区迁
+    // web/src/components/agents/AgentIdentitySection.tsx（原文搬运），
+    // 锚随体迁、断言语义不变。
+    expect(read('web/src/components/agents/AgentIdentitySection.tsx')).toMatch(
       /CKQClaw MCP[\s\S]*宿主机 Skills[\s\S]*“能力配置”独立控制/,
     );
     // ISSUE-12 波 5 单元 5.3：hostSkillOptions memo（external 过滤）已随
@@ -204,12 +208,15 @@ describe('Agent prompt and capability frontend contract', () => {
   });
 
   test('allows every saved model configuration to be selected by an Agent', () => {
-    const profiles = read('web/src/pages/AgentProfilesPage.tsx');
+    // ISSUE-12 波 5 单元 5.7：模型配置选择器已随身份区迁
+    // web/src/components/agents/AgentIdentitySection.tsx（原文搬运），
+    // 锚随体迁、双断言逐字不变。
+    const identity = read('web/src/components/agents/AgentIdentitySection.tsx');
     const main = read(
       'web/src/components/settings/MainAgentCapabilitiesSection.tsx',
     );
 
-    for (const source of [profiles, main]) {
+    for (const source of [identity, main]) {
       expect(source).not.toContain('disabled={!model.enabled}');
       expect(source).toContain("!model.enabled ? '（仅显式使用）' : ''");
     }
