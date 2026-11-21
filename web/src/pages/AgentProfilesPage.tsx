@@ -50,6 +50,7 @@ import { AgentGovernanceSection } from '../components/agents/AgentGovernanceSect
 import { AgentSkillsPolicyEditor } from '../components/agents/AgentSkillsPolicyEditor';
 import { PolicyResourcePicker } from '../components/agents/PolicyResourcePicker';
 import { AgentCreatePanel } from '../components/agents/AgentCreatePanel';
+import { AgentDraftSummary } from '../components/agents/AgentDraftSummary';
 import { EmojiAvatar } from '../components/common/EmojiAvatar';
 import { EmojiPicker } from '../components/common/EmojiPicker';
 import { ColorPicker } from '../components/common/ColorPicker';
@@ -66,10 +67,7 @@ import { useUnsavedNavigationGuard } from '../hooks/useUnsavedNavigationGuard';
 import { useAgentRuntimePolicy } from '../hooks/useAgentRuntimePolicy';
 import { useHostSkillAutosave } from '../hooks/useHostSkillAutosave';
 import { useAgentProfileForm } from '../hooks/useAgentProfileForm';
-import {
-  skillPolicySummary,
-  type RuntimePolicyMode,
-} from '../utils/agent-runtime-policy';
+import { type RuntimePolicyMode } from '../utils/agent-runtime-policy';
 import {
   AGENT_EFFORT_OPTIONS,
   asApiError,
@@ -81,15 +79,6 @@ import {
 // AGENT_EFFORT_VALUES / normalizeRuntimePolicy / sameRuntimePolicy /
 // sameSkillSourcePolicy / asApiError 已迁 ../utils/agent-runtime-policy-form.ts
 // （原文搬运），经同名 import 回接零调用点改动。
-
-function SummaryItem({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg bg-muted/50 p-3">
-      <dt className="text-[11px] font-medium text-muted-foreground">{label}</dt>
-      <dd className="mt-1 text-sm font-medium text-foreground">{value}</dd>
-    </div>
-  );
-}
 
 export function AgentProfilesPage() {
   const location = useLocation();
@@ -1213,93 +1202,22 @@ export function AgentProfilesPage() {
                   )}
 
                   {draftMode && draftStep === 5 && (
-                    <section className="overflow-hidden rounded-xl border border-border bg-card">
-                      <div className="border-b px-5 py-4">
-                        <h2 className="text-sm font-semibold">确认创建</h2>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          检查核心设置。创建后仍可随时修改并通过版本历史回退提示词。
-                        </p>
-                      </div>
-                      <dl className="grid gap-4 p-5 sm:grid-cols-2">
-                        <SummaryItem
-                          label="名称"
-                          value={name.trim() || '未填写'}
-                        />
-                        <SummaryItem
-                          label="提示词完成度"
-                          value={`${Object.values(currentPrompts).filter((value) => value.trim()).length}/4 段`}
-                        />
-                        <SummaryItem
-                          label="模型配置"
-                          value={
-                            modelConfigId === 'inherit'
-                              ? `跟随系统默认${defaultModelConfigId ? `：${modelConfigs.find((item) => item.id === defaultModelConfigId)?.name ?? '当前默认'}` : ''}`
-                              : (modelConfigs.find(
-                                  (item) => item.id === modelConfigId,
-                                )?.name ?? '不可用模型配置')
-                          }
-                        />
-                        <SummaryItem
-                          label="推理努力档位"
-                          value={
-                            AGENT_EFFORT_OPTIONS.find(
-                              (option) => option.value === effort,
-                            )?.label ?? '跟随模型配置'
-                          }
-                        />
-                        <SummaryItem
-                          label="宿主机配置"
-                          value={
-                            contextSource === 'host_claude'
-                              ? '完整加载 ~/.claude（宿主机 Skills 独立）'
-                              : '不加载'
-                          }
-                        />
-                        <SummaryItem
-                          label="CKQClaw Skills"
-                          value={
-                            skillsMode === 'inherit'
-                              ? '全部已启用'
-                              : skillsMode === 'disabled'
-                                ? '关闭'
-                                : `所选 ${skillIds.length} 项`
-                          }
-                        />
-                        <SummaryItem
-                          label="宿主机 Skills"
-                          value={skillPolicySummary(
-                            { mode: hostSkillsMode, ids: hostSkillIds },
-                            '全部使用',
-                          )}
-                        />
-                        <SummaryItem
-                          label="CKQClaw MCP"
-                          value={
-                            mcpMode === 'inherit'
-                              ? '全部已启用'
-                              : mcpMode === 'disabled'
-                                ? '关闭'
-                                : `所选 ${mcpIds.length} 项`
-                          }
-                        />
-                      </dl>
-                      {!name.trim() && (
-                        <p
-                          role="alert"
-                          className="mx-5 mb-5 rounded-lg bg-error-bg px-3 py-2 text-xs text-error"
-                        >
-                          请返回“基本信息”填写名称。
-                        </p>
-                      )}
-                      {capabilityError && (
-                        <p
-                          role="alert"
-                          className="mx-5 mb-5 rounded-lg bg-error-bg px-3 py-2 text-xs text-error"
-                        >
-                          {capabilityError}
-                        </p>
-                      )}
-                    </section>
+                    <AgentDraftSummary
+                      name={name}
+                      currentPrompts={currentPrompts}
+                      modelConfigId={modelConfigId}
+                      defaultModelConfigId={defaultModelConfigId}
+                      modelConfigs={modelConfigs}
+                      effort={effort}
+                      contextSource={contextSource}
+                      skillsMode={skillsMode}
+                      skillIds={skillIds}
+                      hostSkillsMode={hostSkillsMode}
+                      hostSkillIds={hostSkillIds}
+                      mcpMode={mcpMode}
+                      mcpIds={mcpIds}
+                      capabilityError={capabilityError}
+                    />
                   )}
 
                   <section

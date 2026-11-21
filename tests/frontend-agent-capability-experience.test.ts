@@ -79,7 +79,11 @@ describe('Agent prompt and capability frontend contract', () => {
       /基本信息[\s\S]*四段提示词[\s\S]*宿主机配置[\s\S]*Skills \/ MCP[\s\S]*确认创建/,
     );
     expect(page).toContain('draftStep');
-    expect(page).toContain('提示词完成度');
+    // ISSUE-12 波 5 单元 5.6：确认创建汇总 section（含提示词完成度）已迁
+    // web/src/components/agents/AgentDraftSummary.tsx（原文搬运），锚随体迁。
+    expect(read('web/src/components/agents/AgentDraftSummary.tsx')).toContain(
+      '提示词完成度',
+    );
     expect(editor).toContain('一键填入推荐模板');
     expect(editor).toContain('DEFAULT_AGENT_PROMPTS');
     expect(history).toContain('对比当前');
