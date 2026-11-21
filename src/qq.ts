@@ -43,11 +43,13 @@ import {
   classifyCloseCode,
 } from './qq-reconnect.js';
 import { resolveAdmittedChannelRoute } from './channel-admission.js';
+import {
+  createQQTokenManager,
+  QQ_MAX_JSON_RESPONSE_BYTES,
+} from './qq-token.js';
 // ─── Constants ──────────────────────────────────────────────────
 
-const QQ_TOKEN_URL = 'https://bots.qq.com/app/getAppAccessToken';
 const QQ_API_BASE = 'https://api.sgroup.qq.com';
-const TOKEN_REFRESH_BUFFER_MS = 300_000; // refresh 5min before expiry
 const MSG_SPLIT_LIMIT = 5000;
 const MAX_RECONNECT_ATTEMPTS = 100;
 const RATE_LIMIT_DELAY_MS = 60_000;
@@ -59,9 +61,7 @@ const KEEPALIVE_INTERVAL_MS = 5 * 60 * 1000;
 // Safety net: if we ever end up disconnected with no reconnect pending,
 // the watchdog kicks a fresh attempt instead of leaving the bot dead.
 const WATCHDOG_INTERVAL_MS = 60_000;
-const QQ_TOKEN_REQUEST_TIMEOUT_MS = 15_000;
 const QQ_API_REQUEST_TIMEOUT_MS = 30_000;
-const QQ_MAX_JSON_RESPONSE_BYTES = 2 * 1024 * 1024;
 
 const IMAGE_EXT_MAP: Record<string, string> = {
   'image/jpeg': '.jpg',
@@ -338,11 +338,6 @@ export interface QQConnection {
   getLastIncomingMsgId(openid: string): string | undefined;
 }
 
-interface TokenInfo {
-  accessToken: string;
-  expiresAt: number;
-}
-
 interface QQWsPayload {
   op: number;
   d?: any;
@@ -386,10 +381,6 @@ export function validateQQGatewayUrl(value: string): string {
 // ─── Factory Function ───────────────────────────────────────────
 
 export function createQQConnection(config: QQConnectionConfig): QQConnection {
-  // Token state
-  let tokenInfo: TokenInfo | null = null;
-  let tokenRefreshPromise: Promise<string> | null = null;
-
   // WebSocket state
   let ws: WebSocket | null = null;
   let heartbeatTimer: NodeJS.Timeout | null = null;
@@ -503,100 +494,13 @@ export function createQQConnection(config: QQConnectionConfig): QQConnection {
   }
 
   // ─── Token Management ──────────────────────────────────────
-
-  async function getAccessToken(): Promise<string> {
-    // Check cached token
-    if (
-      tokenInfo &&
-      Date.now() < tokenInfo.expiresAt - TOKEN_REFRESH_BUFFER_MS
-    ) {
-      return tokenInfo.accessToken;
-    }
-
-    // Singleflight: reuse in-flight refresh
-    if (tokenRefreshPromise) {
-      return tokenRefreshPromise;
-    }
-
-    tokenRefreshPromise = refreshToken();
-    try {
-      return await tokenRefreshPromise;
-    } finally {
-      tokenRefreshPromise = null;
-    }
-  }
-
-  async function refreshToken(): Promise<string> {
-    const body = JSON.stringify({
-      appId: config.appId,
-      clientSecret: config.appSecret,
-    });
-
-    return new Promise<string>((resolve, reject) => {
-      const url = new URL(QQ_TOKEN_URL);
-      const req = https.request(
-        {
-          hostname: url.hostname,
-          path: url.pathname,
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Content-Length': Buffer.byteLength(body),
-          },
-        },
-        (res) => {
-          const chunks: Buffer[] = [];
-          let responseBytes = 0;
-          res.on('data', (chunk: Buffer) => {
-            responseBytes += chunk.length;
-            if (responseBytes > QQ_MAX_JSON_RESPONSE_BYTES) {
-              res.destroy(new Error('QQ token response is too large'));
-              return;
-            }
-            chunks.push(chunk);
-          });
-          res.on('end', () => {
-            try {
-              const text = Buffer.concat(chunks).toString('utf-8');
-              const data = JSON.parse(text);
-              if (res.statusCode && res.statusCode >= 400) {
-                reject(
-                  new Error(
-                    `QQ token request failed (${res.statusCode}): ${String(data.message || data.msg || 'unknown error').slice(0, 500)}`,
-                  ),
-                );
-                return;
-              }
-              if (!data.access_token) {
-                reject(
-                  new Error(
-                    `QQ token response missing access_token: ${JSON.stringify(data).slice(0, 500)}`,
-                  ),
-                );
-                return;
-              }
-              const expiresIn = Number(data.expires_in) || 7200;
-              tokenInfo = {
-                accessToken: data.access_token,
-                expiresAt: Date.now() + expiresIn * 1000,
-              };
-              logger.info({ expiresIn }, 'QQ access token refreshed');
-              resolve(data.access_token);
-            } catch (err) {
-              reject(err);
-            }
-          });
-          res.on('error', reject);
-        },
-      );
-      req.on('error', reject);
-      req.setTimeout(QQ_TOKEN_REQUEST_TIMEOUT_MS, () => {
-        req.destroy(new Error('QQ token request timed out'));
-      });
-      req.write(body);
-      req.end();
-    });
-  }
+  // getAccessToken / refreshToken 及其专属状态（tokenInfo /
+  // tokenRefreshPromise，原 389-391）已整体抽至 ./qq-token.ts（ISSUE-12
+  // 单元 2.11 原文搬运）。同名解构使 apiRequest / handleWsMessage / connect
+  // 三处调用点零改动；refreshToken 仅被 getAccessToken 内部消费，不进工厂
+  // 返回面；WS close 'refresh-token' 分支与 disconnect 的 token 复位经
+  // resetToken() 等价承接。
+  const { getAccessToken, resetToken } = createQQTokenManager(config);
 
   // ─── REST API ──────────────────────────────────────────────
 
@@ -1342,7 +1246,7 @@ export function createQQConnection(config: QQConnectionConfig): QQConnection {
               { code },
               'QQ invalid token close, forcing token refresh',
             );
-            tokenInfo = null;
+            resetToken();
             sessionId = null;
             lastSequence = null;
             scheduleReconnect(opts);
@@ -2000,7 +1904,7 @@ export function createQQConnection(config: QQConnectionConfig): QQConnection {
         ws = null;
       }
 
-      tokenInfo = null;
+      resetToken();
       sessionId = null;
       lastSequence = null;
       resumeGatewayUrl = null;
