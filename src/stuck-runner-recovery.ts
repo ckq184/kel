@@ -84,7 +84,7 @@ export function isHostProcessAlive(pid: number): boolean {
  * recovery ceilings (absolute IPC ceiling / idle ceiling) rather than an
  * unlimited cpu_unknown veto.
  */
-export async function probeHostRunnerLivenessWin32(
+async function probeHostRunnerLivenessWin32(
   pid: number,
   context: Pick<
     StuckRecoveryCandidate,

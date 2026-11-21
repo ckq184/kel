@@ -2034,9 +2034,7 @@ export function getActiveProfileCustomEnv(): Record<string, string> {
  * Resolve any profileId to a full ClaudeProviderConfig.
  * Used by ProviderPool to build env for a non-active profile.
  */
-export function resolveProfileToConfig(
-  profileId: string,
-): ClaudeProviderConfig {
+function resolveProfileToConfig(profileId: string): ClaudeProviderConfig {
   const state = readStoredState();
   if (!state) return defaultsFromEnv();
 

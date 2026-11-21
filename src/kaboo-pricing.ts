@@ -218,7 +218,7 @@ const TOKEN_FIELDS: readonly (keyof KabooTokenUsage)[] = [
 ];
 
 /** Token counts are int64 in Kaboo; JS inputs are clamped to safe integers. */
-export function normalizeKabooTokenCount(value: unknown): number {
+function normalizeKabooTokenCount(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
     return 0;
   }

@@ -67,7 +67,7 @@ export function isMentionActivationMode(
   );
 }
 
-export function isFeishuTopicChat(chatMode: string | undefined): boolean {
+function isFeishuTopicChat(chatMode: string | undefined): boolean {
   return chatMode === 'topic';
 }
 

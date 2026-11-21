@@ -162,7 +162,7 @@ export function decideHostRunnerReap(
 }
 
 /** Process creation time where the platform exposes it; null otherwise. */
-export async function getProcessCreateTimeMs(
+async function getProcessCreateTimeMs(
   pid: number,
   platform: NodeJS.Platform = process.platform,
 ): Promise<number | null> {

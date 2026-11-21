@@ -300,7 +300,7 @@ const FREEZE_SLICE_BYTES = 16 * 1024;
 
 const byteLen = (s: string): number => Buffer.byteLength(s, 'utf-8');
 
-export function extractTitleAndBody(text: string): {
+function extractTitleAndBody(text: string): {
   title: string;
   body: string;
 } {
@@ -3359,7 +3359,7 @@ export function resolveJidByMessageId(messageId: string): string | undefined {
 /**
  * Remove a messageId mapping.
  */
-export function unregisterMessageId(messageId: string): void {
+function unregisterMessageId(messageId: string): void {
   messageIdToChatJid.delete(messageId);
 }
 

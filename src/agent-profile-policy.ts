@@ -28,7 +28,7 @@ export function resolveHostSkillPolicy(runtimePolicy: {
   );
 }
 
-export function requestsHostClaudeContext(
+function requestsHostClaudeContext(
   runtimePolicy: { context?: { source?: string } } | undefined,
 ): boolean {
   return runtimePolicy?.context?.source === 'host_claude';
@@ -41,7 +41,7 @@ export function isUnauthorizedHostClaudeContext(
   return user.role !== 'admin' && requestsHostClaudeContext(runtimePolicy);
 }
 
-export function requestsHostSkills(
+function requestsHostSkills(
   runtimePolicy: { skills?: { host?: { mode?: string } } } | undefined,
 ): boolean {
   const mode = runtimePolicy?.skills?.host?.mode;

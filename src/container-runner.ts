@@ -492,7 +492,7 @@ function mkdirForContainer(dirPath: string): void {
   }
 }
 
-export function replaceHostMcpServersEnv(
+function replaceHostMcpServersEnv(
   env: Record<string, string>,
   servers: Record<string, Record<string, unknown>>,
 ): void {

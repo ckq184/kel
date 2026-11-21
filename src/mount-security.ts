@@ -300,7 +300,7 @@ export function isHostMountNavigationPathAllowed(realPath: string): boolean {
     .some((component) => SOCKET_COMPONENT_RE.test(component));
 }
 
-export function normalizeAdditionalMountContainerPath(input: string): string {
+function normalizeAdditionalMountContainerPath(input: string): string {
   if (input !== input.trim()) {
     throw new Error(
       'containerPath must not have leading or trailing whitespace',

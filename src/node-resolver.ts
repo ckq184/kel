@@ -21,7 +21,7 @@ interface NodeResolverContext {
   isExecutable: (filePath: string) => boolean;
 }
 
-export function isExecutableFile(filePath: string | undefined | null): boolean {
+function isExecutableFile(filePath: string | undefined | null): boolean {
   if (!filePath) return false;
   try {
     fs.accessSync(filePath, fs.constants.X_OK);
