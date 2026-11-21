@@ -31,11 +31,10 @@ import {
   FEISHU_CURSOR_SCOPE,
 } from './feishu-backfill.js';
 import { createFeishuSender } from './feishu-outbound.js';
+import { buildFeishuEventHandlers } from './feishu-events.js';
 import {
   buildAgentReplyCard,
-  buildFollowUpActionResultCard,
   buildQueuedFollowUpCard,
-  parseCardCallbackEnvelope,
 } from './feishu-cards/builder.js';
 import {
   evaluateMentionGate,
@@ -2747,174 +2746,11 @@ export function createFeishuConnection(
       }
 
       // Create event dispatcher
-      eventDispatcher = new lark.EventDispatcher({}).register({
-        'im.message.receive_v1': async (data) => {
-          try {
-            const message = data.message;
-            const sender = data.sender as typeof data.sender & {
-              sender_type?: string;
-              tenant_key?: string;
-              sender_name?: string;
-              sender_id?: {
-                open_id?: string;
-                user_id?: string;
-                union_id?: string;
-              };
-            };
-            await handleIncomingMessage(
-              {
-                chatId: message.chat_id,
-                messageId: message.message_id,
-                rootId: message.root_id,
-                parentId: message.parent_id,
-                threadId: message.thread_id,
-                createTimeMs: toEpochMs(message.create_time),
-                messageType: message.message_type,
-                content: message.content,
-                chatType: message.chat_type,
-                mentions: message.mentions as FeishuMentionLike[] | undefined,
-                senderOpenId: sender.sender_id?.open_id || '',
-                senderUserId: sender.sender_id?.user_id,
-                senderUnionId: sender.sender_id?.union_id,
-                senderName: sender.sender_name,
-                senderTenantKey: sender.tenant_key,
-                senderType: sender.sender_type,
-              },
-              'ws',
-            );
-          } catch (err) {
-            logger.error({ err }, 'Error handling Feishu message');
-          }
-        },
-        'im.chat.member.bot.added_v1': async (data) => {
-          try {
-            const chatId = data.chat_id;
-            if (!chatId) return;
-            const rawJid = `feishu:${chatId}`;
-            const chatJid =
-              connectOptions?.normalizeIncomingJid?.(rawJid) ?? rawJid;
-            const chatName = data.name || '飞书群聊';
-            logger.info({ chatJid, chatName }, 'Bot added to Feishu group');
-            connectOptions?.onBotAddedToGroup?.(chatJid, chatName);
-          } catch (err) {
-            logger.error({ err }, 'Error handling bot added to group event');
-          }
-        },
-        'im.chat.member.bot.deleted_v1': async (data) => {
-          try {
-            const chatId = data.chat_id;
-            if (!chatId) return;
-            const rawJid = `feishu:${chatId}`;
-            const chatJid =
-              connectOptions?.normalizeIncomingJid?.(rawJid) ?? rawJid;
-            logger.info({ chatJid }, 'Bot removed from Feishu group');
-            connectOptions?.onBotRemovedFromGroup?.(chatJid);
-          } catch (err) {
-            logger.error(
-              { err },
-              'Error handling bot removed from group event',
-            );
-          }
-        },
-        'im.chat.disbanded_v1': async (data) => {
-          try {
-            const chatId = data.chat_id;
-            if (!chatId) return;
-            const rawJid = `feishu:${chatId}`;
-            const chatJid =
-              connectOptions?.normalizeIncomingJid?.(rawJid) ?? rawJid;
-            logger.info({ chatJid }, 'Feishu group disbanded');
-            connectOptions?.onBotRemovedFromGroup?.(chatJid);
-          } catch (err) {
-            logger.error({ err }, 'Error handling group disbanded event');
-          }
-        },
-        'card.action.trigger': async (data: any) => {
-          try {
-            const envelope = parseCardCallbackEnvelope(data);
-            if (!envelope) {
-              logger.debug(
-                { keys: Object.keys(data ?? {}).join(',') },
-                'Feishu card action ignored: no actionable button value',
-              );
-              return;
-            }
-            const { value, cardMessageId, operatorImId } = envelope;
-            const action = value.action;
-            if (!cardMessageId) return;
-
-            let result: FollowUpActionResult | undefined;
-            if (action === 'interrupt_stream') {
-              const chatJid = resolveJidByMessageId(cardMessageId);
-              if (!chatJid) {
-                logger.debug(
-                  { cardMessageId },
-                  'Card action: no mapping for messageId',
-                );
-                return;
-              }
-              result = connectOptions?.onCardInterrupt?.(chatJid, operatorImId);
-            } else if (
-              action === 'steer_queued' ||
-              action === 'cancel_queued' ||
-              action === 'interrupt_and_run'
-            ) {
-              const mappedAction: FollowUpAction =
-                action === 'steer_queued'
-                  ? 'steer'
-                  : action === 'cancel_queued'
-                    ? 'cancel'
-                    : 'interrupt_and_run';
-              if (
-                typeof value.sourceJid !== 'string' ||
-                typeof value.targetJid !== 'string' ||
-                typeof value.messageId !== 'string' ||
-                typeof value.expectedRunId !== 'string'
-              ) {
-                return;
-              }
-              result = await connectOptions?.onFollowUpCardAction?.({
-                sourceJid: value.sourceJid,
-                targetJid: value.targetJid,
-                messageId: value.messageId,
-                action: mappedAction,
-                expectedRunId: value.expectedRunId,
-                operatorImId,
-              });
-            }
-
-            if (!result) return;
-            if (!result.ok) {
-              return {
-                toast: {
-                  type: 'warning',
-                  content: result.message,
-                },
-              };
-            }
-            if (!client) return;
-            // 业务错误码不抛异常（HTTP 200 + code!=0 时尤其如此），必须记录响应，
-            // 否则卡片更新失败会退化成无痕迹的静默成功。
-            const patchResp = await client.im.v1.message.patch({
-              path: { message_id: cardMessageId },
-              data: {
-                content: JSON.stringify(
-                  buildFollowUpActionResultCard(result.message, result.ok),
-                ),
-              },
-            });
-            logger.info(
-              {
-                cardMessageId,
-                code: (patchResp as { code?: number } | undefined)?.code,
-                msg: (patchResp as { msg?: string } | undefined)?.msg,
-              },
-              'Feishu follow-up card patched',
-            );
-          } catch (err) {
-            logger.error({ err }, 'Error handling card action trigger');
-          }
-        },
+      eventDispatcher = buildFeishuEventHandlers({
+        handleIncomingMessage,
+        toEpochMs,
+        getConnectOptions: () => connectOptions,
+        getClient: () => client,
       });
 
       // Initialize WebSocket client
