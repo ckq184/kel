@@ -44,7 +44,7 @@ export const MAX_GIT_REPOSITORY_BYTES = 64 * 1024 * 1024;
 /** 子进程合并输出的保留上限（防超长报错撑爆内存/日志）。 */
 const MAX_COMMAND_OUTPUT_BYTES = 64 * 1024;
 
-export interface SkillImportResult {
+interface SkillImportResult {
   installed: string[];
   sourceUrl?: string;
   version?: string;

@@ -261,7 +261,7 @@ export interface CachedOAuthUsage {
 export const CONTEXT_WINDOW_PRESETS = [
   128_000, 256_000, 512_000, 1_000_000,
 ] as const;
-export type DeclaredContextWindow = (typeof CONTEXT_WINDOW_PRESETS)[number];
+type DeclaredContextWindow = (typeof CONTEXT_WINDOW_PRESETS)[number];
 /** `auto` = 现行为（[1m] 启发式 → 1M，否则 200k）。 */
 export type ContextWindowPreset = 'auto' | DeclaredContextWindow;
 
@@ -276,7 +276,7 @@ export interface ClaudeProviderConfig {
   updatedAt: string | null;
 }
 
-export interface ClaudeProviderPublicConfig {
+interface ClaudeProviderPublicConfig {
   anthropicBaseUrl: string;
   anthropicModel: string;
   contextWindow?: ContextWindowPreset;
@@ -292,7 +292,7 @@ export interface ClaudeProviderPublicConfig {
   claudeOAuthCredentialsAccessTokenMasked: string | null;
 }
 
-export interface ClaudeThirdPartyProfile {
+interface ClaudeThirdPartyProfile {
   id: string;
   name: string;
   anthropicBaseUrl: string;
@@ -302,16 +302,16 @@ export interface ClaudeThirdPartyProfile {
   customEnv: Record<string, string>;
 }
 
-export interface FeishuProviderConfig {
+interface FeishuProviderConfig {
   appId: string;
   appSecret: string;
   enabled?: boolean;
   updatedAt: string | null;
 }
 
-export type FeishuConfigSource = 'runtime' | 'env' | 'none';
+type FeishuConfigSource = 'runtime' | 'env' | 'none';
 
-export interface FeishuProviderPublicConfig {
+interface FeishuProviderPublicConfig {
   appId: string;
   hasAppSecret: boolean;
   appSecretMasked: string | null;
@@ -439,7 +439,7 @@ interface StoredClaudeProviderConfigV5 {
 }
 
 /** 解密后的统一供应商运行时结构 */
-export interface UnifiedProvider {
+interface UnifiedProvider {
   id: string;
   name: string;
   type: 'official' | 'third_party';
@@ -2141,7 +2141,7 @@ export function appendImConfigAudit(
 
 const CONTAINER_ENV_DIR = path.join(DATA_DIR, 'config', 'container-env');
 
-export interface ContainerEnvConfig {
+interface ContainerEnvConfig {
   /** Claude provider overrides — empty string means "use global" */
   anthropicBaseUrl?: string;
   anthropicAuthToken?: string;
@@ -2306,7 +2306,7 @@ const REGISTRATION_CONFIG_FILE = path.join(
   'registration.json',
 );
 
-export interface RegistrationConfig {
+interface RegistrationConfig {
   allowRegistration: boolean;
   requireInviteCode: boolean;
   updatedAt: string | null;
@@ -2618,7 +2618,7 @@ export function saveAppearanceConfig(
 
 const USER_IM_CONFIG_DIR = path.join(DATA_DIR, 'config', 'user-im');
 
-export interface UserFeishuConfig {
+interface UserFeishuConfig {
   appId: string;
   appSecret: string;
   enabled?: boolean;
@@ -2627,7 +2627,7 @@ export interface UserFeishuConfig {
   autoIsolateContext?: boolean; // auto-create isolated conversation for each new IM chat
 }
 
-export interface UserQQConfig {
+interface UserQQConfig {
   appId: string;
   appSecret: string;
   enabled?: boolean;
@@ -2779,7 +2779,7 @@ export function saveUserQQConfig(
 
 // ========== WeChat User IM Config ==========
 
-export interface UserWeChatConfig {
+interface UserWeChatConfig {
   botToken: string; // iLink bot_token
   ilinkBotId: string; // bot ID (xxx@im.bot)
   baseUrl?: string; // 默认 https://ilinkai.weixin.qq.com

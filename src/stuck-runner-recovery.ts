@@ -4,11 +4,7 @@ import { promisify } from 'util';
 import { logger } from './logger.js';
 
 export type RunnerRuntime = 'host' | 'container';
-export type RunnerCpuActivity =
-  | 'active'
-  | 'inactive'
-  | 'unknown'
-  | 'unavailable';
+type RunnerCpuActivity = 'active' | 'inactive' | 'unknown' | 'unavailable';
 
 export interface StuckRecoveryCandidate {
   jid: string;
@@ -37,12 +33,12 @@ export type StuckRecoveryDecision =
       reason: 'container_grace' | 'cpu_active' | 'cpu_unknown';
     };
 
-export type HostProcessTableReader = () => Promise<string>;
-export type HostRunnerCpuProbe = (
+type HostProcessTableReader = () => Promise<string>;
+type HostRunnerCpuProbe = (
   pid: number,
   context: StuckRecoveryCandidate,
 ) => Promise<RunnerCpuActivity>;
-export type HostProcessLivenessProbe = (pid: number) => boolean;
+type HostProcessLivenessProbe = (pid: number) => boolean;
 
 export interface RunnerCpuResolutionOptions {
   /** Test seam: defaults to the real host platform. */
