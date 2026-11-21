@@ -30,6 +30,10 @@ import {
   withFeishuHardTimeout,
 } from './feishu-media.js';
 import {
+  createFeishuBackfill,
+  FEISHU_CURSOR_SCOPE,
+} from './feishu-backfill.js';
+import {
   buildAgentReplyCard,
   buildFollowUpActionResultCard,
   buildQueuedFollowUpCard,
@@ -64,7 +68,6 @@ import {
   claimNextChannelInbox,
   completeChannelInbox,
   failChannelInbox,
-  getChannelCursor,
   ignoreChannelInbox,
   listChannelCursors,
   recordChannelInbox,
@@ -224,15 +227,11 @@ const FEISHU_WS_READY_STATE_OPEN = 1;
 const WS_HEALTH_CHECK_INTERVAL_MS = 15_000;
 const WS_RECONNECT_CHECK_THRESHOLD = 4;
 const WS_RECONNECT_MIN_INTERVAL_MS = 30_000;
-const BACKFILL_LOOKBACK_MS = 5 * 60 * 1000;
-const BACKFILL_PAGE_SIZE = 50;
-const BACKFILL_MAX_PAGES_PER_CHAT = 5;
 const FEISHU_INBOX_LEASE_MS = 5 * 60 * 1000;
 const FEISHU_INBOX_HEARTBEAT_MS = 60 * 1000;
 const FEISHU_INBOX_RETRY_DELAY_MS = 5_000;
 const FEISHU_INBOX_GATE_RETRY_DELAY_MS = 250;
 const FEISHU_INBOX_RECOVERY_LIMIT = 500;
-const FEISHU_CURSOR_SCOPE = 'chat_messages';
 // "因 botOpenId 缺失而丢消息" 的 warn 节流间隔，避免日志刷屏
 const BOT_INFO_MISSING_WARN_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -2612,117 +2611,24 @@ export function createFeishuConnection(
     }
   }
 
-  async function backfillChatMessages(
-    chatId: string,
-    sinceMs: number,
-  ): Promise<void> {
-    if (!client) return;
-    const nowSec = Math.floor(Date.now() / 1000);
-    const startSec = Math.max(0, Math.floor(sinceMs / 1000));
-    const params: {
-      container_id_type: 'chat';
-      container_id: string;
-      sort_type: 'ByCreateTimeDesc';
-      start_time: string;
-      end_time: string;
-      page_size: number;
-      page_token?: string;
-    } = {
-      container_id_type: 'chat',
-      container_id: chatId,
-      sort_type: 'ByCreateTimeDesc',
-      start_time: String(startSec),
-      end_time: String(nowSec),
-      page_size: BACKFILL_PAGE_SIZE,
-    };
-
-    const pendingMessages: IncomingMessagePayload[] = [];
-    let pages = 0;
-    while (pages < BACKFILL_MAX_PAGES_PER_CHAT) {
-      const response = (await client.im.v1.message.list({ params })) as {
-        data?: {
-          items?: Array<{
-            message_id?: string;
-            create_time?: string | number;
-            msg_type?: string;
-            message_type?: string;
-            body?: { content?: string };
-            content?: string;
-            chat_type?: string;
-            mentions?: FeishuMentionLike[];
-            deleted?: boolean;
-            root_id?: string;
-            parent_id?: string;
-            thread_id?: string;
-            sender?: {
-              id?: string;
-              sender_type?: string;
-              tenant_key?: string;
-              name?: string;
-              sender_id?: {
-                open_id?: string;
-                user_id?: string;
-                union_id?: string;
-              };
-            };
-          }>;
-          has_more?: boolean;
-          page_token?: string;
-        };
-      };
-
-      const list = response.data?.items || [];
-      const messages = list
-        .filter((item) => {
-          if (item.deleted === true || !item.message_id) return false;
-          // 过滤 Bot 自身发送的消息，避免 backfill 将回复当作新消息处理
-          const senderType = item.sender?.sender_type;
-          if (senderType === 'app') return false;
-          return true;
-        })
-        .map((item) => {
-          const senderOpenId =
-            item.sender?.sender_id?.open_id || item.sender?.id || '';
-          return {
-            chatId,
-            messageId: item.message_id as string,
-            rootId: item.root_id || undefined,
-            parentId: item.parent_id || undefined,
-            threadId: item.thread_id || undefined,
-            createTimeMs: toEpochMs(item.create_time),
-            messageType: item.msg_type || item.message_type || '',
-            content: item.body?.content || item.content || '',
-            chatType: item.chat_type || chatTypeById.get(chatId) || 'group',
-            mentions: item.mentions,
-            senderOpenId,
-            senderUserId: item.sender?.sender_id?.user_id,
-            senderUnionId: item.sender?.sender_id?.union_id,
-            senderName: item.sender?.name,
-            senderTenantKey: item.sender?.tenant_key,
-            senderType: item.sender?.sender_type,
-          };
-        })
-        .sort((a, b) => a.createTimeMs - b.createTimeMs);
-
-      pendingMessages.push(...messages);
-
-      pages++;
-      if (!response.data?.has_more || !response.data.page_token) {
-        break;
-      }
-      params.page_token = response.data.page_token;
-    }
-
-    // The provider paginates newest-first. Sorting only inside each page would
-    // execute page 1 before the older page 2 and violate per-chat ordering.
-    pendingMessages.sort((a, b) => {
-      const byTime = a.createTimeMs - b.createTimeMs;
-      return byTime || a.messageId.localeCompare(b.messageId);
-    });
-    for (const message of pendingMessages) {
-      await handleIncomingMessage(message, 'backfill');
-    }
-  }
+  // ISSUE-12 单元 2.3：backfillChatMessages / runBackfill 原文搬运至
+  // ./feishu-backfill.ts；client 经 getClient 访问器注入，knownChatIds /
+  // chatTypeById / reliabilityAccountId / toEpochMs / handleIncomingMessage
+  // 为工厂闭包绑定、同名注入，搬运体内引用逐字节不变。防重入标志
+  // backfillRunning 仍留在本文件（上方 let 声明），connect() 的复位行与
+  // 三处 runBackfill 调用点均不变。
+  const { runBackfill } = createFeishuBackfill({
+    getClient: () => client,
+    reliabilityAccountId,
+    knownChatIds,
+    chatTypeById,
+    toEpochMs,
+    handleIncomingMessage,
+    isBackfillRunning: () => backfillRunning,
+    setBackfillRunning: (running) => {
+      backfillRunning = running;
+    },
+  });
 
   function parseRecoveredInbox(
     claim: ClaimedChannelInboxItem,
@@ -2800,38 +2706,6 @@ export function createFeishuConnection(
         { reason, recovered, accountId: reliabilityAccountId },
         'Recovered queued Feishu Inbox messages',
       );
-    }
-  }
-
-  async function runBackfill(reason: string): Promise<void> {
-    if (!client || backfillRunning) return;
-    const chatIds = Array.from(knownChatIds);
-    if (chatIds.length === 0) return;
-
-    backfillRunning = true;
-    try {
-      for (const chatId of chatIds) {
-        try {
-          const cursor = getChannelCursor({
-            provider: 'feishu',
-            accountId: reliabilityAccountId,
-            scope: FEISHU_CURSOR_SCOPE,
-            chatId,
-          });
-          const sinceMs = cursor
-            ? Math.max(0, cursor.position - BACKFILL_LOOKBACK_MS)
-            : Math.max(0, Date.now() - BACKFILL_LOOKBACK_MS);
-          await backfillChatMessages(chatId, sinceMs);
-        } catch (err) {
-          logger.warn({ err, chatId, reason }, 'Feishu chat backfill failed');
-        }
-      }
-      logger.info(
-        { reason, chatCount: chatIds.length },
-        'Feishu backfill finished',
-      );
-    } finally {
-      backfillRunning = false;
     }
   }
 
