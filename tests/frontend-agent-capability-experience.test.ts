@@ -129,8 +129,12 @@ describe('Agent prompt and capability frontend contract', () => {
 
     const profiles = read('web/src/pages/AgentProfilesPage.tsx');
     expect(profiles).toContain('onHostModeChange={handleHostSkillsModeChange}');
-    expect(profiles).toContain('void persistHostSkillPolicy(');
-    expect(profiles).toMatch(
+    // ISSUE-12 波 5 单元 5.2：persistHostSkillPolicy 及其调用点已随
+    // useHostSkillAutosave hook 迁 web/src/hooks/useHostSkillAutosave.ts
+    // （原文搬运），锚随体迁、断言文本不变；JSX 接线锚仍读页面。
+    const autosave = read('web/src/hooks/useHostSkillAutosave.ts');
+    expect(autosave).toContain('void persistHostSkillPolicy(');
+    expect(autosave).toMatch(
       /runtime_policy:\s*\{\s*skills:\s*\{\s*host: nextPolicy/,
     );
   });
