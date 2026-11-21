@@ -10,7 +10,7 @@ export interface SkillSourcePolicy {
   ids: string[];
 }
 
-export const DEFAULT_HOST_SKILL_POLICY: SkillSourcePolicy = {
+const DEFAULT_HOST_SKILL_POLICY: SkillSourcePolicy = {
   mode: 'disabled',
   ids: [],
 };
