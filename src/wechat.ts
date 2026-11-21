@@ -35,16 +35,14 @@ import {
   parseChannelPairingCode,
   resolveAdmittedChannelRoute,
 } from './channel-admission.js';
-import { createWeChatHttpDispatcher } from './wechat-http.js';
+import { createWeChatApiClient, DEFAULT_BASE_URL } from './wechat-api.js';
 
 // ─── Constants ──────────────────────────────────────────────────
 
-const DEFAULT_BASE_URL = 'https://ilinkai.weixin.qq.com';
 const DEFAULT_CDN_BASE_URL = 'https://novac2c.cdn.weixin.qq.com/c2c';
 
 const MSG_SPLIT_LIMIT = 2000; // WeChat has stricter text limits than other channels
 
-const LONGPOLL_EXTRA_TIMEOUT_MS = 5000;
 const DEFAULT_LONGPOLL_TIMEOUT_MS = 35000;
 
 const RECONNECT_MIN_DELAY_MS = 3000;
@@ -52,8 +50,6 @@ const RECONNECT_MAX_DELAY_MS = 60000;
 const REPEATED_ERROR_LOG_INTERVAL_MS = 5 * 60 * 1000;
 
 const IMAGE_MAX_BASE64_SIZE = 5 * 1024 * 1024; // 5 MB for inline base64
-
-const CHANNEL_VERSION = '1.0.0';
 
 // iLink message types
 // const MESSAGE_TYPE_USER = 1;
@@ -265,15 +261,6 @@ export async function parseWeChatApiResponse<T>(
   }
 }
 
-interface GetUpdatesResponse {
-  ret?: number;
-  errcode?: number;
-  errmsg?: string;
-  msgs?: WeixinMessage[];
-  get_updates_buf?: string;
-  longpolling_timeout_ms?: number;
-}
-
 /**
  * Process one long-poll batch before acknowledging its cursor. If processing
  * or persistence fails, the caller keeps the previous cursor so the batch is
@@ -297,15 +284,6 @@ export async function processWeChatUpdateBatch<T>(input: {
 }
 
 // ─── Helpers ────────────────────────────────────────────────────
-
-/**
- * Generate random X-WECHAT-UIN header value.
- * A random uint32 converted to string, then base64-encoded.
- */
-function randomWechatUin(): string {
-  const uint32 = crypto.randomBytes(4).readUInt32BE(0);
-  return Buffer.from(String(uint32), 'utf-8').toString('base64');
-}
 
 /**
  * Extract text content from message item_list.
@@ -458,8 +436,6 @@ export function createWeChatConnection(
   const baseUrl = config.baseUrl || DEFAULT_BASE_URL;
   const cdnBaseUrl = config.cdnBaseUrl || DEFAULT_CDN_BASE_URL;
   const bypassProxy = config.bypassProxy !== false;
-  const fetchImpl = deps.fetch ?? undiciFetch;
-  const createDispatcher = deps.createDispatcher ?? createWeChatHttpDispatcher;
   const random = deps.random ?? Math.random;
   const now = deps.now ?? Date.now;
   const logContext = {
@@ -467,9 +443,6 @@ export function createWeChatConnection(
     userId: config.logContext?.userId,
     botId: maskedBotId(config.ilinkBotId),
   };
-
-  // Generate UIN once per connection instance (no need to regenerate per request)
-  const wechatUin = randomWechatUin();
 
   // Polling state
   let currentGetUpdatesBuf = config.getUpdatesBuf || '';
@@ -482,7 +455,6 @@ export function createWeChatConnection(
   let activePollController: AbortController | null = null;
   let cancelSleep: (() => void) | null = null;
   let activeOpts: WeChatConnectOpts | null = null;
-  let connectionState: WeChatConnectionState = { status: 'disconnected' };
   let consecutiveFailures = 0;
   let consecutivePollTimeouts = 0;
   let failureStartedAt = 0;
@@ -506,97 +478,51 @@ export function createWeChatConnection(
 
   // ─── Deduplication ────────────────────────────────────────
 
-  // ─── HTTP Helpers ─────────────────────────────────────────
-
-  function ensureDispatcher(): Dispatcher {
-    dispatcher ??= createDispatcher(bypassProxy);
-    return dispatcher;
-  }
-
-  function publishState(state: WeChatConnectionState): void {
-    connectionState = state;
-    activeOpts?.onConnectionStateChange?.(state);
-  }
-
-  function buildHeaders(): Record<string, string> {
-    return {
-      'Content-Type': 'application/json',
-      AuthorizationType: 'ilink_bot_token',
-      Authorization: `Bearer ${config.botToken}`,
-      'X-WECHAT-UIN': wechatUin,
-      ...weChatIlinkHeaders(),
-    };
-  }
-
-  function baseInfo(): Record<string, string> {
-    return {
-      channel_version: CHANNEL_VERSION,
-      bot_agent: `CKQClaw/${CHANNEL_VERSION}`,
-    };
-  }
-
-  /**
-   * Make an HTTPS POST request to the iLink API using fetch.
-   */
-  async function apiPost<T = any>(
-    endpoint: string,
-    body: Record<string, unknown>,
-    timeoutMs?: number,
-    trackAsPollRequest = false,
-  ): Promise<T> {
-    const bodyStr = JSON.stringify(body);
-    const url = new URL(endpoint, baseUrl);
-    const headers = buildHeaders();
-
-    const controller = new AbortController();
-    if (trackAsPollRequest) activePollController = controller;
-    const timer = timeoutMs
-      ? setTimeout(() => controller.abort(), timeoutMs)
-      : undefined;
-
-    try {
-      const res = await fetchImpl(url.toString(), {
-        method: 'POST',
-        headers: {
-          ...headers,
-          'Content-Length': String(Buffer.byteLength(bodyStr, 'utf-8')),
-        },
-        body: bodyStr,
-        signal: controller.signal,
-        dispatcher: ensureDispatcher(),
-      });
-
-      return await parseWeChatApiResponse<T>(res, endpoint);
-    } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') {
-        throw Object.assign(
-          new Error(`WeChat API ${endpoint} timed out`, { cause: err }),
-          { code: 'WECHAT_REQUEST_TIMEOUT' },
-        );
-      }
-      throw err;
-    } finally {
-      if (timer) clearTimeout(timer);
-      if (trackAsPollRequest && activePollController === controller) {
-        activePollController = null;
-      }
-    }
-  }
+  // ─── HTTP/API Client ────────────────────────────────────────
+  // HTTP 客户端与长轮询请求段（ensureDispatcher / publishState / buildHeaders
+  // / baseInfo / apiPost / getUpdates，原 509-599）已抽至 ./wechat-api.ts
+  // （ISSUE-12 单元 2.17 原文搬运）。publishState 为该段自产，经工厂返回面
+  // 同名解构回接；其唯一写点 connectionState 随段内化于 wechat-api，本文件
+  // 留守读点（connect 状态重放 / pollLoop 意外退出的 expired 判定）经返回
+  // 面 getConnectionState() 活读。dispatcher / activePollController /
+  // longpollTimeoutMs / currentGetUpdatesBuf / activeOpts 均有段外消费者
+  // （closeDispatcher / disconnect 复位清理行 / pollLoop 游标与超时回写 /
+  // connect 门面），本体留守本文件状态区，wechat-api 经 get/set 访问器对
+  // 读写（2.14 qq-ws 状态留守同款，复位与清理行因此逐字节不变）。deps
+  // 第二参原样透传——wechat-connection-lifecycle 的 fetch/createDispatcher
+  // 注入链穿透至 apiPost/ensureDispatcher；random/now 的解析与消费留守
+  // W6/W7。仅该段消费的 randomWechatUin 与 wechatUin 生成行、
+  // LONGPOLL_EXTRA_TIMEOUT_MS / CHANNEL_VERSION 常数、GetUpdatesResponse
+  // 接口随段迁移；DEFAULT_BASE_URL 随段安家 wechat-api 并导出，本文件顶部
+  // 回接 import（2.12 QQ_MAX_JSON_RESPONSE_BYTES 同款）。
+  // parseWeChatApiResponse 为本文件既有导出（外层门面约束），经同名参数
+  // 注入，apiPost 体内调用点逐字节不变（2.12 validateQQGatewayUrl 同款）。
+  // 同名解构使 connect / disconnect / pollLoop / markConnectionHealthy /
+  // handlePollFailure / sendMessageApi / getTypingTicket / sendTypingApi /
+  // sendImage / sendFile / downloadCdnMediaItem 调用点零改动。
+  const {
+    ensureDispatcher,
+    publishState,
+    baseInfo,
+    apiPost,
+    getUpdates,
+    getConnectionState,
+  } = createWeChatApiClient(config, deps, {
+    parseWeChatApiResponse,
+    getActiveOpts: () => activeOpts,
+    getDispatcher: () => dispatcher,
+    setDispatcher: (value) => {
+      dispatcher = value;
+    },
+    getActivePollController: () => activePollController,
+    setActivePollController: (value) => {
+      activePollController = value;
+    },
+    getLongpollTimeoutMs: () => longpollTimeoutMs,
+    getCurrentGetUpdatesBuf: () => currentGetUpdatesBuf,
+  });
 
   // ─── API Methods ──────────────────────────────────────────
-
-  async function getUpdates(): Promise<GetUpdatesResponse> {
-    const httpTimeout = longpollTimeoutMs + LONGPOLL_EXTRA_TIMEOUT_MS;
-    return apiPost<GetUpdatesResponse>(
-      'ilink/bot/getupdates',
-      {
-        get_updates_buf: currentGetUpdatesBuf,
-        base_info: baseInfo(),
-      },
-      httpTimeout,
-      true,
-    );
-  }
 
   async function sendMessageApi(
     toUserId: string,
@@ -1245,7 +1171,7 @@ export function createWeChatConnection(
           'WeChat connect ignored: poller already running',
         );
         opts.onReady?.();
-        opts.onConnectionStateChange?.(connectionState);
+        opts.onConnectionStateChange?.(getConnectionState());
         return;
       }
 
@@ -1284,7 +1210,7 @@ export function createWeChatConnection(
       pollPromise = pollLoop()
         .catch((err) => {
           connected = false;
-          if (!stopping && connectionState.status !== 'expired') {
+          if (!stopping && getConnectionState().status !== 'expired') {
             const error = '微信轮询意外退出，请重新连接';
             publishState({ status: 'disconnected', error, lastConnectedAt });
             logger.error(
