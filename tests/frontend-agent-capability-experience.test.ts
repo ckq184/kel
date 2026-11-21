@@ -132,7 +132,12 @@ describe('Agent prompt and capability frontend contract', () => {
     ).toEqual({ mode: 'custom', ids: ['research', 'docs'] });
 
     const profiles = read('web/src/pages/AgentProfilesPage.tsx');
-    expect(profiles).toContain('onHostModeChange={handleHostSkillsModeChange}');
+    // ISSUE-12 波 5 单元 5.8：能力配置区 JSX 已迁
+    // web/src/components/agents/AgentCapabilitiesSection.tsx（原文搬运），
+    // onHostModeChange 接线锚随体迁、断言文本不变。
+    expect(
+      read('web/src/components/agents/AgentCapabilitiesSection.tsx'),
+    ).toContain('onHostModeChange={handleHostSkillsModeChange}');
     // ISSUE-12 波 5 单元 5.2：persistHostSkillPolicy 及其调用点已随
     // useHostSkillAutosave hook 迁 web/src/hooks/useHostSkillAutosave.ts
     // （原文搬运），锚随体迁、断言文本不变；JSX 接线锚仍读页面。

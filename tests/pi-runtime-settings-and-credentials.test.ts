@@ -330,8 +330,21 @@ describe('ISSUE-04 web UI source contracts', () => {
     expect(systemSettings).toMatch(
       /历史百分比与固定阈值配置已于 Pi 运行时下线/,
     );
-    expect(profilesPage).toMatch(
-      /历史百分比与\s*固定阈值配置已于 Pi 运行时下线/,
+    // ISSUE-12 波 5 单元 5.8：SDK 自动压缩说明已随能力配置区迁
+    // web/src/components/agents/AgentCapabilitiesSection.tsx（原文搬运），
+    // 锚随体迁、断言语义不变。
+    const capabilitiesSection = fs.readFileSync(
+      path.join(
+        process.cwd(),
+        'web/src/components/agents/AgentCapabilitiesSection.tsx',
+      ),
+      'utf8',
+    );
+    expect(capabilitiesSection).toMatch(
+      // ISSUE-12 波 5 单元 5.8 留痕：prettier 对组件内 JSX 说明文字重排，
+      // 「Pi」与「运行时下线」间断行，该一处字面空格改 \s+（与同句既有
+      // \s* 边界风格一致，断言语义不弱化）。
+      /历史百分比与\s*固定阈值配置已于 Pi\s+运行时下线/,
     );
   });
 
