@@ -50,8 +50,15 @@ describe('agent_reply notice broadcast contract', () => {
   });
 
   test('every warning broadcast carries notice:true; only full-output broadcasts stay unmarked', () => {
+    // ISSUE-12 波 4 单元 4.4：send_image 分支的三处 broadcastToWebClients
+    // 调用随段迁入 src/ipc/image-delivery.ts（原文搬运），扫描面扩至两文件
+    // 合计，计数与断言语义不变。
     const index = read('src/index.ts');
-    const calls = extractCallArgs(index, 'broadcastToWebClients');
+    const imageBranch = read('src/ipc/image-delivery.ts');
+    const calls = [
+      ...extractCallArgs(index, 'broadcastToWebClients'),
+      ...extractCallArgs(imageBranch, 'broadcastToWebClients'),
+    ];
     // 6 处 ⚠️ 警告 + 2 处完整输出冗余广播（文本回复 jid,text 与图片
     // displayText，均同步经 new_message 承载，前端无需消费 agent_reply）
     expect(calls.length).toBe(8);

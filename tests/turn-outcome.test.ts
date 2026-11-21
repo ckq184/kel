@@ -210,7 +210,13 @@ describe('resolveTurnOutcome', () => {
   });
 
   test('returns a negative MCP image acknowledgement when physical delivery is unconfirmed', () => {
-    const main = readMain();
+    // ISSUE-12 波 4 单元 4.4：send_image 分支已迁
+    // src/ipc/image-delivery.ts（原文搬运），锚随体迁、切片标记与断言
+    // 文本不变。
+    const main = fs.readFileSync(
+      path.join(process.cwd(), 'src/ipc/image-delivery.ts'),
+      'utf8',
+    );
     const imageBranch = main.slice(
       main.indexOf('let regularImageDelivered'),
       main.indexOf("'IPC image sent'"),

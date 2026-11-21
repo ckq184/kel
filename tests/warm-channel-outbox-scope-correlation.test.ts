@@ -237,17 +237,21 @@ describe('warm channel outbox scope wiring contract', () => {
   });
 
   test('text and image IPC projection both recover the frozen logical base', () => {
-    // ISSUE-12 波 4 单元 4.3：text 投影分支已迁 src/ipc/message-delivery.ts
-    // （image 分支仍留守 index.ts，单元 4.4 再迁），双投影断言改为两文件
-    // 合计仍为 2，语义不变。
+    // ISSUE-12 波 4 单元 4.3/4.4：text 与 image 两投影分支分别迁入
+    // src/ipc/message-delivery.ts 与 src/ipc/image-delivery.ts，双投影断言
+    // 改为两新模块合计仍为 2；第二断言的 bindChannelOutboxScope 与
+    // resolveIpcOutputRuntimeChatJid 仍留守 index.ts，读入不变。
     const host = read('src/index.ts');
     const textBranch = read('src/ipc/message-delivery.ts');
-    const hostMatches =
-      host.match(/runtimeChatJid:\s*resolveIpcOutputRuntimeChatJid\(/g) ?? [];
+    const imageBranch = read('src/ipc/image-delivery.ts');
     const textMatches =
       textBranch.match(/runtimeChatJid:\s*resolveIpcOutputRuntimeChatJid\(/g) ??
       [];
-    expect(hostMatches.length + textMatches.length).toBe(2);
+    const imageMatches =
+      imageBranch.match(
+        /runtimeChatJid:\s*resolveIpcOutputRuntimeChatJid\(/g,
+      ) ?? [];
+    expect(textMatches.length + imageMatches.length).toBe(2);
     expect(host).toMatch(
       /logicalBaseChatJid:\s*chatJid[\s\S]*?function resolveIpcOutputRuntimeChatJid/,
     );

@@ -391,6 +391,7 @@ import {
   canDeliverTurnUtterance,
 } from './host-state.js';
 import { processIpcSendMessage } from './ipc/message-delivery.js';
+import { processIpcSendImage } from './ipc/image-delivery.js';
 import type {
   FeishuCapabilityOperation,
   FeishuCapabilityRequest,
@@ -9043,6 +9044,23 @@ function startIpcWatcher(): void {
     sendMessageWithOutcome,
   };
 
+  // ISSUE-12 波 4 单元 4.4：send_image 分支的 index.ts 本地依赖注入
+  // 对象（防 src/ipc/image-delivery.ts ↔ index.ts import 环，4.3 同款）。
+  const ipcImageDeliveryDeps = {
+    REPLY_LIMIT_REACHED_ERROR,
+    canSendCrossGroupMessage,
+    getIpcDeliveryTargetGroup,
+    writeIpcMessageResult,
+    taskRunAcceptsLateIpcOutput,
+    resolveImRoute,
+    channelOutboxRefForInput,
+    sendTaskImageWithRetry,
+    broadcastToOwnerIMChannels,
+    settleAndRecordTaskIpcDeliveries,
+    resolveIpcOutputRuntimeChatJid,
+    resolveIpcOutputWorkspaceJid,
+  };
+
   const processGroupIpc = async (sourceGroup: string) => {
     if (shuttingDown) return;
     // Determine if this IPC directory belongs to an admin home group
@@ -9209,355 +9227,24 @@ function startIpcWatcher(): void {
               data.chatJid &&
               data.imageBase64
             ) {
-              // Handle image IPC messages from send_image MCP tool
-              const targetGroup = getIpcDeliveryTargetGroup(data.chatJid);
-              let taskImageTargetJids: string[] = [];
-              let taskImageDeliverySettled = false;
-              let isTaskIpcImage = false;
-              if (
-                canSendCrossGroupMessage(
-                  isAdminHome,
-                  isHome,
-                  sourceGroup,
-                  sourceGroupEntry,
-                  targetGroup,
-                )
-              ) {
-                try {
-                  const imageBuffer = Buffer.from(data.imageBase64, 'base64');
-                  const mimeType = data.mimeType || 'image/png';
-                  const caption = data.caption || undefined;
-                  const fileName = data.fileName || undefined;
-
-                  isTaskIpcImage = !!(
-                    data.isScheduledTask ||
-                    data.taskId ||
-                    ipcTaskId
-                  );
-                  if (
-                    isTaskIpcImage &&
-                    durableTaskRunId &&
-                    !taskRunAcceptsLateIpcOutput(durableTaskRunId)
-                  ) {
-                    messageResultWritten = writeIpcMessageResult(
-                      messageResultsDir,
-                      messageRequestId,
-                      {
-                        success: false,
-                        error: 'Task run was cancelled before image delivery.',
-                      },
-                    );
-                    if (
-                      !canDeleteAcknowledgedIpcSource(
-                        messageRequestId,
-                        messageResultWritten,
-                      )
-                    ) {
-                      throw new Error(
-                        'Failed to acknowledge cancelled image request',
-                      );
-                    }
-                    await fsp.unlink(filePath);
-                    continue;
-                  }
-                  // Runaway-loop fuse, sharing send_message's budget. An image
-                  // is an irreversible side effect in a real chat, so it must
-                  // be gated too: otherwise images drain the budget silently
-                  // and the turn's actual answer is the delivery that gets
-                  // refused. Task images keep their own accounting.
-                  if (
-                    !isTaskIpcImage &&
-                    !canDeliverTurnUtterance(
-                      sourceGroup,
-                      ipcAgentId,
-                      data.inputTurnId,
-                    )
-                  ) {
-                    logger.warn(
-                      {
-                        sourceGroup,
-                        agentId: ipcAgentId,
-                        inputTurnId: data.inputTurnId,
-                      },
-                      'Suppressed IPC send_image: per-turn reply limit reached',
-                    );
-                    messageResultWritten = writeIpcMessageResult(
-                      messageResultsDir,
-                      messageRequestId,
-                      { success: false, error: REPLY_LIMIT_REACHED_ERROR },
-                    );
-                    if (
-                      !canDeleteAcknowledgedIpcSource(
-                        messageRequestId,
-                        messageResultWritten,
-                      )
-                    ) {
-                      throw new Error(
-                        'Failed to acknowledge reply-limited image request',
-                      );
-                    }
-                    await fsp.unlink(filePath);
-                    continue;
-                  }
-                  const imgImRoute = isTaskIpcImage
-                    ? null
-                    : resolveImRoute({
-                        ipcAgentId,
-                        isHome,
-                        chatJid: data.chatJid,
-                        sourceGroup,
-                      });
-                  let regularImageDelivered: boolean | null = null;
-                  let durableScopedImage = false;
-                  if (isTaskIpcImage) {
-                    const imgRoutingDecision = resolveTaskRoutingDecision(
-                      data,
-                      ipcTaskId,
-                      !!sourceGroupEntry?.created_by,
-                      { getTaskById, getChannelType },
-                    );
-                    if (imgRoutingDecision.mode === 'direct') {
-                      taskImageTargetJids = [imgRoutingDecision.taskChatJid];
-                    } else if (
-                      imgRoutingDecision.mode === 'broadcast' &&
-                      sourceGroupEntry?.created_by
-                    ) {
-                      const alreadySent = new Set<string>(
-                        [data.chatJid, imgImRoute].filter(Boolean) as string[],
-                      );
-                      broadcastToOwnerIMChannels(
-                        sourceGroupEntry.created_by,
-                        broadcastFolder,
-                        alreadySent,
-                        (jid) => taskImageTargetJids.push(jid),
-                        imgRoutingDecision.notifyChannels,
-                      );
-                    }
-                  }
-                  if (imgImRoute) {
-                    const imageOutboxRef = channelOutboxRefForInput(
-                      channelTurnScope(sourceGroup, ipcAgentId),
-                      imgImRoute,
-                      data.inputTurnId,
-                      `ipc-image:${messageRequestId ?? file}`,
-                    );
-                    durableScopedImage = Boolean(imageOutboxRef);
-                    regularImageDelivered = await sendTaskImageWithRetry(
-                      imgImRoute,
-                      imageBuffer,
-                      mimeType,
-                      caption,
-                      fileName,
-                      imageOutboxRef,
-                    );
-                    if (!regularImageDelivered) {
-                      const failMsg = durableScopedImage
-                        ? `⚠️ 图片 "${fileName || caption || 'image'}" 的投递结果待确认，系统不会自动重发，以免产生重复图片。`
-                        : `⚠️ 图片 "${fileName || caption || 'image'}" 发送失败（IM 通道发送失败），请稍后重试。`;
-                      broadcastToWebClients(sourceGroup, failMsg, {
-                        notice: true,
-                      });
-                    }
-                  } else if (!isTaskIpcImage) {
-                    logger.debug(
-                      { chatJid: data.chatJid, sourceGroup },
-                      'No IM route for send_image, skipped IM delivery',
-                    );
-                    const skipImgMsg = `⚠️ 图片 "${fileName || 'image'}" 未发送到 IM 通道（当前会话无 IM 路由绑定）。`;
-                    broadcastToWebClients(
-                      data.chatJid ?? sourceGroup,
-                      skipImgMsg,
-                      {
-                        notice: true,
-                      },
-                    );
-                  }
-
-                  // Conversation agents and isolated scheduled tasks store in
-                  // virtual JIDs (agent/task tab), not the main conversation.
-                  // Shares the text path's resolver so images are attributed to
-                  // the bound workspace instead of the raw IM row.
-                  const imgChatJid = resolveHostIpcLogicalChatJid({
-                    sourceChatJid: data.chatJid,
-                    agentId: ipcAgentId,
-                    agentChatJid: ipcAgentId
-                      ? getAgent(ipcAgentId)?.chat_jid
-                      : undefined,
-                    taskRunId: ipcTaskId,
-                    scheduledTask: data.isScheduledTask === true,
-                    runtimeChatJid: resolveIpcOutputRuntimeChatJid(
-                      sourceGroup,
-                      ipcAgentId,
-                      data.inputTurnId,
-                      data.chatJid,
-                    ),
-                    resolveWorkspaceJid: resolveIpcOutputWorkspaceJid,
-                  });
-
-                  // Persist image message to DB and broadcast to WebSocket (same as sendMessage flow)
-                  const displayText = caption
-                    ? `[图片: ${fileName || 'image'}]\n${caption}`
-                    : `[图片: ${fileName || 'image'}]`;
-                  const imgMsgId = crypto.randomUUID();
-                  const imgTimestamp = new Date().toISOString();
-                  ensureChatExists(imgChatJid);
-                  const persistedImgMsgId = storeMessageDirect(
-                    imgMsgId,
-                    imgChatJid,
-                    'ckqclaw-agent',
-                    ASSISTANT_NAME,
-                    displayText,
-                    imgTimestamp,
-                    true,
-                    { meta: { sourceKind: 'sdk_send_message' } },
-                  );
-                  broadcastNewMessage(imgChatJid, {
-                    id: persistedImgMsgId,
-                    chat_jid: imgChatJid,
-                    sender: 'ckqclaw-agent',
-                    sender_name: ASSISTANT_NAME,
-                    content: displayText,
-                    timestamp: imgTimestamp,
-                    is_from_me: true,
-                    turn_id: null,
-                    session_id: null,
-                    source_kind: 'sdk_send_message',
-                    finalization_reason: null,
-                  });
-                  broadcastToWebClients(imgChatJid, displayText);
-
-                  // Scheduled-task image routing uses the same direct target /
-                  // notify-channel fan-out contract as text and file outputs.
-                  if (isTaskIpcImage) {
-                    const attempts: TaskNotificationDeliveryAttempt[] = [];
-                    const relativeImagePath =
-                      typeof data.filePath === 'string' ? data.filePath : '';
-                    const imageAttempt = (
-                      targetJid: string,
-                    ): TaskNotificationDeliveryAttempt => ({
-                      channel: getChannelType(targetJid) ?? targetJid,
-                      payload: {
-                        kind: 'im_image',
-                        targetJid,
-                        workspaceFolder: sourceGroup,
-                        filePath: relativeImagePath,
-                        mimeType,
-                        caption,
-                        fileName,
-                      },
-                      deliver: () =>
-                        sendTaskImageWithRetry(
-                          targetJid,
-                          imageBuffer,
-                          mimeType,
-                          caption,
-                          fileName,
-                        ),
-                    });
-                    for (const targetJid of taskImageTargetJids) {
-                      attempts.push(imageAttempt(targetJid));
-                    }
-                    const delivery = await settleAndRecordTaskIpcDeliveries(
-                      durableTaskRunId,
-                      attempts,
-                    );
-                    taskImageDeliverySettled = true;
-                    const delivered =
-                      delivery.accepted &&
-                      (delivery.receipt.status === 'success' ||
-                        delivery.receipt.status === 'skipped');
-                    messageResultWritten = writeIpcMessageResult(
-                      messageResultsDir,
-                      messageRequestId,
-                      delivered
-                        ? { success: true }
-                        : {
-                            success: false,
-                            error:
-                              delivery.receipt.error ||
-                              'Image could not be delivered to its target.',
-                          },
-                    );
-                  } else {
-                    messageResultWritten = writeIpcMessageResult(
-                      messageResultsDir,
-                      messageRequestId,
-                      regularImageDelivered
-                        ? { success: true }
-                        : {
-                            success: false,
-                            error: durableScopedImage
-                              ? 'Image delivery outcome is uncertain; do not retry automatically.'
-                              : 'Image could not be delivered to its IM target.',
-                          },
-                    );
-                    // An image is user-visible speech. Without this the turn
-                    // looks silent, so a later runner error replays the input
-                    // and the user receives the artifact twice.
-                    if (
-                      regularImageDelivered &&
-                      typeof data.inputTurnId === 'string' &&
-                      data.inputTurnId
-                    ) {
-                      activeTurnOutputs.recordDeliveredUtterance({
-                        scopeKey: channelTurnScope(sourceGroup, ipcAgentId),
-                        inputTurnId: data.inputTurnId,
-                      });
-                    }
-                  }
-
-                  logger.info(
-                    {
-                      chatJid: imgChatJid,
-                      sourceGroup,
-                      mimeType,
-                      size: imageBuffer.length,
-                      agentId: ipcAgentId,
-                    },
-                    'IPC image sent',
-                  );
-                } catch (err) {
-                  if (
-                    isTaskIpcImage &&
-                    durableTaskRunId &&
-                    !taskImageDeliverySettled
-                  ) {
-                    const failed = buildFailedTaskImageNotification({
-                      targetJids: taskImageTargetJids,
-                      workspaceFolder: sourceGroup,
-                      filePath:
-                        typeof data.filePath === 'string' ? data.filePath : '',
-                      mimeType: data.mimeType || 'image/png',
-                      caption: data.caption || undefined,
-                      fileName: data.fileName || undefined,
-                      error: err,
-                      getChannel: getChannelType,
-                    });
-                    if (failed) {
-                      recordTaskRunNotificationReceipt(
-                        durableTaskRunId,
-                        failed.receipt,
-                        failed.payload,
-                      );
-                    }
-                  }
-                  logger.error(
-                    { chatJid: data.chatJid, sourceGroup, err },
-                    'Failed to process IPC image',
-                  );
-                  throw err;
-                }
-              } else {
-                logger.warn(
-                  { chatJid: data.chatJid, sourceGroup },
-                  'Unauthorized IPC image attempt blocked',
-                );
-                messageResultWritten = writeIpcMessageResult(
-                  messageResultsDir,
-                  messageRequestId,
-                  { success: false, error: 'Unauthorized image target.' },
-                );
-              }
+              const imageOutcome = await processIpcSendImage({
+                data,
+                file,
+                filePath,
+                messageRequestId,
+                messageResultsDir,
+                sourceGroup,
+                sourceGroupEntry,
+                ipcAgentId,
+                ipcTaskId,
+                durableTaskRunId,
+                isHome,
+                isAdminHome,
+                broadcastFolder,
+                ...ipcImageDeliveryDeps,
+              });
+              if (imageOutcome.skippedFile) continue;
+              messageResultWritten = imageOutcome.messageResultWritten;
             }
             if (
               !canDeleteAcknowledgedIpcSource(
