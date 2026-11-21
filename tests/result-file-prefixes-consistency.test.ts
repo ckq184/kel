@@ -18,6 +18,14 @@ const watcherSource = readFileSync(
   path.join(repoRoot, 'src/ipc/watcher.ts'),
   'utf-8',
 );
+// ISSUE-12 波 4 单元 4.10：动态 writeTaskResult(tasksDir, data.type, …)
+// 调用与其 case 标签（agent_profile_* 七 case）随段迁入
+// src/ipc/builder-ops.ts，标签关联扫描改读该模块（标签与调用同体迁移，
+// 关联逻辑不变）。
+const builderOpsSource = readFileSync(
+  path.join(repoRoot, 'src/ipc/builder-ops.ts'),
+  'utf-8',
+);
 
 /** 从源码提取 RESULT_FILE_PREFIXES 数组的字面量成员。 */
 function extractResultFilePrefixes(source: string): string[] {
@@ -77,7 +85,7 @@ describe('orphan result file cleanup prefix consistency (ISSUE-05 §1)', () => {
   });
 
   test('every case label with a dynamic data.type write is in the list', () => {
-    const caseLabels = extractCaseLabelledDynamicWriteTypes(mainSource);
+    const caseLabels = extractCaseLabelledDynamicWriteTypes(builderOpsSource);
     expect(caseLabels.length).toBeGreaterThan(0);
     const missing = [...new Set(caseLabels)].filter(
       (label) => !prefixes.includes(`${label}_result_`),

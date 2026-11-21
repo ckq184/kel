@@ -406,6 +406,7 @@ import {
 } from './ipc/skill-registry-ops.js';
 import { processIpcFeishuCapability } from './ipc/feishu-capability-ops.js';
 import { processIpcTaskOps } from './ipc/task-ops.js';
+import { processIpcBuilderOps } from './ipc/builder-ops.js';
 import type {
   FeishuCapabilityOperation,
   FeishuCapabilityRequest,
@@ -9684,142 +9685,20 @@ async function processTaskIpc(
       break;
     }
 
-    case 'agent_profile_list': {
-      try {
-        const actor = requireAgentBuilderActor();
-        writeTaskResult(tasksDir, data.type, data.requestId, {
-          success: true,
-          ...listAgentProfilesForBuilder(actor.user.id),
-        });
-      } catch (error) {
-        writeTaskResult(tasksDir, data.type, data.requestId, {
-          success: false,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
+    case 'agent_profile_list':
+    case 'agent_profile_get':
+    case 'agent_profile_draft_get':
+    case 'agent_capability_catalog':
+    case 'agent_profile_prepare':
+    case 'agent_profile_publish':
+    case 'agent_profile_discard':
+      await processIpcBuilderOps({
+        writeTaskResult,
+        requireAgentBuilderActor,
+        data,
+        tasksDir,
+      });
       break;
-    }
-
-    case 'agent_profile_get': {
-      try {
-        const actor = requireAgentBuilderActor();
-        if (!data.profileId) throw new Error('profileId is required');
-        writeTaskResult(tasksDir, data.type, data.requestId, {
-          success: true,
-          ...getAgentProfileForBuilder(actor.user.id, data.profileId),
-        });
-      } catch (error) {
-        writeTaskResult(tasksDir, data.type, data.requestId, {
-          success: false,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-      break;
-    }
-
-    case 'agent_profile_draft_get': {
-      try {
-        const actor = requireAgentBuilderActor();
-        if (!data.draftId) throw new Error('draftId is required');
-        writeTaskResult(tasksDir, data.type, data.requestId, {
-          success: true,
-          draft: getAgentBuilderDraftForBuilder(actor.user.id, data.draftId),
-        });
-      } catch (error) {
-        writeTaskResult(tasksDir, data.type, data.requestId, {
-          success: false,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-      break;
-    }
-
-    case 'agent_capability_catalog': {
-      try {
-        const actor = requireAgentBuilderActor();
-        writeTaskResult(tasksDir, data.type, data.requestId, {
-          success: true,
-          catalog: getAgentCapabilityCatalogForBuilder(actor),
-        });
-      } catch (error) {
-        writeTaskResult(tasksDir, data.type, data.requestId, {
-          success: false,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-      break;
-    }
-
-    case 'agent_profile_prepare': {
-      try {
-        const actor = requireAgentBuilderActor();
-        const result = prepareAgentBuilderDraft(actor, {
-          draftId: data.draftId,
-          expectedDraftRevision: data.expectedDraftRevision,
-          targetAgentProfileId: data.targetAgentProfileId,
-          expectedAgentVersion: data.expectedAgentVersion,
-          definition: data.definition,
-          assumptions: data.assumptions,
-        });
-        writeTaskResult(tasksDir, data.type, data.requestId, {
-          success: true,
-          ...result,
-        });
-      } catch (error) {
-        writeTaskResult(tasksDir, data.type, data.requestId, {
-          success: false,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-      break;
-    }
-
-    case 'agent_profile_publish': {
-      try {
-        const actor = requireAgentBuilderActor();
-        if (!data.draftId || data.expectedDraftRevision === undefined) {
-          throw new Error('draftId and expectedDraftRevision are required');
-        }
-        const result = await publishAgentBuilderDraft(
-          actor,
-          data.draftId,
-          data.expectedDraftRevision,
-        );
-        writeTaskResult(tasksDir, data.type, data.requestId, {
-          success: true,
-          ...result,
-        });
-      } catch (error) {
-        writeTaskResult(tasksDir, data.type, data.requestId, {
-          success: false,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-      break;
-    }
-
-    case 'agent_profile_discard': {
-      try {
-        const actor = requireAgentBuilderActor();
-        if (!data.draftId || data.expectedDraftRevision === undefined) {
-          throw new Error('draftId and expectedDraftRevision are required');
-        }
-        writeTaskResult(tasksDir, data.type, data.requestId, {
-          success: true,
-          draft: discardPreparedAgentDraft(
-            actor.user.id,
-            data.draftId,
-            data.expectedDraftRevision,
-          ),
-        });
-      } catch (error) {
-        writeTaskResult(tasksDir, data.type, data.requestId, {
-          success: false,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-      break;
-    }
 
     case 'schedule_task':
     case 'pause_task':
