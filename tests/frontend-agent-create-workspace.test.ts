@@ -36,7 +36,13 @@ describe('Agent creation workspace', () => {
   });
 
   test('routes create links to the same main-workspace entry flow', () => {
-    const page = readAgentProfilesPage();
+    // ISSUE-12 波 5 单元 5.1：?create=1 路由效应已随
+    // useUnsavedNavigationGuard hook 迁 web/src/hooks/useUnsavedNavigationGuard.ts
+    // （原文搬运），锚随体迁、切片标记与断言文本不变。
+    const page = fs.readFileSync(
+      path.join(process.cwd(), 'web/src/hooks/useUnsavedNavigationGuard.ts'),
+      'utf8',
+    );
     const createRouteEffect = page.slice(
       page.indexOf("if (searchParams.get('create') !== '1') return;"),
       page.indexOf("if (searchParams.get('create') !== '1') return;") + 450,

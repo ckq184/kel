@@ -18,16 +18,23 @@ describe('Agent profile unsaved navigation guard', () => {
       path.join(process.cwd(), 'web/src/App.tsx'),
       'utf8',
     );
+    // ISSUE-12 波 5 单元 5.1：useBlocker/useBeforeUnload 守卫已随
+    // useUnsavedNavigationGuard hook 迁 web/src/hooks/useUnsavedNavigationGuard.ts
+    // （原文搬运），锚随体迁、断言文本不变；页面负断言仍读页面。
     const page = fs.readFileSync(
       path.join(process.cwd(), 'web/src/pages/AgentProfilesPage.tsx'),
+      'utf8',
+    );
+    const guardHook = fs.readFileSync(
+      path.join(process.cwd(), 'web/src/hooks/useUnsavedNavigationGuard.ts'),
       'utf8',
     );
 
     expect(app).toContain('createBrowserRouter');
     expect(app).toContain('createHashRouter');
     expect(app).toContain('<RouterProvider router={getAppRouter()} />');
-    expect(page).toContain('useBlocker(shouldBlockNavigation)');
-    expect(page).toContain('useBeforeUnload(');
+    expect(guardHook).toContain('useBlocker(shouldBlockNavigation)');
+    expect(guardHook).toContain('useBeforeUnload(');
     expect(page).not.toContain("document.addEventListener('click'");
   });
 

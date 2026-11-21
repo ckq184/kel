@@ -9,14 +9,8 @@
  * 主 CKQClaw 不可自改）；dirty 状态经 useBlocker + beforeunload 拦截
  * 误触导航离开（createUnsavedNavigationGuard）。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  useBeforeUnload,
-  useBlocker,
-  useLocation,
-  useSearchParams,
-  type BlockerFunction,
-} from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import {
   ArrowRight,
   Bot,
@@ -86,7 +80,7 @@ import {
   type AgentPromptParts,
   type AgentPromptSection,
 } from '../utils/agent-prompts';
-import { createUnsavedNavigationGuard } from '../utils/unsaved-navigation';
+import { useUnsavedNavigationGuard } from '../hooks/useUnsavedNavigationGuard';
 import {
   getHostSkillPolicy,
   hostSkillPolicyForMode,
@@ -119,26 +113,7 @@ function SummaryItem({ label, value }: { label: string; value: string }) {
 
 export function AgentProfilesPage() {
   const location = useLocation();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const navigationGuardRef = useRef(createUnsavedNavigationGuard());
-  const setAllowedSearchParams = useCallback(
-    (
-      next: URLSearchParams | Record<string, string>,
-      options: { replace?: boolean } = {},
-    ) => {
-      const normalized =
-        next instanceof URLSearchParams ? next : new URLSearchParams(next);
-      const serialized = normalized.toString();
-      const token = navigationGuardRef.current.allowNext({
-        pathname: location.pathname,
-        search: serialized ? `?${serialized}` : '',
-        hash: '',
-      });
-      setSearchParams(next, options);
-      queueMicrotask(() => navigationGuardRef.current.cancelAllowance(token));
-    },
-    [location.pathname, setSearchParams],
-  );
+  const [searchParams] = useSearchParams();
   const requestedProfileId = searchParams.get('agent');
   const {
     profiles,
@@ -255,6 +230,18 @@ export function AgentProfilesPage() {
   const mcpLoading = useMcpServersStore((state) => state.loading);
   const mcpError = useMcpServersStore((state) => state.error);
   const loadMcpServers = useMcpServersStore((state) => state.loadServers);
+
+  // ISSUE-12 波 5 单元 5.1：导航守卫（shouldBlockNavigation/useBlocker/
+  // useBeforeUnload/阻断确认效应/?create=1 路由效应）已迁
+  // ../hooks/useUnsavedNavigationGuard.ts（原文搬运，getter 惰性取值）。
+  // 调用点必须在下方 selection 效应（消费 setAllowedSearchParams）之前；
+  // getHasUnsavedChanges 惰性取值打破其晚于本行的声明顺序。
+  const { setAllowedSearchParams } = useUnsavedNavigationGuard({
+    getHasUnsavedChanges: () => hasUnsavedChanges,
+    searchParams,
+    setDraftMode,
+    setCreatePanelOpen,
+  });
 
   useEffect(() => {
     void loadProfiles();
@@ -468,45 +455,6 @@ export function AgentProfilesPage() {
     createPanelOpen && !draftMode && createDescription.trim().length > 0;
   const editorUnsavedChanges = dirty || draftDirty;
   const hasUnsavedChanges = editorUnsavedChanges || createDirty;
-  const shouldBlockNavigation = useCallback<BlockerFunction>(
-    ({ currentLocation, nextLocation }) =>
-      navigationGuardRef.current.shouldBlock(
-        hasUnsavedChanges,
-        currentLocation,
-        nextLocation,
-      ),
-    [hasUnsavedChanges],
-  );
-  const navigationBlocker = useBlocker(shouldBlockNavigation);
-
-  useBeforeUnload(
-    useCallback(
-      (event) => {
-        if (!hasUnsavedChanges) return;
-        event.preventDefault();
-        event.returnValue = '';
-      },
-      [hasUnsavedChanges],
-    ),
-  );
-
-  useEffect(() => {
-    if (navigationBlocker.state !== 'blocked') return;
-    if (confirm('当前智能体有未保存修改，离开页面会丢失。是否继续？')) {
-      navigationBlocker.proceed();
-    } else {
-      navigationBlocker.reset();
-    }
-  }, [navigationBlocker]);
-
-  useEffect(() => {
-    if (searchParams.get('create') !== '1') return;
-    const next = new URLSearchParams(searchParams);
-    next.delete('create');
-    setDraftMode(false);
-    setCreatePanelOpen(true);
-    setAllowedSearchParams(next, { replace: true });
-  }, [searchParams, setAllowedSearchParams]);
 
   const governance = selected ? governanceByProfile[selected.id] : undefined;
   const governanceBusy = selected ? !!governanceLoading[selected.id] : false;
