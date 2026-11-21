@@ -399,6 +399,11 @@ import {
   watchIpcGroup,
 } from './ipc/watcher.js';
 import { processIpcSendFile } from './ipc/file-delivery.js';
+import {
+  processIpcInstallSkill,
+  processIpcRegisterGroup,
+  processIpcUninstallSkill,
+} from './ipc/skill-registry-ops.js';
 import type {
   FeishuCapabilityOperation,
   FeishuCapabilityRequest,
@@ -9050,6 +9055,15 @@ const ipcFileDeliveryDeps = {
   findFileInSubdirs,
 };
 
+// ISSUE-12 波 4 单元 4.11：技能注册三 case 的 index.ts 本地依赖注入对象
+// （getRegisteredGroups 为 getter——registeredGroups 有整体重赋值）。
+const ipcSkillRegistryDeps = {
+  getRegisteredGroups: () => registeredGroups,
+  isAdminHostOnlyOwner,
+  registerGroup,
+  SAFE_REQUEST_ID_RE,
+};
+
 async function processTaskIpc(
   data: {
     type: string;
@@ -10846,185 +10860,28 @@ async function processTaskIpc(
     }
 
     case 'register_group':
-      // Only admin home group can register new groups
-      if (!isAdminHome) {
-        logger.warn(
-          { sourceGroup },
-          'Unauthorized register_group attempt blocked',
-        );
-        break;
-      }
-      if (data.jid && data.name && data.folder) {
-        // Inherit created_by from the source group so onNewChat won't re-route
-        const sourceEntry = Object.values(registeredGroups).find(
-          (g) => g.folder === sourceGroup,
-        );
-        const execMode = isAdminHostOnlyOwner(sourceEntry?.created_by)
-          ? 'host'
-          : data.executionMode === 'host' || data.executionMode === 'container'
-            ? data.executionMode
-            : undefined;
-        try {
-          registerGroup(data.jid, {
-            name: data.name,
-            folder: data.folder,
-            added_at: new Date().toISOString(),
-            containerConfig: data.containerConfig,
-            created_by: sourceEntry?.created_by,
-            executionMode: execMode,
-          });
-        } catch (err) {
-          // registerGroup 校验 folder 名时会抛错。IPC 来源不可信（agent 进程
-          // 可能被 prompt 注入），不要把异常冒泡到主消息循环。
-          logger.warn(
-            { jid: data.jid, folder: data.folder, err },
-            'register_group rejected by validation',
-          );
-        }
-      } else {
-        logger.warn(
-          { data },
-          'Invalid register_group request - missing required fields',
-        );
-      }
+      processIpcRegisterGroup({
+        ...ipcSkillRegistryDeps,
+        data,
+        sourceGroup,
+        isAdminHome,
+      });
       break;
 
     case 'install_skill':
-      if (data.package && data.requestId) {
-        const pkg = data.package;
-        const requestId = data.requestId;
-        if (!SAFE_REQUEST_ID_RE.test(requestId)) {
-          logger.warn(
-            { sourceGroup, requestId },
-            'Rejected install_skill request with invalid requestId',
-          );
-          break;
-        }
-        const tasksDir = path.join(DATA_DIR, 'ipc', sourceGroup, 'tasks');
-        const tasksDirResolved = path.resolve(tasksDir);
-        const resultFileName = `install_skill_result_${requestId}.json`;
-        const resultFilePath = path.resolve(tasksDir, resultFileName);
-        if (!resultFilePath.startsWith(`${tasksDirResolved}${path.sep}`)) {
-          logger.warn(
-            { sourceGroup, requestId, resultFilePath },
-            'Rejected install_skill request with unsafe result file path',
-          );
-          break;
-        }
-
-        // Find the user who owns this group
-        const sourceGroupForSkill = Object.values(registeredGroups).find(
-          (g) => g.folder === sourceGroup,
-        );
-        const userId = sourceGroupForSkill?.created_by;
-
-        if (!userId) {
-          logger.warn(
-            { sourceGroup },
-            'Cannot install skill: no user associated with group',
-          );
-          const errorResult = JSON.stringify({
-            success: false,
-            error: 'No user associated with this group',
-          });
-          const tmpPath = `${resultFilePath}.tmp`;
-          fs.mkdirSync(path.dirname(resultFilePath), { recursive: true });
-          fs.writeFileSync(tmpPath, errorResult);
-          fs.renameSync(tmpPath, resultFilePath);
-          break;
-        }
-
-        try {
-          const result = await installSkillForUser(userId, pkg);
-          const tmpPath = `${resultFilePath}.tmp`;
-          fs.mkdirSync(path.dirname(resultFilePath), { recursive: true });
-          fs.writeFileSync(tmpPath, JSON.stringify(result));
-          fs.renameSync(tmpPath, resultFilePath);
-          logger.info(
-            { sourceGroup, userId, pkg, success: result.success },
-            'Skill installation via IPC completed',
-          );
-        } catch (err) {
-          const errorResult = JSON.stringify({
-            success: false,
-            error: err instanceof Error ? err.message : String(err),
-          });
-          const tmpPath = `${resultFilePath}.tmp`;
-          fs.mkdirSync(path.dirname(resultFilePath), { recursive: true });
-          fs.writeFileSync(tmpPath, errorResult);
-          fs.renameSync(tmpPath, resultFilePath);
-          logger.error(
-            { sourceGroup, userId, pkg, err },
-            'Skill installation via IPC failed',
-          );
-        }
-      } else {
-        logger.warn(
-          { data },
-          'Invalid install_skill request - missing required fields',
-        );
-      }
+      await processIpcInstallSkill({
+        ...ipcSkillRegistryDeps,
+        data,
+        sourceGroup,
+      });
       break;
 
     case 'uninstall_skill':
-      if (data.skillId && data.requestId) {
-        const skillId = data.skillId;
-        const requestId = data.requestId;
-        if (!SAFE_REQUEST_ID_RE.test(requestId)) {
-          logger.warn(
-            { sourceGroup, requestId },
-            'Rejected uninstall_skill request with invalid requestId',
-          );
-          break;
-        }
-        const tasksDir = path.join(DATA_DIR, 'ipc', sourceGroup, 'tasks');
-        const tasksDirResolved = path.resolve(tasksDir);
-        const resultFileName = `uninstall_skill_result_${requestId}.json`;
-        const resultFilePath = path.resolve(tasksDir, resultFileName);
-        if (!resultFilePath.startsWith(`${tasksDirResolved}${path.sep}`)) {
-          logger.warn(
-            { sourceGroup, requestId, resultFilePath },
-            'Rejected uninstall_skill request with unsafe result file path',
-          );
-          break;
-        }
-
-        const sourceGroupForUninstall = Object.values(registeredGroups).find(
-          (g) => g.folder === sourceGroup,
-        );
-        const userId = sourceGroupForUninstall?.created_by;
-
-        if (!userId) {
-          logger.warn(
-            { sourceGroup },
-            'Cannot uninstall skill: no user associated with group',
-          );
-          const errorResult = JSON.stringify({
-            success: false,
-            error: 'No user associated with this group',
-          });
-          const tmpPath = `${resultFilePath}.tmp`;
-          fs.mkdirSync(path.dirname(resultFilePath), { recursive: true });
-          fs.writeFileSync(tmpPath, errorResult);
-          fs.renameSync(tmpPath, resultFilePath);
-          break;
-        }
-
-        const result = await deleteSkillForUser(userId, skillId);
-        const tmpPath = `${resultFilePath}.tmp`;
-        fs.mkdirSync(path.dirname(resultFilePath), { recursive: true });
-        fs.writeFileSync(tmpPath, JSON.stringify(result));
-        fs.renameSync(tmpPath, resultFilePath);
-        logger.info(
-          { sourceGroup, userId, skillId, success: result.success },
-          'Skill uninstall via IPC completed',
-        );
-      } else {
-        logger.warn(
-          { data },
-          'Invalid uninstall_skill request - missing required fields',
-        );
-      }
+      await processIpcUninstallSkill({
+        ...ipcSkillRegistryDeps,
+        data,
+        sourceGroup,
+      });
       break;
 
     case 'send_file':
