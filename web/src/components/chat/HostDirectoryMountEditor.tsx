@@ -19,7 +19,7 @@ export interface HostDirectoryMountDraft {
   containerPathTouched: boolean;
 }
 
-export function createHostDirectoryMountDraft(): HostDirectoryMountDraft {
+function createHostDirectoryMountDraft(): HostDirectoryMountDraft {
   mountDraftSequence += 1;
   return {
     id: `host-mount-${mountDraftSequence}`,
