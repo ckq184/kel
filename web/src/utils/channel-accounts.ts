@@ -158,7 +158,7 @@ export function supportsChannelPairing(provider: ChannelProvider): boolean {
   return providerDefinition(provider)?.supportsPairing ?? false;
 }
 
-export function normalizeCredentials(values: Record<string, string>) {
+function normalizeCredentials(values: Record<string, string>) {
   return Object.fromEntries(
     Object.entries(values)
       .map(([key, value]) => [key, value.trim()] as const)

@@ -8,7 +8,7 @@ interface SourceQualifiedMcpServer {
   runtimeAvailable?: boolean;
 }
 
-export function mcpSourceKey(source: McpServerSource, id: string): string {
+function mcpSourceKey(source: McpServerSource, id: string): string {
   return `${source}:${id}`;
 }
 
