@@ -8,7 +8,7 @@
 const FEISHU_TENANT_TOKEN_ENDPOINT =
   'https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal';
 
-export interface FeishuConnectivityResult {
+interface FeishuConnectivityResult {
   ok: boolean;
   errorCode?: number;
   errorMessage?: string;
@@ -40,9 +40,11 @@ export async function testFeishuCredentials(
       };
     }
 
-    const data = (await res.json().catch(() => null)) as
-      | { code?: number; msg?: string; tenant_access_token?: string }
-      | null;
+    const data = (await res.json().catch(() => null)) as {
+      code?: number;
+      msg?: string;
+      tenant_access_token?: string;
+    } | null;
 
     if (!data) {
       return { ok: false, errorMessage: 'Feishu API returned non-JSON body' };

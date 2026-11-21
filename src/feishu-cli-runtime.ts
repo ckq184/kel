@@ -32,7 +32,7 @@ interface FeishuCliBindingDependencies {
   ) => Record<string, string | undefined> | null;
 }
 
-export interface ResolveFeishuCliRuntimeBindingInput {
+interface ResolveFeishuCliRuntimeBindingInput {
   ownerUserId?: string | null;
   channelContext?: ChannelTurnContext;
   workspaceChannelAccountId?: string | null;

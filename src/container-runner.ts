@@ -472,7 +472,7 @@ function applyKnownProviderFailureDisposition(
   output.inputTurnCompleted = terminal;
 }
 
-export interface VolumeMount {
+interface VolumeMount {
   hostPath: string;
   containerPath: string;
   readonly: boolean;
@@ -1382,7 +1382,7 @@ export function buildVolumeMounts(
   return mounts;
 }
 
-export type ContainerHostIdentityMode =
+type ContainerHostIdentityMode =
   | 'direct'
   | 'rootless'
   | 'userns'
@@ -1390,13 +1390,13 @@ export type ContainerHostIdentityMode =
   | 'host-root'
   | 'unknown';
 
-export interface ContainerHostIdentity {
+interface ContainerHostIdentity {
   mode: ContainerHostIdentityMode;
   uid?: number;
   gid?: number;
 }
 
-export interface ContainerHostIdentityProbe {
+interface ContainerHostIdentityProbe {
   platform: NodeJS.Platform;
   uid?: number;
   gid?: number;
