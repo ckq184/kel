@@ -453,7 +453,7 @@ const WorkspaceMemoryTimestampSchema = z
 const WorkspaceMemoryOptionalTimestampSchema =
   WorkspaceMemoryTimestampSchema.nullable().optional();
 
-export const WorkspaceMemoryProvenanceSchema = z
+const WorkspaceMemoryProvenanceSchema = z
   .object({
     sourceId: z.string().trim().min(1).max(512).nullable().optional(),
     sessionId: z.string().trim().min(1).max(512).nullable().optional(),
