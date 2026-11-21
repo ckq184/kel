@@ -616,7 +616,7 @@ export function buildStreamingPanels(init: StreamingPanelsInit): El[] {
 }
 
 /** One runtime panel (collapsible wrapping a single patchable markdown). */
-export function buildRuntimePanel(opts: {
+function buildRuntimePanel(opts: {
   elementId: string;
   contentElementId: string;
   title: string;
