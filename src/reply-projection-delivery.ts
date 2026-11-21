@@ -1,6 +1,10 @@
 import type { StreamingSession } from './im-channel.js';
 import { logger } from './logger.js';
-import { buildSteeredReply, buildStoppedReply } from './reply-finalization.js';
+import {
+  buildInterruptedReply,
+  buildSteeredReply,
+  buildStoppedReply,
+} from './reply-finalization.js';
 
 /**
  * ISSUE-12 波 6 单元 6.3：回复投影投递自 src/index.ts 的 processGroupMessages /
@@ -66,6 +70,92 @@ export async function persistInterruptedStreamText(
     }
     onPersisted();
     commitCursor();
+  } catch (err) {
+    logger.warn(logContext(err), logMessage);
+  }
+}
+
+export interface InterruptedTextExitSaveInput {
+  /** A：wasInterrupted && !alreadySavedByShutdown（shutdown 去重）；B：wasInterrupted。 */
+  guard: boolean;
+  steered: boolean;
+  accumulatedText: string;
+  /** A 传 thinking；B 原文单参。 */
+  stoppedThinking?: string;
+  persist: (interruptedText: string) => Promise<void>;
+  /** A：sentReply = true；B：agentInterruptFinalized = true（均在无文本时也置位）。 */
+  onPersisted: () => void;
+  logContext: (err: unknown) => Record<string, unknown>;
+  logMessage: string;
+}
+
+/** M37：finally 保存中断内容到数据库 + 广播到 Web（落库后端经 persist 注入）。 */
+export async function saveInterruptedTextOnExit(
+  input: InterruptedTextExitSaveInput,
+): Promise<void> {
+  const {
+    guard,
+    steered,
+    accumulatedText,
+    stoppedThinking,
+    persist,
+    onPersisted,
+    logContext,
+    logMessage,
+  } = input;
+  if (!guard) return;
+  const interruptedText = steered
+    ? buildSteeredReply(accumulatedText)
+    : buildStoppedReply(accumulatedText, stoppedThinking);
+  try {
+    if (interruptedText) {
+      await persist(interruptedText);
+    }
+    onPersisted();
+  } catch (err) {
+    logger.warn(logContext(err), logMessage);
+  }
+}
+
+export interface FallbackPartialSaveInput {
+  /** A：!sentReply && !alreadySavedByShutdown && accText.trim()；B：
+   * publishesFrameworkAnswer && !isCursorCommitted() && accText.trim()。 */
+  guard: boolean;
+  accumulatedText: string;
+  /** A 传 thinking（双参）；B 原文单参。 */
+  interruptedThinking?: string;
+  persist: (partialReply: string) => Promise<void>;
+  /** A：sentReply = true；B 无旗标（原文即无）。 */
+  onPersisted?: () => void;
+  /** B 侧静态 IM 兜底子步骤（sendImWithRetry + outbox token）；A 无。 */
+  afterPersisted?: (partialReply: string) => Promise<void>;
+  logContext: (err: unknown) => Record<string, unknown>;
+  logMessage: string;
+}
+
+/** M38：兜底保存——进程异常退出导致累积文本未持久化。 */
+export async function saveFallbackPartialTextOnExit(
+  input: FallbackPartialSaveInput,
+): Promise<void> {
+  const {
+    guard,
+    accumulatedText,
+    interruptedThinking,
+    persist,
+    onPersisted,
+    afterPersisted,
+    logContext,
+    logMessage,
+  } = input;
+  if (!guard) return;
+  try {
+    const partialReply = buildInterruptedReply(
+      accumulatedText,
+      interruptedThinking,
+    );
+    await persist(partialReply);
+    onPersisted?.();
+    await afterPersisted?.(partialReply);
   } catch (err) {
     logger.warn(logContext(err), logMessage);
   }

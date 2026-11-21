@@ -295,7 +295,11 @@ import {
   type ChannelMessageDeliveryOptions,
 } from './im-channel.js';
 import { ConversationIndicatorLedger } from './conversation-indicator-ledger.js';
-import { persistInterruptedStreamText } from './reply-projection-delivery.js';
+import {
+  persistInterruptedStreamText,
+  saveInterruptedTextOnExit,
+  saveFallbackPartialTextOnExit,
+} from './reply-projection-delivery.js';
 import {
   createStreamingCardOnTurnStart,
   rollbackIdleCardReservation,
@@ -7431,44 +7435,42 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       shutdownSavedJids.has(chatJid) ||
       shutdownSavedJids.has(webJidForShutdownCheck);
 
-    if (wasInterrupted && !alreadySavedByShutdown) {
-      const interruptedText = wasSteered
-        ? buildSteeredReply(streamingAccumulatedText)
-        : buildStoppedReply(
-            streamingAccumulatedText,
-            streamingAccumulatedThinking,
-          );
-      try {
+    // ISSUE-12 波 6 单元 6.3b：M37/M38 收敛 reply-projection-delivery
+    // （原文搬运；shutdown 去重守卫与持久化后端经参数注入）。
+    await saveInterruptedTextOnExit({
+      guard: wasInterrupted && !alreadySavedByShutdown,
+      steered: wasSteered,
+      accumulatedText: streamingAccumulatedText,
+      stoppedThinking: streamingAccumulatedThinking,
+      persist: async (interruptedText) => {
         // sendToIM: false — 飞书卡片已在原卡片上完成收束，不重复发送
-        if (interruptedText) {
-          lastReplyMsgId = await sendMessage(chatJid, interruptedText, {
-            sendToIM: false,
-            messageMeta: {
-              turnId: lastProcessed.id,
-              sessionId: activeSessionId,
-              sourceKind: 'interrupt_partial',
-              finalizationReason: 'interrupted',
-            },
-          });
-        }
+        lastReplyMsgId = await sendMessage(chatJid, interruptedText, {
+          sendToIM: false,
+          messageMeta: {
+            turnId: lastProcessed.id,
+            sessionId: activeSessionId,
+            sourceKind: 'interrupt_partial',
+            finalizationReason: 'interrupted',
+          },
+        });
+      },
+      onPersisted: () => {
         sentReply = true;
-      } catch (err) {
-        logger.warn({ err, chatJid }, 'Failed to save interrupted text');
-      }
-    }
+      },
+      logContext: (err) => ({ err, chatJid }),
+      logMessage: 'Failed to save interrupted text',
+    });
 
     // ── 兜底：进程异常退出导致累积文本未持久化 ──
     // 进程被杀（SIGTERM/错误）后不会自动继续，"上下文压缩中"提示会误导用户。
-    if (
-      !sentReply &&
-      !alreadySavedByShutdown &&
-      streamingAccumulatedText.trim()
-    ) {
-      try {
-        const partialReply = buildInterruptedReply(
-          streamingAccumulatedText,
-          streamingAccumulatedThinking,
-        );
+    await saveFallbackPartialTextOnExit({
+      guard:
+        !sentReply &&
+        !alreadySavedByShutdown &&
+        !!streamingAccumulatedText.trim(),
+      accumulatedText: streamingAccumulatedText,
+      interruptedThinking: streamingAccumulatedThinking,
+      persist: async (partialReply) => {
         lastReplyMsgId = await sendMessage(chatJid, partialReply, {
           sendToIM: false,
           messageMeta: {
@@ -7478,11 +7480,13 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
             finalizationReason: 'error',
           },
         });
+      },
+      onPersisted: () => {
         sentReply = true;
-      } catch (err) {
-        logger.warn({ err, chatJid }, 'Failed to save overflow partial text');
-      }
-    }
+      },
+      logContext: (err) => ({ err, chatJid }),
+      logMessage: 'Failed to save overflow partial text',
+    });
   }
 
   // runAgent threw — output is undefined, cannot proceed with post-processing.
@@ -11184,67 +11188,67 @@ async function processAgentConversation(
     }
 
     // ── 保存中断内容 ──
-    if (wasInterrupted) {
-      const interruptedText = wasSteered
-        ? buildSteeredReply(agentStreamingAccText)
-        : buildStoppedReply(agentStreamingAccText);
-      try {
-        if (interruptedText) {
-          const msgId = crypto.randomUUID();
-          const timestamp = new Date().toISOString();
-          ensureChatExists(virtualChatJid);
-          const persistedMsgId = storeMessageDirect(
-            msgId,
-            virtualChatJid,
-            'ckqclaw-agent',
-            ASSISTANT_NAME,
-            interruptedText,
-            timestamp,
-            true,
-            {
-              meta: {
-                turnId: lastProcessed.id,
-                sessionId: currentAgentSessionId,
-                sourceKind: 'interrupt_partial',
-                finalizationReason: 'interrupted',
-              },
+    // ISSUE-12 波 6 单元 6.3b：M37/M38 收敛 reply-projection-delivery
+    // （原文搬运；B 无 shutdown 去重（storeDirect 直投幂等），静态 IM 兜底
+    // 经 afterPersisted 子步骤注入）。
+    await saveInterruptedTextOnExit({
+      guard: wasInterrupted,
+      steered: wasSteered,
+      accumulatedText: agentStreamingAccText,
+      persist: async (interruptedText) => {
+        const msgId = crypto.randomUUID();
+        const timestamp = new Date().toISOString();
+        ensureChatExists(virtualChatJid);
+        const persistedMsgId = storeMessageDirect(
+          msgId,
+          virtualChatJid,
+          'ckqclaw-agent',
+          ASSISTANT_NAME,
+          interruptedText,
+          timestamp,
+          true,
+          {
+            meta: {
+              turnId: lastProcessed.id,
+              sessionId: currentAgentSessionId,
+              sourceKind: 'interrupt_partial',
+              finalizationReason: 'interrupted',
             },
-          );
-          broadcastNewMessage(
-            virtualChatJid,
-            {
-              id: persistedMsgId,
-              chat_jid: virtualChatJid,
-              sender: 'ckqclaw-agent',
-              sender_name: ASSISTANT_NAME,
-              content: interruptedText,
-              timestamp,
-              is_from_me: true,
-              turn_id: lastProcessed.id,
-              session_id: currentAgentSessionId,
-              source_kind: 'interrupt_partial',
-              finalization_reason: 'interrupted',
-            },
-            agentId,
-          );
-        }
-        agentInterruptFinalized = true;
-      } catch (err) {
-        logger.warn(
-          { err, chatJid, agentId },
-          'Failed to save interrupted agent text',
+          },
         );
-      }
-    }
+        broadcastNewMessage(
+          virtualChatJid,
+          {
+            id: persistedMsgId,
+            chat_jid: virtualChatJid,
+            sender: 'ckqclaw-agent',
+            sender_name: ASSISTANT_NAME,
+            content: interruptedText,
+            timestamp,
+            is_from_me: true,
+            turn_id: lastProcessed.id,
+            session_id: currentAgentSessionId,
+            source_kind: 'interrupt_partial',
+            finalization_reason: 'interrupted',
+          },
+          agentId,
+        );
+      },
+      onPersisted: () => {
+        agentInterruptFinalized = true;
+      },
+      logContext: (err) => ({ err, chatJid, agentId }),
+      logMessage: 'Failed to save interrupted agent text',
+    });
 
     // ── 兜底：进程异常退出导致累积文本未持久化 ──
-    if (
-      publishesFrameworkAnswer(interactionMode) &&
-      !isCursorCommitted() &&
-      agentStreamingAccText.trim()
-    ) {
-      try {
-        const partialReply = buildInterruptedReply(agentStreamingAccText);
+    await saveFallbackPartialTextOnExit({
+      guard:
+        publishesFrameworkAnswer(interactionMode) &&
+        !isCursorCommitted() &&
+        !!agentStreamingAccText.trim(),
+      accumulatedText: agentStreamingAccText,
+      persist: async (partialReply) => {
         const msgId = crypto.randomUUID();
         const timestamp = new Date().toISOString();
         ensureChatExists(virtualChatJid);
@@ -11282,6 +11286,8 @@ async function processAgentConversation(
           },
           agentId,
         );
+      },
+      afterPersisted: async (partialReply) => {
         // Fallback: send accumulated streaming text to IM when output.result is null
         // (agent-runner streams all text via text_delta, never sets result field)
         logger.info({
@@ -11319,13 +11325,10 @@ async function processAgentConversation(
             'Partial reply: no replySourceImJid found, skipping IM send',
           );
         }
-      } catch (err) {
-        logger.warn(
-          { err, chatJid, agentId },
-          'Failed to save interrupted partial agent text',
-        );
-      }
-    }
+      },
+      logContext: (err) => ({ err, chatJid, agentId }),
+      logMessage: 'Failed to save interrupted partial agent text',
+    });
 
     // ── Spawn result injection: write final output back to the source chat ──
     if (
