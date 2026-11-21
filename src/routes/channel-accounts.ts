@@ -53,7 +53,7 @@ import {
   type WeChatQrStatusValue,
 } from '../wechat-onboarding.js';
 
-export interface ChannelAccountRouteDeps {
+interface ChannelAccountRouteDeps {
   reloadChannelAccount?: (accountId: string) => Promise<boolean>;
   disconnectChannelAccount?: (accountId: string) => Promise<void>;
   testChannelAccount?: (

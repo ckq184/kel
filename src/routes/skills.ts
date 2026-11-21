@@ -1576,5 +1576,5 @@ skillsRoutes.post('/:id/reinstall', authMiddleware, async (c) => {
   });
 });
 
-export { getUserSkillsDir, installSkillForUser, deleteSkillForUser };
+export { installSkillForUser, deleteSkillForUser };
 export default skillsRoutes;
