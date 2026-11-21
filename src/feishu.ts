@@ -7,11 +7,7 @@ import {
   updateRegisteredGroupAvatar,
 } from './db.js';
 import { logger } from './logger.js';
-import {
-  saveDownloadedFile,
-  sanitizeImFilename,
-  buildInlinedFileContent,
-} from './im-downloader.js';
+import { sanitizeImFilename } from './im-downloader.js';
 import { notifyNewImMessage } from './message-notifier.js';
 import { broadcastFollowUpUpdate, broadcastNewMessage } from './web.js';
 import { resolveJidByMessageId } from './feishu-streaming-card.js';
@@ -21,8 +17,6 @@ import {
   type FeishuBotPublicInfo,
 } from './feishu-bot-info.js';
 import {
-  downloadFeishuFileToDisk,
-  downloadFeishuImage,
   FEISHU_RESOURCE_REQUEST_TIMEOUT_MS,
   withFeishuHardTimeout,
 } from './feishu-media.js';
@@ -39,6 +33,7 @@ import {
   type MentionGateMention,
 } from './feishu-mention-gate.js';
 import { createFeishuInboundAdmission } from './feishu-inbound-admission.js';
+import { downloadFeishuInboundAttachments } from './feishu-inbound-attachments.js';
 import {
   extractProviderTarget,
   parseChannelAddress,
@@ -1666,233 +1661,24 @@ export function createFeishuConnection(
       const resolvedCreateTimeMs = createTimeMs > 0 ? createTimeMs : Date.now();
       const timestamp = new Date(resolvedCreateTimeMs).toISOString();
 
-      let attachmentsJson: string | undefined;
-
       // ── 附件下载（已通过白名单 + mention 门控后才执行）──
       // 安全：未授权发送者 / 未 @bot 的群消息已在上面 return，绝不会触发图片/
       // 文件下载落盘或对飞书 API 的拉取（防止未授权资源消耗 / SSRF 式拉取）。
-      const currentImageKeys = extracted.imageKeys ?? [];
-      const currentImageRefs =
-        enriched.currentImageRefs ??
-        currentImageKeys.map((imageKey) => ({ messageId, imageKey }));
-      const referencedImageRefs = enriched.referencedImageRefs ?? [];
-      const referencedMessages: ChannelReferencedMessage[] = (
-        enriched.references ?? []
-      ).map((reference) => ({ ...reference }));
-      const replaceReferenceMarker = (
-        referenceMessageId: string,
-        marker: string,
-        replacement: string,
-        attachmentIndex?: number,
-      ): void => {
-        const reference = referencedMessages.find(
-          (item) =>
-            item.id === referenceMessageId && item.text.includes(marker),
-        );
-        if (!reference) return;
-        reference.text = reference.text.replace(marker, replacement);
-        reference.attachmentHints = [
-          ...(reference.attachmentHints ?? []),
-          replacement,
-        ];
-        if (attachmentIndex !== undefined) {
-          reference.attachmentIndexes = [
-            ...(reference.attachmentIndexes ?? []),
-            attachmentIndex,
-          ];
-        }
-      };
-      if (currentImageRefs.length > 0 || referencedImageRefs.length > 0) {
-        // 图片消息：下载后双轨处理
-        // 1. Vision 通道：base64 附件供模型看图
-        // 2. 存盘通道：写入工作区文件，agent 可直接操作（压缩、发送等）
-        const attachments = [];
-        const groupFolder = resolveGroupFolder?.(chatJid);
-        const savedPaths: string[] = [];
-        let downloadedCurrentImages = 0;
-
-        for (const imageRef of currentImageRefs) {
-          const { imageKey } = imageRef;
-          const imageData = await downloadFeishuImage(
-            () => client,
-            imageRef.messageId,
-            imageKey,
-          );
-          if (!imageData) continue;
-          downloadedCurrentImages++;
-
-          // Vision 附件
-          attachments.push({
-            type: 'image',
-            data: imageData.base64,
-            mimeType: imageData.mimeType,
-          });
-
-          // 存盘：扩展名从 mimeType 推断，对齐文件消息处理逻辑
-          if (groupFolder) {
-            const extMap: Record<string, string> = {
-              'image/jpeg': '.jpg',
-              'image/png': '.png',
-              'image/gif': '.gif',
-              'image/webp': '.webp',
-              'image/bmp': '.bmp',
-              'image/tiff': '.tiff',
-            };
-            const ext = extMap[imageData.mimeType] ?? '.jpg';
-            const fileName = `feishu_img_${imageKey.slice(-8)}${ext}`;
-            try {
-              const relPath = await saveDownloadedFile(
-                groupFolder,
-                'feishu',
-                fileName,
-                Buffer.from(imageData.base64, 'base64'),
-              );
-              if (relPath) savedPaths.push(relPath);
-            } catch (err) {
-              logger.warn(
-                { err, imageKey },
-                'Failed to save Feishu image to disk',
-              );
-            }
-          }
-        }
-
-        // Referenced images must be downloaded against the message that owns
-        // the image key, not the current event. The normalized text carries a
-        // stable marker so the saved path stays associated with the correct
-        // quoted message while the same bytes are also supplied to vision.
-        for (const ref of referencedImageRefs) {
-          const imageData = await downloadFeishuImage(
-            () => client,
-            ref.messageId,
-            ref.imageKey,
-          );
-          if (!imageData) {
-            replaceReferenceMarker(
-              ref.referenceMessageId,
-              ref.marker,
-              '[引用图片下载失败]',
-            );
-            continue;
-          }
-          const attachmentIndex = attachments.length;
-          attachments.push({
-            type: 'image',
-            data: imageData.base64,
-            mimeType: imageData.mimeType,
-          });
-          let replacement = '[引用图片]';
-          if (groupFolder) {
-            const extMap: Record<string, string> = {
-              'image/jpeg': '.jpg',
-              'image/png': '.png',
-              'image/gif': '.gif',
-              'image/webp': '.webp',
-              'image/bmp': '.bmp',
-              'image/tiff': '.tiff',
-            };
-            const ext = extMap[imageData.mimeType] ?? '.jpg';
-            const fileName = `feishu_ref_${ref.imageKey.slice(-8)}${ext}`;
-            try {
-              const relPath = await saveDownloadedFile(
-                groupFolder,
-                'feishu',
-                fileName,
-                Buffer.from(imageData.base64, 'base64'),
-              );
-              if (relPath) replacement = `[引用图片: ${relPath}]`;
-            } catch (err) {
-              logger.warn(
-                { err, messageId: ref.messageId, imageKey: ref.imageKey },
-                'Failed to save referenced Feishu image to disk',
-              );
-            }
-          }
-          replaceReferenceMarker(
-            ref.referenceMessageId,
-            ref.marker,
-            replacement,
-            attachmentIndex,
-          );
-        }
-
-        // 拼接图片标记：成功下载的用路径，失败的用占位符，确保 text 不为空。
-        // 否则长图/超大图片下载失败时会落入 agent 的空消息分支，回复"消息是空的"。
-        const failedCount = currentImageRefs.length - downloadedCurrentImages;
-        const markers: string[] = [];
-        if (attachments.length > 0) {
-          attachmentsJson = JSON.stringify(attachments);
-        }
-        if (downloadedCurrentImages > 0) {
-          if (savedPaths.length > 0) {
-            markers.push(...savedPaths.map((p) => `[图片: ${p}]`));
-          } else {
-            markers.push('[图片]');
-          }
-        }
-        if (failedCount > 0) {
-          markers.push(
-            `[图片下载失败: ${failedCount} 张，可能超过飞书接口限制或网络异常]`,
-          );
-          logger.warn(
-            {
-              chatJid,
-              messageId,
-              failedCount,
-              totalKeys: currentImageRefs.length,
-            },
-            'Feishu image download failed for some or all images',
-          );
-        }
-        const imgMarker = markers.join('\n');
-        if (imgMarker) {
-          text = text ? `${imgMarker}\n${text}` : imgMarker;
-        }
-      }
-      if (extracted.fileInfos && extracted.fileInfos.length > 0) {
-        // 文件消息：下载到磁盘，路径内联替换
-        logger.info(
-          {
-            chatJid,
-            messageId,
-            messageType,
-            fileCount: extracted.fileInfos.length,
-          },
-          'Processing Feishu file download',
-        );
-        const groupFolder = resolveGroupFolder?.(chatJid);
-        if (!groupFolder) {
-          logger.warn(
-            { chatJid },
-            'Cannot resolve group folder for file download',
-          );
-          for (const fi of extracted.fileInfos) {
-            const safeFilename = sanitizeImFilename(fi.filename || fi.fileKey);
-            const placeholder = `[文件: ${safeFilename}]`;
-            text = text.replace(placeholder, `[文件下载失败: ${safeFilename}]`);
-          }
-        } else {
-          for (const fi of extracted.fileInfos) {
-            const safeFilename = sanitizeImFilename(fi.filename || fi.fileKey);
-            const relPath = await downloadFeishuFileToDisk(
-              () => client,
-              messageId,
-              fi.fileKey,
-              fi.filename,
-              groupFolder,
-            );
-            const placeholder = `[文件: ${safeFilename}]`;
-            // 弱模型兜底：抽取成功则内联文件文本，失败回退仅路径标记。
-            const replacement = !relPath
-              ? `[文件下载失败: ${safeFilename}]`
-              : ((await buildInlinedFileContent(groupFolder, relPath)) ??
-                `[文件: ${relPath}]`);
-            // replacer 用函数形式：replacement 含文件抽取文本，其中的
-            // $& / $' 等特殊序列不能被 String.replace 展开。
-            text = text.replace(placeholder, () => replacement);
-          }
-        }
-      }
+      // ISSUE-12 单元 2.9：图片双轨下载 / 引用标记替换 / 文件落盘内联的搬运体
+      // 在 ./feishu-inbound-attachments.ts（getClient 与 resolveGroupFolder 显式
+      // 注入，唯一机械替换 () => client → getClient 共 3 处）；本段只保留一次
+      // 委托调用，正文 / 附件 JSON / 引用消息沿解构回接原下游变量，段位与
+      // 调用顺序不变。
+      const {
+        text: inboundText,
+        attachmentsJson,
+        referencedMessages,
+      } = await downloadFeishuInboundAttachments(
+        () => client,
+        { extracted, enriched, messageId, chatJid, messageType },
+        { resolveGroupFolder, text },
+      );
+      text = inboundText;
 
       const routeSourceJid =
         agentRouting?.sourceJid ??

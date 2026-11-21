@@ -30,6 +30,14 @@ import { describe, expect, test } from 'vitest';
 // 「新模块切片 + 主管道 verdict 分支」双锚收进下方 describe 块
 // （Feishu 入站三段准入决策模块契约），等强于原表行对该段可达的全部
 // 断言（原表只锁 marker + 终态计数，新 describe 另锁决策体结构与文案）。
+//
+// 2.9 改锚说明：附件段（图片双轨下载 / 引用标记替换 / 文件落盘内联）搬至
+// src/feishu-inbound-attachments.ts，段内唯一 return（replaceReferenceMarker
+// 箭头守卫 if (!reference) return;，原表 nested 行）随体迁出主管道——21 行表
+// 减为 20 条 return + 1 条落尾收尾，该 nested 行在下方 2.9 describe 块改锚
+// 新模块切片等强收口（行文本 + marker 双双随体迁移，另锁定义/守卫相对
+// 位置）；主管道侧仅余一次委托调用与 text / attachmentsJson /
+// referencedMessages 解构回接，无新增 return、无新增终态调用。
 
 const source = fs.readFileSync('src/feishu.ts', 'utf8');
 const inboxModuleSource = fs.existsSync('src/feishu-inbox.ts')
@@ -38,6 +46,11 @@ const inboxModuleSource = fs.existsSync('src/feishu-inbox.ts')
 const inboxFamily = `${source}\n${inboxModuleSource}`;
 const admissionModuleSource = fs.existsSync('src/feishu-inbound-admission.ts')
   ? fs.readFileSync('src/feishu-inbound-admission.ts', 'utf8')
+  : '';
+const attachmentsModuleSource = fs.existsSync(
+  'src/feishu-inbound-attachments.ts',
+)
+  ? fs.readFileSync('src/feishu-inbound-attachments.ts', 'utf8')
   : '';
 
 // ─── 工具 ────────────────────────────────────────────────────────────────
@@ -130,9 +143,11 @@ interface ClaimReturnRow {
   calls?: number;
 }
 
-// HEAD（24ef334）逐行核账：21 条 return + 1 条落尾收尾；2.8 后受众门 /
-// mention 门 / 路由准入三行的 return 为 verdict 分支出口（决策体在
-// src/feishu-inbound-admission.ts，见下方 describe 块）。改动主管道时随提交更新本表。
+// HEAD（24ef334）逐行核账 21 条；2.8 后受众门 / mention 门 / 路由准入三行
+// 的 return 为 verdict 分支出口（决策体在 src/feishu-inbound-admission.ts，
+// 见下方 describe 块）；2.9 后附件段 nested 行随段迁出（守卫 return 在
+// src/feishu-inbound-attachments.ts，见下方 2.9 describe 块），表减为 20 条
+// return + 1 条落尾收尾。改动主管道时随提交更新本表。
 const CLAIM_RETURN_CONTRACT: ClaimReturnRow[] = [
   {
     // 恢复门：shouldDeferInbound 未开即 fail（retry=true 走恢复调度）
@@ -246,12 +261,6 @@ const CLAIM_RETURN_CONTRACT: ClaimReturnRow[] = [
     scope: 'pipeline',
     via: 'ignore',
     marker: "'binding_rejected'",
-  },
-  {
-    // replaceReferenceMarker 箭头函数内部的守卫 return（非管道出口）
-    line: 'if (!reference) return;',
-    scope: 'nested',
-    marker: 'replaceReferenceMarker',
   },
   {
     // ack reaction attach 工厂的返回值（非管道出口）
@@ -584,5 +593,75 @@ describe('Feishu 入站三段准入决策模块契约（单元 2.8 搬迁锚）'
     const enrichIdx = pipelineBody.indexOf('await enrichFeishuInboundContent(');
     expect(admittedIdx).toBeGreaterThan(-1);
     expect(enrichIdx).toBeGreaterThan(admittedIdx);
+  });
+});
+
+// ─── 单元 2.9：入站附件下载模块契约 ────────────────────────────────────────
+//
+// 附件段自 processClaimedIncomingMessage 搬至 src/feishu-inbound-attachments.ts
+// 后：搬运体标志调用只许出现在新模块、主管道仅余一次委托调用；原 21 行表的
+// nested 行（replaceReferenceMarker 守卫 return）等强改锚新模块切片——行文本
+// 与 marker 双双随体迁移，另加定义 / 守卫相对位置断言（不弱于原 nested 行
+// 断言）。路由先于下载的顺序契约由 channel-route-side-effect-order.test.ts
+// 锚管道侧委托调用形 + 新模块下载调用形两跳联合。
+
+describe('Feishu 入站附件下载模块契约（单元 2.9 搬迁锚）', () => {
+  test('附件段搬运体只在新模块，主管道仅余一次委托调用', () => {
+    // 搬运体标志调用不得残留在主管道（防漏搬 / 双接线）
+    for (const body of [
+      'await downloadFeishuImage(',
+      'await downloadFeishuFileToDisk(',
+      'await buildInlinedFileContent(',
+      'const replaceReferenceMarker = (',
+      'if (!reference) return;',
+      'const currentImageKeys = extracted.imageKeys ?? [];',
+    ]) {
+      expect({ body, inPipeline: pipelineBody.includes(body) }).toEqual({
+        body,
+        inPipeline: false,
+      });
+      expect({
+        body,
+        inModule: attachmentsModuleSource.includes(body),
+      }).toEqual({ body, inModule: true });
+    }
+    // 主管道侧恰一次委托调用（防重复接线或漏接）
+    const delegateCall = 'await downloadFeishuInboundAttachments(';
+    expect({
+      call: delegateCall,
+      count: countOccurrences(pipelineBody, delegateCall),
+    }).toEqual({ call: delegateCall, count: 1 });
+  });
+
+  test('replaceReferenceMarker 守卫 return 随段迁入新模块（原 21 行表 nested 行等强改锚）', () => {
+    // 原 nested 行断言：line 'if (!reference) return;' + marker
+    // 'replaceReferenceMarker'——两断言目标随搬运体搬家，另锁守卫在定义体内。
+    const defIdx = attachmentsModuleSource.indexOf(
+      'const replaceReferenceMarker = (',
+    );
+    const guardIdx = attachmentsModuleSource.indexOf('if (!reference) return;');
+    expect(defIdx).toBeGreaterThan(-1);
+    expect(guardIdx).toBeGreaterThan(defIdx);
+  });
+
+  test('三下游变量解构回接在主管道原位（text / attachmentsJson / referencedMessages）', () => {
+    // 段位顺序：委托调用紧随 enrich 之后、storeMessageDirect 之前
+    // （channel-route-side-effect-order 的管道侧镜像）。
+    const delegateIdx = pipelineBody.indexOf(
+      'await downloadFeishuInboundAttachments(',
+    );
+    const enrichIdx = pipelineBody.indexOf('await enrichFeishuInboundContent(');
+    const storeIdx = pipelineBody.indexOf('storeMessageDirect(');
+    expect(delegateIdx).toBeGreaterThan(-1);
+    expect(enrichIdx).toBeGreaterThan(-1);
+    expect(storeIdx).toBeGreaterThan(-1);
+    expect(delegateIdx).toBeGreaterThan(enrichIdx);
+    expect(storeIdx).toBeGreaterThan(delegateIdx);
+    // 解构回接沿用原下游变量名；解构模式本体按 prettier 折行展开，锚绑定
+    // 形与 text 回写行（不锚单一折行形态，防格式化噪音）。
+    expect(pipelineBody).toContain(
+      '} = await downloadFeishuInboundAttachments(',
+    );
+    expect(pipelineBody).toContain('text = inboundText;');
   });
 });
