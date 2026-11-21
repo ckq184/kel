@@ -1,4 +1,4 @@
-export type McpSecretKind = 'env' | 'headers';
+type McpSecretKind = 'env' | 'headers';
 
 export interface McpSecretRow {
   key: string;

@@ -1,6 +1,6 @@
 export type AgentPromptSection = 'identity' | 'soul' | 'agents' | 'tools';
 
-export type AgentPromptMode = 'append' | 'replace';
+type AgentPromptMode = 'append' | 'replace';
 
 export interface AgentPromptParts {
   identity_prompt: string;

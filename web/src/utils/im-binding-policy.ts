@@ -1,11 +1,7 @@
 import type { AvailableImGroup } from '../types';
 
-export type BindingActivationMode = NonNullable<
-  AvailableImGroup['activation_mode']
->;
-export type BindingAudienceMode = NonNullable<
-  AvailableImGroup['audience_mode']
->;
+type BindingActivationMode = NonNullable<AvailableImGroup['activation_mode']>;
+type BindingAudienceMode = NonNullable<AvailableImGroup['audience_mode']>;
 
 const ACTIVATION_MODES = new Set<BindingActivationMode>([
   'auto',

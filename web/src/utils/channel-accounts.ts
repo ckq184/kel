@@ -6,7 +6,7 @@ import type {
 
 export type ChannelAuthMode = 'credentials' | 'bot_token' | 'qr_session';
 
-export interface CredentialField {
+interface CredentialField {
   key: string;
   label: string;
   required?: boolean;
@@ -25,7 +25,7 @@ export interface ChannelSetupGuide {
   nextStep: string;
 }
 
-export interface ChannelProviderOption {
+interface ChannelProviderOption {
   value: ChannelProvider;
   label: string;
   description: string;
@@ -208,7 +208,7 @@ export function validateChannelAccountForm(
     : null;
 }
 
-export interface AccountScopedChannel {
+interface AccountScopedChannel {
   channel_account_id?: string | null;
   channel_account_name?: string | null;
 }

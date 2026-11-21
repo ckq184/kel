@@ -1,6 +1,6 @@
 const DEFAULT_AGENT_NAME = 'CKQClaw';
 
-export interface AgentDisplayIdentity {
+interface AgentDisplayIdentity {
   name: string;
   imageUrl?: string;
   emoji?: string;
@@ -8,7 +8,7 @@ export interface AgentDisplayIdentity {
   fallbackChar: string;
 }
 
-export interface AgentIdentityOptions {
+interface AgentIdentityOptions {
   agentName?: string | null;
   messageSenderName?: string | null;
   avatarUrl?: string | null;

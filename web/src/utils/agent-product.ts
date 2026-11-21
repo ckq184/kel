@@ -1,7 +1,7 @@
 import type { GroupInfo } from '../types';
 import type { GroupEntry } from './group-utils';
 
-export interface AgentWorkspaceSection {
+interface AgentWorkspaceSection {
   id: string;
   name: string;
   version?: number;

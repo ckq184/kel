@@ -1,6 +1,6 @@
 export type McpServerSource = 'system' | 'user';
 
-export interface SourceQualifiedMcpServer {
+interface SourceQualifiedMcpServer {
   id: string;
   source?: McpServerSource;
   sourceKey?: string;

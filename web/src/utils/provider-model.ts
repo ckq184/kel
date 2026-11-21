@@ -17,12 +17,12 @@ export const CONTEXT_WINDOW_OPTIONS: readonly {
   { value: 1000000, label: '1M' },
 ];
 
-export interface ProviderModelSelection {
+interface ProviderModelSelection {
   model: string;
   oneMillionContext: boolean;
 }
 
-export interface DefaultProviderEnvRow {
+interface DefaultProviderEnvRow {
   key: string;
   value: string;
   source: 'model' | 'context' | 'default';
