@@ -68,7 +68,6 @@ import { useAgentProfilesStore } from '../stores/agent-profiles';
 import { useAuthStore } from '../stores/auth';
 import { useSkillsStore } from '../stores/skills';
 import { useMcpServersStore } from '../stores/mcp-servers';
-import type { ApiError } from '../api/client';
 import {
   buildMcpPolicyOptions,
   normalizeMcpPolicyReferences,
@@ -95,71 +94,19 @@ import {
   skillSelectionError,
   type RuntimePolicyMode,
 } from '../utils/agent-runtime-policy';
+import {
+  AGENT_EFFORT_OPTIONS,
+  asApiError,
+  DEFAULT_RUNTIME_POLICY,
+  normalizeRuntimePolicy,
+  sameRuntimePolicy,
+  sameSkillSourcePolicy,
+} from '../utils/agent-runtime-policy-form';
 
-const DEFAULT_RUNTIME_POLICY: AgentProfileRuntimePolicy = {
-  reasoning: { effort: 'inherit' },
-  context: {
-    source: 'managed',
-    auto_compact_window: 0,
-    auto_compact_percentage: 0,
-  },
-  skills: {
-    mode: 'inherit',
-    ids: [],
-    host: { mode: 'disabled', ids: [] },
-  },
-  mcp: { mode: 'inherit', ids: [] },
-};
-
-const AGENT_EFFORT_OPTIONS: Array<{
-  value: AgentEffortLevel;
-  label: string;
-}> = [
-  { value: 'inherit', label: '跟随模型配置' },
-  { value: 'low', label: 'Low' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'high', label: 'High' },
-  { value: 'xhigh', label: 'XHigh' },
-  { value: 'max', label: 'Max' },
-];
-
-const AGENT_EFFORT_VALUES = new Set<AgentEffortLevel>(
-  AGENT_EFFORT_OPTIONS.map((option) => option.value),
-);
-
-function normalizeRuntimePolicy(
-  policy?: Partial<AgentProfileRuntimePolicy> | null,
-): AgentProfileRuntimePolicy {
-  return {
-    reasoning: {
-      effort: AGENT_EFFORT_VALUES.has(
-        policy?.reasoning?.effort as AgentEffortLevel,
-      )
-        ? (policy?.reasoning?.effort as AgentEffortLevel)
-        : 'inherit',
-    },
-    context: {
-      source: getAgentContextSource(policy),
-      auto_compact_window:
-        typeof policy?.context?.auto_compact_window === 'number'
-          ? policy.context.auto_compact_window
-          : 0,
-      auto_compact_percentage:
-        typeof policy?.context?.auto_compact_percentage === 'number'
-          ? policy.context.auto_compact_percentage
-          : 0,
-    },
-    skills: {
-      mode: policy?.skills?.mode ?? 'inherit',
-      ids: policy?.skills?.ids ?? [],
-      host: getHostSkillPolicy(policy),
-    },
-    mcp: {
-      mode: policy?.mcp?.mode ?? 'inherit',
-      ids: policy?.mcp?.ids ?? [],
-    },
-  };
-}
+// ISSUE-12 波 5 单元 5.3：DEFAULT_RUNTIME_POLICY / AGENT_EFFORT_OPTIONS /
+// AGENT_EFFORT_VALUES / normalizeRuntimePolicy / sameRuntimePolicy /
+// sameSkillSourcePolicy / asApiError 已迁 ../utils/agent-runtime-policy-form.ts
+// （原文搬运），经同名 import 回接零调用点改动。
 
 function SummaryItem({ label, value }: { label: string; value: string }) {
   return (
@@ -168,32 +115,6 @@ function SummaryItem({ label, value }: { label: string; value: string }) {
       <dd className="mt-1 text-sm font-medium text-foreground">{value}</dd>
     </div>
   );
-}
-
-function sameRuntimePolicy(
-  a?: Partial<AgentProfileRuntimePolicy> | null,
-  b?: Partial<AgentProfileRuntimePolicy> | null,
-): boolean {
-  return (
-    JSON.stringify(normalizeRuntimePolicy(a)) ===
-    JSON.stringify(normalizeRuntimePolicy(b))
-  );
-}
-
-function sameSkillSourcePolicy(
-  a: ReturnType<typeof hostSkillPolicyForMode>,
-  b: ReturnType<typeof hostSkillPolicyForMode>,
-): boolean {
-  return a.mode === b.mode && JSON.stringify(a.ids) === JSON.stringify(b.ids);
-}
-
-function asApiError(error: unknown): ApiError | null {
-  if (!error || typeof error !== 'object' || !('status' in error)) return null;
-  const candidate = error as Partial<ApiError>;
-  return typeof candidate.status === 'number' &&
-    typeof candidate.message === 'string'
-    ? (candidate as ApiError)
-    : null;
 }
 
 export function AgentProfilesPage() {
