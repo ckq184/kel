@@ -18,12 +18,12 @@ export interface FeishuRichContentClient {
   };
 }
 
-export interface FeishuParsedContent {
+interface FeishuParsedContent {
   text: string;
   imageKeys?: string[];
 }
 
-export interface FeishuRichContentLimits {
+interface FeishuRichContentLimits {
   /** Timeout for one Feishu API request. */
   requestTimeoutMs: number;
   /** Overall budget for current-message and reference enrichment. */
@@ -77,7 +77,7 @@ interface NormalizedItem {
   senderLabel?: string;
 }
 
-export interface EnrichFeishuInboundContentInput {
+interface EnrichFeishuInboundContentInput {
   client: FeishuRichContentClient;
   messageId: string;
   messageType: string;
@@ -92,7 +92,7 @@ export interface EnrichFeishuInboundContentInput {
   limits?: Partial<FeishuRichContentLimits>;
 }
 
-export interface EnrichedFeishuInboundContent {
+interface EnrichedFeishuInboundContent {
   /** Current user-visible message only; quoted ancestors are kept separately. */
   text: string;
   imageKeys?: string[];

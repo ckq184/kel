@@ -1,4 +1,4 @@
-export interface FeishuTokenUsage {
+interface FeishuTokenUsage {
   inputTokens?: number;
   outputTokens?: number;
   cacheReadInputTokens?: number;
@@ -6,7 +6,7 @@ export interface FeishuTokenUsage {
   reasoningTokens?: number;
 }
 
-export interface FeishuUsageNoteInput extends FeishuTokenUsage {
+interface FeishuUsageNoteInput extends FeishuTokenUsage {
   inputTokens: number;
   outputTokens: number;
   costUSD: number;

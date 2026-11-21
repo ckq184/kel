@@ -94,7 +94,7 @@ interface FeishuFileInfo {
   filename: string;
 }
 
-export interface ConnectOptions {
+interface ConnectOptions {
   onReady: () => void;
   /** 收到消息后调用，让调用方自动注册未知的飞书聊天 */
   onNewChat?: (chatJid: string, chatName: string) => void;
@@ -163,7 +163,7 @@ export interface ConnectOptions {
   shouldDeferInbound?: () => boolean;
 }
 
-export interface FeishuChatInfo {
+interface FeishuChatInfo {
   avatar?: string;
   name?: string;
   user_count?: string;
@@ -530,7 +530,7 @@ function toEpochMs(value: string | number | undefined): number {
   return numeric < 1e12 ? Math.trunc(numeric * 1000) : Math.trunc(numeric);
 }
 
-export interface FeishuRouteTarget {
+interface FeishuRouteTarget {
   raw: string;
   chatId: string;
   threadId?: string;

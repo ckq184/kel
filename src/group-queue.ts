@@ -15,7 +15,7 @@ import type {
 } from './stuck-runner-recovery.js';
 import type { ChannelTurnContext } from './types.js';
 export type SendMessageResult = 'sent' | 'no_active';
-export interface IpcMessageCursor {
+interface IpcMessageCursor {
   timestamp: string;
   id: string;
   /** Immutable provider route that owns this exact original input's side
@@ -81,7 +81,7 @@ function resolveFeishuCliIdentityRequirement(
   return { specified: false, accountId: null };
 }
 
-export interface MutationPauseToken {
+interface MutationPauseToken {
   readonly id: number;
 }
 
@@ -106,11 +106,7 @@ interface QueuedTask {
   onDropped?: () => void;
 }
 
-export type QueryFinishReason =
-  | 'completed'
-  | 'released'
-  | 'runner_exit'
-  | 'stopped';
+type QueryFinishReason = 'completed' | 'released' | 'runner_exit' | 'stopped';
 
 const MAX_RETRIES = 5;
 const BASE_RETRY_MS = 5000;

@@ -65,7 +65,7 @@ export interface StreamingCardOptions {
   lifecycle?: StreamingCardLifecycle;
 }
 
-export interface StreamingCardLifecycleSnapshot {
+interface StreamingCardLifecycleSnapshot {
   text: string;
   thinking: string;
   state: StreamingState;
@@ -448,7 +448,7 @@ interface TaskRunState {
 }
 
 /** Extra metadata a caller can attach to a running tool call. */
-export interface ToolCallMeta {
+interface ToolCallMeta {
   skillName?: string;
   isNested?: boolean;
   toolInput?: Record<string, unknown>;
@@ -471,7 +471,7 @@ const MAX_TOOL_SUMMARY_CHARS = 60;
 const MAX_ELEMENT_CHARS = 4000;
 const MAX_COMPLETED_TOOL_AGE = 30000; // 30s — purge completed tools after this
 
-export interface AuxiliaryState {
+interface AuxiliaryState {
   thinkingText: string;
   isThinking: boolean;
   toolCalls: Map<string, ToolCallState>;
@@ -3369,7 +3369,7 @@ export function unregisterMessageId(messageId: string): void {
  * Minimal interface for any streaming card session.
  * StreamingCardController implements this.
  */
-export interface IStreamingSession {
+interface IStreamingSession {
   isActive(): boolean;
   abort(reason?: string): Promise<void>;
   getAllMessageIds(): string[];

@@ -1,4 +1,4 @@
-export type FeishuActivationMode =
+type FeishuActivationMode =
   | 'auto'
   | 'always'
   | 'when_mentioned'

@@ -57,7 +57,7 @@ export interface MentionGateInput {
   isGroupOwnerMessage?: (chatJid: string, senderOpenId?: string) => boolean;
 }
 
-export type MentionGateRejectReason =
+type MentionGateRejectReason =
   /** activation_mode=disabled is a hard stop, even when the bot is mentioned */
   | 'disabled'
   /** botOpenId 未知，fail-closed 拒绝（区别于 not_mentioned，调用方应做不同的告警 / 自愈） */
@@ -67,7 +67,7 @@ export type MentionGateRejectReason =
   /** owner_mentioned 模式下 bot 被 @ 了但 sender 不是 owner */
   | 'not_owner';
 
-export type MentionGateDecision =
+type MentionGateDecision =
   | { allow: true }
   | { allow: false; reason: MentionGateRejectReason };
 
