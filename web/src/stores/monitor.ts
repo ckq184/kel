@@ -50,7 +50,7 @@ export interface UncertainChannelOutboxItem {
   updatedAt: string;
 }
 
-export type UncertainOutboxResolution = 'delivered' | 'failed';
+type UncertainOutboxResolution = 'delivered' | 'failed';
 
 interface UncertainOutboxListResponse {
   items: UncertainChannelOutboxItem[];

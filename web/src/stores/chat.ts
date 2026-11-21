@@ -108,7 +108,7 @@ export interface FollowUpTransition {
 import type { StreamEventType, StreamEvent } from '../stream-event.types';
 export type { StreamEventType, StreamEvent };
 
-export interface StreamingTimelineEvent {
+interface StreamingTimelineEvent {
   id: string;
   timestamp: number;
   text: string;
@@ -147,7 +147,7 @@ export interface StreamingTaskRuntimeState {
 }
 
 /** Shape of the snapshot payload pushed from the backend on WS reconnect (stream_snapshot). */
-export interface StreamSnapshotData {
+interface StreamSnapshotData {
   partialText: string;
   thinkingText?: string;
   activeTools: Array<{
@@ -170,7 +170,7 @@ export interface StreamSnapshotData {
   turnId?: string;
 }
 
-export interface ActiveRunSnapshotData {
+interface ActiveRunSnapshotData {
   chatJid: string;
   runId: string;
   startedAt: string;

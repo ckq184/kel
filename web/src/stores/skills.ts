@@ -37,7 +37,7 @@ export interface SearchResult {
   source?: string;
 }
 
-export interface SearchResultDetail {
+interface SearchResultDetail {
   description: string;
   skillName?: string;
   readme?: string;

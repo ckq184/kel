@@ -39,7 +39,7 @@ export interface AppearanceConfig {
   aiAvatarMode: 'brand' | 'emoji';
 }
 
-export interface SetupStatus {
+interface SetupStatus {
   needsSetup: boolean;
   claudeConfigured: boolean;
   feishuConfigured: boolean;

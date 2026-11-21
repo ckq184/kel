@@ -63,7 +63,7 @@ export interface UsageScope {
   source: string | null;
 }
 
-export interface DataRange {
+interface DataRange {
   from: string;
   to: string;
   activeDays: number;
@@ -156,7 +156,7 @@ interface RawUsageResponse {
   attributions?: Partial<Record<keyof UsageAttributions, unknown[]>>;
 }
 
-export interface NormalizedUsageResponse {
+interface NormalizedUsageResponse {
   summary: UsageSummary;
   breakdown: UsageBreakdown[];
   daily: UsageDailyBucket[];
