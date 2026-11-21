@@ -17,7 +17,7 @@ interface NavItem {
   requiredPermission?: Permission;
 }
 
-export const baseNavItems: NavItem[] = [
+const baseNavItems: NavItem[] = [
   { path: '/chat', icon: MessageCircle, label: '工作台' },
   { path: '/agent-profiles', icon: Bot, label: '智能体' },
   { path: '/capabilities', icon: Puzzle, label: '能力库' },
