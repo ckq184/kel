@@ -10,11 +10,22 @@ const repoRoot = path.resolve(
   '..',
 );
 const mainSource = readFileSync(path.join(repoRoot, 'src/index.ts'), 'utf-8');
+// ISSUE-12 波 4 单元 4.2：RESULT_FILE_PREFIXES 数组随 startIpcWatcher 体迁入
+// src/ipc/watcher.ts（原文搬运），前缀提取改读新模块；writeTaskResult 的
+// 字面量/动态调用与 *_task case 标签仍留守 index.ts 的 processTaskIpc，
+// 三处断言读入不变。
+const watcherSource = readFileSync(
+  path.join(repoRoot, 'src/ipc/watcher.ts'),
+  'utf-8',
+);
 
 /** 从源码提取 RESULT_FILE_PREFIXES 数组的字面量成员。 */
 function extractResultFilePrefixes(source: string): string[] {
   const match = source.match(/const RESULT_FILE_PREFIXES = \[([^\]]*)\]/);
-  expect(match, 'RESULT_FILE_PREFIXES 数组应存在于 src/index.ts').toBeTruthy();
+  expect(
+    match,
+    'RESULT_FILE_PREFIXES 数组应存在于 src/ipc/watcher.ts',
+  ).toBeTruthy();
   return [...match![1].matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
 }
 
@@ -47,7 +58,7 @@ function extractCaseLabelledDynamicWriteTypes(source: string): string[] {
 }
 
 describe('orphan result file cleanup prefix consistency (ISSUE-05 §1)', () => {
-  const prefixes = extractResultFilePrefixes(mainSource);
+  const prefixes = extractResultFilePrefixes(watcherSource);
 
   test('feishu_capability result files are covered by the cleanup list', () => {
     // 回归锚点：writeTaskResult(tasksDir, 'feishu_capability', …) 生成的

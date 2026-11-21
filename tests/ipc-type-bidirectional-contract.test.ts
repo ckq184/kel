@@ -37,6 +37,14 @@ const mcpToolsSource = readFileSync(
   'utf-8',
 );
 const indexSource = readFileSync(path.join(repoRoot, 'src/index.ts'), 'utf-8');
+// ISSUE-12 波 4 单元 4.2：messages 目录的条件分支（data.type === '…'）随
+// startIpcWatcher 体迁入 src/ipc/watcher.ts（原文搬运），条件分支扫描面
+// 扩至该模块；tasks 目录的 switch (data.type) 分发壳仍留守 index.ts，
+// 结构锚点（switch 恰 1 处）不变。
+const watcherSource = readFileSync(
+  path.join(repoRoot, 'src/ipc/watcher.ts'),
+  'utf-8',
+);
 
 /** runner 侧发送方：`type: '<lit>'` 字面量（排除 content 块的 as const 行）∪ callAgentBuilder('<lit>')。 */
 function extractSenders(): Set<string> {
@@ -63,7 +71,7 @@ function extractHandlers(): Set<string> {
     if (m) handlers.add(m[1]);
   }
   // messages 目录的投递 watcher 用条件分支而非 switch。
-  for (const m of indexSource.matchAll(/data\.type === '([a-z_]+)'/g))
+  for (const m of watcherSource.matchAll(/data\.type === '([a-z_]+)'/g))
     handlers.add(m[1]);
   return handlers;
 }
