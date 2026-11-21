@@ -81,7 +81,7 @@ function syncMetaThemeColor() {
   }
 }
 
-export function applyTheme(theme: Theme) {
+function applyTheme(theme: Theme) {
   if (typeof document === 'undefined') return;
   document.documentElement.classList.toggle(
     'dark',
