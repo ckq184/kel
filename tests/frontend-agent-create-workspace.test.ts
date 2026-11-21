@@ -14,7 +14,16 @@ describe('Agent creation workspace', () => {
     // web/src/components/agents/AgentCreatePanel.tsx（原文搬运），锚随体迁
     // ——面板内容断言改读组件文件，aside/main 结构断言仍读页面。
     const page = readAgentProfilesPage();
-    const aside = page.slice(page.indexOf('<aside'), page.indexOf('</aside>'));
+    // ISSUE-12 波 5 单元 5.9：aside 侧栏已迁
+    // web/src/components/agents/AgentProfilesSidebar.tsx（原文搬运），
+    // aside 断言改读组件文件；main 结构断言仍读页面。
+    const aside = fs.readFileSync(
+      path.join(
+        process.cwd(),
+        'web/src/components/agents/AgentProfilesSidebar.tsx',
+      ),
+      'utf8',
+    );
     const main = page.slice(page.indexOf('<main'));
     const createPanel = fs.readFileSync(
       path.join(
