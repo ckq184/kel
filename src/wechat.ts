@@ -19,17 +19,11 @@ import { createWeChatApiClient, DEFAULT_BASE_URL } from './wechat-api.js';
 import { createWeChatSender } from './wechat-outbound.js';
 import { createWeChatMedia } from './wechat-media.js';
 import { createWeChatInboundProcessor } from './wechat-inbound.js';
+import { createWeChatPoller } from './wechat-poller.js';
 
 // ─── Constants ──────────────────────────────────────────────────
 
 const DEFAULT_LONGPOLL_TIMEOUT_MS = 35000;
-
-const RECONNECT_MIN_DELAY_MS = 3000;
-const RECONNECT_MAX_DELAY_MS = 60000;
-const REPEATED_ERROR_LOG_INTERVAL_MS = 5 * 60 * 1000;
-
-// errcode for session expired
-const ERRCODE_SESSION_EXPIRED = -14;
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -280,25 +274,6 @@ export function classifyWeChatConnectionError(
   return 'unknown';
 }
 
-function weChatConnectionErrorMessage(code: WeChatConnectionErrorCode): string {
-  switch (code) {
-    case 'connect_timeout':
-      return '连接微信服务超时，CKQClaw 正在自动重试';
-    case 'request_timeout':
-      return '微信长轮询暂时无响应，CKQClaw 正在自动重试';
-    case 'connection_reset':
-      return '微信连接在 TLS 建立前被中断，CKQClaw 正在自动重试';
-    case 'tls_error':
-      return '微信服务 TLS 连接失败，CKQClaw 正在自动重试';
-    case 'api_error':
-      return '微信服务返回异常，CKQClaw 正在自动重试';
-    case 'network_error':
-      return '暂时无法访问微信服务，CKQClaw 正在自动重试';
-    default:
-      return '微信连接暂时异常，CKQClaw 正在自动重试';
-  }
-}
-
 export function jitteredWeChatRetryDelay(
   baseDelayMs: number,
   random: () => number = Math.random,
@@ -322,8 +297,6 @@ export function createWeChatConnection(
 ): WeChatConnection {
   const baseUrl = config.baseUrl || DEFAULT_BASE_URL;
   const bypassProxy = config.bypassProxy !== false;
-  const random = deps.random ?? Math.random;
-  const now = deps.now ?? Date.now;
   const logContext = {
     accountId: config.logContext?.accountId,
     userId: config.logContext?.userId,
@@ -345,8 +318,6 @@ export function createWeChatConnection(
   let consecutivePollTimeouts = 0;
   let failureStartedAt = 0;
   let lastConnectedAt: string | undefined;
-  let lastLoggedErrorCode: WeChatConnectionErrorCode | null = null;
-  let lastRepeatedErrorLogAt = 0;
 
   // context_token cache: from_user_id -> latest context_token
   const contextTokenCache = new Map<string, string>();
@@ -376,19 +347,22 @@ export function createWeChatConnection(
   // connect 门面），本体留守本文件状态区，wechat-api 经 get/set 访问器对
   // 读写（2.14 qq-ws 状态留守同款，复位与清理行因此逐字节不变）。deps
   // 第二参原样透传——wechat-connection-lifecycle 的 fetch/createDispatcher
-  // 注入链穿透至 apiPost/ensureDispatcher；random/now 的解析与消费留守
-  // W6/W7。仅该段消费的 randomWechatUin 与 wechatUin 生成行、
+  // 注入链穿透至 apiPost/ensureDispatcher；random/now 的解析与消费 2.21
+  // 起随轮询簇迁往 wechat-poller（经下方 Long-Polling Poller 接线透传，
+  // 注入链收尾）。仅该段消费的 randomWechatUin 与 wechatUin 生成行、
   // LONGPOLL_EXTRA_TIMEOUT_MS / CHANNEL_VERSION 常数、GetUpdatesResponse
   // 接口随段迁移；DEFAULT_BASE_URL 随段安家 wechat-api 并导出，本文件顶部
   // 回接 import（2.12 QQ_MAX_JSON_RESPONSE_BYTES 同款）。
   // parseWeChatApiResponse 为本文件既有导出（外层门面约束），经同名参数
   // 注入，apiPost 体内调用点逐字节不变（2.12 validateQQGatewayUrl 同款）。
-  // 同名解构使 connect / disconnect / pollLoop / markConnectionHealthy /
-  // handlePollFailure 调用点零改动（downloadCdnMediaItem 链 2.19 起随媒体段
-  // 迁往 wechat-media，ensureDispatcher 经下方 CDN Media 接线透传；
-  // 2.18 起 sendMessageApi 的 processMessage 消费面与门面 sendImage /
-  // sendFile / sendTyping 委托体改经 wechat-outbound 接线，
-  // getTypingTicket / sendTypingApi 随段内化，见下方 Outbound Sender 接线）。
+  // 同名解构使 connect / disconnect 调用点零改动（pollLoop /
+  // markConnectionHealthy / handlePollFailure 2.21 起随轮询簇迁往
+  // wechat-poller，publishState / getUpdates 经下方 Long-Polling Poller
+  // 接线透传；downloadCdnMediaItem 链 2.19 起随媒体段迁往 wechat-media，
+  // ensureDispatcher 经下方 CDN Media 接线透传；2.18 起 sendMessageApi 的
+  // processMessage 消费面与门面 sendImage / sendFile / sendTyping 委托体
+  // 改经 wechat-outbound 接线，getTypingTicket / sendTypingApi 随段内化，
+  // 见下方 Outbound Sender 接线）。
   const {
     ensureDispatcher,
     publishState,
@@ -491,7 +465,8 @@ export function createWeChatConnection(
   //（本文件回接名随本单元删除）。channel-attachment-routing-order 的微信
   // 路由顺序契约与 channel-pairing-uniform 的 /pair 接线断言等强改锚
   // src/wechat-inbound.ts（断言文本逐字不变，2.15 体例）。pollLoop 的
-  // processMessage 调用点经同名解构零改动。
+  // processMessage 调用点 2.21 起随轮询簇迁往 wechat-poller、经下方
+  // Long-Polling Poller 接线同名透传。
   const { processMessage } = createWeChatInboundProcessor({
     sendMessageApi,
     processImageItem,
@@ -503,185 +478,81 @@ export function createWeChatConnection(
     REJECT_COOLDOWN_MS,
   });
 
-  // ─── Long-Polling Loop ────────────────────────────────────
-
-  function markConnectionHealthy(): void {
-    const recoveredFailures = consecutiveFailures;
-    const downtimeMs = failureStartedAt
-      ? Math.max(0, now() - failureStartedAt)
-      : 0;
-    const wasConnected = connected;
-    connected = true;
-    consecutiveFailures = 0;
-    consecutivePollTimeouts = 0;
-    failureStartedAt = 0;
-    lastLoggedErrorCode = null;
-    lastRepeatedErrorLogAt = 0;
-    if (wasConnected) return;
-    lastConnectedAt = new Date(now()).toISOString();
-    publishState({ status: 'connected', lastConnectedAt });
-    if (!wasConnected && recoveredFailures === 0) {
-      logger.info(logContext, 'WeChat poll connection established');
-    } else if (!wasConnected && recoveredFailures > 0) {
-      logger.info(
-        { ...logContext, recoveredFailures, downtimeMs },
-        'WeChat poll connection recovered',
-      );
-    }
-  }
-
-  async function handlePollFailure(
-    err: unknown,
-    baseDelayMs: number,
-  ): Promise<void> {
-    connected = false;
-    consecutiveFailures += 1;
-    if (!failureStartedAt) failureStartedAt = now();
-    const errorCode = classifyWeChatConnectionError(err);
-    const nextRetryMs = jitteredWeChatRetryDelay(baseDelayMs, random);
-    const userMessage = weChatConnectionErrorMessage(errorCode);
-    publishState({
-      status: 'reconnecting',
-      error: userMessage,
-      errorCode,
-      consecutiveFailures,
-      nextRetryMs,
-      lastConnectedAt,
-    });
-
-    const currentTime = now();
-    const shouldLogDetails =
-      consecutiveFailures === 1 ||
-      errorCode !== lastLoggedErrorCode ||
-      currentTime - lastRepeatedErrorLogAt >= REPEATED_ERROR_LOG_INTERVAL_MS;
-    if (shouldLogDetails) {
-      logger.warn(
-        {
-          ...logContext,
-          err,
-          errorCode,
-          consecutiveFailures,
-          nextRetryMs,
-        },
-        'WeChat poll connection unavailable; retry scheduled',
-      );
-      lastLoggedErrorCode = errorCode;
-      lastRepeatedErrorLogAt = currentTime;
-    } else {
-      logger.debug(
-        { ...logContext, errorCode, consecutiveFailures, nextRetryMs },
-        'WeChat poll retry scheduled',
-      );
-    }
-    await sleep(nextRetryMs);
-  }
-
-  async function pollLoop(): Promise<void> {
-    let reconnectDelay = RECONNECT_MIN_DELAY_MS;
-
-    while (!stopping) {
-      try {
-        const response = await getUpdates();
-        if (stopping) break;
-
-        // Update longpoll timeout from server
-        if (response.longpolling_timeout_ms) {
-          longpollTimeoutMs = response.longpolling_timeout_ms;
-        }
-
-        const responseCode = response.ret ?? response.errcode;
-
-        // Check for session expiry
-        if (responseCode === ERRCODE_SESSION_EXPIRED) {
-          const error = '微信授权已过期，请重新扫码连接';
-          logger.warn(
-            { ...logContext, errorCode: 'session_expired' },
-            'WeChat session expired; polling stopped',
-          );
-          connected = false;
-          publishState({ status: 'expired', error });
-          break;
-        }
-
-        // ret/errcode are absent when the request succeeds — treat as 0.
-        if (responseCode !== undefined && responseCode !== 0) {
-          throw Object.assign(
-            new Error(
-              `WeChat getUpdates error: code=${responseCode}, message=${response.errmsg ?? ''}`,
-            ),
-            { code: 'WECHAT_API_ERROR' },
-          );
-        }
-
-        // Reset backoff on success
-        markConnectionHealthy();
-        reconnectDelay = RECONNECT_MIN_DELAY_MS;
-
-        const opts = activeOpts;
-        if (!opts || stopping) break;
-
-        // Cursor acknowledgement is deliberately last. A crash or processing
-        // failure replays the whole batch from the previous durable cursor.
-        currentGetUpdatesBuf = await processWeChatUpdateBatch({
-          messages: response.msgs,
-          nextCursor: response.get_updates_buf,
-          currentCursor: currentGetUpdatesBuf,
-          processMessage: (msg) => processMessage(msg, opts),
-          persistCursor: opts.onUpdatesBuf,
-        });
-      } catch (err) {
-        if (stopping) break;
-
-        // Once healthy, a client-side long-poll timeout only means the server
-        // kept the request open longer than advertised. It is not an outage.
-        const errorCode = classifyWeChatConnectionError(err);
-        if (connected && errorCode === 'request_timeout') {
-          consecutivePollTimeouts += 1;
-        }
-        if (
-          connected &&
-          errorCode === 'request_timeout' &&
-          consecutivePollTimeouts === 1
-        ) {
-          logger.debug(
-            { ...logContext, errorCode },
-            'WeChat long poll reached client timeout; retrying',
-          );
-          continue;
-        }
-
-        await handlePollFailure(err, reconnectDelay);
-        reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_DELAY_MS);
-      }
-    }
-  }
-
-  function sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => {
-      const finish = () => {
-        if (cancelSleep === cancel) cancelSleep = null;
-        resolve();
-      };
-      const timer = setTimeout(finish, ms);
-      const cancel = () => {
-        clearTimeout(timer);
-        finish();
-      };
-      cancelSleep = cancel;
-    });
-  }
-
-  async function closeDispatcher(): Promise<void> {
-    const activeDispatcher = dispatcher;
-    dispatcher = null;
-    if (!activeDispatcher) return;
-    await activeDispatcher.close().catch((err) => {
-      logger.debug(
-        { ...logContext, err },
-        'Failed to close WeChat HTTP dispatcher cleanly',
-      );
-    });
-  }
+  // ─── Long-Polling Poller ──────────────────────────────────
+  // 轮询簇整簇（markConnectionHealthy / handlePollFailure / pollLoop /
+  // sleep / closeDispatcher，原 506-685）及仅簇内消费的模块级素材——
+  // weChatConnectionErrorMessage 助手、RECONNECT_MIN/MAX_DELAY_MS /
+  // REPEATED_ERROR_LOG_INTERVAL_MS / ERRCODE_SESSION_EXPIRED 四常数、
+  // random / now 解析行——已抽至 ./wechat-poller.ts（ISSUE-12 单元 2.21
+  // 原文搬运，qq-ws 2.14 整簇纪律：互递归与轮询超时控制整簇内聚禁半抽；
+  // 搬运体仅访问器机械替换，`+=` 与构造赋值用局部 const 捕获 + setX 保持
+  // 下游引用逐字节）。状态归属以 connect() / disconnect() 门面复位与清理
+  // 行最小扰动为准则（2.14 状态留守+访问器先例）：stopping / running /
+  // connected / pollPromise / consecutiveFailures / consecutivePollTimeouts
+  // / failureStartedAt / lastConnectedAt / cancelSleep / dispatcher /
+  // longpollTimeoutMs / currentGetUpdatesBuf / activeOpts 均有门面或 2.17
+  // 接线消费点，本体留守本文件状态区——门面全部复位与清理行因此逐字节
+  // 不变（running / pollPromise / activePollController 簇体不消费，零
+  // 接线）；lastLoggedErrorCode / lastRepeatedErrorLogAt 簇内独有，随簇
+  // 内化（2.16 lastIncomingMsgId 先例）。deps 原样透传——
+  // wechat-connection-lifecycle 的 random / now 注入链穿透至
+  // handlePollFailure / markConnectionHealthy（2.17 已透传 fetch /
+  // createDispatcher，头号风险注记本单元收尾）。publishState / getUpdates
+  //（2.17 返回面）/ processMessage（2.20 返回面）/ logContext 同名注入；
+  // classifyWeChatConnectionError / jitteredWeChatRetryDelay /
+  // processWeChatUpdateBatch 为本文件既有导出（外层门面约束），经同名
+  // 参数注入（2.17 parseWeChatApiResponse 同款）；getConnectionState 经
+  // 核对仅 connect 门面消费、簇体零消费不入（2.18 api 子集同判）。同名
+  // 解构使 connect 的 pollPromise = pollLoop() 接线与 disconnect 的
+  // closeDispatcher 调用点零改动。
+  const { pollLoop, closeDispatcher } = createWeChatPoller({
+    deps,
+    logContext,
+    publishState,
+    getUpdates,
+    processMessage,
+    classifyWeChatConnectionError,
+    jitteredWeChatRetryDelay,
+    processWeChatUpdateBatch,
+    getStopping: () => stopping,
+    getConnected: () => connected,
+    setConnected: (value) => {
+      connected = value;
+    },
+    getConsecutiveFailures: () => consecutiveFailures,
+    setConsecutiveFailures: (value) => {
+      consecutiveFailures = value;
+    },
+    getConsecutivePollTimeouts: () => consecutivePollTimeouts,
+    setConsecutivePollTimeouts: (value) => {
+      consecutivePollTimeouts = value;
+    },
+    getFailureStartedAt: () => failureStartedAt,
+    setFailureStartedAt: (value) => {
+      failureStartedAt = value;
+    },
+    getLastConnectedAt: () => lastConnectedAt,
+    setLastConnectedAt: (value) => {
+      lastConnectedAt = value;
+    },
+    getActiveOpts: () => activeOpts,
+    getCurrentGetUpdatesBuf: () => currentGetUpdatesBuf,
+    setCurrentGetUpdatesBuf: (value) => {
+      currentGetUpdatesBuf = value;
+    },
+    getLongpollTimeoutMs: () => longpollTimeoutMs,
+    setLongpollTimeoutMs: (value) => {
+      longpollTimeoutMs = value;
+    },
+    getCancelSleep: () => cancelSleep,
+    setCancelSleep: (value) => {
+      cancelSleep = value;
+    },
+    getDispatcher: () => dispatcher,
+    setDispatcher: (value) => {
+      dispatcher = value;
+    },
+  });
 
   // ─── Connection Interface ─────────────────────────────────
 
