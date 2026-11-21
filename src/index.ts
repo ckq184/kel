@@ -294,6 +294,7 @@ import {
   type StreamingSession,
   type ChannelMessageDeliveryOptions,
 } from './im-channel.js';
+import { ConversationIndicatorLedger } from './conversation-indicator-ledger.js';
 import {
   PROACTIVE_TAIL_INTERRUPTION_NOTICE,
   buildInteractionTextOutboxPayload,
@@ -5127,88 +5128,26 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   let lastReplyMsgId: string | undefined;
   const queryTaskIds = new Set<string>();
   const healthyCompletedInputTurns = new Set<string>();
-  const processingIndicatorJidsByInput = new Map<string, string>();
-  // One cold SDK turn may cover several rapidly-arriving DB inputs. Each
-  // provider reaction is owned by the original DB message id, while the SDK
-  // completion is correlated to the batch's terminal input id.
-  const processingIndicatorInputsByCompletion = new Map<string, string[]>([
-    [
-      lastProcessed.id,
-      [...new Set(missedMessages.map((message) => message.id))],
-    ],
-  ]);
-  const processingTypingLeaseIdsByCompletion = new Map<string, string>([
-    [lastProcessed.id, lastProcessed.id],
-  ]);
-  for (const message of missedMessages) {
-    const indicatorJid =
-      message.source_jid && getChannelType(message.source_jid)
-        ? message.source_jid
-        : directImReply
-          ? chatJid
-          : null;
-    if (!indicatorJid) continue;
-    processingIndicatorJidsByInput.set(message.id, indicatorJid);
-    trackProcessingIndicator(chatJid, message.id, indicatorJid);
-  }
+  // ISSUE-12 波 6 单元 6.1：typing/processing 四表+clear 闭包（M6）收敛进
+  // src/conversation-indicator-ledger.ts（原文搬运）；A 侧经 logicalJid=chatJid
+  // 与 directImReply 冷回退接入，日志文案/字段与收敛前一致。
+  const processingIndicatorLedger = new ConversationIndicatorLedger({
+    logicalJid: chatJid,
+    logScopeLabel: '',
+    logContext: { chatJid },
+    trackProcessingIndicator,
+    untrackProcessingIndicator,
+    clearTrackedTypingIndicator,
+  });
+  processingIndicatorLedger.seedColdBatch(
+    lastProcessed.id,
+    missedMessages,
+    directImReply ? chatJid : null,
+  );
   const clearProcessingIndicatorForInput = async (
     inputTurnId: string,
   ): Promise<void> => {
-    const exactInputIds = processingIndicatorInputsByCompletion.get(
-      inputTurnId,
-    ) ?? [inputTurnId];
-    const typingLeaseId =
-      processingTypingLeaseIdsByCompletion.get(inputTurnId) ?? inputTurnId;
-    let typingCleared = false;
-    await clearTrackedTypingIndicator(
-      chatJid,
-      typingLeaseId,
-      processingIndicatorJidsByInput.get(exactInputIds[0]) ?? chatJid,
-    ).then(
-      () => {
-        typingCleared = true;
-      },
-      (err) => {
-        logger.debug(
-          { err, chatJid, inputTurnId, typingLeaseId },
-          'Failed to clear exact processing typing lease',
-        );
-      },
-    );
-    if (typingCleared) {
-      processingTypingLeaseIdsByCompletion.delete(inputTurnId);
-    }
-    const failedExactInputIds: string[] = [];
-    for (const exactInputId of new Set(exactInputIds)) {
-      const indicatorJid = processingIndicatorJidsByInput.get(exactInputId);
-      if (!indicatorJid) continue;
-      let ackCleared = false;
-      await imManager.clearAckReaction(indicatorJid, exactInputId).then(
-        () => {
-          ackCleared = true;
-        },
-        (err) => {
-          logger.debug(
-            { err, chatJid, inputTurnId: exactInputId, indicatorJid },
-            'Failed to clear exact processing indicator',
-          );
-        },
-      );
-      if (ackCleared) {
-        processingIndicatorJidsByInput.delete(exactInputId);
-        untrackProcessingIndicator(chatJid, exactInputId);
-      } else {
-        failedExactInputIds.push(exactInputId);
-      }
-    }
-    if (failedExactInputIds.length > 0) {
-      processingIndicatorInputsByCompletion.set(
-        inputTurnId,
-        failedExactInputIds,
-      );
-    } else {
-      processingIndicatorInputsByCompletion.delete(inputTurnId);
-    }
+    await processingIndicatorLedger.clearForInput(inputTurnId);
   };
   const sentReplyByInput = new Map<string, boolean>([
     [lastProcessed.id, false],
@@ -5739,32 +5678,12 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
         lifecycle: nextLifecycle,
       });
       genuineReplyDeliveredByInput.set(inputTurnId, false);
-      const exactInputs =
-        coveredInputs && coveredInputs.length > 0
-          ? coveredInputs
-          : [{ id: inputTurnId, sourceJid: newSourceJid ?? undefined }];
-      const exactInputIds = [...new Set(exactInputs.map((input) => input.id))];
-      processingIndicatorInputsByCompletion.set(inputTurnId, exactInputIds);
-      processingTypingLeaseIdsByCompletion.set(inputTurnId, inputTurnId);
-      const fallbackProcessingIndicatorJid =
-        newSourceJid && getChannelType(newSourceJid) ? newSourceJid : newImJid;
-      for (const exactInput of exactInputs) {
-        const processingIndicatorJid =
-          exactInput.sourceJid && getChannelType(exactInput.sourceJid)
-            ? exactInput.sourceJid
-            : fallbackProcessingIndicatorJid;
-        if (processingIndicatorJid) {
-          processingIndicatorJidsByInput.set(
-            exactInput.id,
-            processingIndicatorJid,
-          );
-          trackProcessingIndicator(
-            chatJid,
-            exactInput.id,
-            processingIndicatorJid,
-          );
-        }
-      }
+      processingIndicatorLedger.registerWarmCompletion(
+        inputTurnId,
+        coveredInputs,
+        newSourceJid,
+        newImJid,
+      );
       // This runs in GroupQueue's beforePublish hook, before the IPC temp file
       // is atomically renamed into the runner-visible inbox. A host runner can
       // therefore never emit its first primary result before the exact
@@ -9403,91 +9322,27 @@ async function processAgentConversation(
     ? `${replySourceImJid}#agent:${agentId}`
     : undefined;
   const healthyAgentCompletedInputTurns = new Set<string>();
-  const agentProcessingIndicatorJidsByInput = new Map<string, string>();
-  const agentProcessingIndicatorInputsByCompletion = new Map<string, string[]>([
-    [
-      lastProcessed.id,
-      [...new Set(missedMessages.map((message) => message.id))],
-    ],
-  ]);
-  const agentProcessingTypingLeaseIdsByCompletion = new Map<string, string>([
-    [lastProcessed.id, lastProcessed.id],
-  ]);
-  for (const message of missedMessages) {
-    const indicatorJid =
-      message.source_jid && getChannelType(message.source_jid)
-        ? message.source_jid
-        : replySourceImJid;
-    if (!indicatorJid) continue;
-    agentProcessingIndicatorJidsByInput.set(message.id, indicatorJid);
-    trackProcessingIndicator(virtualChatJid, message.id, indicatorJid);
-  }
+  // ISSUE-12 波 6 单元 6.1：M6 四表+clear 闭包收敛进
+  // src/conversation-indicator-ledger.ts（原文搬运）；B 侧经
+  // logicalJid=virtualChatJid 与 replySourceImJid 冷回退接入，日志文案/字段
+  // （含 agentId）与收敛前一致。
+  const agentProcessingIndicatorLedger = new ConversationIndicatorLedger({
+    logicalJid: virtualChatJid,
+    logScopeLabel: 'agent ',
+    logContext: { chatJid, agentId },
+    trackProcessingIndicator,
+    untrackProcessingIndicator,
+    clearTrackedTypingIndicator,
+  });
+  agentProcessingIndicatorLedger.seedColdBatch(
+    lastProcessed.id,
+    missedMessages,
+    replySourceImJid,
+  );
   const clearAgentProcessingIndicatorForInput = async (
     inputTurnId: string,
   ): Promise<void> => {
-    const exactInputIds = agentProcessingIndicatorInputsByCompletion.get(
-      inputTurnId,
-    ) ?? [inputTurnId];
-    const typingLeaseId =
-      agentProcessingTypingLeaseIdsByCompletion.get(inputTurnId) ?? inputTurnId;
-    let typingCleared = false;
-    await clearTrackedTypingIndicator(
-      virtualChatJid,
-      typingLeaseId,
-      agentProcessingIndicatorJidsByInput.get(exactInputIds[0]) ??
-        virtualChatJid,
-    ).then(
-      () => {
-        typingCleared = true;
-      },
-      (err) => {
-        logger.debug(
-          { err, chatJid, agentId, inputTurnId, typingLeaseId },
-          'Failed to clear exact agent processing typing lease',
-        );
-      },
-    );
-    if (typingCleared) {
-      agentProcessingTypingLeaseIdsByCompletion.delete(inputTurnId);
-    }
-    const failedExactInputIds: string[] = [];
-    for (const exactInputId of new Set(exactInputIds)) {
-      const indicatorJid =
-        agentProcessingIndicatorJidsByInput.get(exactInputId);
-      if (!indicatorJid) continue;
-      let ackCleared = false;
-      await imManager.clearAckReaction(indicatorJid, exactInputId).then(
-        () => {
-          ackCleared = true;
-        },
-        (err) => {
-          logger.debug(
-            {
-              err,
-              chatJid,
-              agentId,
-              inputTurnId: exactInputId,
-              indicatorJid,
-            },
-            'Failed to clear exact agent processing indicator',
-          );
-        },
-      );
-      if (ackCleared) {
-        agentProcessingIndicatorJidsByInput.delete(exactInputId);
-        untrackProcessingIndicator(virtualChatJid, exactInputId);
-      } else {
-        failedExactInputIds.push(exactInputId);
-      }
-    }
-    if (failedExactInputIds.length > 0) {
-      agentProcessingIndicatorInputsByCompletion.set(
-        inputTurnId,
-        failedExactInputIds,
-      );
-    } else {
-      agentProcessingIndicatorInputsByCompletion.delete(inputTurnId);
-    }
+    await agentProcessingIndicatorLedger.clearForInput(inputTurnId);
   };
   const initialAgentTypingTransportJid = replySourceImJid ?? virtualChatJid;
   const initialAgentTypingReady = setTyping(
@@ -9931,37 +9786,12 @@ async function processAgentConversation(
       });
       agentAnyReplyProjectedByInput.set(inputTurnId, false);
       agentGenuineReplyDeliveredByInput.set(inputTurnId, false);
-      const exactInputs =
-        coveredInputs && coveredInputs.length > 0
-          ? coveredInputs
-          : [{ id: inputTurnId, sourceJid: newSourceJid ?? undefined }];
-      const exactInputIds = [...new Set(exactInputs.map((input) => input.id))];
-      agentProcessingIndicatorInputsByCompletion.set(
+      agentProcessingIndicatorLedger.registerWarmCompletion(
         inputTurnId,
-        exactInputIds,
+        coveredInputs,
+        newSourceJid,
+        targetSourceJid,
       );
-      agentProcessingTypingLeaseIdsByCompletion.set(inputTurnId, inputTurnId);
-      const fallbackProcessingIndicatorJid =
-        newSourceJid && getChannelType(newSourceJid)
-          ? newSourceJid
-          : targetSourceJid;
-      for (const exactInput of exactInputs) {
-        const processingIndicatorJid =
-          exactInput.sourceJid && getChannelType(exactInput.sourceJid)
-            ? exactInput.sourceJid
-            : fallbackProcessingIndicatorJid;
-        if (processingIndicatorJid) {
-          agentProcessingIndicatorJidsByInput.set(
-            exactInput.id,
-            processingIndicatorJid,
-          );
-          trackProcessingIndicator(
-            virtualChatJid,
-            exactInput.id,
-            processingIndicatorJid,
-          );
-        }
-      }
       return {
         rollback: () => {
           const admitted = admittedWarmAgentInputs.get(inputTurnId);
