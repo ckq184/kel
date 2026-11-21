@@ -11,12 +11,12 @@ export interface AgentProfileDraft extends AgentProfilePrompts {
   name: string;
 }
 
-export interface AgentProfilePromptMessage {
+interface AgentProfilePromptMessage {
   role: 'user' | 'assistant';
   content: string;
 }
 
-export interface AgentProfilePromptRefinement {
+interface AgentProfilePromptRefinement {
   reply: string;
   identity_prompt: string;
   soul_prompt: string;

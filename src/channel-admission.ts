@@ -6,13 +6,13 @@
  * must never be consulted for an unpaired chat.
  */
 
-export type ChannelAdmissionDecision =
+type ChannelAdmissionDecision =
   | { kind: 'allow' }
   | { kind: 'paired' }
   | { kind: 'pair_rejected' }
   | { kind: 'deny' };
 
-export interface ChannelAdmissionInput {
+interface ChannelAdmissionInput {
   jid: string;
   chatName: string;
   text: string;
@@ -86,9 +86,7 @@ export function matchesChannelPairTarget(input: {
  *   lifecycle state that can recover, so the message must stay retryable.
  * An unmarked rejection carries no routing verdict and is never swallowed.
  */
-export type ChannelRouteRejectionReason =
-  | 'binding_unresolved'
-  | 'connection_inactive';
+type ChannelRouteRejectionReason = 'binding_unresolved' | 'connection_inactive';
 
 export class ChannelRouteRejectedError extends Error {
   readonly sourceJid: string;

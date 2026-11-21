@@ -64,7 +64,7 @@ function findJsonObjectEnd(buf: string, start: number): number {
 
 // ─── Stdout Stream Parser ────────────────────────────────────────────
 
-export interface StdoutParserState {
+interface StdoutParserState {
   stdout: string;
   stdoutTruncated: boolean;
   parseBuffer: string;
@@ -79,7 +79,7 @@ export interface StdoutParserState {
   hasInterruptedOutput: boolean;
 }
 
-export interface StdoutParserOptions {
+interface StdoutParserOptions {
   groupName: string;
   /** Label used in log messages, e.g. "Container" or "Host agent" */
   label: string;
@@ -285,7 +285,7 @@ export function attachStdoutHandler(
 
 // ─── Stderr Handler ──────────────────────────────────────────────────
 
-export interface StderrState {
+interface StderrState {
   stderr: string;
   stderrTruncated: boolean;
 }
@@ -780,7 +780,7 @@ const API_ERROR_PATTERNS = [
  * never make the whole provider profile unhealthy.
  */
 
-export type ProviderLimitScope = 'account' | 'model';
+type ProviderLimitScope = 'account' | 'model';
 
 const MODEL_LIMIT_LABELS = new Set(['opus', 'sonnet', 'fable 5']);
 const ACCOUNT_LIMIT_LABELS = new Set([

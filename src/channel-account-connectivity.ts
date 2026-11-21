@@ -8,7 +8,7 @@ import {
   isWeChatConnectTimeout,
 } from './wechat-http.js';
 
-export interface ChannelAccountCredentialTestResult {
+interface ChannelAccountCredentialTestResult {
   success: boolean;
   unsupported?: boolean;
   error?: string;

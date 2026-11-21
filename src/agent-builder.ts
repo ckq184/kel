@@ -67,7 +67,7 @@ export interface AgentBuilderActor {
   sourceMessageContent?: string | null;
 }
 
-export interface AgentBuilderPrepareInput {
+interface AgentBuilderPrepareInput {
   draftId?: string;
   expectedDraftRevision?: number;
   targetAgentProfileId?: string | null;

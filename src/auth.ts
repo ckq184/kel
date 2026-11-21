@@ -37,7 +37,7 @@ export function signSessionToken(token: string): string {
   return `${token}.${sig}`;
 }
 
-export interface VerifiedToken {
+interface VerifiedToken {
   token: string;
   /** True when the cookie was a legacy unsigned token, caller should upgrade via Set-Cookie. */
   legacy: boolean;

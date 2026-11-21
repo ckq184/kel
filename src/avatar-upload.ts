@@ -37,12 +37,12 @@ const AVATAR_MIME_EXTENSIONS: Record<string, string> = {
  * Structural request surface consumed by storeAvatarUpload. Hono contexts
  * satisfy it, keeping this module free of hono generic typing.
  */
-export interface AvatarUploadRequest {
+interface AvatarUploadRequest {
   header(name: string): string | undefined;
   formData(): Promise<FormData>;
 }
 
-export type AvatarUploadOutcome =
+type AvatarUploadOutcome =
   | { ok: true; filename: string; avatarUrl: string }
   | { ok: false; status: 400 | 413; error: string };
 
@@ -87,7 +87,7 @@ export async function storeAvatarUpload(
   return { ok: true, filename, avatarUrl: `/api/auth/avatars/${filename}` };
 }
 
-export interface AvatarReapOptions {
+interface AvatarReapOptions {
   /** Only files whose names start with this prefix are considered stale. */
   prefix: string;
   /** Basenames never to delete (the just-written file, another field's file). */

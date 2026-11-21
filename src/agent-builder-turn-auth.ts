@@ -3,7 +3,7 @@ import {
   parseChannelAddress,
 } from './channel-address.js';
 
-export interface AgentBuilderTurnContext {
+interface AgentBuilderTurnContext {
   chatJid: string;
   messageId: string;
   /** Host-issued identity used by the runner for this cold/warm input turn. */
