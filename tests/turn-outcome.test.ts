@@ -262,7 +262,13 @@ describe('resolveTurnOutcome', () => {
   });
 
   test('projects MCP send_message to Web but delivers raw native content through the exact input Outbox', () => {
-    const main = readMain();
+    // ISSUE-12 波 4 单元 4.3：send_message 投影分支已迁
+    // src/ipc/message-delivery.ts（原文搬运），锚随体迁、切片标记与断言
+    // 文本不变。
+    const main = fs.readFileSync(
+      path.join(process.cwd(), 'src/ipc/message-delivery.ts'),
+      'utf8',
+    );
     const branchStart = main.indexOf(
       '// Feishu card JSON: store extracted markdown for web',
     );

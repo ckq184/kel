@@ -192,8 +192,11 @@ describe('workspace interaction runtime policy', () => {
       }),
     ).toMatchObject({ mode: 'assistant', valid: false });
 
+    // ISSUE-12 波 4 单元 4.3：frozenIpcMode 切片随 send_message 分支迁入
+    // src/ipc/message-delivery.ts（原文搬运），锚随体迁、切片标记与断言
+    // 文本不变。
     const source = fs.readFileSync(
-      path.join(process.cwd(), 'src/index.ts'),
+      path.join(process.cwd(), 'src/ipc/message-delivery.ts'),
       'utf8',
     );
     const watcher = source.slice(

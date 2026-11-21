@@ -390,6 +390,7 @@ import {
   activeTurnOutputs,
   canDeliverTurnUtterance,
 } from './host-state.js';
+import { processIpcSendMessage } from './ipc/message-delivery.js';
 import type {
   FeishuCapabilityOperation,
   FeishuCapabilityRequest,
@@ -9017,6 +9018,31 @@ function startIpcWatcher(): void {
 
   const fsp = fs.promises;
 
+  // ISSUE-12 波 4 单元 4.3：messages 侧投递分支的 index.ts 本地依赖注入
+  // 对象（防 src/ipc/message-delivery.ts ↔ index.ts import 环）。运行期
+  // 构造，函数声明提升使下方定义先于构造求值无碍。
+  const ipcMessageDeliveryDeps = {
+    REPLY_LIMIT_REACHED_ERROR,
+    activeImReplyRoutes,
+    canSendCrossGroupMessage,
+    getIpcDeliveryTargetGroup,
+    writeIpcMessageResult,
+    isRetryDuplicateIpcSend,
+    recordSuccessfulIpcSend,
+    taskRunAcceptsLateIpcOutput,
+    resolveImRoute,
+    extractFeishuCardText,
+    extractLocalImImagePaths,
+    channelOutboxRefForInput,
+    sendImWithRetry,
+    sendTaskImageWithRetry,
+    broadcastToOwnerIMChannels,
+    settleAndRecordTaskIpcDeliveries,
+    resolveIpcOutputRuntimeChatJid,
+    resolveIpcOutputWorkspaceJid,
+    sendMessageWithOutcome,
+  };
+
   const processGroupIpc = async (sourceGroup: string) => {
     if (shuttingDown) return;
     // Determine if this IPC directory belongs to an admin home group
@@ -9160,529 +9186,24 @@ function startIpcWatcher(): void {
               continue;
             }
             if (data.type === 'message' && data.chatJid && data.text) {
-              const targetGroup = getIpcDeliveryTargetGroup(data.chatJid);
-              let messageDelivered = false;
-              let messageStaged = false;
-              let messageDeliveryError: string | undefined;
-              let messageDeliveryUncertain = false;
-              let nativeDeliveryAcknowledged = false;
-              let stagedDisposition:
-                | 'staged_progress'
-                | 'staged_final'
-                | undefined;
-              const isTaskIpcMessage = !!(
-                data.isScheduledTask ||
-                data.taskId ||
-                ipcTaskId
-              );
-              const frozenIpcMode = resolveFrozenIpcInteractionMode(
-                data.interactionMode,
-                {
-                  scheduledTask: isTaskIpcMessage,
-                  spawnAgent:
-                    !!ipcAgentId &&
-                    getAgent(ipcAgentId)?.kind !== 'conversation',
-                },
-              );
-              if (!frozenIpcMode.valid) {
-                messageResultWritten = writeIpcMessageResult(
-                  messageResultsDir,
-                  messageRequestId,
-                  {
-                    success: false,
-                    error: 'Invalid frozen interaction mode.',
-                  },
-                );
-                await fsp.unlink(filePath);
-                continue;
-              }
-              const ipcInteractionMode = frozenIpcMode.mode;
-              const authorized = canSendCrossGroupMessage(
-                isAdminHome,
-                isHome,
+              const sendOutcome = await processIpcSendMessage({
+                data,
+                file,
+                filePath,
+                messageRequestId,
+                messageResultsDir,
                 sourceGroup,
                 sourceGroupEntry,
-                targetGroup,
-              );
-              const hostOutputRoute = routeHostIpcOutput(
-                {
-                  sourceGroup,
-                  agentId: ipcAgentId,
-                  inputTurnId: data.inputTurnId,
-                  text: data.text,
-                  deliveryRole: data.deliveryRole,
-                  authorized,
-                  scheduledTask: isTaskIpcMessage,
-                  interactionMode: ipcInteractionMode,
-                },
-                activeTurnOutputs,
-              );
-              const stagingAttempted =
-                hostOutputRoute.path === 'primary_projection';
-              if (hostOutputRoute.path === 'primary_projection') {
-                messageDelivered = hostOutputRoute.delivered;
-                messageStaged = hostOutputRoute.staged;
-                stagedDisposition = hostOutputRoute.disposition;
-                if (hostOutputRoute.stageResult.accepted) {
-                  logger.info(
-                    {
-                      sourceGroup,
-                      agentId: ipcAgentId,
-                      inputTurnId: data.inputTurnId,
-                      deliveryRole: hostOutputRoute.deliveryRole,
-                      duplicate: hostOutputRoute.stageResult.duplicate,
-                    },
-                    'IPC send_message joined the active primary reply',
-                  );
-                } else {
-                  logger.warn(
-                    {
-                      sourceGroup,
-                      agentId: ipcAgentId,
-                      inputTurnId: data.inputTurnId,
-                      deliveryRole: hostOutputRoute.deliveryRole,
-                      reason: hostOutputRoute.stageResult.reason,
-                    },
-                    'IPC send_message could not join its exact active primary reply',
-                  );
-                }
-              }
-              if (messageStaged || stagingAttempted) {
-                // Staged progress/final text intentionally has no independent
-                // DB/IM side effect. SDK Result will finalize the same primary
-                // answer; a failed staging attempt must not fall through into
-                // the legacy separate-message path.
-              } else if (
-                isRetryDuplicateIpcSend(sourceGroup, data.chatJid, data.text)
-              ) {
-                // The deduplicator only records confirmed deliveries, so a
-                // replay hit is itself evidence that the prior attempt reached
-                // the user. Failed attempts are deliberately never recorded.
-                messageDelivered = true;
-                nativeDeliveryAcknowledged = true;
-                logger.info(
-                  { sourceGroup, chatJid: data.chatJid },
-                  'Duplicate IPC send_message suppressed (retry replay window)',
-                );
-              } else if (authorized) {
-                if (
-                  isTaskIpcMessage &&
-                  durableTaskRunId &&
-                  !taskRunAcceptsLateIpcOutput(durableTaskRunId)
-                ) {
-                  messageResultWritten = writeIpcMessageResult(
-                    messageResultsDir,
-                    messageRequestId,
-                    {
-                      success: false,
-                      error: 'Task run was cancelled before message delivery.',
-                    },
-                  );
-                  await fsp.unlink(filePath);
-                  continue;
-                }
-                // Conversation agents and isolated scheduled tasks route to
-                // virtual JIDs so output appears in their own tab/session,
-                // not the workspace main conversation.
-                const effectiveChatJid = resolveHostIpcLogicalChatJid({
-                  sourceChatJid: data.chatJid,
-                  agentId: ipcAgentId,
-                  agentChatJid: ipcAgentId
-                    ? getAgent(ipcAgentId)?.chat_jid
-                    : undefined,
-                  taskRunId: ipcTaskId,
-                  scheduledTask: data.isScheduledTask === true,
-                  runtimeChatJid: resolveIpcOutputRuntimeChatJid(
-                    sourceGroup,
-                    ipcAgentId,
-                    data.inputTurnId,
-                    data.chatJid,
-                  ),
-                  resolveWorkspaceJid: resolveIpcOutputWorkspaceJid,
-                });
-                // Feishu card JSON: store extracted markdown for web, send raw JSON to IM
-                const cardText = extractFeishuCardText(data.text);
-                const webText = cardText || data.text;
-
-                // Every non-task native send, including conversation agents,
-                // resolves the sticky exact route and uses the Turn Outbox.
-                // DB/Web stores markdown extracted from a Feishu card; the
-                // connector receives the original JSON/text payload.
-                if (!isTaskIpcMessage) {
-                  const ipcImRoute = resolveImRoute({
-                    ipcAgentId,
-                    isHome,
-                    chatJid: data.chatJid,
-                    sourceGroup,
-                  });
-                  if (ipcImRoute) {
-                    if (
-                      typeof data.inputTurnId !== 'string' ||
-                      !data.inputTurnId
-                    ) {
-                      messageDelivered = false;
-                      logger.error(
-                        {
-                          sourceGroup,
-                          agentId: ipcAgentId,
-                          chatJid: data.chatJid,
-                        },
-                        'Suppressed IPC send_message without an immutable inputTurnId',
-                      );
-                    } else {
-                      const messageScopeKey = channelTurnScope(
-                        sourceGroup,
-                        ipcAgentId,
-                      );
-                      const messageScope =
-                        activeChannelOutboxScopes.resolveInput(
-                          messageScopeKey,
-                          data.inputTurnId,
-                          ipcImRoute,
-                        );
-                      if (
-                        !activeTurnOutputs.canDeliverUtterance({
-                          scopeKey: messageScopeKey,
-                          inputTurnId: data.inputTurnId,
-                        })
-                      ) {
-                        // Runaway-loop fuse. Already delivered messages stand;
-                        // the model gets a stable machine-readable reason so it
-                        // can tell "stop talking" from "retry later".
-                        messageDelivered = false;
-                        messageDeliveryError = REPLY_LIMIT_REACHED_ERROR;
-                        logger.warn(
-                          {
-                            sourceGroup,
-                            agentId: ipcAgentId,
-                            inputTurnId: data.inputTurnId,
-                          },
-                          'Suppressed IPC send_message: per-turn reply limit reached',
-                        );
-                      } else {
-                        messageDelivered = await sendImWithRetry(
-                          ipcImRoute,
-                          data.text,
-                          extractLocalImImagePaths(data.text, sourceGroup),
-                          channelOutboxRefForInput(
-                            messageScopeKey,
-                            ipcImRoute,
-                            data.inputTurnId,
-                            `ipc-message:${messageRequestId ?? file}`,
-                          ),
-                          usesNativeMessagePresentation(ipcInteractionMode)
-                            ? { presentation: 'native' }
-                            : undefined,
-                          {
-                            deliveryRole: hostOutputRoute.deliveryRole,
-                            inputTurnId: data.inputTurnId,
-                            logicalChatJid: effectiveChatJid,
-                          },
-                        );
-                        nativeDeliveryAcknowledged = messageDelivered;
-                        if (
-                          !messageDelivered &&
-                          messageScope &&
-                          getUncertainChannelOutboxForTurn(
-                            messageScope.turnRunId,
-                          )
-                        ) {
-                          messageDeliveryUncertain = true;
-                          messageDeliveryError =
-                            'Message delivery is uncertain or fenced by an earlier uncertain channel mutation. Do not retry, sleep, switch to a card, or call a raw channel API; the framework will notify the user.';
-                        }
-                      }
-                    }
-                  } else if (
-                    getSessionChannelOwner(sourceGroup, ipcAgentId ?? null)
-                  ) {
-                    // The session is owned by a native channel, so a missing
-                    // route means the route is unavailable — not that this is a
-                    // Web-only session. Reporting "delivered" here told the
-                    // model its message had reached the user while the IM side
-                    // stayed silent, which in Proactive mode (no published SDK
-                    // final) meant the user saw nothing at all.
-                    messageDelivered = false;
-                    messageDeliveryError =
-                      'Message could not be delivered: this session is bound to a native channel whose route is currently unavailable.';
-                    logger.error(
-                      {
-                        sourceGroup,
-                        agentId: ipcAgentId,
-                        chatJid: data.chatJid,
-                      },
-                      'Suppressed IPC send_message: native-owned session has no resolvable route',
-                    );
-                  } else {
-                    // A genuinely Web-only logical session is delivered by
-                    // durable persistence/broadcast below; it has no native
-                    // provider side effect to acknowledge first.
-                    messageDelivered = true;
-                  }
-                }
-
-                // Scheduled-task delivery uses its independent durable task
-                // receipt ledger.
-                if (!ipcAgentId) {
-                  // Scheduled-task output routing. Decision logic is in
-                  // resolveTaskRoutingDecision() (src/task-routing.ts) so it
-                  // can be unit-tested without booting this module.
-                  const routingDecision = resolveTaskRoutingDecision(
-                    data,
-                    ipcTaskId,
-                    !!sourceGroupEntry?.created_by,
-                    { getTaskById, getChannelType },
-                  );
-                  if (isTaskIpcMessage) {
-                    const taskLocalImages = extractLocalImImagePaths(
-                      data.text,
-                      sourceGroup,
-                    );
-                    const attempts: TaskNotificationDeliveryAttempt[] = [];
-                    const addTargetAttempts = (targetJid: string): void => {
-                      const channel = getChannelType(targetJid) ?? targetJid;
-                      attempts.push({
-                        channel,
-                        payload: {
-                          kind: 'im_message',
-                          targetJid,
-                          text: data.text,
-                          localImagePaths: [],
-                        },
-                        deliver: () =>
-                          sendImWithRetry(targetJid, data.text, []),
-                      });
-                      for (const imagePath of taskLocalImages) {
-                        const imageBuffer = fs.readFileSync(imagePath);
-                        const mimeType = detectImageMimeType(imageBuffer);
-                        const fileName = path.basename(imagePath);
-                        attempts.push({
-                          channel,
-                          payload: {
-                            kind: 'im_image',
-                            targetJid,
-                            workspaceFolder: sourceGroup,
-                            filePath: path.relative(
-                              path.resolve(GROUPS_DIR, sourceGroup),
-                              imagePath,
-                            ),
-                            mimeType,
-                            fileName,
-                          },
-                          deliver: () =>
-                            sendTaskImageWithRetry(
-                              targetJid,
-                              imageBuffer,
-                              mimeType,
-                              undefined,
-                              fileName,
-                            ),
-                        });
-                      }
-                    };
-                    if (routingDecision.mode === 'direct') {
-                      const targetJid = routingDecision.taskChatJid;
-                      addTargetAttempts(targetJid);
-                    } else if (
-                      routingDecision.mode === 'broadcast' &&
-                      sourceGroupEntry?.created_by
-                    ) {
-                      // Fallback: broadcast to all connected IM channels
-                      const alreadySent = new Set<string>(
-                        [
-                          data.chatJid,
-                          activeImReplyRoutes.get(sourceGroup),
-                        ].filter(Boolean) as string[],
-                      );
-                      broadcastToOwnerIMChannels(
-                        sourceGroupEntry.created_by,
-                        broadcastFolder,
-                        alreadySent,
-                        (jid) => {
-                          addTargetAttempts(jid);
-                        },
-                        routingDecision.notifyChannels,
-                      );
-                    }
-                    const delivery = await settleAndRecordTaskIpcDeliveries(
-                      durableTaskRunId,
-                      attempts,
-                    );
-                    messageDelivered =
-                      delivery.accepted &&
-                      (delivery.receipt.status === 'success' ||
-                        delivery.receipt.status === 'skipped');
-                  }
-                }
-                const projectionMessageId = `ipc_${crypto
-                  .createHash('sha256')
-                  .update(
-                    [
-                      effectiveChatJid,
-                      typeof data.inputTurnId === 'string'
-                        ? data.inputTurnId
-                        : '',
-                      data.text,
-                    ].join('\0'),
-                  )
-                  .digest('hex')
-                  .slice(0, 32)}`;
-                const isExplicitProactiveFinal =
-                  !isTaskIpcMessage &&
-                  ipcInteractionMode === 'proactive' &&
-                  hostOutputRoute.deliveryRole === 'final' &&
-                  typeof data.inputTurnId === 'string' &&
-                  Boolean(data.inputTurnId);
-
-                // An unacknowledged native final must keep the exact answer in
-                // the canonical Web session without replaying the provider
-                // mutation. Its provenance remains visibly non-completed.
-                if (!messageDelivered && isExplicitProactiveFinal) {
-                  const preserved = await preserveUnacknowledgedProactiveFinal({
-                    registry: activeTurnOutputs,
-                    scopeKey: channelTurnScope(sourceGroup, ipcAgentId),
-                    inputTurnId: data.inputTurnId,
-                    text: webText,
-                    uncertain: messageDeliveryUncertain,
-                    project: async (text, finalizationReason) => {
-                      const outcome = await sendMessageWithOutcome(
-                        effectiveChatJid,
-                        text,
-                        {
-                          sendToIM: false,
-                          messageId: projectionMessageId,
-                          messageMeta: {
-                            turnId: data.inputTurnId,
-                            sourceKind: 'sdk_send_message',
-                            finalizationReason,
-                          },
-                        },
-                      );
-                      return outcome.targetDelivered;
-                    },
-                  });
-                  logger[preserved.projected ? 'warn' : 'error'](
-                    {
-                      chatJid: effectiveChatJid,
-                      sourceGroup,
-                      agentId: ipcAgentId,
-                      inputTurnId: data.inputTurnId,
-                      finalizationReason: preserved.finalizationReason,
-                    },
-                    preserved.projected
-                      ? 'Preserved unacknowledged Proactive final in canonical Web session'
-                      : 'Failed to preserve unacknowledged Proactive final in canonical Web session',
-                  );
-                }
-                if (messageDelivered) {
-                  const sendOutcome = await sendMessageWithOutcome(
-                    effectiveChatJid,
-                    webText,
-                    {
-                      // Native delivery above owns the physical ACK. Only
-                      // confirmed sends are projected into the canonical Web
-                      // session, using a replay-stable id.
-                      sendToIM: false,
-                      messageId: projectionMessageId,
-                      messageMeta: {
-                        turnId:
-                          typeof data.inputTurnId === 'string'
-                            ? data.inputTurnId
-                            : undefined,
-                        sourceKind: 'sdk_send_message',
-                        finalizationReason:
-                          hostOutputRoute.deliveryRole === 'final'
-                            ? 'completed'
-                            : undefined,
-                      },
-                    },
-                  );
-                  messageDelivered = sendOutcome.targetDelivered;
-                  if (!messageDelivered && nativeDeliveryAcknowledged) {
-                    // The provider side effect already ACKed. Reporting a tool
-                    // failure would invite a duplicate retry; preserve the ACK
-                    // while leaving the canonical projection failure visible
-                    // in logs for operator repair.
-                    messageDelivered = true;
-                    logger.error(
-                      {
-                        chatJid: effectiveChatJid,
-                        sourceGroup,
-                        agentId: ipcAgentId,
-                        inputTurnId: data.inputTurnId,
-                      },
-                      'Native IPC message ACKed but canonical Web projection failed',
-                    );
-                  }
-                }
-                if (messageDelivered) {
-                  recordSuccessfulIpcSend(sourceGroup, data.chatJid, data.text);
-                }
-                logger.info(
-                  {
-                    chatJid: effectiveChatJid,
-                    sourceGroup,
-                    agentId: ipcAgentId,
-                    delivered: messageDelivered,
-                  },
-                  messageDelivered
-                    ? 'IPC message delivered and projected'
-                    : 'IPC message was not delivered',
-                );
-              } else {
-                logger.warn(
-                  { chatJid: data.chatJid, sourceGroup },
-                  'Unauthorized IPC message attempt blocked',
-                );
-              }
-              const isMainUserTurnReply = !(
-                data.isScheduledTask ||
-                data.taskId ||
-                ipcTaskId ||
-                ipcAgentId
-              );
-              if (
-                messageDelivered &&
-                !messageStaged &&
-                !isTaskIpcMessage &&
-                typeof data.inputTurnId === 'string' &&
-                data.inputTurnId
-              ) {
-                activeTurnOutputs.recordDeliveredUtterance({
-                  scopeKey: channelTurnScope(sourceGroup, ipcAgentId),
-                  inputTurnId: data.inputTurnId,
-                  role: hostOutputRoute.deliveryRole ?? undefined,
-                  text: data.text,
-                });
-              }
-              if (
-                messageDelivered &&
-                !messageStaged &&
-                isMainUserTurnReply &&
-                typeof data.inputTurnId === 'string' &&
-                data.inputTurnId
-              ) {
-                const activeTracker =
-                  activeIpcReplyTurnTrackers.get(sourceGroup);
-                if (activeTracker) {
-                  acknowledgeIpcReplyTurn(activeTracker, data.inputTurnId);
-                }
-              }
-              messageResultWritten = writeIpcMessageResult(
-                messageResultsDir,
-                messageRequestId,
-                messageDelivered
-                  ? {
-                      success: true,
-                      disposition: stagedDisposition ?? 'delivered_separately',
-                    }
-                  : {
-                      success: false,
-                      error:
-                        messageDeliveryError ??
-                        'Message could not be delivered to its target.',
-                    },
-              );
+                ipcAgentId,
+                ipcTaskId,
+                durableTaskRunId,
+                isHome,
+                isAdminHome,
+                broadcastFolder,
+                ...ipcMessageDeliveryDeps,
+              });
+              if (sendOutcome.skippedFile) continue;
+              messageResultWritten = sendOutcome.messageResultWritten;
             } else if (
               data.type === 'image' &&
               data.chatJid &&

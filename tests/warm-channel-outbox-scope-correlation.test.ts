@@ -237,10 +237,17 @@ describe('warm channel outbox scope wiring contract', () => {
   });
 
   test('text and image IPC projection both recover the frozen logical base', () => {
+    // ISSUE-12 波 4 单元 4.3：text 投影分支已迁 src/ipc/message-delivery.ts
+    // （image 分支仍留守 index.ts，单元 4.4 再迁），双投影断言改为两文件
+    // 合计仍为 2，语义不变。
     const host = read('src/index.ts');
-    expect(
-      host.match(/runtimeChatJid:\s*resolveIpcOutputRuntimeChatJid\(/g),
-    ).toHaveLength(2);
+    const textBranch = read('src/ipc/message-delivery.ts');
+    const hostMatches =
+      host.match(/runtimeChatJid:\s*resolveIpcOutputRuntimeChatJid\(/g) ?? [];
+    const textMatches =
+      textBranch.match(/runtimeChatJid:\s*resolveIpcOutputRuntimeChatJid\(/g) ??
+      [];
+    expect(hostMatches.length + textMatches.length).toBe(2);
     expect(host).toMatch(
       /logicalBaseChatJid:\s*chatJid[\s\S]*?function resolveIpcOutputRuntimeChatJid/,
     );
