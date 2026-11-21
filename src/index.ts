@@ -296,6 +296,11 @@ import {
 } from './im-channel.js';
 import { ConversationIndicatorLedger } from './conversation-indicator-ledger.js';
 import {
+  createStreamingCardOnTurnStart,
+  rollbackIdleCardReservation,
+  finalizeStreamingCardOnExit,
+} from './streaming-card-lifecycle.js';
+import {
   PROACTIVE_TAIL_INTERRUPTION_NOTICE,
   buildInteractionTextOutboxPayload,
   isProactiveControlPlaneSuccess,
@@ -5450,17 +5455,15 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   };
   const makeOnCardCreated = (jid: string) => (messageId: string) =>
     registerMessageIdMapping(messageId, jid);
-  // 重试轮（指数退避后的重跑）静默执行，不新建流式卡片：否则一条持续失败的
-  // 消息每轮都会在飞书发一张「生成中→处理出错」卡，最多刷 6 张（消息洪流）。
-  // 重试成功时最终回复仍经静态 sendMessage 送达。
-  let streamingSession =
-    retryAttempt > 0 || !publishesFrameworkAnswer(interactionMode)
-      ? undefined
-      : await imManager.createStreamingSession(
-          streamingSessionJid,
-          makeOnCardCreated(streamingSessionJid),
-          activeDurableCardLifecycle,
-        );
+  let streamingSession = await createStreamingCardOnTurnStart({
+    eligible: publishesFrameworkAnswer(interactionMode),
+    // ISSUE-12 波 6 单元 6.2：分歧①——A 重试轮静默不建卡（B 无此判断）。
+    suppressOnRetry: true,
+    retryAttempt,
+    createSessionJid: streamingSessionJid,
+    onCardCreated: makeOnCardCreated(streamingSessionJid),
+    lifecycle: activeDurableCardLifecycle,
+  });
   const channelStreamingSessionsByInput = new Map<
     string,
     { session: NonNullable<typeof streamingSession>; jid: string }
@@ -5493,31 +5496,23 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     logger.debug({ chatJid }, 'Streaming card session created for Feishu');
   }
   const rollbackIdleMainCardReservation = (inputTurnId: string): boolean => {
-    const projection =
-      channelStreamingSessionsByInput.get(inputTurnId) ??
-      (inputTurnId === lastProcessed.id && streamingSession
-        ? { session: streamingSession, jid: streamingSessionJid }
-        : undefined);
-    const runtime = channelTurnRuntimes.get(inputTurnId);
-    if (projection?.session.isActive()) return false;
-    if (!runtime?.rollbackUnpublishedStreamingCardReservation()) {
-      // The reservation may already have reached Feishu. Activate the
-      // controller so the normal complete/abort path can terminalize it.
-      projection?.session.setThinking();
-      return false;
-    }
-    projection?.session.dispose();
-    if (projection) unregisterStreamingSession(projection.jid);
-    channelStreamingSessionsByInput.delete(inputTurnId);
-    if (projection?.session === streamingSession) {
+    const rollback = rollbackIdleCardReservation({
+      sessionsByInput: channelStreamingSessionsByInput,
+      inputTurnId,
+      batchTerminalInputId: lastProcessed.id,
+      currentSession: streamingSession,
+      currentSessionJid: streamingSessionJid,
+      requireJidForCurrentProjection: false,
+      getRuntime: (id) => channelTurnRuntimes.get(id),
+      logContext: { chatJid, inputTurnId },
+      logMessage:
+        'Rolled back unpublished streaming card after provider failure',
+    });
+    if (rollback.droppedCurrentSession) {
       streamingSession = undefined;
       activeDurableCardLifecycle = undefined;
     }
-    logger.info(
-      { chatJid, inputTurnId },
-      'Rolled back unpublished streaming card after provider failure',
-    );
-    return true;
+    return rollback.rolledBack;
   };
 
   interface AdmittedWarmMainInput {
@@ -7312,56 +7307,26 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     const wasSteered = wasInterrupted && streamSteered;
 
     // ── Streaming card cleanup ──
+    // ISSUE-12 波 6 单元 6.2：五分支收尾收敛 streaming-card-lifecycle（原文
+    // 搬运；分歧④ silentSuccess 探针与 error/closed 探针经参数注入）。
     if (streamingSession) {
-      if (streamingSession.isActive()) {
-        // isActive() 仍为 true ⟹ 卡片从未被 complete()（result.result 非空路径会
-        // 在 3594 complete 后令 isActive 转 false）。这里覆盖所有"卡片建了但没收口"的
-        // 收尾场景，避免卡片永久停在「生成中」（僵尸卡片）。
-        if (providerFailoverPending) {
-          await streamingSession
-            .abort('模型服务切换中，正在重试')
-            .catch(() => {});
-        } else if (hadError || !output || output.status === 'error') {
-          await streamingSession.abort('处理出错').catch(() => {});
-        } else if (wasInterrupted) {
-          if (wasSteered) {
-            await streamingSession
-              .complete(streamingAccumulatedText)
-              .catch(() => {});
-          } else {
-            await streamingSession.abort('已停止').catch(() => {});
-          }
-        } else if (output.status === 'closed') {
-          // closed：容器 drain/_close 中断了 in-flight query（agent-runner 发
-          // status:'closed' 而非 interrupt 流事件，streamInterrupted 仍为 false）。
-          // 该消息会重试（3904 保留 cursor），此处仅收口卡片避免僵尸卡 + 重试叠卡。
-          // 文案区别于"已中断"：closed 是系统侧打断并自动重试，非用户主动中断。
-          await streamingSession.abort('连接已切换，正在重试').catch(() => {});
-        } else if (!sentReply) {
-          // 真 silent-success：本轮从未发过可见回复（agent 仅用 send_message 旁路
-          // 回复、最终 result 为空，3546 if(result.result) 门控跳过了 complete()）。
-          // complete() 把卡片从 streaming 收口到 completed（空正文由 buildStructuredFinalCard
-          // 兜底为 "..."，并保留 thinking/工具统计），而非裸 dispose() 留下「生成中」僵尸卡。
-          try {
-            await streamingSession.complete(streamingAccumulatedText);
-          } catch (err) {
-            logger.warn(
-              { err, chatJid },
-              'Streaming card silent-success finalize failed, aborting card',
-            );
-            // dispose() 只清定时器不碰卡面，会留下永久「生成中」僵尸卡；
-            // abort() 内部自带 catch，会尽力把卡面切到「已中断」终态。
-            await streamingSession.abort('').catch(() => {});
-            streamingSession.dispose();
-          }
-        } else {
-          // sentReply 已为 true：卡片是正常回复 complete 后由 3651 为"下一条消息"预建的
-          // 空白 active 卡，本轮无后续 result。dispose() 丢弃，不可 complete()（否则会
-          // 凭空渲染一张正文为 "..." 的完成卡）。
-          streamingSession.dispose();
-        }
-      }
-      unregisterStreamingSession(streamingSessionJid);
+      await finalizeStreamingCardOnExit({
+        session: streamingSession,
+        sessionJid: streamingSessionJid,
+        accumulatedText: streamingAccumulatedText,
+        wasInterrupted,
+        wasSteered,
+        failoverPending: providerFailoverPending,
+        runnerError: hadError || !output || output.status === 'error',
+        // 原分支序里 error 分支（含 !output）先于 closed 判定，undefined 时
+        // 永不抵达 closed——可选链保序语义不变。
+        runnerClosed: output?.status === 'closed',
+        silentSuccess: !sentReply,
+        logContext: (err) => ({ err, chatJid }),
+        silentFailureLogMessage:
+          'Streaming card silent-success finalize failed, aborting card',
+        abortOnSilentFinalizeFailure: true,
+      });
     }
 
     if (channelTurnRuntimes.size > 0) {
@@ -9572,15 +9537,16 @@ async function processAgentConversation(
     ActiveChannelOutboxScope
   >();
   const rejectedAgentInputTurns = new Set<string>();
-  let agentStreamingSession =
-    publishesFrameworkAnswer(interactionMode) && replySourceImJid
-      ? await imManager.createStreamingSession(
-          replySourceImJid,
-          (messageId) =>
-            registerMessageIdMapping(messageId, streamingSessionJid!),
-          activeAgentDurableCardLifecycle,
-        )
-      : undefined;
+  let agentStreamingSession = await createStreamingCardOnTurnStart({
+    eligible: publishesFrameworkAnswer(interactionMode) && !!replySourceImJid,
+    // ISSUE-12 波 6 单元 6.2：分歧①——B 无重试静默判断（原文如此）。
+    suppressOnRetry: false,
+    retryAttempt: agentRetryAttempt,
+    createSessionJid: replySourceImJid!,
+    onCardCreated: (messageId) =>
+      registerMessageIdMapping(messageId, streamingSessionJid!),
+    lifecycle: activeAgentDurableCardLifecycle,
+  });
   const agentStreamingSessionsByInput = new Map<
     string,
     { session: NonNullable<typeof agentStreamingSession>; jid: string }
@@ -9608,31 +9574,23 @@ async function processAgentConversation(
     );
   }
   const rollbackIdleAgentCardReservation = (inputTurnId: string): boolean => {
-    const projection =
-      agentStreamingSessionsByInput.get(inputTurnId) ??
-      (inputTurnId === lastProcessed.id &&
-      agentStreamingSession &&
-      streamingSessionJid
-        ? { session: agentStreamingSession, jid: streamingSessionJid }
-        : undefined);
-    const runtime = agentChannelTurnRuntimes.get(inputTurnId);
-    if (projection?.session.isActive()) return false;
-    if (!runtime?.rollbackUnpublishedStreamingCardReservation()) {
-      projection?.session.setThinking();
-      return false;
-    }
-    projection?.session.dispose();
-    if (projection) unregisterStreamingSession(projection.jid);
-    agentStreamingSessionsByInput.delete(inputTurnId);
-    if (projection?.session === agentStreamingSession) {
+    const rollback = rollbackIdleCardReservation({
+      sessionsByInput: agentStreamingSessionsByInput,
+      inputTurnId,
+      batchTerminalInputId: lastProcessed.id,
+      currentSession: agentStreamingSession,
+      currentSessionJid: streamingSessionJid,
+      requireJidForCurrentProjection: true,
+      getRuntime: (id) => agentChannelTurnRuntimes.get(id),
+      logContext: { chatJid, agentId, inputTurnId },
+      logMessage:
+        'Rolled back unpublished agent streaming card after provider failure',
+    });
+    if (rollback.droppedCurrentSession) {
       agentStreamingSession = undefined;
       activeAgentDurableCardLifecycle = undefined;
     }
-    logger.info(
-      { chatJid, agentId, inputTurnId },
-      'Rolled back unpublished agent streaming card after provider failure',
-    );
-    return true;
+    return rollback.rolledBack;
   };
   interface AdmittedWarmAgentInput {
     sourceJid: string | null;
@@ -11099,51 +11057,24 @@ async function processAgentConversation(
       activeTurnOutputs.unbind(agentAdmissionKey, inputTurnId, coordinator);
     }
     if (agentStreamingSession) {
-      if (agentStreamingSession.isActive()) {
-        // Symmetric with the main session's five-way finalize (index.ts ~3804):
-        // every "card built but never completed" path must finalize so the card
-        // can't get stuck at 生成中 (zombie card).
-        if (agentProviderFailoverPending) {
-          await agentStreamingSession
-            .abort('模型服务切换中，正在重试')
-            .catch(() => {});
-        } else if (hadError) {
-          await agentStreamingSession.abort('处理出错').catch(() => {});
-        } else if (wasInterrupted) {
-          if (wasSteered) {
-            await agentStreamingSession
-              .complete(agentStreamingAccText)
-              .catch(() => {});
-          } else {
-            await agentStreamingSession.abort('已停止').catch(() => {});
-          }
-        } else if (agentClosed) {
-          // Container drained/_closed the in-flight query; the message will be
-          // retried, so just finalize the card (区别于"已中断"：系统侧打断重试).
-          await agentStreamingSession
-            .abort('连接已切换，正在重试')
-            .catch(() => {});
-        } else if (!isCursorCommitted()) {
-          // Silent-success: the agent replied only via the send_message
-          // side-channel or produced an empty result, so the card was never
-          // completed. complete() 收口 (空正文由 buildStructuredFinalCard 兜底)
-          // 而非裸 dispose 留下「生成中」僵尸卡。
-          try {
-            await agentStreamingSession.complete(agentStreamingAccText);
-          } catch (err) {
-            logger.warn(
-              { err, chatJid, agentId },
-              'Agent streaming card silent-success finalize failed, disposing',
-            );
-            agentStreamingSession.dispose();
-          }
-        } else {
-          agentStreamingSession.dispose();
-        }
-      }
-      if (streamingSessionJid) {
-        unregisterStreamingSession(streamingSessionJid);
-      }
+      // ISSUE-12 波 6 单元 6.2：五分支收尾收敛 streaming-card-lifecycle
+      // （原文搬运；分歧④ silentSuccess 以 cursor 未提交判定、silent 失败
+      // 直接 dispose 等微差经参数注入）。
+      await finalizeStreamingCardOnExit({
+        session: agentStreamingSession,
+        sessionJid: streamingSessionJid,
+        accumulatedText: agentStreamingAccText,
+        wasInterrupted,
+        wasSteered,
+        failoverPending: agentProviderFailoverPending,
+        runnerError: hadError,
+        runnerClosed: agentClosed,
+        silentSuccess: !isCursorCommitted(),
+        logContext: (err) => ({ err, chatJid, agentId }),
+        silentFailureLogMessage:
+          'Agent streaming card silent-success finalize failed, disposing',
+        abortOnSilentFinalizeFailure: false,
+      });
     }
 
     if (agentChannelTurnRuntimes.size > 0) {
