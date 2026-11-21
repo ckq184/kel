@@ -2606,7 +2606,7 @@ export function updateChatName(chatJid: string, name: string): void {
   ).run(chatJid, name, new Date().toISOString());
 }
 
-export interface ChatInfo {
+interface ChatInfo {
   jid: string;
   name: string;
   last_message_time: string;
@@ -3262,7 +3262,7 @@ export interface UsageModelRecordInput {
   providerEstimatedCostUSD: number;
 }
 
-export interface UsagePricingBucketTotals {
+interface UsagePricingBucketTotals {
   bucketStart: string;
   bucketEnd: string;
   inputTokens: number;
@@ -3339,7 +3339,7 @@ export function getUsagePricingBucketTotals(input: {
   };
 }
 
-export interface UsageEventRecordInput {
+interface UsageEventRecordInput {
   eventId: string;
   userId: string;
   groupFolder: string;
@@ -3895,7 +3895,7 @@ export function getDeletedTasks(): ScheduledTask[] {
     .map(mapTaskRow);
 }
 
-export interface WorkspaceTaskRebuildPause {
+interface WorkspaceTaskRebuildPause {
   groupFolder: string;
   tasks: Array<{
     id: string;
@@ -4108,16 +4108,16 @@ export function updateTask(
   ).run(...values);
 }
 
-export type TaskRevisionMutationResult =
+type TaskRevisionMutationResult =
   | { status: 'updated'; task: ScheduledTask }
   | { status: 'conflict'; task: ScheduledTask }
   | { status: 'not_found' };
 
-export type TaskSoftDeleteMutationResult =
+type TaskSoftDeleteMutationResult =
   | TaskRevisionMutationResult
   | { status: 'active_run'; task: ScheduledTask; run: TaskRun };
 
-export type TaskPermanentDeleteMutationResult =
+type TaskPermanentDeleteMutationResult =
   | { status: 'deleted'; task_ids: string[] }
   | { status: 'conflict'; task: ScheduledTask }
   | { status: 'not_deleted'; task: ScheduledTask }
@@ -4614,7 +4614,7 @@ function insertTaskRunRow(
   );
 }
 
-export interface CreateTaskRunInput {
+interface CreateTaskRunInput {
   task: ScheduledTask;
   triggerType: TaskRunTrigger;
   scheduledFor?: string;
@@ -4622,7 +4622,7 @@ export interface CreateTaskRunInput {
   availableAt?: string;
 }
 
-export interface CreateTaskRunResult {
+interface CreateTaskRunResult {
   created: boolean;
   reason?: 'duplicate' | 'active_conflict';
   run: TaskRun;
@@ -4700,7 +4700,7 @@ export function createTaskRun(input: CreateTaskRunInput): CreateTaskRunResult {
   })();
 }
 
-export interface MaterializeTaskOccurrenceInput {
+interface MaterializeTaskOccurrenceInput {
   taskId: string;
   scheduledFor: string;
   nextRun: string | null;
@@ -4811,7 +4811,7 @@ export function getTaskRunsPendingContinuation(): TaskRun[] {
   ).map(mapTaskRunRow);
 }
 
-export interface CreateContinuationTaskRunInput {
+interface CreateContinuationTaskRunInput {
   parentRun: TaskRun;
   task: ScheduledTask;
   reason: string;
@@ -4820,7 +4820,7 @@ export interface CreateContinuationTaskRunInput {
   availableAt: string;
 }
 
-export interface CreateContinuationTaskRunResult {
+interface CreateContinuationTaskRunResult {
   created: boolean;
   reason?: 'duplicate' | 'active_conflict';
   run?: TaskRun;
@@ -5179,7 +5179,7 @@ export function releaseTaskRunForRetry(
   return result.changes === 1;
 }
 
-export interface CompleteTaskRunInput {
+interface CompleteTaskRunInput {
   status: Extract<
     TaskRunStatus,
     'success' | 'failed' | 'cancelled' | 'delivered'
@@ -5419,7 +5419,7 @@ export function completeIsolatedTaskRunWithWorkspaceResultIntent(input: {
   })();
 }
 
-export interface StoreScheduledGroupPromptInput {
+interface StoreScheduledGroupPromptInput {
   runId: string;
   taskId: string;
   leaseOwner: string;
@@ -5616,7 +5616,7 @@ function finalizeDeliveredGroupTaskRunInTransaction(
   return true;
 }
 
-export interface ScheduledGroupWorkspaceFinalization {
+interface ScheduledGroupWorkspaceFinalization {
   runId: string;
   taskId: string;
   status?: 'success' | 'failed' | 'cancelled';
@@ -5624,7 +5624,7 @@ export interface ScheduledGroupWorkspaceFinalization {
   error?: string | null;
 }
 
-export interface StoreScheduledGroupWorkspaceResultInput {
+interface StoreScheduledGroupWorkspaceResultInput {
   messageId: string;
   chatJid: string;
   senderId: string;
@@ -5930,14 +5930,14 @@ export interface TaskRunTextNotificationPayload {
   sendOptions?: { source?: string };
 }
 
-export interface TaskRunImMessageNotificationPayload {
+interface TaskRunImMessageNotificationPayload {
   kind: 'im_message';
   targetJid: string;
   text: string;
   localImagePaths: string[];
 }
 
-export interface TaskRunImImageNotificationPayload {
+interface TaskRunImImageNotificationPayload {
   kind: 'im_image';
   targetJid: string;
   workspaceFolder: string;
@@ -5947,7 +5947,7 @@ export interface TaskRunImImageNotificationPayload {
   fileName?: string;
 }
 
-export interface TaskRunImFileNotificationPayload {
+interface TaskRunImFileNotificationPayload {
   kind: 'im_file';
   targetJid: string;
   workspaceFolder: string;
@@ -7542,7 +7542,7 @@ export function deleteAllSessionsForFolder(groupFolder: string): void {
   })();
 }
 
-export interface SessionAgentIdentity {
+interface SessionAgentIdentity {
   agent_profile_id: string | null;
   agent_profile_version: number | null;
   identity_hash: string | null;
