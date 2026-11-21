@@ -28,41 +28,15 @@ import {
   createDedupCache,
 } from './im-utils.js';
 import { ProcessingLock, isStale } from './im-safety/index.js';
-import {
-  isTransientError,
-  getReconnectDelay,
-  classifyCloseCode,
-} from './qq-reconnect.js';
+import { isTransientError } from './qq-reconnect.js';
 import { resolveAdmittedChannelRoute } from './channel-admission.js';
 import { createQQTokenManager } from './qq-token.js';
 import { createQQApi } from './qq-api.js';
 import { createQQMediaSender } from './qq-media.js';
+import { createQQWsSession } from './qq-ws.js';
 // ─── Constants ──────────────────────────────────────────────────
 
 const MSG_SPLIT_LIMIT = 5000;
-const MAX_RECONNECT_ATTEMPTS = 100;
-const RATE_LIMIT_DELAY_MS = 60_000;
-const QUICK_DISCONNECT_THRESHOLD_MS = 5_000;
-const MAX_QUICK_DISCONNECT_COUNT = 3;
-// After exhausting MAX_RECONNECT_ATTEMPTS we don't give up; we fall back to a
-// long-tail keepalive so a multi-hour outage eventually self-recovers.
-const KEEPALIVE_INTERVAL_MS = 5 * 60 * 1000;
-// Safety net: if we ever end up disconnected with no reconnect pending,
-// the watchdog kicks a fresh attempt instead of leaving the bot dead.
-const WATCHDOG_INTERVAL_MS = 60_000;
-
-// Intents: PUBLIC_MESSAGES (C2C + group @bot)
-const INTENTS = 1 << 25;
-
-// WebSocket opcodes
-const OP_DISPATCH = 0;
-const OP_HEARTBEAT = 1;
-const OP_IDENTIFY = 2;
-const OP_RESUME = 6;
-const OP_RECONNECT = 7;
-const OP_INVALID_SESSION = 9;
-const OP_HELLO = 10;
-const OP_HEARTBEAT_ACK = 11;
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -133,13 +107,6 @@ export interface QQConnection {
   getNextMsgSeq(chatId: string): number;
   /** Latest msg_id received from a C2C openid, for passive reply. */
   getLastIncomingMsgId(openid: string): string | undefined;
-}
-
-interface QQWsPayload {
-  op: number;
-  d?: any;
-  s?: number;
-  t?: string;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────
@@ -284,326 +251,81 @@ export function createQQConnection(config: QQConnectionConfig): QQConnection {
 
   // ─── WebSocket Connection ─────────────────────────────────
 
-  function clearTimers(): void {
-    if (heartbeatTimer) {
-      clearInterval(heartbeatTimer);
-      heartbeatTimer = null;
-    }
-    if (reconnectTimer) {
-      clearTimeout(reconnectTimer);
-      reconnectTimer = null;
-    }
-  }
-
-  function stopWatchdog(): void {
-    if (watchdogTimer) {
-      clearInterval(watchdogTimer);
-      watchdogTimer = null;
-    }
-  }
-
-  function startWatchdog(opts: QQConnectOpts): void {
-    stopWatchdog();
-    watchdogTimer = setInterval(() => {
-      if (stopping) return;
-      if (connection.isConnected()) return;
-      // A reconnect is already in flight (including keepalive ticks).
-      if (reconnectTimer) return;
-      // Invariant violation: disconnected, not stopping, no retry pending.
-      // Reset the budget and kick a fresh attempt — this is the safety net
-      // that prevents the bot from staying permanently dead.
-      logger.warn(
-        { reconnectAttempts, keepaliveMode },
-        'QQ watchdog detected stale disconnected state, kicking fresh reconnect',
-      );
-      reconnectAttempts = 0;
-      keepaliveMode = false;
-      lastErrorIsTransient = false;
-      scheduleReconnect(opts);
-    }, WATCHDOG_INTERVAL_MS);
-  }
-
-  function sendWs(payload: QQWsPayload): void {
-    if (ws?.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify(payload));
-    }
-  }
-
-  function startHeartbeat(intervalMs: number): void {
-    if (heartbeatTimer) clearInterval(heartbeatTimer);
-    heartbeatTimer = setInterval(() => {
-      sendWs({ op: OP_HEARTBEAT, d: lastSequence });
-    }, intervalMs);
-  }
-
-  async function connectWs(
-    opts: QQConnectOpts,
-    gatewayUrl: string,
-    isResume: boolean = false,
-  ): Promise<void> {
-    if (stopping) return;
-
-    return new Promise<void>((resolve, reject) => {
-      let settled = false;
-      // True only once READY/RESUMED dispatched. Distinguishes a real
-      // mid-session disconnect from a connect-time error so the close handler
-      // doesn't double-schedule a reconnect that the rejection's catch path
-      // is already handling.
-      let connectionEstablished = false;
-
-      ws = new WebSocket(gatewayUrl);
-
-      const onSessionReady = (): void => {
-        connectionEstablished = true;
-        lastConnectTime = Date.now();
-        reconnectAttempts = 0;
-        keepaliveMode = false;
-        if (!settled) {
-          settled = true;
-          resolve();
-        }
-      };
-
-      ws.on('open', () => {
-        logger.info(
-          { gatewayUrl: gatewayUrl.slice(0, 50) },
-          'QQ WebSocket connected',
-        );
-        // Don't reset reconnectAttempts here — wait until READY/RESUMED
-      });
-
-      ws.on('message', async (data) => {
-        try {
-          const payload: QQWsPayload = JSON.parse(data.toString());
-          await handleWsMessage(payload, opts, gatewayUrl, onSessionReady);
-        } catch (err) {
-          logger.error({ err }, 'Error parsing QQ WebSocket message');
-        }
-      });
-
-      ws.on('close', (code, reason) => {
-        logger.info({ code, reason: reason.toString() }, 'QQ WebSocket closed');
-        clearTimers();
-
-        if (!settled) {
-          settled = true;
-          reject(new Error(`QQ WebSocket closed before ready: ${code}`));
-          return;
-        }
-        // settled but not established → ws.on('error') already rejected;
-        // let the rejection's catch path handle the reconnect (avoids the
-        // double-increment that drained the old budget in ~3 minutes).
-        if (!connectionEstablished) return;
-        if (stopping) return;
-
-        // Quick-disconnect detection: server flapping us right after READY
-        // usually signals a permission / auth issue. Back off harder.
-        if (
-          lastConnectTime > 0 &&
-          Date.now() - lastConnectTime < QUICK_DISCONNECT_THRESHOLD_MS
-        ) {
-          quickDisconnectCount++;
-          if (quickDisconnectCount >= MAX_QUICK_DISCONNECT_COUNT) {
-            logger.error(
-              { quickDisconnectCount, code },
-              'QQ too many quick disconnects, backing off (check appId/secret/permissions)',
-            );
-            quickDisconnectCount = 0;
-            scheduleReconnect(opts, RATE_LIMIT_DELAY_MS);
-            return;
-          }
-        } else {
-          quickDisconnectCount = 0;
-        }
-
-        const action = classifyCloseCode(code);
-        switch (action.kind) {
-          case 'refresh-token':
-            logger.info(
-              { code },
-              'QQ invalid token close, forcing token refresh',
-            );
-            resetToken();
-            sessionId = null;
-            lastSequence = null;
-            scheduleReconnect(opts);
-            break;
-          case 'rate-limit':
-            logger.warn({ code }, 'QQ rate limited, applying long delay');
-            scheduleReconnect(opts, RATE_LIMIT_DELAY_MS);
-            break;
-          case 'reset-session':
-            logger.info({ code }, 'QQ server internal error, dropping session');
-            sessionId = null;
-            lastSequence = null;
-            scheduleReconnect(opts);
-            break;
-          default:
-            scheduleReconnect(opts);
-        }
-      });
-
-      ws.on('error', (err) => {
-        logger.error({ err }, 'QQ WebSocket error');
-        lastErrorIsTransient = isTransientError(err);
-        if (!settled) {
-          settled = true;
-          reject(err);
-        }
-      });
+  // ─── WebSocket Connection ─────────────────────────────────
+  // WS 重连互递归簇（clearTimers / stopWatchdog / startWatchdog / sendWs /
+  // startHeartbeat / connectWs / handleWsMessage / scheduleReconnect，原
+  // 287-606）已整簇抽至 ./qq-ws.ts（ISSUE-12 单元 2.14 原文搬运，整簇
+  // 内聚禁止只抽一半；close/error 防双计数注释随段走）。WS 簇 14 个 let
+  // 留守本文件状态区（feishu-ws-lifecycle 同款）——connect() /
+  // disconnect() 门面的复位与清理行因此逐字节不变，qq-ws 经 get/set
+  // 访问器对读写（stopping 门面独写故只读）。依赖注入：getAccessToken /
+  // resetToken（2.11）、getGatewayUrl（2.12）、isConnected 门面前向引用
+  //（闭包延迟求值，运行时序不变）、onC2CMessage / onGroupMessage
+  // （OP_DISPATCH 分发，2.15 handler 本体留本文件，函数声明提升可用）。
+  // 同名解构使 connect() 的 startWatchdog / connectWs 与 disconnect() 的
+  // stopWatchdog / clearTimers 调用点零改动。
+  const { startWatchdog, stopWatchdog, clearTimers, connectWs } =
+    createQQWsSession({
+      getWs: () => ws,
+      setWs: (value) => {
+        ws = value;
+      },
+      getHeartbeatTimer: () => heartbeatTimer,
+      setHeartbeatTimer: (value) => {
+        heartbeatTimer = value;
+      },
+      getReconnectTimer: () => reconnectTimer,
+      setReconnectTimer: (value) => {
+        reconnectTimer = value;
+      },
+      getWatchdogTimer: () => watchdogTimer,
+      setWatchdogTimer: (value) => {
+        watchdogTimer = value;
+      },
+      getReconnectAttempts: () => reconnectAttempts,
+      setReconnectAttempts: (value) => {
+        reconnectAttempts = value;
+      },
+      getLastSequence: () => lastSequence,
+      setLastSequence: (value) => {
+        lastSequence = value;
+      },
+      getSessionId: () => sessionId,
+      setSessionId: (value) => {
+        sessionId = value;
+      },
+      getResumeGatewayUrl: () => resumeGatewayUrl,
+      setResumeGatewayUrl: (value) => {
+        resumeGatewayUrl = value;
+      },
+      getStopping: () => stopping,
+      getReadyFired: () => readyFired,
+      setReadyFired: (value) => {
+        readyFired = value;
+      },
+      getQuickDisconnectCount: () => quickDisconnectCount,
+      setQuickDisconnectCount: (value) => {
+        quickDisconnectCount = value;
+      },
+      getLastConnectTime: () => lastConnectTime,
+      setLastConnectTime: (value) => {
+        lastConnectTime = value;
+      },
+      getKeepaliveMode: () => keepaliveMode,
+      setKeepaliveMode: (value) => {
+        keepaliveMode = value;
+      },
+      getLastErrorIsTransient: () => lastErrorIsTransient,
+      setLastErrorIsTransient: (value) => {
+        lastErrorIsTransient = value;
+      },
+      getAccessToken,
+      resetToken,
+      getGatewayUrl,
+      isConnected: () => connection.isConnected(),
+      onC2CMessage: handleC2CMessage,
+      onGroupMessage: handleGroupMessage,
     });
-  }
-
-  async function handleWsMessage(
-    payload: QQWsPayload,
-    opts: QQConnectOpts,
-    gatewayUrl: string,
-    onSessionReady?: () => void,
-  ): Promise<void> {
-    switch (payload.op) {
-      case OP_HELLO: {
-        const heartbeatInterval = payload.d?.heartbeat_interval || 41250;
-        startHeartbeat(heartbeatInterval);
-
-        const token = await getAccessToken();
-        if (sessionId) {
-          // Resume existing session (after reconnect)
-          sendWs({
-            op: OP_RESUME,
-            d: {
-              token: `QQBot ${token}`,
-              session_id: sessionId,
-              seq: lastSequence,
-            },
-          });
-        } else {
-          // Fresh identify
-          sendWs({
-            op: OP_IDENTIFY,
-            d: {
-              token: `QQBot ${token}`,
-              intents: INTENTS,
-              shard: [0, 1],
-            },
-          });
-        }
-        break;
-      }
-
-      case OP_DISPATCH: {
-        if (payload.s !== undefined) {
-          lastSequence = payload.s;
-        }
-
-        const eventType = payload.t;
-        const eventData = payload.d;
-
-        if (eventType === 'READY') {
-          sessionId = eventData.session_id;
-          resumeGatewayUrl = gatewayUrl;
-          logger.info({ sessionId }, 'QQ bot session ready');
-          onSessionReady?.();
-          if (!readyFired) {
-            readyFired = true;
-            opts.onReady?.();
-          }
-        } else if (eventType === 'RESUMED') {
-          logger.info('QQ bot session resumed');
-          onSessionReady?.();
-        } else if (eventType === 'C2C_MESSAGE_CREATE') {
-          await handleC2CMessage(eventData, opts);
-        } else if (eventType === 'GROUP_AT_MESSAGE_CREATE') {
-          await handleGroupMessage(eventData, opts);
-        }
-        break;
-      }
-
-      case OP_HEARTBEAT_ACK:
-        // Heartbeat acknowledged, all good
-        break;
-
-      case OP_RECONNECT:
-        logger.info('QQ server requested reconnect');
-        ws?.close();
-        break;
-
-      case OP_INVALID_SESSION: {
-        const canResume = payload.d === true;
-        logger.warn({ canResume }, 'QQ invalid session');
-        if (!canResume) {
-          sessionId = null;
-          lastSequence = null;
-        }
-        ws?.close();
-        break;
-      }
-
-      default:
-        logger.debug({ op: payload.op }, 'QQ unknown WebSocket opcode');
-    }
-  }
-
-  function scheduleReconnect(opts: QQConnectOpts, customDelay?: number): void {
-    if (stopping) return;
-    // Idempotent: if a reconnect is already pending, don't double-schedule
-    // (the close handler and the connect-failure catch can both fire for the
-    // same disconnect event).
-    if (reconnectTimer) return;
-
-    // Transition to keepalive mode once we exhaust the regular budget.
-    // We never hard-stop trying — a long network outage should self-recover.
-    if (
-      !keepaliveMode &&
-      !lastErrorIsTransient &&
-      reconnectAttempts >= MAX_RECONNECT_ATTEMPTS
-    ) {
-      keepaliveMode = true;
-      logger.error(
-        { attempts: reconnectAttempts },
-        'QQ max reconnect attempts reached, falling back to keepalive mode',
-      );
-    }
-
-    let delay: number;
-    if (customDelay !== undefined) {
-      delay = customDelay;
-    } else if (keepaliveMode) {
-      delay = KEEPALIVE_INTERVAL_MS;
-    } else {
-      delay = getReconnectDelay(reconnectAttempts);
-      // Transient errors (DNS hiccups, brief TCP resets) shouldn't burn our
-      // attempt budget — otherwise a 3-minute network blip kills the bot.
-      if (!lastErrorIsTransient) {
-        reconnectAttempts++;
-      }
-    }
-    const wasTransient = lastErrorIsTransient;
-    lastErrorIsTransient = false;
-
-    logger.info(
-      { delay, attempt: reconnectAttempts, keepaliveMode, wasTransient },
-      'QQ scheduling reconnect',
-    );
-    reconnectTimer = setTimeout(async () => {
-      reconnectTimer = null;
-      if (stopping) return;
-
-      try {
-        if (sessionId && resumeGatewayUrl) {
-          // Try to resume
-          await connectWs(opts, resumeGatewayUrl, true);
-        } else {
-          // Fresh connection
-          const url = await getGatewayUrl();
-          await connectWs(opts, url, false);
-        }
-      } catch (err) {
-        logger.error({ err }, 'QQ reconnect failed');
-        lastErrorIsTransient = isTransientError(err);
-        scheduleReconnect(opts);
-      }
-    }, delay);
-  }
 
   // ─── Event Handlers ───────────────────────────────────────
 
