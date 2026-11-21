@@ -59,7 +59,7 @@ ISSUE-12 文档中的行数是审查 R2 时点（基线 `3f34cf7`）的估计，
 - `shared/stream-event.ts` / `src/stream-event.types.ts` / `web/src/stream-event.types.ts` 三份逐字节同步副本（要动必须三份同提交并过 `scripts/check-stream-event-sync.sh`，默认整组跳过）；
 - `src/index.ts` 的 7 个候选：它是 `"main": "dist/index.js"` 入口，仓外无消费者声明（本仓为应用非库）后单列一批处理。
 
-分批：每批 ≤20 个名字、**单文件单提交**；顺序 type/interface → const → function。web 侧 `tsconfig` 开了 `noUnusedLocals`，若去 export 后 tsc 报"never used"说明该符号应整体删除——出现即停下按删除前交叉核实口径处理（grep 调用方 + tests/docs 搜索），不在本波顺手删。
+分批（**升版 2026-11-21 拍板④**：原"单文件单提交"在实测 438 名分布 158 个文件后不成比例，经用户批准改为**目录聚合批**）：每批 ≤20 个名字、同目录同类聚合，单文件超 20 名按类型阶段拆独占提交（db.ts×3、runtime-config 14 名一提交等），`web/src/components/ui` 独占热身批，`src/index.ts` 单列批；顺序 type/interface/list（无运行时效果）→ const → function/class，共 41 批。执行器带护栏：每名编辑前重扫全仓 token 防漂移，未找到唯一编辑位置即中止该名。web 侧 `tsconfig` 开了 `noUnusedLocals`，若去 export 后 tsc 报"never used"说明该符号应整体删除——出现即停下按删除前交叉核实口径处理（grep 调用方 + tests/docs 搜索），不在本波顺手删。
 
 范围声明扩宽：波 1 开工前用临时脚本（本地一次性，不入库）生成候选文件清单，随波 1 首个提交把文件清单显式加入 `.gatescope.json` allow 并在提交信息说明（扩宽留痕，复用 ISSUE-10 的 8 条扩宽先例）。
 
