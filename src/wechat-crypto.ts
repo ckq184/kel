@@ -219,7 +219,7 @@ export async function getUploadUrl(params: {
   return { uploadParam };
 }
 
-export interface UploadMediaResult {
+interface UploadMediaResult {
   filekey: string;
   downloadEncryptedQueryParam: string;
   /** AES key as base64(hex-string ASCII bytes) — ~44 chars, same for all media types. */

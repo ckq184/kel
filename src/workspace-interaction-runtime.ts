@@ -1,6 +1,6 @@
 import type { InteractionMode } from './types.js';
 
-export type PublicAgentKind = 'main' | 'conversation' | 'spawn';
+type PublicAgentKind = 'main' | 'conversation' | 'spawn';
 
 /**
  * Workspace interaction mode applies only to public, user-facing Agent loops.
@@ -89,7 +89,7 @@ export function buildInteractionTextOutboxPayload(
   };
 }
 
-export interface FrozenIpcInteractionMode {
+interface FrozenIpcInteractionMode {
   mode: InteractionMode;
   valid: boolean;
   legacyDefaulted: boolean;

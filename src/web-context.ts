@@ -21,7 +21,7 @@ import {
 import type { ChannelAccount } from './types.js';
 import type { ChannelAccountSecret } from './channel-account-secrets.js';
 
-export interface WsClientInfo {
+interface WsClientInfo {
   sessionId: string;
   userId: string;
   role: UserRole;

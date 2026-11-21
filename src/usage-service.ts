@@ -13,7 +13,7 @@ import {
 } from './kaboo-pricing.js';
 import { getEffectiveCustomPricing } from './custom-pricing-store.js';
 
-export interface UsagePayload {
+interface UsagePayload {
   eventId?: string;
   inputTokens: number;
   outputTokens: number;
@@ -36,7 +36,7 @@ export interface UsagePayload {
   >;
 }
 
-export interface RecordUsageEventOptions {
+interface RecordUsageEventOptions {
   userId: string;
   groupFolder: string;
   agentId?: string | null;

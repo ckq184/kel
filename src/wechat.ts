@@ -90,7 +90,7 @@ export interface WeChatConnectionConfig {
   };
 }
 
-export type WeChatConnectionErrorCode =
+type WeChatConnectionErrorCode =
   | 'connect_timeout'
   | 'request_timeout'
   | 'connection_reset'
@@ -165,7 +165,7 @@ export interface WeChatConnection {
   getUpdatesBuf(): string;
 }
 
-export interface WeChatConnectionDeps {
+interface WeChatConnectionDeps {
   fetch?: typeof undiciFetch;
   createDispatcher?: (bypassProxy: boolean) => Dispatcher;
   random?: () => number;

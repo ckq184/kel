@@ -38,8 +38,8 @@ export type ExecutionMode = 'container' | 'host';
 /** User-visible interaction contract owned by one Workspace↔Agent binding. */
 export type InteractionMode = 'assistant' | 'proactive';
 export type ConversationSource = 'manual' | 'native_thread' | 'feishu_thread';
-export type ConversationNavMode = 'horizontal' | 'vertical_threads';
-export type ImBindingMode = 'single_context' | 'thread_map';
+type ConversationNavMode = 'horizontal' | 'vertical_threads';
+type ImBindingMode = 'single_context' | 'thread_map';
 export type ChannelRoutingMode = 'single_session' | 'thread_map';
 export type AudienceMode = 'everyone' | 'owner_only';
 
@@ -832,7 +832,7 @@ export interface ImContextBinding {
   updated_at: string;
 }
 
-export interface ActiveRunSnapshot {
+interface ActiveRunSnapshot {
   chatJid: string;
   runId: string;
   startedAt: string;

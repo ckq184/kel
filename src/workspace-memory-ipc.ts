@@ -1,7 +1,7 @@
 import type { WorkspaceMemoryActor } from './memory-service.js';
 import type { WorkspaceMemorySourceType } from './memory-store.js';
 
-export type WorkspaceMemoryIpcOperation =
+type WorkspaceMemoryIpcOperation =
   | 'snapshot'
   | 'search'
   | 'get'
@@ -9,7 +9,7 @@ export type WorkspaceMemoryIpcOperation =
   | 'update'
   | 'delete';
 
-export interface WorkspaceMemoryAuthoritativePrincipal {
+interface WorkspaceMemoryAuthoritativePrincipal {
   actor: WorkspaceMemoryActor;
   workspaceJid: string;
   sourceType: WorkspaceMemorySourceType;
