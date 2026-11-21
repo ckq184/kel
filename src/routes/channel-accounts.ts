@@ -90,9 +90,7 @@ const pendingWeChatQr = new Map<string, PendingWeChatQr>();
 
 const PAIRING_CHANNEL_PROVIDERS = new Set<ChannelProvider>(['qq', 'wechat']);
 
-export function channelProviderSupportsPairing(
-  provider: ChannelProvider,
-): boolean {
+function channelProviderSupportsPairing(provider: ChannelProvider): boolean {
   return PAIRING_CHANNEL_PROVIDERS.has(provider);
 }
 
@@ -357,7 +355,7 @@ function legacyCredentialsFor(
 }
 
 /** Lazy, idempotent projection of legacy per-user/provider singleton configs. */
-export function ensureLegacyDefaultChannelAccounts(userId: string): void {
+function ensureLegacyDefaultChannelAccounts(userId: string): void {
   const providers = Object.keys(PROVIDER_NAMES) as ChannelProvider[];
   for (const provider of providers) {
     const legacy = legacyCredentialsFor(userId, provider);
