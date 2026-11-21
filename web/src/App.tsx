@@ -270,7 +270,7 @@ const appRoutes = createRoutesFromElements(
   </>,
 );
 
-export function createAppRouter(useHashRouter = shouldUseHashRouter()) {
+function createAppRouter(useHashRouter = shouldUseHashRouter()) {
   const options = {
     basename: APP_BASE === '/' ? undefined : APP_BASE,
   };
