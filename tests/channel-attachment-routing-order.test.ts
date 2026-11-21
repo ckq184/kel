@@ -30,18 +30,19 @@ function expectRouteBefore(
 
 describe('attachment routing is fail-closed before business side effects', () => {
   test('QQ resolves direct and group routes before registration/download', () => {
-    const source = read('src/qq.ts');
+    // ISSUE-12 单元 2.15：C2C/群两 handler 镜像合一为
+    // processQQInboundMessage（kind 双态保留），路由顺序契约等强改锚
+    // src/qq-inbound.ts 的合一函数切片——gate 与双副作用断言文本逐字不变；
+    // 合一体保持 isChatAuthorized → resolveAdmittedChannelRoute →
+    // storeChatMetadata / processQQAttachment 的顺序不变量，C2C 与群
+    // 两态共用同一函数体。
+    const source = read('src/qq-inbound.ts');
     expectRouteBefore(
       section(
         source,
+        'async function processQQInboundMessage(',
         'async function handleC2CMessage(',
-        'async function handleGroupMessage(',
       ),
-      ['storeChatMetadata(jid', 'processQQAttachment('],
-      'isChatAuthorized(jid)',
-    );
-    expectRouteBefore(
-      section(source, 'async function handleGroupMessage('),
       ['storeChatMetadata(jid', 'processQQAttachment('],
       'isChatAuthorized(jid)',
     );

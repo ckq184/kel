@@ -9,31 +9,17 @@
  *
  * Reference: https://github.com/sliverp/qqbot (QQ Bot API v2)
  */
-import crypto from 'crypto';
 import fs from 'node:fs';
 import WebSocket from 'ws';
-import {
-  getRegisteredGroup,
-  storeChatMetadata,
-  storeMessageDirect,
-  updateChatName,
-} from './db.js';
-import { notifyNewImMessage } from './message-notifier.js';
-import { broadcastNewMessage } from './web.js';
-import { parseChannelPairingCode } from './channel-admission.js';
 import { logger } from './logger.js';
-import {
-  markdownToPlainText,
-  splitTextChunks,
-  createDedupCache,
-} from './im-utils.js';
-import { ProcessingLock, isStale } from './im-safety/index.js';
+import { splitTextChunks, createDedupCache } from './im-utils.js';
+import { ProcessingLock } from './im-safety/index.js';
 import { isTransientError } from './qq-reconnect.js';
-import { resolveAdmittedChannelRoute } from './channel-admission.js';
 import { createQQTokenManager } from './qq-token.js';
 import { createQQApi } from './qq-api.js';
 import { createQQMediaSender } from './qq-media.js';
 import { createQQWsSession } from './qq-ws.js';
+import { createQQInboundProcessor } from './qq-inbound.js';
 // ─── Constants ──────────────────────────────────────────────────
 
 const MSG_SPLIT_LIMIT = 5000;
@@ -249,6 +235,28 @@ export function createQQConnection(config: QQConnectionConfig): QQConnection {
   const { sendQQImageMessage, sendQQFileMessage, processQQAttachment } =
     createQQMediaSender({ apiRequest }, getNextMsgSeq);
 
+  // ─── Event Handlers ───────────────────────────────────────
+  // C2C/群入站两 handler（原 332-751，逐块镜像）已合一抽至 ./qq-inbound.ts
+  // （ISSUE-12 单元 2.15 原文搬运 + 镜像合一）：processQQInboundMessage
+  // 以 kind 参数承载全部差异点（双态保留，不合并选边），工厂返回
+  // handleC2CMessage / handleGroupMessage 原名入口，2.14 qq-ws 的
+  // onC2CMessage / onGroupMessage 接线行零改动。dedup / processingLock /
+  // rejectTimestamps / REJECT_COOLDOWN_MS / lastIncomingMsgId 状态本体
+  // 留守本文件状态区（disconnect 清理行与门面 getLastIncomingMsgId 读点
+  // 逐字节不变，2.14 状态留守同款）；lastIncomingMsgId 写入点（原 421）随
+  // c2c 分支迁入，经注入的同一 Map 实例回接。本块须置于 WS 接线之前：
+  // 入口为 const 解构（非函数声明提升），onC2CMessage 值引用要求先于此
+  // 完成求值。
+  const { handleC2CMessage, handleGroupMessage } = createQQInboundProcessor({
+    sendQQMessage,
+    processQQAttachment,
+    dedup,
+    processingLock,
+    rejectTimestamps,
+    REJECT_COOLDOWN_MS,
+    lastIncomingMsgId,
+  });
+
   // ─── WebSocket Connection ─────────────────────────────────
 
   // ─── WebSocket Connection ─────────────────────────────────
@@ -326,431 +334,6 @@ export function createQQConnection(config: QQConnectionConfig): QQConnection {
       onC2CMessage: handleC2CMessage,
       onGroupMessage: handleGroupMessage,
     });
-
-  // ─── Event Handlers ───────────────────────────────────────
-
-  async function handleC2CMessage(
-    data: any,
-    opts: QQConnectOpts,
-  ): Promise<void> {
-    try {
-      const msgId = data.id;
-      if (!msgId) return;
-      const msgTimeMs = data.timestamp ? new Date(data.timestamp).getTime() : 0;
-      if (isStale(msgTimeMs)) {
-        logger.debug(
-          { msgId, msgTimeMs },
-          'Stale QQ C2C message (>30min), dropping',
-        );
-        return;
-      }
-      if (dedup.isDuplicate(msgId)) return;
-      if (!processingLock.acquire(msgId)) {
-        logger.debug({ msgId }, 'QQ C2C message already in-flight, skipping');
-        return;
-      }
-      dedup.markSeen(msgId);
-      try {
-        // Skip stale messages from before connection (hot-reload scenario)
-        if (opts.ignoreMessagesBefore && data.timestamp) {
-          const msgTime = new Date(data.timestamp).getTime();
-          if (!isNaN(msgTime) && msgTime < opts.ignoreMessagesBefore) return;
-        }
-
-        const userOpenId = data.author?.id || data.author?.user_openid;
-        if (!userOpenId) return;
-
-        const jid =
-          opts.normalizeIncomingJid?.(`qq:c2c:${userOpenId}`) ??
-          `qq:c2c:${userOpenId}`;
-        const realName = (data.author?.username || '').trim();
-        const senderName = realName || `QQ用户`;
-        const chatName = senderName;
-
-        // Strip bot mention from content
-        let content = (data.content || '').trim();
-
-        // ── /pair <code> command ──
-        // 统一走共享解析（严格语义：拒绝 /pair abc extra 这类多余参数），
-        // 与微信及 channel-admission 共享语义保持一致。
-        const pairCode = parseChannelPairingCode(content);
-        if (pairCode !== null && opts.onPairAttempt) {
-          try {
-            const success = await opts.onPairAttempt(jid, chatName, pairCode);
-            const reply = success
-              ? '配对成功！此聊天已连接到你的账号。'
-              : '配对码无效或已过期，请在 Web 设置页重新生成。';
-            await sendQQMessage('c2c', userOpenId, reply);
-          } catch (err) {
-            logger.error({ err, jid }, 'QQ pair attempt error');
-            await sendQQMessage('c2c', userOpenId, '配对失败，请稍后重试。');
-          }
-          return;
-        }
-
-        // ── Authorization check ──
-        if (!opts.isChatAuthorized(jid)) {
-          const now = Date.now();
-          const lastReject = rejectTimestamps.get(jid) ?? 0;
-          if (now - lastReject >= REJECT_COOLDOWN_MS) {
-            rejectTimestamps.set(jid, now);
-            await sendQQMessage(
-              'c2c',
-              userOpenId,
-              '此聊天尚未配对。请发送 /pair <code> 进行配对。\n' +
-                '你可以在 Web 设置页生成配对码。',
-            );
-          }
-          return;
-        }
-
-        const resolvedRoute = resolveAdmittedChannelRoute(
-          jid,
-          opts.resolveEffectiveChatJid,
-        );
-        if (!resolvedRoute) {
-          logger.warn(
-            { jid },
-            'QQ message dropped: binding resolver rejected route',
-          );
-          return;
-        }
-        const { targetJid, routing: agentRouting } = resolvedRoute;
-
-        // Only a routable message may update reply context caches.
-        lastIncomingMsgId.set(userOpenId, msgId);
-
-        // ── Authorized: process message ──
-        storeChatMetadata(jid, new Date().toISOString());
-
-        // QQ C2C payloads usually omit author.username, so naively writing
-        // chatName here would clobber user-set names (the rename API writes
-        // to both chats.name and registered_groups.name).  Only persist when
-        // the platform gave us a real username; otherwise pass the existing
-        // registered name through so buildOnNewChat's diff guard leaves it
-        // untouched, and fall back to the placeholder only for first-time
-        // registration.
-        if (realName) {
-          updateChatName(jid, realName);
-          opts.onNewChat(jid, realName);
-        } else {
-          const existing = getRegisteredGroup(jid);
-          opts.onNewChat(jid, existing?.name ?? chatName);
-        }
-
-        // Handle slash commands
-        const slashMatch = content.match(/^\/(\S+)(?:\s+(.*))?$/i);
-        if (slashMatch && opts.onCommand) {
-          const cmdBody = (
-            slashMatch[1] + (slashMatch[2] ? ' ' + slashMatch[2] : '')
-          ).trim();
-          try {
-            // Namespace senderImId with `c2c:` prefix so owner_im_id 比对在
-            // DM 与群聊上下文中独立——QQ Bot API v2 的 author.user_openid (C2C) 与
-            // author.member_openid (Group) 是两个不同的 ID namespace，protocol
-            // 层面不互通；前缀化让 DM 认领的 owner 与群里认领的 owner 各自落入
-            // 独立记录，互不干扰。
-            const reply = await opts.onCommand(
-              jid,
-              cmdBody,
-              `c2c:${userOpenId}`,
-            );
-            if (reply) {
-              await sendQQMessage(
-                'c2c',
-                userOpenId,
-                markdownToPlainText(reply),
-              );
-              return;
-            }
-          } catch (err) {
-            logger.error({ jid, err }, 'QQ slash command failed');
-            await sendQQMessage('c2c', userOpenId, '命令执行失败，请稍后重试');
-            return;
-          }
-        }
-
-        // Handle attachments (images / files)
-        let attachmentsJson: string | undefined;
-        if (data.attachments?.length) {
-          const result = await processQQAttachment(
-            data.attachments[0],
-            msgId,
-            jid,
-            content,
-            opts,
-            'c2c',
-          );
-          content = result.content;
-          attachmentsJson = result.attachmentsJson;
-        }
-
-        // Store the already-resolved route. A configured resolver is
-        // authoritative and was evaluated before registration/downloads.
-        const id = crypto.randomUUID();
-        let timestamp: string;
-        try {
-          timestamp = data.timestamp
-            ? new Date(data.timestamp).toISOString()
-            : new Date().toISOString();
-        } catch {
-          timestamp = new Date().toISOString();
-        }
-        const senderId = `qq:${userOpenId}`;
-        storeChatMetadata(targetJid, timestamp);
-        storeMessageDirect(
-          id,
-          targetJid,
-          senderId,
-          senderName,
-          content,
-          timestamp,
-          false,
-          { attachments: attachmentsJson, sourceJid: jid },
-        );
-
-        broadcastNewMessage(
-          targetJid,
-          {
-            id,
-            chat_jid: targetJid,
-            source_jid: jid,
-            sender: senderId,
-            sender_name: senderName,
-            content,
-            timestamp,
-            attachments: attachmentsJson,
-            is_from_me: false,
-          },
-          agentRouting?.agentId ?? undefined,
-        );
-        notifyNewImMessage();
-
-        if (agentRouting?.agentId) {
-          opts.onAgentMessage?.(jid, agentRouting.agentId);
-          logger.info(
-            { jid, effectiveJid: targetJid, agentId: agentRouting.agentId },
-            'QQ C2C message routed to agent',
-          );
-        } else {
-          logger.info(
-            { jid, sender: senderName, msgId },
-            'QQ C2C message stored',
-          );
-        }
-      } finally {
-        processingLock.release(msgId);
-      }
-    } catch (err) {
-      logger.error({ err }, 'Error handling QQ C2C message');
-    }
-  }
-
-  async function handleGroupMessage(
-    data: any,
-    opts: QQConnectOpts,
-  ): Promise<void> {
-    try {
-      const msgId = data.id;
-      if (!msgId) return;
-      const msgTimeMs = data.timestamp ? new Date(data.timestamp).getTime() : 0;
-      if (isStale(msgTimeMs)) {
-        logger.debug(
-          { msgId, msgTimeMs },
-          'Stale QQ group message (>30min), dropping',
-        );
-        return;
-      }
-      if (dedup.isDuplicate(msgId)) return;
-      if (!processingLock.acquire(msgId)) {
-        logger.debug({ msgId }, 'QQ group message already in-flight, skipping');
-        return;
-      }
-      dedup.markSeen(msgId);
-      try {
-        // Skip stale messages from before connection (hot-reload scenario)
-        if (opts.ignoreMessagesBefore && data.timestamp) {
-          const msgTime = new Date(data.timestamp).getTime();
-          if (!isNaN(msgTime) && msgTime < opts.ignoreMessagesBefore) return;
-        }
-
-        const groupOpenId = data.group_openid;
-        if (!groupOpenId) return;
-
-        const jid =
-          opts.normalizeIncomingJid?.(`qq:group:${groupOpenId}`) ??
-          `qq:group:${groupOpenId}`;
-        const memberOpenId = data.author?.member_openid;
-        const senderName = data.author?.username || `QQ群成员`;
-        const chatName = `QQ群 ${groupOpenId.slice(0, 8)}`;
-
-        // Strip bot mention text (e.g. <@!bot_id>)
-        let content = (data.content || '').replace(/<@!\w+>/g, '').trim();
-
-        // ── /pair <code> command ──
-        // 同 c2c 分支：共享解析的严格语义（拒绝多余参数）。
-        const pairCode = parseChannelPairingCode(content);
-        if (pairCode !== null && opts.onPairAttempt) {
-          try {
-            const success = await opts.onPairAttempt(jid, chatName, pairCode);
-            const reply = success
-              ? '配对成功！此群聊已连接。'
-              : '配对码无效或已过期，请在 Web 设置页重新生成。';
-            await sendQQMessage('group', groupOpenId, reply);
-          } catch (err) {
-            logger.error({ err, jid }, 'QQ group pair attempt error');
-            await sendQQMessage('group', groupOpenId, '配对失败，请稍后重试。');
-          }
-          return;
-        }
-
-        // ── Authorization check ──
-        if (!opts.isChatAuthorized(jid)) {
-          const now = Date.now();
-          const lastReject = rejectTimestamps.get(jid) ?? 0;
-          if (now - lastReject >= REJECT_COOLDOWN_MS) {
-            rejectTimestamps.set(jid, now);
-            await sendQQMessage(
-              'group',
-              groupOpenId,
-              '此群聊尚未配对。请发送 /pair <code> 进行配对。',
-            );
-          }
-          return;
-        }
-
-        const resolvedRoute = resolveAdmittedChannelRoute(
-          jid,
-          opts.resolveEffectiveChatJid,
-        );
-        if (!resolvedRoute) {
-          logger.warn(
-            { jid },
-            'QQ group message dropped: binding resolver rejected route',
-          );
-          return;
-        }
-        const { targetJid, routing: agentRouting } = resolvedRoute;
-
-        // ── Authorized: process message ──
-        storeChatMetadata(jid, new Date().toISOString());
-
-        // QQ group payloads don't carry a group name; chatName is always a
-        // placeholder derived from groupOpenId.  Only write it on first-time
-        // registration — otherwise we'd clobber user-set names (rename API).
-        const existing = getRegisteredGroup(jid);
-        if (!existing) {
-          updateChatName(jid, chatName);
-          opts.onNewChat(jid, chatName);
-        } else {
-          opts.onNewChat(jid, existing.name ?? chatName);
-        }
-
-        // Handle slash commands
-        const slashMatch = content.match(/^\/(\S+)(?:\s+(.*))?$/i);
-        if (slashMatch && opts.onCommand) {
-          const cmdBody = (
-            slashMatch[1] + (slashMatch[2] ? ' ' + slashMatch[2] : '')
-          ).trim();
-          try {
-            // Namespace senderImId with `group:` prefix——见 C2C 分支的注释。
-            // member_openid 仅在群聊上下文有意义，与 C2C 的 user_openid 不互通。
-            const reply = await opts.onCommand(
-              jid,
-              cmdBody,
-              memberOpenId ? `group:${memberOpenId}` : undefined,
-            );
-            if (reply) {
-              await sendQQMessage(
-                'group',
-                groupOpenId,
-                markdownToPlainText(reply),
-              );
-              return;
-            }
-          } catch (err) {
-            logger.error({ jid, err }, 'QQ group slash command failed');
-            await sendQQMessage(
-              'group',
-              groupOpenId,
-              '命令执行失败，请稍后重试',
-            );
-            return;
-          }
-        }
-
-        // Handle attachments (images / files)
-        let attachmentsJson: string | undefined;
-        if (data.attachments?.length) {
-          const result = await processQQAttachment(
-            data.attachments[0],
-            msgId,
-            jid,
-            content,
-            opts,
-            'group',
-          );
-          content = result.content;
-          attachmentsJson = result.attachmentsJson;
-        }
-
-        // Store the already-resolved route.
-        const id = crypto.randomUUID();
-        let timestamp: string;
-        try {
-          timestamp = data.timestamp
-            ? new Date(data.timestamp).toISOString()
-            : new Date().toISOString();
-        } catch {
-          timestamp = new Date().toISOString();
-        }
-        const senderId = memberOpenId ? `qq:${memberOpenId}` : 'qq:unknown';
-        storeChatMetadata(targetJid, timestamp);
-        storeMessageDirect(
-          id,
-          targetJid,
-          senderId,
-          senderName,
-          content,
-          timestamp,
-          false,
-          { attachments: attachmentsJson, sourceJid: jid },
-        );
-
-        broadcastNewMessage(
-          targetJid,
-          {
-            id,
-            chat_jid: targetJid,
-            source_jid: jid,
-            sender: senderId,
-            sender_name: senderName,
-            content,
-            timestamp,
-            attachments: attachmentsJson,
-            is_from_me: false,
-          },
-          agentRouting?.agentId ?? undefined,
-        );
-        notifyNewImMessage();
-
-        if (agentRouting?.agentId) {
-          opts.onAgentMessage?.(jid, agentRouting.agentId);
-        }
-
-        logger.info(
-          { jid, sender: senderName, msgId },
-          'QQ group message stored',
-        );
-      } finally {
-        processingLock.release(msgId);
-      }
-    } catch (err) {
-      logger.error({ err }, 'Error handling QQ group message');
-    }
-  }
-
-  // ─── Connection Interface ─────────────────────────────────
 
   const connection: QQConnection = {
     async connect(opts: QQConnectOpts): Promise<void> {
