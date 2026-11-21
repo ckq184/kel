@@ -20,6 +20,7 @@ import { createQQApi } from './qq-api.js';
 import { createQQMediaSender } from './qq-media.js';
 import { createQQWsSession } from './qq-ws.js';
 import { createQQInboundProcessor } from './qq-inbound.js';
+import { createQQStreamState } from './qq-stream.js';
 // ─── Constants ──────────────────────────────────────────────────
 
 const MSG_SPLIT_LIMIT = 5000;
@@ -158,20 +159,9 @@ export function createQQConnection(config: QQConnectionConfig): QQConnection {
   // Per-chat msg_seq counter for active messages
   const msgSeqCounters = new Map<string, number>();
 
-  // Latest incoming msg_id per C2C openid, used as passive-reply reference
-  // for stream_messages (QQ API rejects the endpoint without msg_id).
-  const lastIncomingMsgId = new Map<string, string>();
-
   // Rate-limit rejection messages
   const rejectTimestamps = new Map<string, number>();
   const REJECT_COOLDOWN_MS = 5 * 60 * 1000;
-
-  function getNextMsgSeq(chatId: string): number {
-    const current = msgSeqCounters.get(chatId) ?? 0;
-    const next = current + 1;
-    msgSeqCounters.set(chatId, next);
-    return next;
-  }
 
   // ─── Token Management ──────────────────────────────────────
   // getAccessToken / refreshToken 及其专属状态（tokenInfo /
@@ -219,6 +209,19 @@ export function createQQConnection(config: QQConnectionConfig): QQConnection {
     });
   }
 
+  // ─── Stream Session ───────────────────────────────────────
+  // 流式会话状态与端点（原 getNextMsgSeq + lastIncomingMsgId 状态簇 +
+  // 门面 sendStreamMessage 方法体）已抽至 ./qq-stream.ts（ISSUE-12 单元
+  // 2.16 原文搬运，QQ 六连收官）。msgSeqCounters 留守本文件状态区并经
+  // 同名参数注入（disconnect 清理行逐字节不变，2.14/2.15 状态留守同款）；
+  // lastIncomingMsgId 随迁工厂内部（disconnect 本不清、被动回复引用跨
+  // 连接存续），门面 getLastIncomingMsgId 读点与 2.15 inbound 写点经
+  // 返回面同名 Map 零改动（同一实例透传）。同名解构使 sendQQMessage /
+  // 2.13 media 接线 / 门面 getNextMsgSeq 转发调用点零改动；门面
+  // sendStreamMessage 方法壳签名不动，方法体一行委托。
+  const { getNextMsgSeq, sendStreamMessage, lastIncomingMsgId } =
+    createQQStreamState({ apiRequest }, msgSeqCounters);
+
   // ─── Media Sending ───────────────────────────────────────
   // 原三段（Image Sending / Chunked File Upload / File Download，
   // 528-1023）与状态区 uploadCache 簇（405-473）已整体抽至 ./qq-media.ts
@@ -241,10 +244,10 @@ export function createQQConnection(config: QQConnectionConfig): QQConnection {
   // 以 kind 参数承载全部差异点（双态保留，不合并选边），工厂返回
   // handleC2CMessage / handleGroupMessage 原名入口，2.14 qq-ws 的
   // onC2CMessage / onGroupMessage 接线行零改动。dedup / processingLock /
-  // rejectTimestamps / REJECT_COOLDOWN_MS / lastIncomingMsgId 状态本体
-  // 留守本文件状态区（disconnect 清理行与门面 getLastIncomingMsgId 读点
-  // 逐字节不变，2.14 状态留守同款）；lastIncomingMsgId 写入点（原 421）随
-  // c2c 分支迁入，经注入的同一 Map 实例回接。本块须置于 WS 接线之前：
+  // rejectTimestamps / REJECT_COOLDOWN_MS 状态本体留守本文件状态区
+  // （disconnect 清理行逐字节不变，2.14 状态留守同款）；lastIncomingMsgId
+  // 于 2.16 随流式状态簇迁至 ./qq-stream.ts，本接线经其返回面同名 Map
+  // 注入（同一实例，写入点随 c2c 分支在 qq-inbound）。本块须置于 WS 接线之前：
   // 入口为 const 解构（非函数声明提升），onC2CMessage 值引用要求先于此
   // 完成求值。
   const { handleC2CMessage, handleGroupMessage } = createQQInboundProcessor({
@@ -256,8 +259,6 @@ export function createQQConnection(config: QQConnectionConfig): QQConnection {
     REJECT_COOLDOWN_MS,
     lastIncomingMsgId,
   });
-
-  // ─── WebSocket Connection ─────────────────────────────────
 
   // ─── WebSocket Connection ─────────────────────────────────
   // WS 重连互递归簇（clearTimers / stopWatchdog / startWatchdog / sendWs /
@@ -511,25 +512,7 @@ export function createQQConnection(config: QQConnectionConfig): QQConnection {
         event_id?: string;
       },
     ): Promise<{ id?: string }> {
-      const endpoint = `/v2/users/${openid}/stream_messages`;
-      const body: Record<string, unknown> = {
-        input_mode: params.input_mode,
-        input_state: params.input_state,
-        content_type: params.content_type,
-        content_raw: params.content_raw,
-        msg_seq: params.msg_seq,
-        index: params.index,
-      };
-      if (params.stream_msg_id) {
-        body.stream_msg_id = params.stream_msg_id;
-      }
-      if (params.msg_id) {
-        body.msg_id = params.msg_id;
-      }
-      if (params.event_id) {
-        body.event_id = params.event_id;
-      }
-      return apiRequest<{ id?: string }>('POST', endpoint, body);
+      return sendStreamMessage(openid, params);
     },
 
     getNextMsgSeq(chatId: string): number {
