@@ -57,7 +57,7 @@ export interface ClaudeContextPlanArgs {
   workspaceSkillsDirOverride?: string;
 }
 
-export interface ClaudeContextPlan {
+interface ClaudeContextPlan {
   executionMode: 'host' | 'container';
   isAdminOwned: boolean;
   externalClaudeDir: string;

@@ -1,4 +1,4 @@
-export interface CkqclawBootstrapTurn {
+interface CkqclawBootstrapTurn {
   turnId?: string;
   isHome: boolean;
   isDefaultProfile: boolean;
@@ -19,7 +19,7 @@ export function isCkqclawBootstrapTurn(input: CkqclawBootstrapTurn): boolean {
   );
 }
 
-export interface CkqclawOwnerProfileRuntime {
+interface CkqclawOwnerProfileRuntime {
   isHome: boolean;
   isDefaultProfile: boolean;
   isScheduledTask?: boolean;

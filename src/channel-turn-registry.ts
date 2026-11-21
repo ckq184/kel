@@ -1,6 +1,6 @@
 import type { ChannelTurnContext } from './types.js';
 
-export interface ActiveChannelTurn {
+interface ActiveChannelTurn {
   correlationId: string;
   sourceJid: string;
   context: ChannelTurnContext;

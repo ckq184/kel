@@ -13,7 +13,7 @@ import {
 } from './channel-reliability-store.js';
 import { logger } from './logger.js';
 
-export interface StreamingCardReconciler {
+interface StreamingCardReconciler {
   reconcileStreamingCard(record: StreamingCardRecord): Promise<{
     version: number;
     method: 'cardkit' | 'message_patch';

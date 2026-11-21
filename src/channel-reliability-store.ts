@@ -52,7 +52,7 @@ let database: SqliteDatabase | null = null;
 
 /** 入站消息生命周期：received 原始落库（默认）→ queued 排队 →
  *  processing 处理中 → 终态 processed / ignored / failed。 */
-export type ChannelInboxStatus =
+type ChannelInboxStatus =
   | 'received'
   | 'queued'
   | 'processing'
@@ -77,7 +77,7 @@ export type ChannelOutboxKind = 'text' | 'image' | 'file' | 'card' | 'mutation';
 
 /** 出站投递生命周期：pending → claimed →（uploading → uploaded）→ sending →
  *  delivered；发送结果不明置 uncertain 待对账，终态为 delivered / failed。 */
-export type ChannelOutboxStatus =
+type ChannelOutboxStatus =
   | 'pending'
   | 'claimed'
   | 'retry_wait'
@@ -88,7 +88,7 @@ export type ChannelOutboxStatus =
   | 'uncertain'
   | 'failed';
 
-export type StreamingCardStatus =
+type StreamingCardStatus =
   | 'creating'
   | 'streaming'
   | 'recovering'
@@ -105,7 +105,7 @@ export interface ChannelRouteSnapshot {
   threadId?: string | null;
 }
 
-export interface ChannelInboxItem extends ChannelRouteSnapshot {
+interface ChannelInboxItem extends ChannelRouteSnapshot {
   id: string;
   externalMessageId: string;
   status: ChannelInboxStatus;
@@ -128,7 +128,7 @@ export interface ClaimedChannelInboxItem extends ChannelInboxItem {
   leaseExpiresAt: string;
 }
 
-export interface ChannelTurnRun extends ChannelRouteSnapshot {
+interface ChannelTurnRun extends ChannelRouteSnapshot {
   id: string;
   inboxId: string | null;
   idempotencyKey: string;
@@ -180,7 +180,7 @@ export interface ChannelOutboxItem extends ChannelRouteSnapshot {
   deliveredAt: string | null;
 }
 
-export interface ClaimedChannelOutboxItem extends ChannelOutboxItem {
+interface ClaimedChannelOutboxItem extends ChannelOutboxItem {
   status: 'claimed';
   leaseOwner: string;
   leaseExpiresAt: string;
@@ -201,7 +201,7 @@ export interface StreamingCardRecord extends ChannelRouteSnapshot {
   completedAt: string | null;
 }
 
-export interface ChannelCursor {
+interface ChannelCursor {
   provider: string;
   accountId: string;
   scope: string;
@@ -493,7 +493,7 @@ function mapCursor(row: CursorRow): ChannelCursor {
   };
 }
 
-export interface AdvanceChannelCursorInput {
+interface AdvanceChannelCursorInput {
   provider: string;
   accountId: string;
   scope: string;
@@ -678,7 +678,7 @@ function mapInbox(row: InboxRow): ChannelInboxItem {
   };
 }
 
-export interface RecordChannelInboxInput extends ChannelRouteSnapshot {
+interface RecordChannelInboxInput extends ChannelRouteSnapshot {
   externalMessageId: string;
   rawPayload?: unknown;
   normalizedPayload?: unknown;
@@ -1037,7 +1037,7 @@ function mapTurn(row: TurnRow): ChannelTurnRun {
   };
 }
 
-export interface CreateChannelTurnRunInput extends ChannelRouteSnapshot {
+interface CreateChannelTurnRunInput extends ChannelRouteSnapshot {
   id?: string;
   inboxId?: string | null;
   idempotencyKey: string;
@@ -1564,7 +1564,7 @@ function mapOutbox(row: OutboxRow): ChannelOutboxItem {
   };
 }
 
-export interface EnqueueChannelOutboxInput extends ChannelRouteSnapshot {
+interface EnqueueChannelOutboxInput extends ChannelRouteSnapshot {
   id?: string;
   turnRunId: string;
   ordinal: number;
@@ -2029,7 +2029,7 @@ function mapCard(row: CardRow): StreamingCardRecord {
   };
 }
 
-export interface CreateStreamingCardRecordInput extends ChannelRouteSnapshot {
+interface CreateStreamingCardRecordInput extends ChannelRouteSnapshot {
   id?: string;
   turnRunId: string;
   messageId?: string | null;
@@ -2293,7 +2293,7 @@ export function listAllNonterminalStreamingCards(
   return cards;
 }
 
-export interface ChannelReliabilityNonterminalSnapshot {
+interface ChannelReliabilityNonterminalSnapshot {
   inbox: ChannelInboxItem[];
   turns: ChannelTurnRun[];
   outbox: ChannelOutboxItem[];
@@ -2347,7 +2347,7 @@ export function scanChannelReliabilityNonterminal(
   };
 }
 
-export interface CleanupChannelReliabilityInput {
+interface CleanupChannelReliabilityInput {
   /** Redact large request/output/card bodies while retaining idempotency receipts. */
   payloadsBefore: string;
   /** Delete terminal audit rows; should exceed every provider replay window. */

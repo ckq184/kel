@@ -34,7 +34,7 @@ import { logger } from './logger.js';
 const DEFAULT_LEASE_MS = 45_000;
 const DEFAULT_HEARTBEAT_MS = 12_000;
 
-export interface ChannelTurnRuntimeInput extends ChannelRouteSnapshot {
+interface ChannelTurnRuntimeInput extends ChannelRouteSnapshot {
   externalMessageId: string;
   agentId?: string | null;
   sessionId?: string | null;
