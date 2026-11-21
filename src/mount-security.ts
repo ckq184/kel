@@ -347,7 +347,7 @@ export function normalizeAdditionalMountContainerPath(input: string): string {
   return normalized;
 }
 
-export interface ContainerConfigParseResult {
+interface ContainerConfigParseResult {
   config?: ContainerConfig;
   error?: string;
 }
@@ -447,7 +447,7 @@ export function parseContainerConfig(raw: unknown): ContainerConfigParseResult {
   };
 }
 
-export interface MountValidationResult {
+interface MountValidationResult {
   allowed: boolean;
   reason: string;
   realHostPath?: string;

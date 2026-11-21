@@ -1,7 +1,7 @@
 import { CHANNEL_PREFIXES } from './channel-prefixes.js';
 import type { ChannelReferencedMessage, NewMessage } from './types.js';
 
-export interface FormatMessagesOptions {
+interface FormatMessagesOptions {
   /**
    * Referenced provider message IDs already available in the active SDK
    * transcript or in the recovery history prepended to this prompt.

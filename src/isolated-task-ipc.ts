@@ -19,7 +19,7 @@ export function getIsolatedTaskRunCompletionMarker(runDir: string): string {
   );
 }
 
-export interface IsolatedTaskRunCompletion {
+interface IsolatedTaskRunCompletion {
   taskId: string;
   taskRunId: string;
   /** Durable task_runs.id; taskRunId is only the filesystem namespace. */

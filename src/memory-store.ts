@@ -30,7 +30,7 @@ export type WorkspaceMemoryStatus =
   | 'superseded'
   | 'deleted';
 
-export type WorkspaceMemoryChangeType = 'create' | 'update' | 'forget';
+type WorkspaceMemoryChangeType = 'create' | 'update' | 'forget';
 
 export type WorkspaceMemorySourceType =
   | 'web_user'
@@ -83,7 +83,7 @@ export interface WorkspaceMemoryVersion extends Omit<
   };
 }
 
-export interface WorkspaceMemoryStore {
+interface WorkspaceMemoryStore {
   id: string;
   workspaceJid: string;
   revision: number;
@@ -911,7 +911,7 @@ export function getMutableWorkspaceMemoryItem(
   return { store, item };
 }
 
-export interface ReservedWorkspaceMemoryMutationResult {
+interface ReservedWorkspaceMemoryMutationResult {
   store: WorkspaceMemoryStore;
   item: WorkspaceMemoryItem;
   replayed: boolean;

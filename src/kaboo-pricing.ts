@@ -10,7 +10,7 @@
  * - kaboo/backend/biz/service/pricing.go
  */
 
-export interface KabooTokenUsage {
+interface KabooTokenUsage {
   inputTokens: number;
   outputTokens: number;
   cacheReadInputTokens: number;
@@ -39,14 +39,14 @@ export interface CustomPricingRules {
   fallback?: KabooModelPricing;
 }
 
-export interface KabooModelTokenUsage extends Omit<
+interface KabooModelTokenUsage extends Omit<
   KabooTokenUsage,
   'reasoningTokens'
 > {
   reasoningTokens?: number;
 }
 
-export interface KabooPricedModelUsage extends KabooTokenUsage {
+interface KabooPricedModelUsage extends KabooTokenUsage {
   model: string;
   pricing: KabooModelPricing;
   unroundedCostUSD: number;
@@ -54,7 +54,7 @@ export interface KabooPricedModelUsage extends KabooTokenUsage {
   costUSD: number;
 }
 
-export interface KabooPricedUsage {
+interface KabooPricedUsage {
   usage: KabooTokenUsage;
   models: KabooPricedModelUsage[];
   unroundedCostUSD: number;

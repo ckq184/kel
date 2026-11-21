@@ -78,7 +78,7 @@ export interface WorkspaceMemoryActor {
   role: UserRole;
 }
 
-export interface WorkspaceMemoryProvenanceInput {
+interface WorkspaceMemoryProvenanceInput {
   sourceId?: string | null;
   sessionId?: string | null;
   observedAt?: string | null;

@@ -1,12 +1,12 @@
 import { detectImageMimeTypeFromBase64Strict } from './image-detector.js';
 
-export interface ImageAttachmentInput {
+interface ImageAttachmentInput {
   type?: unknown;
   data?: unknown;
   mimeType?: unknown;
 }
 
-export interface NormalizedImageAttachment {
+interface NormalizedImageAttachment {
   type: 'image';
   data: string;
   mimeType: string;
