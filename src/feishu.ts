@@ -14,18 +14,21 @@ import {
   saveDownloadedFile,
   sanitizeImFilename,
   buildInlinedFileContent,
-  MAX_FILE_SIZE,
-  FileTooLargeError,
 } from './im-downloader.js';
 import { notifyNewImMessage } from './message-notifier.js';
 import { broadcastFollowUpUpdate, broadcastNewMessage } from './web.js';
-import { detectImageMimeType } from './image-detector.js';
 import { resolveJidByMessageId } from './feishu-streaming-card.js';
 import { optimizeMarkdownStyle } from './feishu-markdown-style.js';
 import {
   createFeishuBotInfoRefresher,
   type FeishuBotPublicInfo,
 } from './feishu-bot-info.js';
+import {
+  downloadFeishuFileToDisk,
+  downloadFeishuImage,
+  FEISHU_RESOURCE_REQUEST_TIMEOUT_MS,
+  withFeishuHardTimeout,
+} from './feishu-media.js';
 import {
   buildAgentReplyCard,
   buildFollowUpActionResultCard,
@@ -82,6 +85,11 @@ import type {
   FollowUpDisposition,
   FollowUpMode,
 } from './types.js';
+
+// 飞书媒体下载纯函数（readFeishuResourceBuffer / withFeishuHardTimeout 等）已抽至
+// ./feishu-media.ts（ISSUE-12 单元 2.2 原文搬运）；readFeishuResourceBuffer 保持自本文件
+// re-export，既有导入路径（tests/feishu-resource-timeout.test.ts）不变。
+export { readFeishuResourceBuffer } from './feishu-media.js';
 
 // ─── FeishuConnection Interface ────────────────────────────────
 
@@ -224,8 +232,6 @@ const FEISHU_INBOX_HEARTBEAT_MS = 60 * 1000;
 const FEISHU_INBOX_RETRY_DELAY_MS = 5_000;
 const FEISHU_INBOX_GATE_RETRY_DELAY_MS = 250;
 const FEISHU_INBOX_RECOVERY_LIMIT = 500;
-const FEISHU_RESOURCE_REQUEST_TIMEOUT_MS = 15_000;
-const FEISHU_RESOURCE_STREAM_TIMEOUT_MS = 30_000;
 const FEISHU_CURSOR_SCOPE = 'chat_messages';
 // "因 botOpenId 缺失而丢消息" 的 warn 节流间隔，避免日志刷屏
 const BOT_INFO_MISSING_WARN_INTERVAL_MS = 5 * 60 * 1000;
@@ -234,10 +240,6 @@ interface FeishuMentionLike {
   key?: string;
   name?: string;
   id?: { open_id?: string; user_id?: string; union_id?: string };
-}
-
-interface FeishuResourceStream extends AsyncIterable<unknown> {
-  destroy?: (error?: Error) => void;
 }
 
 class FeishuTextDeliveryError extends Error {
@@ -303,68 +305,6 @@ function parseFeishuSlashCommandCheckpoint(
   return typeof checkpoint.replyText === 'string'
     ? (checkpoint as FeishuSlashCommandCheckpoint)
     : undefined;
-}
-
-function withFeishuHardTimeout<T>(
-  operation: Promise<T>,
-  timeoutMs: number,
-  label: string,
-  onTimeout?: () => void,
-): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      const error = new Error(`${label} timed out after ${timeoutMs}ms`);
-      try {
-        onTimeout?.();
-      } finally {
-        reject(error);
-      }
-    }, timeoutMs);
-    timer.unref?.();
-    operation.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (error) => {
-        clearTimeout(timer);
-        reject(error);
-      },
-    );
-  });
-}
-
-/** Read one SDK resource stream under a hard wall-clock and byte budget. */
-export async function readFeishuResourceBuffer(
-  stream: FeishuResourceStream,
-  options: {
-    timeoutMs?: number;
-    maxBytes?: number;
-    resourceLabel?: string;
-  } = {},
-): Promise<Buffer> {
-  const label = options.resourceLabel ?? 'Feishu resource stream';
-  const reading = (async () => {
-    const chunks: Buffer[] = [];
-    let totalSize = 0;
-    for await (const chunk of stream) {
-      const buffer = Buffer.isBuffer(chunk)
-        ? chunk
-        : Buffer.from(chunk as Uint8Array);
-      totalSize += buffer.length;
-      if (options.maxBytes !== undefined && totalSize > options.maxBytes) {
-        throw new FileTooLargeError(label, totalSize);
-      }
-      chunks.push(buffer);
-    }
-    return Buffer.concat(chunks);
-  })();
-  return withFeishuHardTimeout(
-    reading,
-    options.timeoutMs ?? FEISHU_RESOURCE_STREAM_TIMEOUT_MS,
-    label,
-    () => stream.destroy?.(new Error(`${label} timed out`)),
-  );
 }
 
 interface IncomingMessagePayload {
@@ -1397,114 +1337,9 @@ export function createFeishuConnection(
   const { fetchBotOpenIdOnce, fetchBotOpenIdWithRetry, ensureBotOpenIdFresh } =
     botInfoRefresher;
 
-  async function downloadFeishuImage(
-    messageId: string,
-    fileKey: string,
-  ): Promise<{ base64: string; mimeType: string } | null> {
-    try {
-      const res = await withFeishuHardTimeout(
-        client!.im.messageResource.get({
-          path: {
-            message_id: messageId,
-            file_key: fileKey,
-          },
-          params: {
-            type: 'image',
-          },
-        }),
-        FEISHU_RESOURCE_REQUEST_TIMEOUT_MS,
-        'Feishu image resource request',
-      );
-
-      const stream = res.getReadableStream() as FeishuResourceStream;
-      const buffer = await readFeishuResourceBuffer(stream, {
-        maxBytes: MAX_FILE_SIZE,
-        resourceLabel: `Feishu image ${fileKey}`,
-      });
-      if (buffer.length === 0) {
-        logger.warn(
-          { messageId, fileKey },
-          'Empty response from image download',
-        );
-        return null;
-      }
-
-      const mimeType = detectImageMimeType(buffer);
-      return {
-        base64: buffer.toString('base64'),
-        mimeType,
-      };
-    } catch (err) {
-      logger.warn(
-        { err, messageId, fileKey },
-        'Failed to download Feishu image',
-      );
-      return null;
-    }
-  }
-
-  /**
-   * 下载飞书文件（type='file'）到工作区磁盘。
-   * 返回工作区相对路径（如 downloads/feishu/2026-03-01/report.pdf），失败返回 null。
-   */
-  async function downloadFeishuFileToDisk(
-    messageId: string,
-    fileKey: string,
-    filename: string,
-    groupFolder: string,
-  ): Promise<string | null> {
-    try {
-      const res = await withFeishuHardTimeout(
-        client!.im.messageResource.get({
-          path: {
-            message_id: messageId,
-            file_key: fileKey,
-          },
-          params: {
-            type: 'file',
-          },
-        }),
-        FEISHU_RESOURCE_REQUEST_TIMEOUT_MS,
-        'Feishu file resource request',
-      );
-
-      const stream = res.getReadableStream() as FeishuResourceStream;
-      const buffer = await readFeishuResourceBuffer(stream, {
-        maxBytes: MAX_FILE_SIZE,
-        resourceLabel: filename || `Feishu file ${fileKey}`,
-      });
-      if (buffer.length === 0) {
-        logger.warn(
-          { messageId, fileKey },
-          'Empty response from file download',
-        );
-        return null;
-      }
-
-      const effectiveName = filename || `file_${fileKey}`;
-      try {
-        const relPath = await saveDownloadedFile(
-          groupFolder,
-          'feishu',
-          effectiveName,
-          buffer,
-        );
-        return relPath;
-      } catch (err) {
-        if (err instanceof FileTooLargeError) {
-          logger.warn({ fileKey, filename }, 'Feishu file too large, skipping');
-          return null;
-        }
-        throw err;
-      }
-    } catch (err) {
-      logger.warn(
-        { err, messageId, fileKey },
-        'Failed to download Feishu file to disk',
-      );
-      return null;
-    }
-  }
+  // 图片/文件下载（downloadFeishuImage / downloadFeishuFileToDisk）与头部媒体纯函数
+  // （readFeishuResourceBuffer / withFeishuHardTimeout）已抽至 ./feishu-media.ts
+  // （ISSUE-12 单元 2.2 原文搬运）；client 经 () => client 访问器注入。
 
   function getSenderName(openId: string): string {
     return senderNameCache.get(openId) || openId;
@@ -2377,6 +2212,7 @@ export function createFeishuConnection(
         for (const imageRef of currentImageRefs) {
           const { imageKey } = imageRef;
           const imageData = await downloadFeishuImage(
+            () => client,
             imageRef.messageId,
             imageKey,
           );
@@ -2425,6 +2261,7 @@ export function createFeishuConnection(
         // quoted message while the same bytes are also supplied to vision.
         for (const ref of referencedImageRefs) {
           const imageData = await downloadFeishuImage(
+            () => client,
             ref.messageId,
             ref.imageKey,
           );
@@ -2536,6 +2373,7 @@ export function createFeishuConnection(
           for (const fi of extracted.fileInfos) {
             const safeFilename = sanitizeImFilename(fi.filename || fi.fileKey);
             const relPath = await downloadFeishuFileToDisk(
+              () => client,
               messageId,
               fi.fileKey,
               fi.filename,
