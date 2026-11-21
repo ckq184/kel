@@ -9218,7 +9218,7 @@ export interface WorkspaceRecord {
 }
 
 /** SDK/provider resume state. This is not a user-visible product Session. */
-export interface WorkspaceRuntimeSessionRecord {
+interface WorkspaceRuntimeSessionRecord {
   group_folder: string;
   runtime_agent_id: string;
   workspace_jid: string;
@@ -10207,7 +10207,7 @@ export function hasContainerModeGroups(): boolean {
   return row !== undefined;
 }
 
-export interface AdminHostOnlyMigrationResult {
+interface AdminHostOnlyMigrationResult {
   affectedGroups: Array<{ jid: string; folder: string }>;
   affectedFolders: string[];
   migratedTaskIds: string[];
@@ -10772,7 +10772,7 @@ export class WorkspaceRebuildPersistentStateError extends Error {
   }
 }
 
-export interface WorkspaceRebuildPersistentStateResult {
+interface WorkspaceRebuildPersistentStateResult {
   deletedAgentIds: string[];
   recycledTaskIds: string[];
 }
@@ -11402,7 +11402,7 @@ function toUserPublic(user: User, lastActiveAt: string | null): UserPublic {
 
 // --- Users ---
 
-export interface CreateUserInput {
+interface CreateUserInput {
   id: string;
   username: string;
   password_hash: string;
@@ -11447,7 +11447,7 @@ export function createUser(user: CreateUserInput): void {
   getOrCreateDefaultAgentProfile(user.id);
 }
 
-export type CreateInitialAdminResult =
+type CreateInitialAdminResult =
   | { ok: true }
   | { ok: false; reason: 'already_initialized' | 'username_taken' };
 
@@ -11492,7 +11492,7 @@ export function getUserByUsername(username: string): User | undefined {
   return row ? mapUserRow(row) : undefined;
 }
 
-export interface ListUsersOptions {
+interface ListUsersOptions {
   query?: string;
   role?: UserRole | 'all';
   status?: UserStatus | 'all';
@@ -11500,7 +11500,7 @@ export interface ListUsersOptions {
   pageSize?: number;
 }
 
-export interface ListUsersResult {
+interface ListUsersResult {
   users: UserPublic[];
   total: number;
   page: number;
@@ -11606,7 +11606,7 @@ export function getActiveAdminCount(): number {
   return row.count;
 }
 
-export type UserFieldUpdates = Partial<
+type UserFieldUpdates = Partial<
   Pick<
     User,
     | 'username'
@@ -11870,7 +11870,7 @@ export function getInviteCode(code: string): InviteCode | undefined {
   };
 }
 
-export type RegisterUserWithInviteResult =
+type RegisterUserWithInviteResult =
   | { ok: true; role: UserRole; permissions: Permission[] }
   | {
       ok: false;
@@ -11973,7 +11973,7 @@ export function registerUserWithInvite(input: {
   }
 }
 
-export type RegisterUserWithoutInviteResult =
+type RegisterUserWithoutInviteResult =
   | { ok: true; role: UserRole; permissions: Permission[] }
   | { ok: false; reason: 'username_taken' };
 
@@ -12080,7 +12080,7 @@ export function logAuthEvent(event: {
   );
 }
 
-export interface AuthAuditLogQuery {
+interface AuthAuditLogQuery {
   limit?: number;
   offset?: number;
   event_type?: AuthEventType | 'all';
@@ -12090,7 +12090,7 @@ export interface AuthAuditLogQuery {
   to?: string;
 }
 
-export interface AuthAuditLogPage {
+interface AuthAuditLogPage {
   logs: AuthAuditLog[];
   total: number;
   limit: number;
@@ -12531,7 +12531,7 @@ export interface CustomModelPricing {
   updatedAt: string;
 }
 
-export interface CustomModelPricingInput {
+interface CustomModelPricingInput {
   kind: 'pattern' | 'fallback';
   /** Required for pattern rules (validated at the API layer); '' for fallback. */
   pattern?: string;
@@ -12546,9 +12546,7 @@ export interface CustomModelPricingInput {
 }
 
 /** PATCH payload; kind is immutable once created. */
-export type CustomModelPricingUpdates = Partial<
-  Omit<CustomModelPricingInput, 'kind'>
->;
+type CustomModelPricingUpdates = Partial<Omit<CustomModelPricingInput, 'kind'>>;
 
 function mapCustomPricingRow(row: Record<string, unknown>): CustomModelPricing {
   return {
