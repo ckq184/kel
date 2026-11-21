@@ -1,4 +1,4 @@
-import type { StreamEvent, WorkflowRunSnapshot } from './stream-event.types.js';
+import type { StreamEvent } from './stream-event.types.js';
 
 export interface AdditionalMount {
   hostPath: string; // Absolute canonical path on host
@@ -401,8 +401,6 @@ export interface NewMessage {
   token_usage?: string;
   /** Sanitized provider-native identifiers for this exact inbound turn. */
   channel_context?: ChannelTurnContext;
-  /** Session-derived Claude Code Workflow snapshots for historical replay. */
-  workflow_runs?: WorkflowRunSnapshot[];
   turn_id?: string | null;
   session_id?: string | null;
   source_kind?: MessageSourceKind | null;
@@ -869,14 +867,6 @@ export type WsMessageOut =
        * 未标记 = 完整回复冗余广播，内容由 new_message 承载，前端无需消费。 */
       notice?: boolean;
     }
-  | { type: 'typing'; chatJid: string; isTyping: boolean; agentId?: string }
-  | {
-      type: 'status_update';
-      activeContainers: number;
-      activeHostProcesses: number;
-      activeTotal: number;
-      queueLength: number;
-    }
   | {
       type: 'stream_event';
       chatJid: string;
@@ -933,16 +923,6 @@ export type WsMessageOut =
       agentId?: string;
       transition?: FollowUpTransition;
     }
-  | {
-      type: 'task_state';
-      chatJid: string;
-      taskId: string;
-      status: 'running' | 'completed' | 'error';
-      name: string;
-      prompt: string;
-      resultSummary?: string;
-      kind?: AgentKind;
-    }
   | { type: 'terminal_output'; chatJid: string; data: string }
   | { type: 'terminal_started'; chatJid: string }
   | { type: 'terminal_stopped'; chatJid: string; reason?: string }
@@ -980,30 +960,12 @@ export type WsMessageOut =
           id: string;
           timestamp: number;
           text: string;
-          kind:
-            | 'tool'
-            | 'skill'
-            | 'hook'
-            | 'status'
-            | 'task'
-            | 'memory'
-            | 'debug'
-            | 'context'
-            | 'permission';
+          kind: 'tool' | 'skill' | 'status' | 'task' | 'memory' | 'debug';
         }>;
         traceEvents?: Array<{
           id: string;
           timestamp: number;
-          kind:
-            | 'tool'
-            | 'skill'
-            | 'hook'
-            | 'status'
-            | 'task'
-            | 'memory'
-            | 'debug'
-            | 'context'
-            | 'permission';
+          kind: 'tool' | 'skill' | 'status' | 'task' | 'memory' | 'debug';
           scope?: StreamEvent['agentScope'];
           title: string;
           summary?: string;
@@ -1014,11 +976,8 @@ export type WsMessageOut =
           displayLevel?: StreamEvent['displayLevel'];
         }>;
         taskStates?: Record<string, unknown>;
-        contextAudit?: StreamEvent['contextAudit'];
-        todos?: Array<{ id: string; content: string; status: string }>;
         systemStatus: string | null;
         isThinking?: boolean;
-        activeHook?: { hookName: string; hookEvent: string } | null;
         turnId?: string;
       };
     };

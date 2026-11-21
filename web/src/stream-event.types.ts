@@ -11,22 +11,18 @@
 
 /**
  * 文件结构导览：① 事件类型词汇表（StreamEventType 联合类型）→
- * ② Claude 上下文审计快照（ClaudeContext* 系列，随 `context_audit`
- * 事件上报）→ ③ `StreamEvent` 统一信封（所有运行时事件跨
- * Runner/Host/Web 三侧流转的载体）。
+ * ② Claude 上下文审计快照（ClaudeContext* 系列，宿主构造后经
+ * `recordRunContextSnapshot` 直记，不再上事件流）→ ③ `StreamEvent`
+ * 统一信封（所有运行时事件跨 Runner/Host/Web 三侧流转的载体）。
  */
 
 /**
  * 事件类型词汇表，按簇分组：
  * - 流式内容：`text_delta` / `thinking_delta`
- * - 工具生命周期：`tool_use_start` / `tool_use_end` / `tool_progress` / `tool_result`
- * - Hook 执行：`hook_started` / `hook_progress` / `hook_response`
- * - SDK 任务（后台任务/子代理/动态工作流）：`task_start` / `task_progress` /
- *   `task_updated` / `task_notification`
- * - 上下文与权限：`permission_denied` / `memory_recall` / `compact_boundary` /
- *   `context_audit` / `raw_sdk_event`
- * - 杂项：`notification` / `prompt_suggestion` / `todo_update` / `usage` /
- *   `status` / `init`
+ * - 工具生命周期：`tool_use_start` / `tool_use_end` / `tool_progress`
+ * - 子代理任务：`task_progress`
+ * - 上下文：`compact_boundary` / `raw_sdk_event`
+ * - 杂项：`usage` / `status`
  */
 export type StreamEventType =
   | 'text_delta'
@@ -34,112 +30,16 @@ export type StreamEventType =
   | 'tool_use_start'
   | 'tool_use_end'
   | 'tool_progress'
-  | 'tool_result'
-  | 'hook_started'
-  | 'hook_progress'
-  | 'hook_response'
-  | 'task_start'
   | 'task_progress'
-  | 'task_updated'
-  | 'task_notification'
-  | 'permission_denied'
-  | 'memory_recall'
   | 'compact_boundary'
-  | 'notification'
-  | 'prompt_suggestion'
   | 'raw_sdk_event'
-  | 'context_audit'
-  | 'todo_update'
   | 'usage'
-  | 'status'
-  | 'init';
+  | 'status';
 
 /** 事件产生者的运行时角色：主对话 / 后台任务 / 子代理 / 系统自身。 */
 export type StreamAgentScope = 'main' | 'task' | 'subagent' | 'system';
 /** 前端展示层级：primary 内联展示，detail 进轨迹面板，debug 仅开发者轨迹。 */
 export type StreamDisplayLevel = 'primary' | 'detail' | 'debug';
-
-/** 动态工作流单个阶段的快照（随 `workflowRun` 上报，供工作流卡片渲染）。 */
-export interface WorkflowPhaseSnapshot {
-  /** 阶段在整条工作流中的序号。 */
-  index: number;
-  /** 阶段标题。 */
-  title: string;
-  /** 阶段补充说明。 */
-  detail?: string;
-}
-
-/** 动态工作流中单个子代理的实时快照。 */
-export interface WorkflowAgentSnapshot {
-  /** 快照列表中的序号。 */
-  index: number;
-  /** 子代理展示标签。 */
-  label: string;
-  /** 所属阶段序号。 */
-  phaseIndex?: number;
-  /** 所属阶段标题。 */
-  phaseTitle?: string;
-  /** 子代理运行 ID。 */
-  agentId?: string;
-  /** 当前使用的模型。 */
-  model?: string;
-  /** 降级回退模型。 */
-  fallbackModel?: string;
-  /** 生命周期状态。 */
-  state: 'queued' | 'running' | 'done' | 'failed' | 'stopped' | 'unknown';
-  /** 入队时间戳。 */
-  queuedAt?: number;
-  /** 启动时间戳。 */
-  startedAt?: number;
-  /** 完成时间戳。 */
-  completedAt?: number;
-  /** 尝试轮次。 */
-  attempt?: number;
-  /** 最近一次工具调用的名称。 */
-  lastToolName?: string;
-  /** 最近一次工具调用的摘要。 */
-  lastToolSummary?: string;
-  /** 提示词预览（截断）。 */
-  promptPreview?: string;
-  /** 结果预览（截断）。 */
-  resultPreview?: string;
-  /** 累计 token 数。 */
-  tokens?: number;
-  /** 累计工具调用次数。 */
-  toolCalls?: number;
-  /** 运行时长（毫秒）。 */
-  durationMs?: number;
-}
-
-/** Persistable, user-facing projection of one Claude Code dynamic Workflow. */
-export interface WorkflowRunSnapshot {
-  /** 所属宿主任务的 ID。 */
-  taskId: string;
-  /** 本次工作流运行的 ID。 */
-  runId?: string;
-  /** 工作流 meta.name（仅动态工作流任务携带）。 */
-  workflowName?: string;
-  /** 运行摘要。 */
-  summary: string;
-  /** 运行状态。 */
-  status: 'running' | 'completed' | 'failed' | 'stopped' | 'unknown';
-  /** 开始时间戳。 */
-  startTime?: number;
-  /** 完成时间戳。 */
-  completedAt?: number;
-  /** 总时长（毫秒）。 */
-  durationMs?: number;
-  /** 子代理数量。 */
-  agentCount?: number;
-  /** 全部子代理累计 token 数。 */
-  totalTokens?: number;
-  /** 全部子代理累计工具调用次数。 */
-  totalToolCalls?: number;
-  /** 阶段快照列表。 */
-  phases: WorkflowPhaseSnapshot[];
-  /** 子代理快照列表。 */
-  agents: WorkflowAgentSnapshot[];
-}
 
 /** 单个 Claude 上下文文件（如 CLAUDE.md / 记忆文件）的审计快照。 */
 export interface ClaudeContextFileAudit {
@@ -355,7 +255,8 @@ export interface ClaudeSdkContextUsageAudit {
   } | null;
 }
 
-/** 一次运行的 Claude 上下文装配总审计（随 `context_audit` 事件上报）。 */
+/** 一次运行的 Claude 上下文装配总审计（宿主构造后经
+ * `recordRunContextSnapshot` 直记快照，供预览接口读取）。 */
 export interface ClaudeContextAudit {
   /** 执行环境：宿主或容器。 */
   executionMode: 'host' | 'container';
@@ -474,12 +375,6 @@ export interface StreamEvent {
   isError?: boolean;
   /** 已耗时（秒）。 */
   elapsedSeconds?: number;
-  /** Hook 名称。 */
-  hookName?: string;
-  /** Hook 事件类型。 */
-  hookEvent?: string;
-  /** Hook 执行结果。 */
-  hookOutcome?: string;
   /** 状态行文本。 */
   statusText?: string;
   /** SDK 任务描述。 */
@@ -494,8 +389,6 @@ export interface StreamEvent {
   taskType?: string;
   /** Claude Code Workflow meta.name (only present for workflow tasks). */
   workflowName?: string;
-  /** Live/completed dynamic Workflow projection for first-class UI rendering. */
-  workflowRun?: WorkflowRunSnapshot;
   /** SDK 任务字段的增量更新（状态/描述/结束时间/累计暂停时长/错误/后台标记）。 */
   taskPatch?: {
     status?: string;
@@ -517,31 +410,12 @@ export interface StreamEvent {
     toolUses: number;
     durationMs: number;
   };
-  /** 权限拒绝详情：被拒工具、调用 ID、原因类型与说明。 */
-  permissionDenied?: {
-    toolName: string;
-    toolUseId: string;
-    agentId?: string;
-    reasonType?: string;
-    reason?: string;
-    message: string;
-  };
   /** 是否后台任务。 */
   isBackground?: boolean;
   /** 是否协作型（teammate）SDK 任务——前端据此跳过普通后台任务的 stale 计时等处理。 */
   isTeammate?: boolean;
   /** 工具完整入参。 */
   toolInput?: Record<string, unknown>;
-  /** 原始 SDK 事件负载（透传，不做结构化保证）。 */
-  rawEvent?: Record<string, unknown>;
-  /** 上下文装配审计（`context_audit` 事件携带）。 */
-  contextAudit?: ClaudeContextAudit;
-  /** 任务清单快照（`todo_update` 事件携带）。 */
-  todos?: Array<{
-    id: string;
-    content: string;
-    status: 'pending' | 'in_progress' | 'completed';
-  }>;
   /** Token usage data emitted at query completion */
   usage?: {
     /** Stable logical run ID used to make usage analytics idempotent. */

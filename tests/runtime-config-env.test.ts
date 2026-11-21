@@ -70,7 +70,10 @@ describe('buildClaudeEnvLines', () => {
     expect(lines).toContain('ANTHROPIC_DEFAULT_SONNET_MODEL=glm-5.2');
     expect(lines).toContain('ANTHROPIC_DEFAULT_HAIKU_MODEL=glm-5.2');
     expect(lines).toContain('CKQCLAW_CONTEXT_WINDOW=1000000');
-    expect(lines).toContain('CLAUDE_CODE_AUTO_COMPACT_WINDOW=1000000');
+    // ISSUE-10 ⑥：AUTO_COMPACT 窗口注入整体下线，env 行不得再出现该键。
+    expect(
+      lines.some((line) => line.startsWith('CLAUDE_CODE_AUTO_COMPACT_WINDOW=')),
+    ).toBe(false);
     expect(lines).toContain('CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1');
     expect(lines).toContain('CLAUDE_CODE_EFFORT_LEVEL=max');
     expect(lines).toContain('CLAUDE_CODE_NO_FLICKER=1');
@@ -85,7 +88,10 @@ describe('buildClaudeEnvLines', () => {
 
     expect(lines).toContain('ANTHROPIC_MODEL=glm-5.2');
     expect(lines).toContain('CKQCLAW_CONTEXT_WINDOW=512000');
-    expect(lines).toContain('CLAUDE_CODE_AUTO_COMPACT_WINDOW=512000');
+    // ISSUE-10 ⑥：AUTO_COMPACT 窗口注入整体下线，env 行不得再出现该键。
+    expect(
+      lines.some((line) => line.startsWith('CLAUDE_CODE_AUTO_COMPACT_WINDOW=')),
+    ).toBe(false);
   });
 
   test('declared window wins over a legacy [1m] suffix', () => {
@@ -96,7 +102,10 @@ describe('buildClaudeEnvLines', () => {
 
     expect(lines).toContain('ANTHROPIC_MODEL=glm-5.2');
     expect(lines).toContain('CKQCLAW_CONTEXT_WINDOW=256000');
-    expect(lines).toContain('CLAUDE_CODE_AUTO_COMPACT_WINDOW=256000');
+    // ISSUE-10 ⑥：AUTO_COMPACT 窗口注入整体下线，env 行不得再出现该键。
+    expect(
+      lines.some((line) => line.startsWith('CLAUDE_CODE_AUTO_COMPACT_WINDOW=')),
+    ).toBe(false);
   });
 
   test('no declaration and no suffix stays byte-equivalent with today', () => {
@@ -109,7 +118,10 @@ describe('buildClaudeEnvLines', () => {
     expect(
       lines.some((line) => line.startsWith('CKQCLAW_CONTEXT_WINDOW=')),
     ).toBe(false);
-    expect(lines).toContain('CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000');
+    // ISSUE-10 ⑥：AUTO_COMPACT 窗口注入整体下线，env 行不得再出现该键。
+    expect(
+      lines.some((line) => line.startsWith('CLAUDE_CODE_AUTO_COMPACT_WINDOW=')),
+    ).toBe(false);
   });
 
   test("explicit 'auto' declaration behaves like no declaration", () => {
@@ -121,19 +133,21 @@ describe('buildClaudeEnvLines', () => {
     // auto = 现行为：启发式因后缀按 1M 认定，模型名仍剥离
     expect(lines).toContain('ANTHROPIC_MODEL=glm-5.2');
     expect(lines).toContain('CKQCLAW_CONTEXT_WINDOW=1000000');
-    expect(lines).toContain('CLAUDE_CODE_AUTO_COMPACT_WINDOW=1000000');
+    // ISSUE-10 ⑥：AUTO_COMPACT 窗口注入整体下线，env 行不得再出现该键。
+    expect(
+      lines.some((line) => line.startsWith('CLAUDE_CODE_AUTO_COMPACT_WINDOW=')),
+    ).toBe(false);
   });
 
   test('uses defaults but lets provider settings override third-party values', () => {
+    // ISSUE-10 ⑥：CLAUDE_CODE_AUTO_COMPACT_WINDOW 不再是平台托管键，
+    // 平台既不注入也不管理它，测试夹具随之移除。
     const lines = buildClaudeEnvLines(config({ anthropicModel: 'k3' }), {
-      CLAUDE_CODE_AUTO_COMPACT_WINDOW: '999999',
       CLAUDE_CODE_EFFORT_LEVEL: 'low',
       CUSTOM_FLAG: 'kept',
     });
 
-    expect(lines).toContain('CLAUDE_CODE_AUTO_COMPACT_WINDOW=999999');
     expect(lines).toContain('CLAUDE_CODE_EFFORT_LEVEL=low');
-    expect(lines).not.toContain('CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000');
     expect(lines).not.toContain('CLAUDE_CODE_EFFORT_LEVEL=max');
     expect(lines).toContain('CUSTOM_FLAG=kept');
   });
@@ -146,7 +160,6 @@ describe('buildClaudeEnvLines', () => {
 
     expect(lines).toContain('CLAUDE_CODE_EFFORT_LEVEL=low');
     expect(lines).not.toContain('CLAUDE_CODE_EFFORT_LEVEL=max');
-    expect(lines).not.toContain('CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000');
   });
 
   test('prevents workspace overrides from replacing third-party managed values', () => {
@@ -155,7 +168,6 @@ describe('buildClaudeEnvLines', () => {
       {
         customEnv: {
           ANTHROPIC_DEFAULT_OPUS_MODEL: 'stale-model',
-          CLAUDE_CODE_AUTO_COMPACT_WINDOW: '42',
           CKQCLAW_FALLBACK_MODEL: 'workspace-fallback',
           PROJECT_ENV: 'kept',
         },
@@ -165,9 +177,7 @@ describe('buildClaudeEnvLines', () => {
 
     expect(lines).toContain('ANTHROPIC_DEFAULT_OPUS_MODEL=glm-5.2');
     expect(lines).toContain('CKQCLAW_CONTEXT_WINDOW=1000000');
-    expect(lines).toContain('CLAUDE_CODE_AUTO_COMPACT_WINDOW=1000000');
     expect(lines).not.toContain('ANTHROPIC_DEFAULT_OPUS_MODEL=stale-model');
-    expect(lines).not.toContain('CLAUDE_CODE_AUTO_COMPACT_WINDOW=42');
     expect(lines).not.toContain('CKQCLAW_FALLBACK_MODEL=workspace-fallback');
     expect(lines).toContain('PROJECT_ENV=kept');
   });

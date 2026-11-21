@@ -12,10 +12,14 @@ const main = readSource('src/index.ts');
 const taskScheduler = readSource('src/task-scheduler.ts');
 
 describe('provider fallback source contracts', () => {
-  test('host consumes the hidden model retry marker without quarantining provider', () => {
-    expect(
-      hostRunner.match(/if \(output\.providerFailureRetrying\)/g),
-    ).toHaveLength(2);
+  test('hidden model retry/maintenance markers are fully retired (ISSUE-10 ⑩)', () => {
+    // agent-runner 从不产出 providerFailureRetrying / providerFailureMaintenance
+    // （Pi 路径 provider 故障只产 providerFailure 本体），宿主的两个隐藏标记
+    // 分支与合成输出随本批整体下线；类型层同样不得再出现。
+    expect(hostRunner).not.toContain('providerFailureRetrying');
+    expect(hostRunner).not.toContain('providerFailureMaintenance');
+    expect(hostRunner).not.toContain('healthyInputTurnCompleted');
+    expect(hostRunner).not.toContain('hostHealthyInputTurnCompleted');
     expect(hostRunner).toContain('!providerFailureReported &&');
     expect(hostRunner).toContain('!hostProviderFailureReported &&');
     expect(hostRunner).not.toContain('ownerHomeFolder,\n    fallbackModel');
@@ -36,12 +40,8 @@ describe('provider fallback source contracts', () => {
     );
   });
 
-  test('maintenance provider failures cannot project or replay a completed input', () => {
-    expect(
-      hostRunner.match(/output\.providerFailureMaintenance &&/g),
-    ).toHaveLength(2);
-    expect(hostRunner).toContain('healthyInputTurnCompleted');
-    expect(hostRunner).toContain('hostHealthyInputTurnCompleted');
+  test('scheduled-input provider failures never replay a completed input', () => {
+    // 保留的 providerFailure 本体路径仍须维持调度语义：已完成的输入不得重放。
     expect(hostRunner).toContain(
       'Provider failed after scheduled input completed; suppressing replay',
     );

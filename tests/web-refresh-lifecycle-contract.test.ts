@@ -112,6 +112,6 @@ describe('Web logical-run refresh contract', () => {
     }
     expect(store).toMatch(/activeRuns: ClientActiveRuns/);
     expect(store).toMatch(/applyRunFinished/);
-    expect(store).toMatch(/exactRunActive \|\| holdsRunningWorkflow/);
+    expect(store).toMatch(/exactRunActive/);
   });
 });

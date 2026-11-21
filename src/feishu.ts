@@ -98,12 +98,6 @@ export interface ConnectOptions {
   onReady: () => void;
   /** 收到消息后调用，让调用方自动注册未知的飞书聊天 */
   onNewChat?: (chatJid: string, chatName: string) => void;
-  /**
-   * @deprecated Durable Inbox + per-chat cursor recovery supersedes this
-   * volatile cutoff. It is retained only for caller compatibility and is not
-   * allowed to discard messages that may have arrived during downtime.
-   */
-  ignoreMessagesBefore?: number;
   /** 斜杠指令回调（如 /clear），返回回复文本或 null；mentions 仅飞书渠道传入，用于 /allow 等命令 */
   onCommand?: (
     chatJid: string,
@@ -3784,54 +3778,4 @@ export function createFeishuConnection(
   };
 
   return connection;
-}
-
-// ─── Backward-compatible global singleton ──────────────────────
-// @deprecated — 旧的顶层导出函数，内部使用一个默认全局实例。
-// 后续由 imManager 替代。
-
-let _defaultInstance: FeishuConnection | null = null;
-
-export interface ConnectFeishuOptions {
-  onReady: () => void;
-  /** 收到消息后调用，让主模块自动注册未知的飞书聊天到主容器 */
-  onNewChat?: (chatJid: string, chatName: string) => void;
-  /** 热重连时设置：丢弃 create_time 早于此时间戳（epoch ms）的消息，避免处理渠道关闭期间的堆积消息 */
-  ignoreMessagesBefore?: number;
-}
-
-/**
- * @deprecated Use FeishuConnection.sendMessage() instead.
- */
-export async function sendFeishuMessage(
-  chatId: string,
-  text: string,
-  localImagePaths?: string[],
-): Promise<void> {
-  if (!_defaultInstance) {
-    logger.warn(
-      { chatId },
-      'Feishu client not initialized, skip sending message',
-    );
-    return;
-  }
-  return _defaultInstance.sendMessage(chatId, text, localImagePaths);
-}
-
-/**
- * @deprecated Use FeishuConnection.syncGroups() instead.
- */
-export async function syncFeishuGroups(): Promise<void> {
-  if (!_defaultInstance) {
-    logger.debug('Feishu client not initialized, skip group sync');
-    return;
-  }
-  return _defaultInstance.syncGroups();
-}
-
-/**
- * @deprecated Use FeishuConnection.isConnected() instead.
- */
-export function isFeishuConnected(): boolean {
-  return _defaultInstance?.isConnected() ?? false;
 }

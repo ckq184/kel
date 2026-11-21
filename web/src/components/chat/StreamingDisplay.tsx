@@ -6,11 +6,9 @@ import { resolveAgentDisplayIdentity } from '../../utils/agent-identity';
 import type { AgentInfo, InteractionMode } from '../../types';
 import { EmojiAvatar } from '../common/EmojiAvatar';
 import { MarkdownRenderer } from './MarkdownRenderer';
-import { TodoProgressPanel } from './TodoProgressPanel';
 import { ToolActivityCard } from './ToolActivityCard';
 import { useDisplayMode } from '../../hooks/useDisplayMode';
 import { formatThinkingDuration } from '../../utils/thinking-duration';
-import { WorkflowRunCard } from './WorkflowRunCard';
 import { shouldShowStreamingPartialText } from '../../lib/interaction-mode';
 
 /** Render AskUserQuestion options as a visual card (read-only). */
@@ -370,11 +368,6 @@ function TracePanel({
 
   const groups = [
     {
-      key: 'permission',
-      label: '🚫 权限拒绝',
-      items: visibleTrace.filter((e) => e.kind === 'permission'),
-    },
-    {
       key: 'task',
       label: 'Task / Sub-agent',
       items: visibleTrace.filter((e) => e.kind === 'task'),
@@ -385,11 +378,6 @@ function TracePanel({
       items: visibleTrace.filter(
         (e) => e.kind === 'tool' || e.kind === 'skill',
       ),
-    },
-    {
-      key: 'hook',
-      label: 'Hooks',
-      items: visibleTrace.filter((e) => e.kind === 'hook'),
     },
     {
       key: 'memory',
@@ -487,38 +475,6 @@ function TraceRow({
   );
 }
 
-/** Prominent red banner listing denied tool calls — a denied permission is a
- *  real signal the user should see at a glance, not something buried in the
- *  collapsed trace panel. */
-function PermissionAlert({
-  streaming,
-}: {
-  streaming: import('../../stores/chat').StreamingState;
-}) {
-  const denied = streaming.traceEvents.filter((e) => e.kind === 'permission');
-  if (denied.length === 0) return null;
-  return (
-    <div className="rounded-lg border border-error/40 bg-error-bg/70 p-2 mb-2">
-      <div className="text-xs font-medium text-error mb-1">
-        🚫 权限被拒绝 ({denied.length})
-      </div>
-      <div className="space-y-0.5 max-h-28 overflow-y-auto">
-        {denied.slice(-10).map((item) => (
-          <div key={item.id} className="text-[13px] text-error/80 break-words">
-            <span className="font-medium">{item.title}</span>
-            {(item.detail || item.summary) && (
-              <span className="opacity-75">
-                {' '}
-                — {item.detail || item.summary}
-              </span>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 /** Shared streaming content — used by both compact and chat modes to eliminate duplication. */
 function StreamingContent({
   streaming,
@@ -546,17 +502,7 @@ function StreamingContent({
   const askUserTools = streaming.activeTools.filter(
     (t) => t.toolName === 'AskUserQuestion' && t.toolInput,
   );
-  const hasWorkflowTasks = Object.values(streaming.taskStates).some(
-    (task) => task.workflowRun || task.taskType === 'local_workflow',
-  );
-  const showSystemStatus =
-    streaming.systemStatus &&
-    !(
-      hasWorkflowTasks &&
-      /后台任务运行中|完成后将继续汇总/u.test(streaming.systemStatus)
-    )
-      ? streaming.systemStatus
-      : null;
+  const showSystemStatus = streaming.systemStatus;
 
   return (
     <>
@@ -663,81 +609,23 @@ function StreamingContent({
         </div>
       )}
 
-      {/* Todo progress */}
-      {streaming.todos && streaming.todos.length > 0 && (
-        <TodoProgressPanel todos={streaming.todos} />
-      )}
-
       {/* SDK Task / sub-agent runtime state */}
       {Object.keys(streaming.taskStates).length > 0 && (
         <div className="mb-2 space-y-1.5">
           {Object.values(streaming.taskStates)
             .sort((a, b) => a.updatedAt - b.updatedAt)
-            .map((task) =>
-              task.workflowRun || task.taskType === 'local_workflow' ? (
-                <WorkflowRunCard
-                  key={task.id}
-                  run={
-                    task.workflowRun ?? {
-                      taskId: task.id,
-                      workflowName: task.workflowName,
-                      summary: task.title,
-                      status:
-                        task.status === 'completed'
-                          ? 'completed'
-                          : task.status === 'error'
-                            ? 'failed'
-                            : 'running',
-                      durationMs: task.usage?.durationMs,
-                      totalTokens: task.usage?.totalTokens,
-                      totalToolCalls: task.usage?.toolUses,
-                      phases: [],
-                      agents: [],
-                    }
-                  }
-                />
-              ) : (
-                <SdkTaskRuntimeBlock
-                  key={task.id}
-                  task={task}
-                  groupJid={groupJid}
-                />
-              ),
-            )}
+            .map((task) => (
+              <SdkTaskRuntimeBlock
+                key={task.id}
+                task={task}
+                groupJid={groupJid}
+              />
+            ))}
         </div>
       )}
-
-      {/* Permission denials — surfaced prominently in red, not buried in trace */}
-      <PermissionAlert streaming={streaming} />
 
       {/* Full trace */}
       <TracePanel streaming={streaming} />
-
-      {/* Hook */}
-      {streaming.activeHook && (
-        <div className="flex items-center gap-2 text-[13px] text-muted-foreground mb-2">
-          <svg
-            className="w-3.5 h-3.5 animate-spin text-primary"
-            viewBox="0 0 24 24"
-            fill="none"
-          >
-            <circle
-              className="opacity-25"
-              cx="12"
-              cy="12"
-              r="10"
-              stroke="currentColor"
-              strokeWidth="4"
-            />
-            <path
-              className="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-            />
-          </svg>
-          <span>Hook: {streaming.activeHook.hookName}</span>
-        </div>
-      )}
 
       {/* Partial text */}
       {showPartialText && streaming.partialText && (
@@ -1001,18 +889,10 @@ export function StreamingDisplay({
       ((showPartialText && streaming.partialText) ||
         streaming.thinkingText ||
         streaming.activeTools.length > 0 ||
-        streaming.activeHook ||
         streaming.systemStatus ||
         streaming.traceEvents.length > 0 ||
-        Object.keys(streaming.taskStates).length > 0 ||
-        (streaming.todos && streaming.todos.length > 0))) ||
+        Object.keys(streaming.taskStates).length > 0)) ||
     hasTaskAgents;
-  const hasWorkflowCards = Boolean(
-    streaming &&
-    Object.values(streaming.taskStates).some(
-      (task) => task.workflowRun || task.taskType === 'local_workflow',
-    ),
-  );
 
   // 仅在既不等待也无冻结数据时才隐藏
   if (!isWaiting && !hasStreamData) return null;
@@ -1192,15 +1072,7 @@ export function StreamingDisplay({
             )}
           </div>
 
-          {/* Workflow already provides the primary card surface. Keep the
-              streaming shell flat so the UI never nests one card in another. */}
-          <div
-            className={
-              hasWorkflowCards
-                ? 'overflow-hidden font-serif'
-                : 'bg-surface rounded-xl border border-border/60 px-5 py-4 overflow-hidden font-serif shadow-card'
-            }
-          >
+          <div className="bg-surface rounded-xl border border-border/60 px-5 py-4 overflow-hidden font-serif shadow-card">
             {streaming && (
               <StreamingContent
                 streaming={streaming}

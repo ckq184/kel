@@ -348,32 +348,13 @@ describe('durable channel inbox', () => {
     ).toBe(true);
   });
 
-  test('supports explicit admission transitions and retry scheduling', () => {
+  test('supports queued scheduling and retry windows', () => {
     const recorded = reliability.recordChannelInbox({
       ...route,
       externalMessageId: 'msg-inbox-retry',
-      status: 'received',
-      now: '2026-07-23T00:01:00.000Z',
+      status: 'queued',
+      now: '2026-07-23T00:01:00.200Z',
     });
-    expect(
-      reliability.transitionChannelInbox(
-        recorded.item.id,
-        'received',
-        'admitted',
-        {
-          normalizedPayload: { text: 'hello' },
-          now: '2026-07-23T00:01:00.100Z',
-        },
-      ),
-    ).toBe(true);
-    expect(
-      reliability.transitionChannelInbox(
-        recorded.item.id,
-        'admitted',
-        'queued',
-        { now: '2026-07-23T00:01:00.200Z' },
-      ),
-    ).toBe(true);
     const firstClaim = reliability.claimNextChannelInbox('retry-worker', 500, {
       now: '2026-07-23T00:01:00.300Z',
     })!;

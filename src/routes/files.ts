@@ -17,7 +17,6 @@ import {
   createDirectory,
   isSystemPath,
   MAX_FILE_SIZE,
-  invalidateGroupStorageUsage,
   getFileRoot,
 } from '../file-manager.js';
 import { MAX_FILE_SIZE_MB } from '../config.js';
@@ -382,7 +381,6 @@ fileRoutes.post('/:jid/files', authMiddleware, async (c) => {
       uploadedFiles.push(file.name);
     }
 
-    invalidateGroupStorageUsage(group.folder, rootOverride);
     return c.json({ success: true, files: uploadedFiles });
   } catch (error) {
     logger.error({ err: error }, `Failed to upload files for ${jid}`);
@@ -895,7 +893,6 @@ fileRoutes.put('/:jid/files/content/:path', authMiddleware, async (c) => {
       }
     }
 
-    invalidateGroupStorageUsage(group.folder, rootOverride);
     return c.json({ success: true });
   } catch (error) {
     logger.error({ err: error }, `Failed to save file content for ${jid}`);
@@ -931,7 +928,6 @@ fileRoutes.delete('/:jid/files/:path', authMiddleware, (c) => {
       'utf-8',
     );
     deleteFile(group.folder, relativePath, rootOverride);
-    invalidateGroupStorageUsage(group.folder, rootOverride);
 
     return c.json({ success: true });
   } catch (error) {

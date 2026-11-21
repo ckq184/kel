@@ -77,6 +77,7 @@ const RESERVED_CLAUDE_ENV_KEYS = new Set([
   'CLAUDE_CODE_OAUTH_TOKEN',
   'ANTHROPIC_BASE_URL',
   'ANTHROPIC_AUTH_TOKEN',
+  'ANTHROPIC_API_KEY',
   'ANTHROPIC_MODEL',
   'CKQCLAW_CLAUDE_ENDPOINT_KIND',
   'CKQCLAW_FALLBACK_MODEL',
@@ -96,7 +97,6 @@ const INHERITED_CLAUDE_PROVIDER_ENV_KEYS = [
   'ANTHROPIC_DEFAULT_OPUS_MODEL',
   'ANTHROPIC_DEFAULT_SONNET_MODEL',
   'ANTHROPIC_DEFAULT_HAIKU_MODEL',
-  'CLAUDE_CODE_AUTO_COMPACT_WINDOW',
   'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC',
   'CLAUDE_CODE_EFFORT_LEVEL',
   'CLAUDE_CODE_NO_FLICKER',
@@ -125,7 +125,6 @@ const THIRD_PARTY_CONFIGURABLE_ENV_KEYS = new Set([
   'ANTHROPIC_DEFAULT_OPUS_MODEL',
   'ANTHROPIC_DEFAULT_SONNET_MODEL',
   'ANTHROPIC_DEFAULT_HAIKU_MODEL',
-  'CLAUDE_CODE_AUTO_COMPACT_WINDOW',
   'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC',
   'CLAUDE_CODE_EFFORT_LEVEL',
   'CLAUDE_CODE_NO_FLICKER',
@@ -149,8 +148,8 @@ function isOneMillionContextModel(model: string): boolean {
 // 保持单一实现（本文件原先自带逐字副本）。
 
 /**
- * 任务AL：宿主侧认定的有效窗口（声明 > [1m] 启发式 > 200k），用于预填
- * CLAUDE_CODE_AUTO_COMPACT_WINDOW 与归一注入 CKQCLAW_CONTEXT_WINDOW。
+ * 任务AL：宿主侧认定的有效窗口（声明 > [1m] 启发式 > 200k），用于归一注入
+ * CKQCLAW_CONTEXT_WINDOW。
  */
 function resolveHostContextWindow(config: ClaudeProviderConfig): number {
   const declared =
@@ -2002,12 +2001,6 @@ export function buildClaudeEnvLines(
       );
     }
 
-    lines.push(
-      `CLAUDE_CODE_AUTO_COMPACT_WINDOW=${configuredValue(
-        'CLAUDE_CODE_AUTO_COMPACT_WINDOW',
-        String(hostContextWindow),
-      )}`,
-    );
     for (const [key, value] of Object.entries(THIRD_PARTY_RUNTIME_DEFAULTS)) {
       lines.push(`${key}=${configuredValue(key, value)}`);
     }

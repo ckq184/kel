@@ -209,23 +209,6 @@ function toStreamEvent(
         ...(event.isError ? { isError: true } : {}),
         sessionId: event.sessionId,
       };
-    case 'usage':
-      return {
-        eventType: 'usage',
-        agentScope: 'main',
-        displayLevel: 'detail',
-        usage: {
-          inputTokens: event.usage.inputTokens,
-          outputTokens: event.usage.outputTokens,
-          cacheReadInputTokens: event.usage.cacheReadInputTokens ?? 0,
-          cacheCreationInputTokens: event.usage.cacheCreationInputTokens ?? 0,
-          reasoningTokens: event.usage.reasoningTokens ?? 0,
-          costUSD: event.usage.costUSD ?? 0,
-          durationMs: event.usage.durationMs ?? 0,
-          numTurns: event.usage.numTurns ?? 0,
-        },
-        sessionId: event.sessionId,
-      };
     case 'status':
       return {
         eventType: 'status',
@@ -271,29 +254,9 @@ function toStreamEvent(
         taskStatus: event.lifecycle,
         ...(taskDescription ? { taskDescription } : {}),
         taskSummary: event.result || event.error,
-        rawEvent:
-          event.details && typeof event.details === 'object'
-            ? (event.details as Record<string, unknown>)
-            : undefined,
         sessionId: event.sessionId,
       };
     }
-    case 'session':
-      return {
-        eventType: 'status',
-        agentScope: 'system',
-        displayLevel: 'debug',
-        statusText: `session:${event.sessionId}`,
-        sessionId: event.sessionId,
-      };
-    case 'error':
-      return {
-        eventType: 'status',
-        agentScope: 'system',
-        displayLevel: 'detail',
-        statusText: event.error,
-        sessionId: event.sessionId,
-      };
     case 'result':
       return undefined;
   }
@@ -302,14 +265,11 @@ function toStreamEvent(
 function emitRuntimeEvent(
   event: RuntimeEvent,
   options: PiQueryRunOptions,
-  resultState: { result?: RuntimeResult; fatalError?: string },
+  resultState: { result?: RuntimeResult },
 ): void {
   if (event.type === 'result') {
     resultState.result = event.result;
     return;
-  }
-  if (event.type === 'error') {
-    if (event.fatal) resultState.fatalError = event.error;
   }
   const streamEvent = toStreamEvent(event, options.containerInput);
   if (streamEvent) {
@@ -328,7 +288,7 @@ export async function runPiQueryAttempt(
 ): Promise<PiQueryRunResult> {
   const session = await options.runtime.createSession(options.sessionOptions);
   options.onSessionId(session.sessionId);
-  const resultState: { result?: RuntimeResult; fatalError?: string } = {};
+  const resultState: { result?: RuntimeResult } = {};
   let closedDuringQuery = false;
   let interruptedDuringQuery = false;
   let cancelledIpcReceipts: IpcDeliveryReceipt[] = [];
@@ -460,9 +420,6 @@ export async function runPiQueryAttempt(
         const result = resultState.result;
         resultState.result = undefined;
         publishResult(result);
-      }
-      if (resultState.fatalError) {
-        throw new Error(resultState.fatalError);
       }
       // AgentSession.prompt() can reject before Pi emits an agent_end event
       // (for example, when credentials are missing). Surface that provider

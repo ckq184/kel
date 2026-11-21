@@ -582,8 +582,6 @@ Agent 镜像只由 `main` 分支的 GitHub Actions 构建并发布。该接口�
 
 - `new_message`
 - `agent_reply`
-- `typing`
-- `status_update`
 - `stream_event`
 - `agent_status`
 - `terminal_output`
