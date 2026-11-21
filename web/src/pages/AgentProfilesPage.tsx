@@ -35,13 +35,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { AgentPromptAssistant } from '../components/agents/AgentPromptAssistant';
 import { AgentPromptEditor } from '../components/agents/AgentPromptEditor';
 import { AgentPromptVersionHistory } from '../components/agents/AgentPromptVersionHistory';
@@ -52,6 +45,7 @@ import { PolicyResourcePicker } from '../components/agents/PolicyResourcePicker'
 import { AgentCreatePanel } from '../components/agents/AgentCreatePanel';
 import { AgentDraftSummary } from '../components/agents/AgentDraftSummary';
 import { AgentProfilesSidebar } from '../components/agents/AgentProfilesSidebar';
+import { AgentDeleteMigrationDialog } from '../components/agents/AgentDeleteMigrationDialog';
 import { EmojiAvatar } from '../components/common/EmojiAvatar';
 import { EmojiPicker } from '../components/common/EmojiPicker';
 import { ColorPicker } from '../components/common/ColorPicker';
@@ -1358,77 +1352,17 @@ export function AgentProfilesPage() {
         </div>
       </main>
 
-      <Dialog
-        open={deleteDialogOpen}
-        onOpenChange={(open) => !deleting && setDeleteDialogOpen(open)}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>迁移工作区后删除智能体</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 text-sm">
-            <p className="leading-6 text-muted-foreground">
-              「{selected?.name}」仍归属 {governance?.workspaces.length ?? 0}{' '}
-              个工作区。删除前必须把它们迁移到同一个目标
-              智能体；渠道绑定会随工作区归属一起更新。
-            </p>
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                目标智能体
-              </label>
-              <Select
-                value={deleteTargetId}
-                onValueChange={setDeleteTargetId}
-                disabled={deleting}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="选择目标智能体" />
-                </SelectTrigger>
-                <SelectContent>
-                  {profiles
-                    .filter((profile) => profile.id !== selected?.id)
-                    .map((profile) => (
-                      <SelectItem key={profile.id} value={profile.id}>
-                        {profile.is_default ? '主智能体' : profile.name}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="max-h-40 overflow-auto rounded-md border bg-muted/20 p-2">
-              {governance?.workspaces.map((workspace) => (
-                <div
-                  key={workspace.jid}
-                  className="truncate px-1 py-1 text-xs text-muted-foreground"
-                >
-                  {workspace.name} · {workspace.folder}
-                </div>
-              ))}
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setDeleteDialogOpen(false)}
-              disabled={deleting}
-            >
-              取消
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => void handleMigrateAndDelete()}
-              disabled={deleting || !deleteTargetId}
-            >
-              {deleting ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <ArrowRight className="h-4 w-4" />
-              )}
-              迁移并删除
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <AgentDeleteMigrationDialog
+        deleteDialogOpen={deleteDialogOpen}
+        setDeleteDialogOpen={setDeleteDialogOpen}
+        deleting={deleting}
+        selected={selected}
+        governance={governance}
+        profiles={profiles}
+        deleteTargetId={deleteTargetId}
+        setDeleteTargetId={setDeleteTargetId}
+        handleMigrateAndDelete={handleMigrateAndDelete}
+      />
     </div>
   );
 }
