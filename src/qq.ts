@@ -274,7 +274,7 @@ export interface QQConnectionConfig {
   appSecret: string;
 }
 
-export interface QQConnectOpts {
+interface QQConnectOpts {
   onReady?: () => void;
   onNewChat: (jid: string, name: string) => void;
   isChatAuthorized: (jid: string) => boolean;

@@ -38,12 +38,7 @@ export function isTransientError(err: unknown): boolean {
 }
 
 export const RECONNECT_DELAYS: readonly number[] = [
-  1_000,
-  2_000,
-  5_000,
-  10_000,
-  30_000,
-  60_000,
+  1_000, 2_000, 5_000, 10_000, 30_000, 60_000,
 ];
 
 export function getReconnectDelay(
@@ -54,7 +49,7 @@ export function getReconnectDelay(
   return delays[idx]!;
 }
 
-export type CloseCodeAction =
+type CloseCodeAction =
   | { kind: 'normal' }
   | { kind: 'refresh-token' }
   | { kind: 'rate-limit' }

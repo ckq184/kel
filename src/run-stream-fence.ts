@@ -1,4 +1,4 @@
-export interface StreamRunDecision {
+interface StreamRunDecision {
   accepted: boolean;
   runId?: string;
 }

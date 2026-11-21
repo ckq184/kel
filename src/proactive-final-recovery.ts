@@ -12,7 +12,7 @@ export interface ProactiveFinalFallbackDelivery {
   path: 'native' | 'web' | 'web_after_native_failure';
 }
 
-export interface ProactiveFinalRecoveryResult {
+interface ProactiveFinalRecoveryResult {
   attempted: boolean;
   projected: boolean;
   targetDelivered: boolean;
@@ -23,7 +23,7 @@ export interface ProactiveFinalRecoveryResult {
     | 'reply_limit_reached';
 }
 
-export interface UnacknowledgedProactiveFinalProjectionResult {
+interface UnacknowledgedProactiveFinalProjectionResult {
   projected: boolean;
   finalizationReason: Extract<
     MessageFinalizationReason,

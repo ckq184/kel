@@ -47,7 +47,7 @@ const MAX_STREAM_CONTENT = 4500; // QQ content_raw conservative upper bound (lea
 // ─── Types ───────────────────────────────────────────────────
 
 /** Callback to send a stream chunk via QQ API */
-export type SendStreamChunkFn = (
+type SendStreamChunkFn = (
   openid: string,
   params: {
     input_mode: string;
@@ -63,7 +63,7 @@ export type SendStreamChunkFn = (
 ) => Promise<{ id?: string }>;
 
 /** Callback to send a plain message (fallback) */
-export type FallbackSendFn = (text: string) => Promise<void>;
+type FallbackSendFn = (text: string) => Promise<void>;
 
 type StreamingState =
   | 'idle'

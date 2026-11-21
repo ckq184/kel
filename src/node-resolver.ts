@@ -13,7 +13,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-export interface NodeResolverContext {
+interface NodeResolverContext {
   env: Record<string, string | undefined>;
   execPath?: string;
   argv0?: string;

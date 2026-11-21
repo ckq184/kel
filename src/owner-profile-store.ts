@@ -48,7 +48,7 @@ const LEGACY_OWNER_ADDRESS_SKIP_SENTINEL_SET = new Set<string>(
   LEGACY_OWNER_ADDRESS_SKIP_SENTINELS,
 );
 
-export type CkqclawOwnerIntroductionState =
+type CkqclawOwnerIntroductionState =
   | 'pending'
   | 'claimed'
   | 'completed'

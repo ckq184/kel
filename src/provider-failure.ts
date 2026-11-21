@@ -25,12 +25,12 @@ export function isPermanentProviderAuthError(error: string): boolean {
   return PERMANENT_AUTH_ERROR_PATTERNS.some((pattern) => pattern.test(error));
 }
 
-export interface ProviderFailureHealth {
+interface ProviderFailureHealth {
   profileId: string;
   healthy: boolean;
 }
 
-export interface ProviderFailureDisposition {
+interface ProviderFailureDisposition {
   /** Another configured provider can replay the same durable input. */
   retryElsewhere: boolean;
   /** The provider pool is exhausted, so the user input must end visibly. */

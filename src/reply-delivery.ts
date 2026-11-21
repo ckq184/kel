@@ -8,7 +8,7 @@
  * without the surrounding IO/streaming machinery.
  */
 
-export interface ReplyResultInfo {
+interface ReplyResultInfo {
   /**
    * Non-null means this result is an interim checkpoint, not the final
    * answer: 'bg_tasks' (background tasks still settling) or 'truncated'
@@ -39,7 +39,7 @@ export function isGenuineReplyResult(info: ReplyResultInfo): boolean {
   return true;
 }
 
-export interface ScheduledGroupPrimaryResultInfo extends ReplyResultInfo {
+interface ScheduledGroupPrimaryResultInfo extends ReplyResultInfo {
   status: 'success' | 'error' | 'stream' | 'closed';
   providerFailure?: boolean;
   hasScheduledGroupRuns: boolean;
@@ -88,7 +88,7 @@ export function resolveHeldReplyDbText(input: {
   return input.text;
 }
 
-export interface RetrySkipDecisionInput {
+interface RetrySkipDecisionInput {
   /** Set once a genuine (isGenuineReplyResult) result was delivered this run. */
   genuineReplyDelivered: boolean;
   /**
@@ -113,7 +113,7 @@ export function wasGenuineReplyDeliveredForInput(
   return deliveredByInput.get(inputTurnId) === true;
 }
 
-export interface AssistantPrimaryProjectionInput {
+interface AssistantPrimaryProjectionInput {
   /** Immutable input identity resolved by inputTurnId/receipt/cold-start. */
   canonicalInputTurnId: string;
   status: 'success' | 'error' | 'stream' | 'closed';
@@ -130,7 +130,7 @@ export interface AssistantPrimaryProjectionInput {
   anyReplyProjected: boolean;
 }
 
-export interface AssistantPrimaryProjectionDecision {
+interface AssistantPrimaryProjectionDecision {
   project: boolean;
   canonicalTurnId: string;
   reason: 'first_primary' | 'already_projected' | 'trailing_lifecycle_success';

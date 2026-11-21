@@ -570,7 +570,7 @@ export function validateMount(
   };
 }
 
-export interface ValidatedAdditionalMount {
+interface ValidatedAdditionalMount {
   hostPath: string;
   containerPath: string;
   readonly: boolean;
