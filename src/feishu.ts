@@ -23,6 +23,10 @@ import { detectImageMimeType } from './image-detector.js';
 import { resolveJidByMessageId } from './feishu-streaming-card.js';
 import { optimizeMarkdownStyle } from './feishu-markdown-style.js';
 import {
+  createFeishuBotInfoRefresher,
+  type FeishuBotPublicInfo,
+} from './feishu-bot-info.js';
+import {
   buildAgentReplyCard,
   buildFollowUpActionResultCard,
   buildQueuedFollowUpCard,
@@ -223,10 +227,6 @@ const FEISHU_INBOX_RECOVERY_LIMIT = 500;
 const FEISHU_RESOURCE_REQUEST_TIMEOUT_MS = 15_000;
 const FEISHU_RESOURCE_STREAM_TIMEOUT_MS = 30_000;
 const FEISHU_CURSOR_SCOPE = 'chat_messages';
-// 启动期 bot info 拉取的最大重试次数（指数退避 1s/2s/4s）
-const BOT_INFO_FETCH_MAX_ATTEMPTS = 4;
-// botOpenId 缺失时 lazy refetch 的最小间隔，避免对 OAPI 高频骚扰
-const BOT_INFO_REFETCH_MIN_INTERVAL_MS = 60_000;
 // "因 botOpenId 缺失而丢消息" 的 warn 节流间隔，避免日志刷屏
 const BOT_INFO_MISSING_WARN_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -384,12 +384,6 @@ interface IncomingMessagePayload {
   senderName?: string;
   senderTenantKey?: string;
   senderType?: string;
-}
-
-interface FeishuBotPublicInfo {
-  openId?: string;
-  name?: string;
-  avatarUrl?: string;
 }
 
 interface CachedFeishuChatInfo {
@@ -1140,8 +1134,6 @@ export function createFeishuConnection(
   let wsClient: lark.WSClient | null = null;
   let eventDispatcher: lark.EventDispatcher | null = null;
   let connectOptions: ConnectOptions | null = null;
-  let botOpenId: string = '';
-  let botPublicInfo: FeishuBotPublicInfo = {};
   let reconnecting = false;
   let backfillRunning = false;
   let reconnectRequestedAt = 0;
@@ -1149,10 +1141,6 @@ export function createFeishuConnection(
   let disconnectedChecks = 0;
   let healthTimer: NodeJS.Timeout | null = null;
   let inboxRecoveryTimer: NodeJS.Timeout | null = null;
-  // botOpenId 自愈状态：lastBotInfoFetchAt 防止 lazy refetch 高频骚扰 OAPI；
-  // botInfoRefetchInFlight 防止并发拉取
-  let lastBotInfoFetchAt = 0;
-  let botInfoRefetchInFlight: Promise<void> | null = null;
   // mention gate fail-closed 的 warn 节流：避免 botOpenId 长时间缺失时日志洪水
   let lastBotInfoMissingWarnAt = 0;
   let botInfoMissingDroppedSinceLastWarn = 0;
@@ -1396,106 +1384,18 @@ export function createFeishuConnection(
       void checkConnectionHealth();
       // 兜底：botOpenId 缺失时让健康检查顺手 lazy refetch；
       // 启动期 retry 失败 / 飞书短暂抖动后能在几分钟内自动恢复 mention 守卫。
-      if (!botOpenId) {
+      if (!botInfoRefresher.getOpenId()) {
         void ensureBotOpenIdFresh('health-check');
       }
     }, WS_HEALTH_CHECK_INTERVAL_MS);
     healthTimer.unref?.();
   }
 
-  /**
-   * 拉取可公开给 Agent 的 bot 信息（open_id、名称、头像）。
-   * 失败时返回空对象，由调用方决定是否重试。
-   */
-  async function fetchBotOpenIdOnce(): Promise<FeishuBotPublicInfo> {
-    if (!client) return {};
-    try {
-      const botInfoRes = await client.request({
-        method: 'GET',
-        url: '/open-apis/bot/v3/info/',
-      });
-      const info = botInfoRes as {
-        bot?: {
-          open_id?: string;
-          app_name?: string;
-          avatar_url?: string;
-        };
-        data?: {
-          bot?: {
-            open_id?: string;
-            app_name?: string;
-            avatar_url?: string;
-          };
-        };
-      };
-      const bot = info?.bot ?? info?.data?.bot;
-      return {
-        ...(bot?.open_id ? { openId: bot.open_id } : {}),
-        ...(bot?.app_name ? { name: bot.app_name } : {}),
-        ...(bot?.avatar_url ? { avatarUrl: bot.avatar_url } : {}),
-      };
-    } catch (err) {
-      logger.debug({ err }, 'fetchBotOpenIdOnce failed');
-      return {};
-    }
-  }
-
-  /**
-   * 启动期带指数退避的 bot open_id 拉取。最多 4 次（间隔 0/1s/2s/4s）。
-   * 即使全部失败也不阻塞 connect()，由 ensureBotOpenIdFresh() 后续兜底。
-   */
-  async function fetchBotOpenIdWithRetry(): Promise<void> {
-    for (let attempt = 0; attempt < BOT_INFO_FETCH_MAX_ATTEMPTS; attempt++) {
-      if (attempt > 0) {
-        await new Promise((r) => setTimeout(r, 1000 * 2 ** (attempt - 1)));
-      }
-      const info = await fetchBotOpenIdOnce();
-      lastBotInfoFetchAt = Date.now();
-      if (info.openId) {
-        botPublicInfo = info;
-        botOpenId = info.openId;
-        logger.info(
-          { botOpenId, attempt: attempt + 1 },
-          'Fetched bot open_id for mention detection',
-        );
-        return;
-      }
-    }
-    logger.warn(
-      { attempts: BOT_INFO_FETCH_MAX_ATTEMPTS },
-      'Could not fetch bot open_id after retries; mention gating will fail-closed until recovered',
-    );
-  }
-
-  /**
-   * 后台 lazy refetch：消息进入 mention 门控前若发现 botOpenId 仍空，触发一次。
-   * 用 lastBotInfoFetchAt 节流，避免每条消息都打 OAPI；并发安全（in-flight Promise 复用）。
-   */
-  function ensureBotOpenIdFresh(reason: string): Promise<void> {
-    if (botOpenId) return Promise.resolve();
-    if (botInfoRefetchInFlight) return botInfoRefetchInFlight;
-    const now = Date.now();
-    if (now - lastBotInfoFetchAt < BOT_INFO_REFETCH_MIN_INTERVAL_MS) {
-      return Promise.resolve();
-    }
-    botInfoRefetchInFlight = (async () => {
-      const info = await fetchBotOpenIdOnce();
-      lastBotInfoFetchAt = Date.now();
-      if (info.openId) {
-        botPublicInfo = info;
-        botOpenId = info.openId;
-        logger.info(
-          { botOpenId, reason },
-          'Recovered bot open_id (lazy refetch)',
-        );
-      } else {
-        logger.debug({ reason }, 'Lazy refetch of bot open_id still failed');
-      }
-    })().finally(() => {
-      botInfoRefetchInFlight = null;
-    });
-    return botInfoRefetchInFlight;
-  }
+  // bot open_id 拉取、指数退避与 lazy refetch 自愈已抽至 ./feishu-bot-info.ts
+  // （ISSUE-12 单元 2.1 原文搬运）；外层 client 为可变 let，经访问器注入。
+  const botInfoRefresher = createFeishuBotInfoRefresher(() => client);
+  const { fetchBotOpenIdOnce, fetchBotOpenIdWithRetry, ensureBotOpenIdFresh } =
+    botInfoRefresher;
 
   async function downloadFeishuImage(
     messageId: string,
@@ -1910,7 +1810,7 @@ export function createFeishuConnection(
       const chatJid =
         connectOptions?.normalizeIncomingJid?.(rawChatJid) ?? rawChatJid;
       const mentionedBot = isBotMentioned(
-        botOpenId,
+        botInfoRefresher.getOpenId(),
         mentions as MentionGateMention[] | undefined,
       );
       const rawMessageMeta: FeishuMessageMeta = {
@@ -2240,7 +2140,7 @@ export function createFeishuConnection(
       {
         const decision = evaluateMentionGate({
           chatType: normalizedChatType,
-          botOpenId,
+          botOpenId: botInfoRefresher.getOpenId(),
           mentions: mentions as MentionGateMention[] | undefined,
           chatJid,
           senderOpenId,
@@ -2306,7 +2206,7 @@ export function createFeishuConnection(
       if (chatType === 'group') {
         text = stripLeadingBotMention(
           text,
-          botOpenId,
+          botInfoRefresher.getOpenId(),
           mentions as MentionGateMention[] | undefined,
         );
       }
@@ -2688,7 +2588,7 @@ export function createFeishuConnection(
       const channelContext = buildFeishuChannelTurnContext({
         appId: config.appId,
         configuredChannelAccountId: config.channelAccountId,
-        bot: botPublicInfo,
+        bot: botInfoRefresher.getPublicInfo(),
         chat: {
           id: chatId,
           type: chatType,
@@ -3209,9 +3109,7 @@ export function createFeishuConnection(
       // Fetch bot open_id for mention detection — 带 retry 的 best-effort 拉取。
       // 启动期失败后，健康检查 + 进入 mention 门控前的 lazy refetch 会兜底自愈，
       // 期间 mention 守卫维持 fail-closed（拒绝群消息），不会回退到默认放行。
-      botOpenId = '';
-      botPublicInfo = {};
-      lastBotInfoFetchAt = 0;
+      botInfoRefresher.reset();
       await fetchBotOpenIdWithRetry();
 
       // Register the bot's current chat inventory before opening the WS. This
