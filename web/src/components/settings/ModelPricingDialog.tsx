@@ -17,7 +17,7 @@ import {
   type ModelPricingRule,
 } from '../../stores/model-pricing';
 
-export type PricingDialogKind = 'pattern' | 'fallback';
+type PricingDialogKind = 'pattern' | 'fallback';
 
 interface ModelPricingDialogProps {
   open: boolean;
