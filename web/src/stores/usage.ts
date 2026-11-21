@@ -55,7 +55,7 @@ export interface UsageWindow {
   timezone: string;
 }
 
-export interface UsageScope {
+interface UsageScope {
   userId: string | null;
   model: string | null;
   agentId: string | null;
@@ -69,7 +69,7 @@ interface DataRange {
   activeDays: number;
 }
 
-export interface UsageUser {
+interface UsageUser {
   id: string;
   username: string;
 }
@@ -97,7 +97,7 @@ export interface UsageAttributionItem {
   modelCallCount: number;
 }
 
-export interface UsageAttributions {
+interface UsageAttributions {
   models: UsageAttributionItem[];
   agents: UsageAttributionItem[];
   workspaces: UsageAttributionItem[];
