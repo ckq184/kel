@@ -104,7 +104,7 @@ export function shortModel(model: string): string {
   return model.length > 20 ? model.slice(0, 17) + '...' : model;
 }
 
-export interface TitleExtractResult {
+interface TitleExtractResult {
   title: string;
   bodyStartIndex: number;
 }
@@ -468,7 +468,7 @@ export function buildThinkingBlockquote(text: string): string {
 
 // ─── AskUserQuestion card ──────────────────────────────────────
 
-export interface AskQuestionView {
+interface AskQuestionView {
   question: string;
   options?: Array<{ value?: string; label?: string }>;
 }
@@ -518,7 +518,7 @@ export function collectAskQuestions(
 
 // ─── Call-trace timeline (recent events) ───────────────────────
 
-export interface TimelineEventView {
+interface TimelineEventView {
   text: string;
 }
 

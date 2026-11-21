@@ -116,7 +116,7 @@ export function buildAgentReplyCard(input: AgentCardInput): FeishuCardV2 {
   return card;
 }
 
-export interface StreamingCardBuildOptions {
+interface StreamingCardBuildOptions {
   /** Initial text to seed into the MAIN_CONTENT slot. */
   initialText?: string;
   /** Optional override title (otherwise extracted from initialText). */
@@ -249,7 +249,7 @@ export function buildStreamingAgentCard(
   };
 }
 
-export interface QueuedFollowUpCardInput {
+interface QueuedFollowUpCardInput {
   content: string;
   position: number;
   sourceJid: string;
@@ -348,7 +348,7 @@ export function parsePrebuiltInteractiveCardText(text: string): object | null {
   return null;
 }
 
-export interface ParsedCardCallback {
+interface ParsedCardCallback {
   /** Button value payload (action name + ids), already parsed. */
   value: Record<string, unknown>;
   /** open_message_id of the card that carried the button. */
