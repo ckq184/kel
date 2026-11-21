@@ -17,25 +17,25 @@ const ILINK_APP_ID = 'bot';
 const ILINK_APP_CLIENT_VERSION = '131329';
 
 /** AES-128-ECB 加密（PKCS7 padding） */
-export function encryptAesEcb(plaintext: Buffer, key: Buffer): Buffer {
+function encryptAesEcb(plaintext: Buffer, key: Buffer): Buffer {
   const cipher = crypto.createCipheriv('aes-128-ecb', key, null);
   return Buffer.concat([cipher.update(plaintext), cipher.final()]);
 }
 
 /** AES-128-ECB 解密（PKCS7 padding） */
-export function decryptAesEcb(ciphertext: Buffer, key: Buffer): Buffer {
+function decryptAesEcb(ciphertext: Buffer, key: Buffer): Buffer {
   const decipher = crypto.createDecipheriv('aes-128-ecb', key, null);
   return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
 }
 
 /** AES-128-ECB 密文大小（PKCS7 padding 到 16 字节边界） */
-export function aesEcbPaddedSize(plaintextSize: number): number {
+function aesEcbPaddedSize(plaintextSize: number): number {
   // PKCS7 always adds at least 1 byte, up to block size (16)
   return Math.ceil((plaintextSize + 1) / 16) * 16;
 }
 
 /** 构造 CDN 下载 URL */
-export function buildCdnDownloadUrl(
+function buildCdnDownloadUrl(
   encryptedQueryParam: string,
   cdnBaseUrl?: string,
 ): string {
@@ -44,7 +44,7 @@ export function buildCdnDownloadUrl(
 }
 
 /** 构造 CDN 上传 URL */
-export function buildCdnUploadUrl(params: {
+function buildCdnUploadUrl(params: {
   cdnBaseUrl?: string;
   uploadParam: string;
   filekey: string;
@@ -103,7 +103,7 @@ export async function downloadAndDecryptMedia(
 }
 
 /** 上传 Buffer 到 CDN（加密后上传） */
-export async function uploadBufferToCdn(params: {
+async function uploadBufferToCdn(params: {
   buf: Buffer;
   uploadParam: string;
   filekey: string;
@@ -160,7 +160,7 @@ export async function uploadBufferToCdn(params: {
 }
 
 /** 获取上传预签名 URL */
-export async function getUploadUrl(params: {
+async function getUploadUrl(params: {
   baseUrl: string;
   token: string;
   filekey: string;

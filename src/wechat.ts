@@ -415,9 +415,7 @@ export function classifyWeChatConnectionError(
   return 'unknown';
 }
 
-export function weChatConnectionErrorMessage(
-  code: WeChatConnectionErrorCode,
-): string {
+function weChatConnectionErrorMessage(code: WeChatConnectionErrorCode): string {
   switch (code) {
     case 'connect_timeout':
       return '连接微信服务超时，CKQClaw 正在自动重试';

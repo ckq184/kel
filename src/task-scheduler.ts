@@ -1883,7 +1883,7 @@ export function scheduledGroupPromptMessageId(runId: string): string {
 }
 
 /** Return a durable run id only for scheduler-owned prompt identities. */
-export function scheduledGroupRunIdFromPromptMessageId(
+function scheduledGroupRunIdFromPromptMessageId(
   messageId: string,
 ): string | null {
   if (!messageId.startsWith(SCHEDULED_GROUP_PROMPT_ID_PREFIX)) return null;
