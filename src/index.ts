@@ -408,6 +408,10 @@ import { processIpcFeishuCapability } from './ipc/feishu-capability-ops.js';
 import { processIpcTaskOps } from './ipc/task-ops.js';
 import { processIpcBuilderOps } from './ipc/builder-ops.js';
 import {
+  processTaskIpcImpl,
+  type IpcTaskRequest,
+} from './ipc/task-dispatch.js';
+import {
   processIpcMemoryOwnerOps,
   requireAgentBuilderActorImpl,
 } from './ipc/memory-owner-ops.js';
@@ -9079,77 +9083,7 @@ const ipcFeishuCapabilityDeps = {
 };
 
 async function processTaskIpc(
-  data: {
-    type: string;
-    taskId?: string;
-    runId?: string;
-    expectedRevision?: number;
-    idempotencyKey?: string;
-    isScheduledTask?: boolean;
-    prompt?: string;
-    schedule_type?: string;
-    schedule_value?: string;
-    context_mode?: string;
-    execution_type?: string;
-    execution_mode?: string;
-    script_command?: string;
-    groupFolder?: string;
-    chatJid?: string;
-    targetJid?: string;
-    // For register_group
-    jid?: string;
-    name?: string;
-    folder?: string;
-    containerConfig?: RegisteredGroup['containerConfig'];
-    executionMode?: string;
-    // For install_skill / uninstall_skill
-    package?: string;
-    requestId?: string;
-    skillId?: string;
-    // For send_file
-    filePath?: string;
-    fileName?: string;
-    // For list_tasks / list_task_runs / workspace_memory snapshots
-    isAdminHome?: boolean;
-    includeDeleted?: boolean;
-    limit?: number;
-    before?: string;
-    // Host-side Feishu capability broker
-    inputTurnId?: string;
-    operation?: string;
-    params?: Record<string, unknown>;
-    // Workspace Memory v2. Workspace/actor/sourceType are never accepted from
-    // IPC; processTaskIpc derives them from the verified namespace.
-    query?: string;
-    kind?: string;
-    maxChars?: number;
-    itemId?: string;
-    title?: string;
-    content?: string;
-    canonicalKey?: string | null;
-    importance?: number;
-    confidence?: number;
-    validFrom?: string | null;
-    validUntil?: string | null;
-    expiresAt?: string | null;
-    patch?: Record<string, unknown>;
-    sessionId?: string;
-    timestamp?: string;
-    runnerInstanceId?: string;
-    mutationSignature?: string;
-    // Dedicated built-in CKQClaw Owner Profile facade.
-    preferredAddress?: string;
-    expectedOnboardingRevision?: number;
-    leaseToken?: number;
-    // For the main CKQClaw's conversational Agent Builder
-    profileId?: string;
-    draftId?: string;
-    expectedDraftRevision?: number;
-    targetAgentProfileId?: string;
-    expectedAgentVersion?: number;
-    definition?: unknown;
-    assumptions?: string[];
-  },
+  data: IpcTaskRequest,
   sourceGroup: string, // Verified identity from IPC directory
   isAdminHome: boolean, // Whether source is admin home container
   isHome: boolean, // Whether source is a home container
@@ -9158,170 +9092,26 @@ async function processTaskIpc(
   ipcAgentId: string | null = null, // Non-null when IPC comes from a conversation agent
   ipcTaskId: string | null = null, // Non-null for an isolated scheduled-task run namespace
 ): Promise<void> {
-  const durableTaskRunId = extractDurableTaskRunIdFromNamespace(ipcTaskId);
-  const ownerHomeFolderCandidate = sourceGroupEntry?.created_by
-    ? getUserHomeGroup(sourceGroupEntry.created_by)?.folder
-    : null;
-  const broadcastFolder = resolveBroadcastFolder(
+  // ISSUE-12 波 4 单元 4.5（收官）：函数体（ACL 装配 + actor 适配 + 分发
+  // switch）已迁 src/ipc/task-dispatch.ts，此处同名签名壳委托；watcher 的
+  // processTaskIpc 注入面与全部调用点不变。
+  await processTaskIpcImpl({
+    data,
     sourceGroup,
-    ownerHomeFolderCandidate,
-  );
-
-  // Scheduled-task ACL for this IPC surface. The predicate itself lives in
-  // src/task-acl.ts so it is unit-testable and cannot silently regress; see
-  // that module for why `isAdminHome` is deliberately absent.
-  const taskAclDeps: TaskAclDeps = {
-    lookupGroup: (jid) => registeredGroups[jid] ?? getRegisteredGroup(jid),
-    resolveActor: () => {
-      const actorId = sourceGroupEntry?.created_by;
-      if (!actorId) return undefined;
-      const actor = getUserById(actorId);
-      if (!actor) return undefined;
-      return { id: actor.id, role: actor.role, status: actor.status };
-    },
-    canAccessGroup,
-  };
-  const ipcActorCanAccessGroupJid = (targetJid: string): boolean =>
-    canIpcActorAccessGroup(sourceGroup, targetJid, taskAclDeps);
-  const ipcActorCanManageTask = (task: {
-    group_folder: string;
-    chat_jid: string;
-  }): boolean => canIpcActorManageTask(sourceGroup, task, taskAclDeps);
-
-  // ISSUE-12 波 4 单元 4.8：两个 actor 构建器已迁 src/ipc/memory-owner-ops.ts
-  // （原文搬运，闭包局部量转显式参数）。此处保留 requireAgentBuilderActor
-  // 同名零参适配闭包供 builder-ops 注入（其 input 接口为 () => AgentBuilderActor
-  // 不变）；requireOwnerProfileActor 壳层已无消费点，模块内自带镜像适配。
-  const requireAgentBuilderActor = (): AgentBuilderActor =>
-    requireAgentBuilderActorImpl({
-      data,
-      sourceGroup,
-      sourceGroupEntry,
-      ipcAgentId,
-      ipcTaskId,
-      getRegisteredGroups: () => registeredGroups,
-    });
-
-  // ISSUE-12 波 4 单元 4.6：任务生命周期十 case 的依赖注入对象。置于
-  // switch 前就地构造——ipcActorCanAccessGroupJid/ipcActorCanManageTask 是
-  // 本函数头局部 ACL 谓词，无法上移模块级。
-  const ipcTaskOpsDeps = {
-    writeTaskResult,
+    isAdminHome,
+    isHome,
+    sourceGroupEntry,
+    tasksDir,
+    ipcAgentId,
+    ipcTaskId,
     getRegisteredGroups: () => registeredGroups,
-    ipcActorCanAccessGroupJid,
-    ipcActorCanManageTask,
-    isAdminHostOnlyOwner,
+    writeTaskResult,
     SAFE_REQUEST_ID_RE,
-  };
-
-  switch (data.type) {
-    case 'ckqclaw_owner_profile':
-    case 'workspace_memory':
-      await processIpcMemoryOwnerOps({
-        writeTaskResult,
-        SAFE_REQUEST_ID_RE,
-        data,
-        sourceGroup,
-        sourceGroupEntry,
-        tasksDir,
-        ipcAgentId,
-        ipcTaskId,
-        isHome,
-        getRegisteredGroups: () => registeredGroups,
-      });
-      break;
-
-    case 'agent_profile_list':
-    case 'agent_profile_get':
-    case 'agent_profile_draft_get':
-    case 'agent_capability_catalog':
-    case 'agent_profile_prepare':
-    case 'agent_profile_publish':
-    case 'agent_profile_discard':
-      await processIpcBuilderOps({
-        writeTaskResult,
-        requireAgentBuilderActor,
-        data,
-        tasksDir,
-      });
-      break;
-
-    case 'schedule_task':
-    case 'pause_task':
-    case 'resume_task':
-    case 'cancel_task':
-    case 'update_task':
-    case 'run_task_now':
-    case 'stop_task_run':
-    case 'restore_task':
-    case 'list_task_runs':
-    case 'list_tasks':
-      await processIpcTaskOps({
-        ...ipcTaskOpsDeps,
-        data,
-        sourceGroup,
-        isAdminHome,
-        sourceGroupEntry,
-        tasksDir,
-        ipcAgentId,
-      });
-      break;
-
-    case 'feishu_capability': {
-      await processIpcFeishuCapability({
-        ...ipcFeishuCapabilityDeps,
-        data,
-        sourceGroup,
-        ipcAgentId,
-        tasksDir,
-      });
-      break;
-    }
-
-    case 'register_group':
-      processIpcRegisterGroup({
-        ...ipcSkillRegistryDeps,
-        data,
-        sourceGroup,
-        isAdminHome,
-      });
-      break;
-
-    case 'install_skill':
-      await processIpcInstallSkill({
-        ...ipcSkillRegistryDeps,
-        data,
-        sourceGroup,
-      });
-      break;
-
-    case 'uninstall_skill':
-      await processIpcUninstallSkill({
-        ...ipcSkillRegistryDeps,
-        data,
-        sourceGroup,
-      });
-      break;
-
-    case 'send_file':
-      await processIpcSendFile({
-        data,
-        sourceGroup,
-        isAdminHome,
-        isHome,
-        sourceGroupEntry,
-        tasksDir,
-        ipcAgentId,
-        ipcTaskId,
-        durableTaskRunId,
-        broadcastFolder,
-        ...ipcFileDeliveryDeps,
-      });
-      break;
-
-    default:
-      logger.warn({ type: data.type }, 'Unknown IPC task type');
-  }
+    isAdminHostOnlyOwner,
+    ipcFileDeliveryDeps,
+    ipcSkillRegistryDeps,
+    ipcFeishuCapabilityDeps,
+  });
 }
 
 /**

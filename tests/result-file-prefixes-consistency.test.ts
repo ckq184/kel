@@ -106,12 +106,18 @@ describe('orphan result file cleanup prefix consistency (ISSUE-05 §1)', () => {
   });
 
   test('parsedData fallback only writes _task types already covered by the list', () => {
-    // 兜底路径 (src/index.ts ~:10936) 仅对 endsWith('_task') 的请求 type 写
-    // 失败回执。请求 type 的全集是容器侧 IPC 任务协议；此处断言宿主侧 switch
-    // 处理的所有 *_task case 标签都在名单内，保证已知的兜底写入不漏删。
+    // 兜底路径（现 src/ipc/watcher.ts 任务扫描 catch）仅对 endsWith('_task')
+    // 的请求 type 写失败回执。请求 type 的全集是容器侧 IPC 任务协议；此处
+    // 断言宿主侧 switch 处理的所有 *_task case 标签都在名单内，保证已知的
+    // 兜底写入不漏删。ISSUE-12 波 4 单元 4.5：分发 switch 随 processTaskIpc
+    // 壳迁 src/ipc/task-dispatch.ts，标签扫描改读该模块。
+    const dispatchSource = readFileSync(
+      path.join(repoRoot, 'src/ipc/task-dispatch.ts'),
+      'utf-8',
+    );
     const taskCaseLabels = [
       ...new Set(
-        [...mainSource.matchAll(/^\s*case '([a-z_]*task[a-z_]*)':/gm)].map(
+        [...dispatchSource.matchAll(/^\s*case '([a-z_]*task[a-z_]*)':/gm)].map(
           (m) => m[1],
         ),
       ),
