@@ -404,6 +404,7 @@ import {
   processIpcRegisterGroup,
   processIpcUninstallSkill,
 } from './ipc/skill-registry-ops.js';
+import { processIpcFeishuCapability } from './ipc/feishu-capability-ops.js';
 import type {
   FeishuCapabilityOperation,
   FeishuCapabilityRequest,
@@ -9064,6 +9065,13 @@ const ipcSkillRegistryDeps = {
   SAFE_REQUEST_ID_RE,
 };
 
+// ISSUE-12 波 4 单元 4.9：feishu_capability case 的 index.ts 本地依赖注入对象。
+const ipcFeishuCapabilityDeps = {
+  SAFE_REQUEST_ID_RE,
+  REPLY_LIMIT_REACHED_ERROR,
+  writeTaskResult,
+};
+
 async function processTaskIpc(
   data: {
     type: string;
@@ -10709,153 +10717,13 @@ async function processTaskIpc(
       break;
 
     case 'feishu_capability': {
-      const startedAt = Date.now();
-      try {
-        if (!data.requestId || !SAFE_REQUEST_ID_RE.test(data.requestId)) {
-          throw new Error('Invalid Feishu capability requestId');
-        }
-        if (!data.inputTurnId) {
-          throw new Error('Feishu capability inputTurnId is required');
-        }
-        const allowedOperations = new Set<FeishuCapabilityOperation>([
-          'get_chat',
-          'list_members',
-          'get_user',
-          'get_history',
-          'send_card',
-          'add_reaction',
-          'remove_reaction',
-          'edit_message',
-          'recall_message',
-          'api_request',
-        ]);
-        if (
-          !data.operation ||
-          !allowedOperations.has(data.operation as FeishuCapabilityOperation)
-        ) {
-          throw new Error('Unknown Feishu capability operation');
-        }
-        const scope = channelTurnScope(sourceGroup, ipcAgentId);
-        const activeTurn = activeChannelTurns.require(scope, data.inputTurnId);
-        const request: FeishuCapabilityRequest = {
-          operation: data.operation as FeishuCapabilityOperation,
-          params: data.params,
-        };
-        // Runaway-loop fuse, sharing send_message's budget. `send_card` is the
-        // only capability that emits new user-visible content, and it is the
-        // only one recorded against the turn — so it is the only one gated.
-        // Reactions, edits and recalls act on existing messages.
-        if (
-          request.operation === 'send_card' &&
-          !canDeliverTurnUtterance(sourceGroup, ipcAgentId, data.inputTurnId)
-        ) {
-          logger.warn(
-            {
-              sourceGroup,
-              agentId: ipcAgentId,
-              inputTurnId: data.inputTurnId,
-            },
-            'Suppressed IPC feishu send_card: per-turn reply limit reached',
-          );
-          throw new Error(REPLY_LIMIT_REACHED_ERROR);
-        }
-        let result;
-        if (isFeishuCapabilityMutation(request)) {
-          const outboxScope = activeChannelOutboxScopes.resolveInput(
-            scope,
-            data.inputTurnId,
-            activeTurn.sourceJid,
-          );
-          if (!outboxScope) {
-            throw new Error(
-              'Exact durable scope for this Feishu mutation is unavailable; operation suppressed.',
-            );
-          }
-          const mutation = await deliverFeishuCapabilityMutation({
-            ...outboxScope,
-            requestId: data.requestId,
-            request,
-            owner: `ckqclaw-feishu-capability:${process.pid}:${outboxScope.turnRunId}`,
-            execute: () =>
-              imManager.executeFeishuCapability(
-                activeTurn.sourceJid,
-                activeTurn.context,
-                request,
-              ),
-          });
-          if (mutation.delivery.status !== 'delivered') {
-            throw new Error(
-              mutation.delivery.status === 'uncertain'
-                ? 'Feishu mutation delivery is uncertain; do not retry automatically. An operator must confirm the provider result.'
-                : mutation.delivery.error ||
-                    `Feishu mutation did not complete (${mutation.delivery.status}).`,
-            );
-          }
-          result =
-            mutation.result ??
-            ({
-              operation: request.operation,
-              data: {
-                deliveryStatus: 'already_delivered',
-                providerReceipt:
-                  mutation.delivery.receipt?.providerMessageId ?? null,
-              },
-            } satisfies Awaited<
-              ReturnType<typeof imManager.executeFeishuCapability>
-            >);
-        } else {
-          result = await imManager.executeFeishuCapability(
-            activeTurn.sourceJid,
-            activeTurn.context,
-            request,
-          );
-        }
-        // `send_card` is the only capability that emits new user-visible
-        // content, so it is the only one that counts as speech for turn
-        // settlement. Reactions, edits and recalls act on existing messages.
-        if (
-          request.operation === 'send_card' &&
-          typeof data.inputTurnId === 'string' &&
-          data.inputTurnId
-        ) {
-          activeTurnOutputs.recordDeliveredUtterance({
-            scopeKey: channelTurnScope(sourceGroup, ipcAgentId),
-            inputTurnId: data.inputTurnId,
-          });
-        }
-        writeTaskResult(tasksDir, 'feishu_capability', data.requestId, {
-          success: true,
-          ...result,
-        });
-        logger.info(
-          {
-            sourceGroup,
-            agentId: ipcAgentId,
-            operation: request.operation,
-            channelAccountId: activeTurn.context.channelAccountId,
-            chatId: activeTurn.context.chat.id,
-            inputTurnId: data.inputTurnId,
-            durationMs: Date.now() - startedAt,
-          },
-          'Feishu capability executed through bound Bot',
-        );
-      } catch (error) {
-        writeTaskResult(tasksDir, 'feishu_capability', data.requestId, {
-          success: false,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        logger.warn(
-          {
-            sourceGroup,
-            agentId: ipcAgentId,
-            operation: data.operation,
-            inputTurnId: data.inputTurnId,
-            durationMs: Date.now() - startedAt,
-            error: error instanceof Error ? error.message : String(error),
-          },
-          'Feishu capability request rejected or failed',
-        );
-      }
+      await processIpcFeishuCapability({
+        ...ipcFeishuCapabilityDeps,
+        data,
+        sourceGroup,
+        ipcAgentId,
+        tasksDir,
+      });
       break;
     }
 
