@@ -102,7 +102,12 @@ describe('Agent prompt and capability frontend contract', () => {
     expect(profiles).toMatch(
       /CKQClaw MCP[\s\S]*宿主机 Skills[\s\S]*“能力配置”独立控制/,
     );
-    expect(profiles).toContain("skill.source === 'external' && skill.enabled");
+    // ISSUE-12 波 5 单元 5.3：hostSkillOptions memo（external 过滤）已随
+    // useAgentRuntimePolicy hook 迁 web/src/hooks/useAgentRuntimePolicy.ts
+    // （原文搬运），锚随体迁、断言文本不变。
+    expect(read('web/src/hooks/useAgentRuntimePolicy.ts')).toContain(
+      "skill.source === 'external' && skill.enabled",
+    );
     expect(skillEditor).toMatch(/不使用[\s\S]*选择部分[\s\S]*全部使用/);
     expect(skillEditor).toContain('来自 ~/.claude/skills，可单独启用');
     expect(main).toContain('<AgentSkillsPolicyEditor');
