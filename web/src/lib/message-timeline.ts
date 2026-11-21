@@ -7,7 +7,7 @@ export interface TimelineMessageLike {
   delivery_run_id?: string | null;
 }
 
-export interface FollowUpTransitionLike {
+interface FollowUpTransitionLike {
   id: string;
   delivery_status: 'released' | 'cancelled';
   delivery_run_id?: string | null;
