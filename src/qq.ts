@@ -43,13 +43,10 @@ import {
   classifyCloseCode,
 } from './qq-reconnect.js';
 import { resolveAdmittedChannelRoute } from './channel-admission.js';
-import {
-  createQQTokenManager,
-  QQ_MAX_JSON_RESPONSE_BYTES,
-} from './qq-token.js';
+import { createQQTokenManager } from './qq-token.js';
+import { createQQApi, QQApiError } from './qq-api.js';
 // ─── Constants ──────────────────────────────────────────────────
 
-const QQ_API_BASE = 'https://api.sgroup.qq.com';
 const MSG_SPLIT_LIMIT = 5000;
 const MAX_RECONNECT_ATTEMPTS = 100;
 const RATE_LIMIT_DELAY_MS = 60_000;
@@ -61,7 +58,6 @@ const KEEPALIVE_INTERVAL_MS = 5 * 60 * 1000;
 // Safety net: if we ever end up disconnected with no reconnect pending,
 // the watchdog kicks a fresh attempt instead of leaving the bot dead.
 const WATCHDOG_INTERVAL_MS = 60_000;
-const QQ_API_REQUEST_TIMEOUT_MS = 30_000;
 
 const IMAGE_EXT_MAP: Record<string, string> = {
   'image/jpeg': '.jpg',
@@ -71,16 +67,6 @@ const IMAGE_EXT_MAP: Record<string, string> = {
 };
 
 // ─── QQ File Upload Types & Constants ──────────────────────────
-
-class QQApiError extends Error {
-  constructor(
-    message: string,
-    public readonly bizCode?: number,
-  ) {
-    super(message);
-    this.name = 'QQApiError';
-  }
-}
 
 enum QQMediaFileType {
   IMAGE = 1,
@@ -503,88 +489,19 @@ export function createQQConnection(config: QQConnectionConfig): QQConnection {
   const { getAccessToken, resetToken } = createQQTokenManager(config);
 
   // ─── REST API ──────────────────────────────────────────────
-
-  async function apiRequest<T = any>(
-    method: string,
-    path: string,
-    body?: Record<string, unknown>,
-  ): Promise<T> {
-    const token = await getAccessToken();
-    const url = new URL(path, QQ_API_BASE);
-    const bodyStr = body ? JSON.stringify(body) : undefined;
-
-    return new Promise<T>((resolve, reject) => {
-      const req = https.request(
-        {
-          hostname: url.hostname,
-          path: url.pathname + url.search,
-          method,
-          headers: {
-            Authorization: `QQBot ${token}`,
-            'Content-Type': 'application/json',
-            ...(bodyStr
-              ? { 'Content-Length': String(Buffer.byteLength(bodyStr)) }
-              : {}),
-          },
-        },
-        (res) => {
-          const chunks: Buffer[] = [];
-          let responseBytes = 0;
-          res.on('data', (chunk: Buffer) => {
-            responseBytes += chunk.length;
-            if (responseBytes > QQ_MAX_JSON_RESPONSE_BYTES) {
-              res.destroy(new Error('QQ API response is too large'));
-              return;
-            }
-            chunks.push(chunk);
-          });
-          res.on('end', () => {
-            const text = Buffer.concat(chunks).toString('utf-8');
-            try {
-              const data = JSON.parse(text);
-              if (res.statusCode && res.statusCode >= 400) {
-                const errMsg = data.message || data.msg || text;
-                const bizCode =
-                  typeof data.code === 'number' ? data.code : undefined;
-                reject(
-                  new QQApiError(
-                    `QQ API ${method} ${path} failed (${res.statusCode}): ${errMsg}`,
-                    bizCode,
-                  ),
-                );
-                return;
-              }
-              resolve(data as T);
-            } catch {
-              if (res.statusCode && res.statusCode >= 400) {
-                reject(
-                  new QQApiError(
-                    `QQ API ${method} ${path} failed (${res.statusCode}): ${text}`,
-                  ),
-                );
-              } else {
-                // Some endpoints return empty body on success
-                resolve({} as T);
-              }
-            }
-          });
-          res.on('error', reject);
-        },
-      );
-      req.on('error', reject);
-      req.setTimeout(QQ_API_REQUEST_TIMEOUT_MS, () => {
-        req.destroy(new Error(`QQ API ${method} ${path} timed out`));
-      });
-      if (bodyStr) req.write(bodyStr);
-      req.end();
-    });
-  }
-
-  async function getGatewayUrl(): Promise<string> {
-    const data = await apiRequest<{ url: string }>('GET', '/gateway/bot');
-    if (!data.url) throw new Error('QQ gateway response did not include url');
-    return validateQQGatewayUrl(data.url);
-  }
+  // apiRequest / getGatewayUrl 已抽至 ./qq-api.ts（ISSUE-12 单元 2.12 原文
+  // 搬运）。tokens 仅 { getAccessToken } 结构子集（2.11 tokenManager 同名
+  // 解构绑定直传）；getGatewayUrl 的 validateQQGatewayUrl 依赖（qq.ts 既有
+  // 导出，不动）经同名参数注入，搬运体内调用逐字节保留。同名解构使
+  // sendQQMessage / upload 链 / sendStreamMessage / connectWs /
+  // scheduleReconnect 调用点零改动。QQApiError 随 apiRequest（唯一
+  // throw 侧）迁至 qq-api.ts 并导出，qqUploadPartFinish /
+  // qqPartFinishPersistentRetry 的 instanceof 判定经顶部 import 引用同一
+  // 类身份（2.13 随段搬至 qq-media 后该 import 消失）。
+  const { apiRequest, getGatewayUrl } = createQQApi(
+    { getAccessToken },
+    validateQQGatewayUrl,
+  );
 
   // ─── Message Sending ──────────────────────────────────────
 
