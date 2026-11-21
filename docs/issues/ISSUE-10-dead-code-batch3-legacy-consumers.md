@@ -75,6 +75,6 @@
   4. 拍板⑤的 stdin `skillManifest` IIFE 整簇下线：`ClaudeContextAudit` 自带 skills.manifestHash/selectedSkillIds，classify 比对无需独立 manifest；宿主路径 `audit.mcp` 原已设置无需补。
   5. 飞书卡模板 5 折叠面板→4（PROGRESS_PANEL 元素与 `buildProgressListText` 随 Todo 面板链删除，`tests/feishu-card.test.ts` 锚点同步）。
   6. 拍板⑦ 的断言落在新增 `tests/run-context-snapshot-wiring.test.ts`（计划草拟于 runtime-config-env，覆盖等价）。
-- **行为变化明示**（均随拍板）：旧 wf_*.json 工件不再显示；`CLAUDE_CODE_AUTO_COMPACT_WINDOW` 不再注入（Bash 内 claude CLI 走其默认压缩策略），custom env 可携带该键但平台不管理；Web 端 Hook/Todo/Permission 展示组件与飞书卡对应面板下线；`context_audit` 事件类型整体消失，审计改宿主直记快照。
+- **行为变化明示**（均随拍板）：旧 wf\_\*.json 工件不再显示；`CLAUDE_CODE_AUTO_COMPACT_WINDOW` 不再注入（Bash 内 claude CLI 走其默认压缩策略），custom env 可携带该键但平台不管理；Web 端 Hook/Todo/Permission 展示组件与飞书卡对应面板下线；`context_audit` 事件类型整体消失，审计改宿主直记快照。
 - **遗留登记**：`shouldEmitBackgroundTaskNotice` 孤儿导出（删除级联 ISSUE-11 契约文件，列下批）；`StreamEvent.taskPatch` 等 0 生产字段不在清单未动；reply-delivery 挂起纯函数残留（计划内保留）；heldUsagePatchTarget 命名不副实（ISSUE-12 候选）。
 - **待用户实机验收**（issue 验收标准实机部分，本会话无运行中服务）：Web/飞书/QQ 对话流式输出、工具卡渲染、中断收口；agent-profiles 预览的 run_context 状态（修复后应可达 'current'）。

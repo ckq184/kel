@@ -181,6 +181,7 @@
     "web/src/App.tsx",
     "web/src/components/chat/HostDirectoryMountEditor.tsx",
     "web/src/hooks/useTheme.ts",
-    "web/src/utils/url.ts"
+    "web/src/utils/url.ts",
+    "docs/issues/ISSUE-10-dead-code-batch3-legacy-consumers.md"
   ]
 }
