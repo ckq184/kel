@@ -159,7 +159,11 @@ describe('三渠道入站文件内联接线（源码契约）', () => {
       call: 'buildInlinedFileContent(groupFolder, relPath)',
     },
     {
-      file: 'src/wechat.ts',
+      // ISSUE-12 单元 2.19：微信入站文件内联接线随媒体段（processFileItem）
+      // 自 src/wechat.ts 原文搬至 src/wechat-media.ts，本条两断言
+      //（im-downloader import / (groupFolder, result.savedPath) 调用形）
+      // 等强改锚新模块，断言文本逐字不变，仅锚点文件随搬运体搬家。
+      file: 'src/wechat-media.ts',
       call: 'buildInlinedFileContent(groupFolder, result.savedPath)',
     },
   ] as const;

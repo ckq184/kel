@@ -17,13 +17,6 @@ import { storeChatMetadata, storeMessageDirect, updateChatName } from './db.js';
 import { notifyNewImMessage } from './message-notifier.js';
 import { broadcastNewMessage } from './web.js';
 import { logger } from './logger.js';
-import {
-  saveDownloadedFile,
-  buildInlinedFileContent,
-  MAX_FILE_SIZE,
-} from './im-downloader.js';
-import { detectImageMimeType } from './image-detector.js';
-import { downloadAndDecryptMedia } from './wechat-crypto.js';
 import { markdownToPlainText, createDedupCache } from './im-utils.js';
 import { weChatIlinkHeaders } from './wechat-onboarding.js';
 import {
@@ -33,12 +26,12 @@ import {
 import { createWeChatApiClient, DEFAULT_BASE_URL } from './wechat-api.js';
 import {
   createWeChatSender,
-  DEFAULT_CDN_BASE_URL,
   MESSAGE_ITEM_TYPE_FILE,
   MESSAGE_ITEM_TYPE_IMAGE,
   MESSAGE_ITEM_TYPE_TEXT,
   MESSAGE_TYPE_BOT,
 } from './wechat-outbound.js';
+import { createWeChatMedia } from './wechat-media.js';
 
 // ─── Constants ──────────────────────────────────────────────────
 
@@ -47,8 +40,6 @@ const DEFAULT_LONGPOLL_TIMEOUT_MS = 35000;
 const RECONNECT_MIN_DELAY_MS = 3000;
 const RECONNECT_MAX_DELAY_MS = 60000;
 const REPEATED_ERROR_LOG_INTERVAL_MS = 5 * 60 * 1000;
-
-const IMAGE_MAX_BASE64_SIZE = 5 * 1024 * 1024; // 5 MB for inline base64
 
 // errcode for session expired
 const ERRCODE_SESSION_EXPIRED = -14;
@@ -417,7 +408,6 @@ export function createWeChatConnection(
   deps: WeChatConnectionDeps = {},
 ): WeChatConnection {
   const baseUrl = config.baseUrl || DEFAULT_BASE_URL;
-  const cdnBaseUrl = config.cdnBaseUrl || DEFAULT_CDN_BASE_URL;
   const bypassProxy = config.bypassProxy !== false;
   const random = deps.random ?? Math.random;
   const now = deps.now ?? Date.now;
@@ -481,10 +471,11 @@ export function createWeChatConnection(
   // parseWeChatApiResponse 为本文件既有导出（外层门面约束），经同名参数
   // 注入，apiPost 体内调用点逐字节不变（2.12 validateQQGatewayUrl 同款）。
   // 同名解构使 connect / disconnect / pollLoop / markConnectionHealthy /
-  // handlePollFailure / downloadCdnMediaItem 调用点零改动（2.18 起
-  // sendMessageApi 的 processMessage 消费面与门面 sendImage / sendFile /
-  // sendTyping 委托体改经 wechat-outbound 接线，getTypingTicket /
-  // sendTypingApi 随段内化，见下方 Outbound Sender 接线）。
+  // handlePollFailure 调用点零改动（downloadCdnMediaItem 链 2.19 起随媒体段
+  // 迁往 wechat-media，ensureDispatcher 经下方 CDN Media 接线透传；
+  // 2.18 起 sendMessageApi 的 processMessage 消费面与门面 sendImage /
+  // sendFile / sendTyping 委托体改经 wechat-outbound 接线，
+  // getTypingTicket / sendTypingApi 随段内化，见下方 Outbound Sender 接线）。
   const {
     ensureDispatcher,
     publishState,
@@ -524,8 +515,9 @@ export function createWeChatConnection(
   //（外层门面约束），经同名参数注入（2.17 parseWeChatApiResponse 同款）。
   // uploadMediaBuffer 直属既有模块 wechat-crypto（W4 消费同模块的
   // downloadAndDecryptMedia，非 W4 素材），wechat-outbound 直接 import；
-  // MAX_FILE_SIZE（W4 download 亦消费）与 markdownToPlainText
-  //（processMessage 亦消费）仍各自直引共享模块。常数归属：
+  // markdownToPlainText（processMessage 亦消费）仍直引共享模块；曾因
+  // W4 亦消费而留守的 im-downloader 三名 import 已于 2.19 随媒体段迁往
+  // ./wechat-media.ts（见下方 CDN Media 接线）。常数归属：
   // MSG_SPLIT_LIMIT / MESSAGE_STATE_FINISH 仅发送链消费随段迁移；
   // MESSAGE_TYPE_BOT / MESSAGE_ITEM_TYPE_TEXT / IMAGE / FILE 为 W5
   // extractTextContent / processMessage 共享，随段安家 wechat-outbound 并
@@ -540,134 +532,28 @@ export function createWeChatConnection(
       assertWeChatApiSuccess,
     );
 
-  // ─── CDN Media Download ────────────────────────────────────
-
-  /**
-   * Download, decrypt, and save a CDN media item (image, file, etc.).
-   * `resolveFileName` receives the decrypted buffer so callers can inspect
-   * content (e.g. MIME-detect for images) before choosing a name.
-   */
-  async function downloadCdnMediaItem(
-    media: CDNMedia | undefined,
-    groupFolder: string | undefined,
-    label: string,
-    resolveFileName: (buffer: Buffer) => string,
-  ): Promise<{ buffer: Buffer; savedPath?: string } | null> {
-    if (!media?.encrypt_query_param || !media?.aes_key) {
-      logger.debug(`WeChat ${label} missing media or aes_key, skipping`);
-      return null;
-    }
-
-    const buffer = await downloadAndDecryptMedia(
-      media.encrypt_query_param,
-      media.aes_key,
-      cdnBaseUrl,
-      ensureDispatcher(),
-    );
-
-    if (!buffer || buffer.length === 0) {
-      logger.warn(`WeChat ${label} download returned empty buffer`);
-      return null;
-    }
-
-    if (buffer.length > MAX_FILE_SIZE) {
-      logger.warn(
-        { size: buffer.length },
-        `WeChat ${label} exceeds max file size, skipping`,
-      );
-      return null;
-    }
-
-    let savedPath: string | undefined;
-    if (groupFolder) {
-      try {
-        const fileName = resolveFileName(buffer);
-        savedPath =
-          (await saveDownloadedFile(groupFolder, 'wechat', fileName, buffer)) ??
-          undefined;
-      } catch (err) {
-        logger.warn({ err }, `Failed to save WeChat ${label} to disk`);
-      }
-    }
-
-    return { buffer, savedPath };
-  }
-
-  async function processImageItem(
-    item: MessageItem,
-    msgIdentifier: string,
-    groupFolder: string | undefined,
-  ): Promise<{
-    attachmentEntry?: { type: string; data: string; mimeType: string };
-    textPrefix?: string;
-  }> {
-    try {
-      const result = await downloadCdnMediaItem(
-        item.image_item?.media,
-        groupFolder,
-        'image',
-        (buffer) => {
-          const mimeType = detectImageMimeType(buffer);
-          const extMap: Record<string, string> = {
-            'image/jpeg': '.jpg',
-            'image/png': '.png',
-            'image/gif': '.gif',
-            'image/webp': '.webp',
-          };
-          return `wechat_img_${msgIdentifier}${extMap[mimeType] ?? '.jpg'}`;
-        },
-      );
-      if (!result) return {};
-
-      const textPrefix = result.savedPath
-        ? `[图片: ${result.savedPath}]`
-        : undefined;
-
-      let attachmentEntry:
-        | { type: string; data: string; mimeType: string }
-        | undefined;
-      if (result.buffer.length <= IMAGE_MAX_BASE64_SIZE) {
-        const mimeType = detectImageMimeType(result.buffer);
-        attachmentEntry = {
-          type: 'image',
-          data: result.buffer.toString('base64'),
-          mimeType,
-        };
-      }
-
-      return { attachmentEntry, textPrefix };
-    } catch (err) {
-      logger.warn({ err }, 'WeChat image download/decrypt failed, skipping');
-      return {};
-    }
-  }
-
-  async function processFileItem(
-    item: MessageItem,
-    groupFolder: string | undefined,
-  ): Promise<string | null> {
-    const fileName = item.file_item?.file_name || 'unknown_file';
-    try {
-      const result = await downloadCdnMediaItem(
-        item.file_item?.media,
-        groupFolder,
-        'file',
-        () => fileName,
-      );
-      if (result?.savedPath) {
-        // 弱模型兜底：抽取成功则内联文件文本，失败回退仅路径标记。
-        const inlined = groupFolder
-          ? await buildInlinedFileContent(groupFolder, result.savedPath)
-          : null;
-        return inlined ?? `[文件: ${result.savedPath}]`;
-      }
-      // CDN media unavailable, fall back to name-only label
-      return `[文件: ${fileName}]`;
-    } catch (err) {
-      logger.warn({ err, fileName }, 'WeChat file download/decrypt failed');
-      return `[文件: ${fileName}]`;
-    }
-  }
+  // ─── CDN Media ─────────────────────────────────────────────
+  // CDN 媒体段（downloadCdnMediaItem / processImageItem / processFileItem，
+  // 原 543-670）已抽至 ./wechat-media.ts（ISSUE-12 单元 2.19 原文搬运，三
+  // 函数体逐字节零替换——原段与迁入方同为工厂体内 2 空格基位，连 dedent
+  // 都不需要）。downloadCdnMediaItem 仅两 process*Item 消费，随段内化不进
+  // 返回面；processImageItem / processFileItem 同名解构回接，W5
+  // processMessage 两调用点零改动。api 为 2.17 createWeChatApiClient 返回
+  // 面结构子集，按实际消费列 ensureDispatcher（qq-stream { apiRequest }
+  // 单员子集同款）；config 为 WeChatConnectionConfig 结构子集，cdnBaseUrl
+  // 派生行随段迁往 wechat-media（DEFAULT_CDN_BASE_URL 改经 sibling import
+  // 引自 wechat-outbound，本文件该派生行与该名 import 随本单元删除）。
+  // IMAGE_MAX_BASE64_SIZE 与 im-downloader 三名 / detectImageMimeType /
+  // downloadAndDecryptMedia 五个 import 仅本段消费，整体随迁；
+  // wechat-crypto 的 buildCdnDownloadUrl 为其模块内私有，W4 无本地包装，
+  // URL 构建在 downloadAndDecryptMedia 体内，如实直引。MessageItem /
+  // CDNMedia 为 W5 共享类型，wechat-media 侧逐字节结构镜像（2.17
+  // wechat-api 同款）。im-inbound-file-inline 的微信条目等强改锚
+  // src/wechat-media.ts（断言文本逐字不变，2.9/2.13 体例）。
+  const { processImageItem, processFileItem } = createWeChatMedia(
+    { ensureDispatcher },
+    config,
+  );
 
   // ─── Message Processing ───────────────────────────────────
 
