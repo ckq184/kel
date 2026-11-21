@@ -505,6 +505,7 @@ import {
   AgentProfile,
   ChannelMessageMeta,
   ChannelTurnContext,
+  InteractionMode,
   MessageCursor,
   NewMessage,
   RegisteredGroup,
@@ -8228,6 +8229,35 @@ function ensureTerminalContainerStarted(chatJid: string): boolean {
   return true;
 }
 
+/** ISSUE-12 波 6 单元 6.0：runner 启动泛化。A 侧（processGroupMessages /
+ * terminal warmup）不传 turnOptions，语义与收敛前一致；B 侧
+ * （processAgentConversation）传 agentId 会话档：队列键转 virtualJid、宿主
+ * 禁权抛错、错误输出不回放、异常上抛由调用方 catch 收口、
+ * setSession(…, agentId, …) 会话落档、回调不再包 ack/会话记账层（B 侧
+ * wrappedOnOutput 自带，键为 virtualJid；再包会重复 ack 且记账键错位）。
+ */
+interface RunAgentTurnOptions {
+  /** 会话 agent 身份（B 侧）；存在即启用上列 B 侧语义。 */
+  agentId?: string;
+  /** 读当前 sessionId（A 缺省：sessions 缓存；B：调用方闭包）。 */
+  getSessionId: () => string | undefined;
+  /** 新 sessionId 落档（A 缺省：sessions 缓存 + setSession(…, undefined, …)）。 */
+  onNewSessionId: (sessionId: string) => void;
+  /** B 侧按 agent.kind 预解析的 interactionMode；A 缺省按 'main' 解析。 */
+  interactionMode?: InteractionMode;
+  /** B 侧预计算的 owner-profile 资格（公式含 runtimeAgentId/Kind 与 task_id）。 */
+  ckqclawOwnerProfileEnabled?: boolean;
+  /** B 侧 agent.kind；驱动 agentBuilderEnabled 公式（conversation 守卫）。 */
+  agentKind?: 'spawn' | 'conversation';
+}
+
+interface RunAgentOutcome {
+  status: 'success' | 'error' | 'closed';
+  error?: string;
+  /** 原始 runner 终态输出；B 侧（turnOptions.agentId）全路径携带。 */
+  output?: ContainerOutput;
+}
+
 async function runAgent(
   group: RegisteredGroup,
   prompt: string,
@@ -8239,31 +8269,53 @@ async function runAgent(
   currentSourceJid?: string,
   channelContext?: ChannelTurnContext,
   agentProfile?: AgentProfile,
-): Promise<{ status: 'success' | 'error' | 'closed'; error?: string }> {
+  turnOptions?: RunAgentTurnOptions,
+): Promise<RunAgentOutcome> {
+  const agentId = turnOptions?.agentId;
   const isHome = !!group.is_home;
   const owner = group.created_by ? getUserById(group.created_by) : undefined;
   const isAdminHome = isHome && owner?.role === 'admin';
   const resolvedAgentProfile = resolveEffectiveAgentProfile(
     agentProfile ?? getAgentProfileForWorkspace(group.folder, group.created_by),
   );
-  const interactionMode = resolveRuntimeInteractionMode(
-    getWorkspaceInteractionMode(group.folder),
-    { agentKind: 'main' },
-  );
-  if (resetMainSessionForAgentProfileMismatch(group, resolvedAgentProfile)) {
+  const interactionMode =
+    turnOptions?.interactionMode ??
+    resolveRuntimeInteractionMode(getWorkspaceInteractionMode(group.folder), {
+      agentKind: 'main',
+    });
+  // 主会话 profile 失配重置仅 A 侧；B 侧在上游以
+  // resetConversationSessionForAgentProfileMismatch 完成且不得触碰主会话。
+  if (
+    !agentId &&
+    resetMainSessionForAgentProfileMismatch(group, resolvedAgentProfile)
+  ) {
     logger.info(
       { groupFolder: group.folder, chatJid },
       'AgentProfile identity mismatch handled inside runAgent',
     );
   }
-  const sessionId = sessions[group.folder];
+  const sessionId = turnOptions
+    ? turnOptions.getSessionId()
+    : sessions[group.folder];
+  const recordNewSessionId = turnOptions
+    ? turnOptions.onNewSessionId
+    : (newSessionId: string) => {
+        sessions[group.folder] = newSessionId;
+        setSession(group.folder, newSessionId, undefined, {
+          agentProfileId: resolvedAgentProfile?.id,
+          agentProfileVersion: resolvedAgentProfile?.version,
+          identityHash: resolvedAgentProfile?.identity_hash,
+        });
+      };
   const containerAgentProfile = toContainerAgentProfile(resolvedAgentProfile);
-  const ckqclawOwnerProfileEnabled = isCkqclawOwnerProfileRuntimeEligible({
-    group,
-    profile: resolvedAgentProfile,
-    turnId,
-    isScheduledTask: Boolean(messageTaskId),
-  });
+  const ckqclawOwnerProfileEnabled =
+    turnOptions?.ckqclawOwnerProfileEnabled ??
+    isCkqclawOwnerProfileRuntimeEligible({
+      group,
+      profile: resolvedAgentProfile,
+      turnId,
+      isScheduledTask: Boolean(messageTaskId),
+    });
 
   // Update tasks snapshot for container to read (filtered by group)
   const tasks = getAllTasks();
@@ -8290,45 +8342,71 @@ async function runAgent(
     new Set(Object.keys(registeredGroups)),
   );
 
-  // Wrap onOutput to track session ID from streamed results
-  const wrappedOnOutput = onOutput
-    ? async (output: ContainerOutput) => {
-        queue.markRunnerActivity(chatJid);
-        if (
-          output.ipcReceipts?.length &&
-          (!output.providerFailure || output.providerFailureTerminal === true)
-        ) {
-          queue.acknowledgeIpcDeliveries(
-            chatJid,
-            output.ipcReceipts,
-            commitIpcDeliveryReceipts,
-          );
+  // Wrap onOutput to track session ID from streamed results.
+  // B 侧回调自带 markRunnerActivity/ack/queryIdle/会话记账（键 virtualJid），
+  // 直接透传，不再包一层。
+  const wrappedOnOutput =
+    onOutput && !turnOptions
+      ? async (output: ContainerOutput) => {
+          queue.markRunnerActivity(chatJid);
+          if (
+            output.ipcReceipts?.length &&
+            (!output.providerFailure || output.providerFailureTerminal === true)
+          ) {
+            queue.acknowledgeIpcDeliveries(
+              chatJid,
+              output.ipcReceipts,
+              commitIpcDeliveryReceipts,
+            );
+          }
+          if (
+            output.queryIdle === true ||
+            (output.status === 'stream' &&
+              output.streamEvent?.eventType === 'status' &&
+              output.streamEvent.statusText === 'interrupted')
+          ) {
+            queue.markRunnerQueryIdle(chatJid);
+          }
+          // 仅从成功的输出中更新 session ID；
+          // error 输出可能携带 stale ID，会覆盖流式传递的有效 session
+          if (
+            output.newSessionId &&
+            output.status !== 'error' &&
+            !output.providerFailure
+          ) {
+            recordNewSessionId(output.newSessionId);
+          }
+          await onOutput(output);
         }
-        if (
-          output.queryIdle === true ||
-          (output.status === 'stream' &&
-            output.streamEvent?.eventType === 'status' &&
-            output.streamEvent.statusText === 'interrupted')
-        ) {
-          queue.markRunnerQueryIdle(chatJid);
-        }
-        // 仅从成功的输出中更新 session ID；
-        // error 输出可能携带 stale ID，会覆盖流式传递的有效 session
-        if (
-          output.newSessionId &&
-          output.status !== 'error' &&
-          !output.providerFailure
-        ) {
-          sessions[group.folder] = output.newSessionId;
-          setSession(group.folder, output.newSessionId, undefined, {
-            agentProfileId: resolvedAgentProfile?.id,
-            agentProfileVersion: resolvedAgentProfile?.version,
-            identityHash: resolvedAgentProfile?.identity_hash,
-          });
-        }
-        await onOutput(output);
-      }
-    : undefined;
+      : onOutput;
+
+  // ISSUE-12 波 6 单元 6.0：B 侧队列键（virtualJid）公式与
+  // processAgentConversation 原文逐字一致；A 侧沿用 chatJid。
+  const queueKey = agentId ? `${chatJid}#agent:${agentId}` : chatJid;
+  const agentBuilderEnabled = turnOptions?.agentKind
+    ? turnOptions.agentKind === 'conversation' &&
+      resolvedAgentProfile?.is_default === true
+    : resolvedAgentProfile?.is_default === true;
+  const containerInput: ContainerInput = {
+    prompt,
+    sessionId,
+    turnId,
+    queryRunId: queue.getActiveQueryId(queueKey) ?? undefined,
+    groupFolder: group.folder,
+    chatJid,
+    interactionMode,
+    currentSourceJid,
+    channelContext,
+    isMain: isAdminHome,
+    isHome,
+    isAdminHome,
+    ckqclawOwnerProfileEnabled,
+    agentBuilderEnabled,
+    images,
+    messageTaskId,
+    agentProfile: containerAgentProfile,
+    agentId,
+  };
 
   watchIpcGroup(group.folder);
   try {
@@ -8348,10 +8426,11 @@ async function runAgent(
     ) => {
       // 宿主机模式：containerName 传 null，走 process.kill() 路径
       const containerName = executionMode === 'container' ? identifier : null;
-      queue.registerProcess(chatJid, proc, {
+      queue.registerProcess(queueKey, proc, {
         containerName,
         groupFolder: group.folder,
         displayName: identifier,
+        agentId,
         selectedProviderId,
         feishuCliAccountId,
       });
@@ -8369,6 +8448,19 @@ async function runAgent(
         ? getUserById(group.created_by)
         : undefined;
       if (!canExecuteOnHost(currentOwner)) {
+        if (agentId) {
+          // B 侧：上抛由 processAgentConversation 的 catch 收口（原语义）。
+          logger.warn(
+            {
+              chatJid,
+              agentId,
+              groupFolder: group.folder,
+              ownerId: group.created_by,
+            },
+            'Blocked host conversation execution for non-admin owner',
+          );
+          throw new Error(HOST_EXECUTION_FORBIDDEN_ERROR);
+        }
         logger.warn(
           { chatJid, groupFolder: group.folder, ownerId: group.created_by },
           'Blocked host workspace execution for non-admin owner',
@@ -8378,25 +8470,7 @@ async function runAgent(
       output = await runAgentWithModelFallback(
         runHostAgent,
         group,
-        {
-          prompt,
-          sessionId,
-          turnId,
-          queryRunId: queue.getActiveQueryId(chatJid) ?? undefined,
-          groupFolder: group.folder,
-          chatJid,
-          interactionMode,
-          currentSourceJid,
-          channelContext,
-          isMain: isAdminHome,
-          isHome,
-          isAdminHome,
-          ckqclawOwnerProfileEnabled,
-          agentBuilderEnabled: resolvedAgentProfile?.is_default === true,
-          images,
-          messageTaskId,
-          agentProfile: containerAgentProfile,
-        },
+        containerInput,
         onProcessCb,
         wrappedOnOutput,
         ownerHomeFolder,
@@ -8405,25 +8479,7 @@ async function runAgent(
       output = await runAgentWithModelFallback(
         runContainerAgent,
         group,
-        {
-          prompt,
-          sessionId,
-          turnId,
-          queryRunId: queue.getActiveQueryId(chatJid) ?? undefined,
-          groupFolder: group.folder,
-          chatJid,
-          interactionMode,
-          currentSourceJid,
-          channelContext,
-          isMain: isAdminHome,
-          isHome,
-          isAdminHome,
-          ckqclawOwnerProfileEnabled,
-          agentBuilderEnabled: resolvedAgentProfile?.is_default === true,
-          images,
-          messageTaskId,
-          agentProfile: containerAgentProfile,
-        },
+        containerInput,
         onProcessCb,
         wrappedOnOutput,
         ownerHomeFolder,
@@ -8437,37 +8493,38 @@ async function runAgent(
       output.status !== 'error' &&
       !output.providerFailure
     ) {
-      sessions[group.folder] = output.newSessionId;
-      setSession(group.folder, output.newSessionId, undefined, {
-        agentProfileId: resolvedAgentProfile?.id,
-        agentProfileVersion: resolvedAgentProfile?.version,
-        identityHash: resolvedAgentProfile?.identity_hash,
-      });
+      recordNewSessionId(output.newSessionId);
     }
 
     // Agent was interrupted by _close sentinel (home folder drain).
     // Propagate so processGroupMessages can skip cursor commit.
     if (output.status === 'closed') {
-      return { status: 'closed' };
+      return { status: 'closed', output };
     }
 
     if (output.status === 'error') {
-      logger.error({ group: group.name, error: output.error }, 'Agent error');
-      if (output.result && wrappedOnOutput) {
-        try {
-          await wrappedOnOutput(output);
-        } catch (err) {
-          logger.error(
-            { group: group.name, err },
-            'Failed to emit agent error output',
-          );
+      // B 侧不做错误日志与错误输出回放（原内联块无此步），
+      // 交由调用方按原始 output 收口。
+      if (!agentId) {
+        logger.error({ group: group.name, error: output.error }, 'Agent error');
+        if (output.result && wrappedOnOutput) {
+          try {
+            await wrappedOnOutput(output);
+          } catch (err) {
+            logger.error(
+              { group: group.name, err },
+              'Failed to emit agent error output',
+            );
+          }
         }
       }
-      return { status: 'error', error: output.error };
+      return { status: 'error', error: output.error, output };
     }
 
-    return { status: 'success' };
+    return { status: 'success', output };
   } catch (err) {
+    // B 侧异常上抛：由 processAgentConversation 的 catch/finally 收口（原语义）。
+    if (agentId) throw err;
     const errorMsg = err instanceof Error ? err.message : String(err);
     logger.error({ group: group.name, err }, 'Agent error');
     return { status: 'error', error: errorMsg };
@@ -11042,30 +11099,12 @@ async function processAgentConversation(
         agentChannelOutboxScope,
       );
     }
-    const executionMode = effectiveGroup.executionMode || 'container';
-    const feishuCliAccountId =
-      executionMode === 'container'
-        ? resolveFeishuCliBoundAccountId({
-            channelContext: currentAgentChannelContext,
-            workspaceChannelAccountId: effectiveGroup.channel_account_id,
-          })
-        : null;
-    const onProcessCb = (
-      proc: ChildProcess,
-      identifier: string,
-      selectedProviderId: string | null,
-    ) => {
-      const containerName = executionMode === 'container' ? identifier : null;
-      queue.registerProcess(virtualJid, proc, {
-        containerName,
-        groupFolder: effectiveGroup.folder,
-        displayName: identifier,
-        agentId,
-        selectedProviderId,
-        feishuCliAccountId,
-      });
-    };
-
+    // ISSUE-12 波 6 单元 6.0：原 126 行内联 runner 启动（executionMode 分派、
+    // feishu 账号绑定、onProcessCb、containerInput、快照写入、宿主禁权守卫、
+    // 模型回退与会话落档）收敛进 runAgent 泛化。B 侧语义经 turnOptions 逐项
+    // 保留：virtualJid 队列键、宿主禁权抛错、错误输出不回放、异常上抛本层
+    // catch、setSession(…, agentId, …) 会话档。owner-profile 资格公式含
+    // runtimeAgentId/Kind 与 lastProcessed.task_id，在调用前按原文预计算。
     const ckqclawOwnerProfileEnabled = isCkqclawOwnerProfileRuntimeEligible({
       group: effectiveGroup,
       profile: agentProfile,
@@ -11074,99 +11113,37 @@ async function processAgentConversation(
       runtimeAgentId: agentId,
       runtimeAgentKind: agent.kind,
     });
-    const containerInput: ContainerInput = {
+    const runnerOutcome = await runAgent(
+      effectiveGroup,
       prompt,
-      sessionId,
-      turnId: lastProcessed.id,
-      queryRunId: queue.getActiveQueryId(virtualJid) ?? undefined,
-      groupFolder: effectiveGroup.folder,
       chatJid,
-      interactionMode,
-      currentSourceJid: currentAgentSourceJid,
-      channelContext: currentAgentChannelContext,
-      isMain: isAdminHome,
-      isHome,
-      isAdminHome,
-      agentBuilderEnabled:
-        agent.kind === 'conversation' && agentProfile?.is_default === true,
-      ckqclawOwnerProfileEnabled,
-      agentId,
-      images: imagesForAgent,
-      agentProfile: toContainerAgentProfile(agentProfile),
-    };
-
-    // Write tasks/groups snapshots
-    const tasks = getAllTasks();
-    writeTasksSnapshot(
-      effectiveGroup.folder,
-      isAdminHome,
-      tasks.map((t) => ({
-        id: t.id,
-        groupFolder: t.group_folder,
-        prompt: t.prompt,
-        schedule_type: t.schedule_type,
-        schedule_value: t.schedule_value,
-        status: t.status,
-        next_run: t.next_run,
-      })),
+      lastProcessed.id,
+      wrappedOnOutput,
+      imagesForAgent,
+      // B 侧 containerInput 不携带 messageTaskId（原内联块无此键）。
+      undefined,
+      currentAgentSourceJid,
+      currentAgentChannelContext,
+      agentProfile,
+      {
+        agentId,
+        getSessionId: () => sessionId,
+        onNewSessionId: (newSessionId) => {
+          setSession(effectiveGroup.folder, newSessionId, agentId, {
+            agentProfileId: agentProfile?.id,
+            agentProfileVersion: agentProfile?.version,
+            identityHash: agentProfile?.identity_hash,
+          });
+        },
+        interactionMode,
+        ckqclawOwnerProfileEnabled,
+        agentKind: agent.kind,
+      },
     );
-    const availableGroups = getAvailableGroups();
-    writeGroupsSnapshot(
-      effectiveGroup.folder,
-      isAdminHome,
-      availableGroups,
-      new Set(Object.keys(registeredGroups)),
-    );
-
-    const ownerHomeFolder = resolveOwnerHomeFolder(effectiveGroup);
-
-    let output: ContainerOutput;
-    if (executionMode === 'host') {
-      const currentOwner = effectiveGroup.created_by
-        ? getUserById(effectiveGroup.created_by)
-        : undefined;
-      if (!canExecuteOnHost(currentOwner)) {
-        logger.warn(
-          {
-            chatJid,
-            agentId,
-            groupFolder: effectiveGroup.folder,
-            ownerId: effectiveGroup.created_by,
-          },
-          'Blocked host conversation execution for non-admin owner',
-        );
-        throw new Error(HOST_EXECUTION_FORBIDDEN_ERROR);
-      }
-      output = await runAgentWithModelFallback(
-        runHostAgent,
-        effectiveGroup,
-        containerInput,
-        onProcessCb,
-        wrappedOnOutput,
-        ownerHomeFolder,
-      );
-    } else {
-      output = await runAgentWithModelFallback(
-        runContainerAgent,
-        effectiveGroup,
-        containerInput,
-        onProcessCb,
-        wrappedOnOutput,
-        ownerHomeFolder,
-      );
-    }
-
-    // Finalize session
-    if (
-      output.newSessionId &&
-      output.status !== 'error' &&
-      !output.providerFailure
-    ) {
-      setSession(effectiveGroup.folder, output.newSessionId, agentId, {
-        agentProfileId: agentProfile?.id,
-        agentProfileVersion: agentProfile?.version,
-        identityHash: agentProfile?.identity_hash,
-      });
+    const output = runnerOutcome.output;
+    if (!output) {
+      // B 模式全路径携带原始 runner 输出；此分支仅类型收窄，运行时不可达。
+      throw new Error('runAgent agent turn outcome missing raw runner output');
     }
 
     // 不可恢复的转录错误（如超大图片/MIME 错配被固化在会话历史中）

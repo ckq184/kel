@@ -36,15 +36,16 @@ describe('Agent Builder runtime scope contract', () => {
     // actorGate 切片改读新模块内构建器边界，断言语义不变。
     const memoryOwnerOps = read('src/ipc/memory-owner-ops.ts');
 
-    expect(host.match(/agentBuilderEnabled:/g)?.length).toBeGreaterThanOrEqual(
-      3,
-    );
+    // ISSUE-12 波 6 单元 6.0：A/B 两式 agentBuilderEnabled（原 A 内联×2 +
+    // B 内联×1）随 runner 启动收敛进 runAgent 单一三元——B 式经
+    // turnOptions.agentKind（B 调用点传 agent.kind）保留 conversation 守卫，
+    // A 式缺省仅看 is_default；containerInput 以同名字段接线。锚随体迁、
+    // 两式断言语义不变。
     expect(host).toMatch(
-      /agentBuilderEnabled:\s*resolvedAgentProfile\?\.is_default === true/,
+      /agentBuilderEnabled = turnOptions\?\.agentKind\s*\?\s*turnOptions\.agentKind === 'conversation' &&\s*resolvedAgentProfile\?\.is_default === true\s*:\s*resolvedAgentProfile\?\.is_default === true/,
     );
-    expect(host).toMatch(
-      /agentBuilderEnabled:\s*agent\.kind === 'conversation' &&\s*agentProfile\?\.is_default === true/,
-    );
+    expect(host).toMatch(/agentKind: agent\.kind,/);
+    expect(host).toMatch(/\bagentBuilderEnabled,/);
 
     const actorGate = section(
       memoryOwnerOps,
