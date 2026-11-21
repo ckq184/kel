@@ -295,6 +295,7 @@ import {
   type ChannelMessageDeliveryOptions,
 } from './im-channel.js';
 import { ConversationIndicatorLedger } from './conversation-indicator-ledger.js';
+import { persistInterruptedStreamText } from './reply-projection-delivery.js';
 import {
   createStreamingCardOnTurnStart,
   rollbackIdleCardReservation,
@@ -6285,51 +6286,45 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
                 !sentReply &&
                 !inlineAlreadySaved
               ) {
-                const interruptedText = steered
-                  ? buildSteeredReply(streamingAccumulatedText)
-                  : buildStoppedReply(
-                      streamingAccumulatedText,
-                      streamingAccumulatedThinking,
-                    );
-                try {
-                  if (streamingSession?.isActive()) {
-                    if (steered) {
-                      await streamingSession
-                        .complete(streamingAccumulatedText)
-                        .catch(() => {});
-                    } else {
-                      await streamingSession.abort('已停止').catch(() => {});
-                    }
-                  }
-                  if (interruptedText) {
+                await persistInterruptedStreamText({
+                  steered,
+                  accumulatedText: streamingAccumulatedText,
+                  stoppedThinking: streamingAccumulatedThinking,
+                  session: streamingSession,
+                  persist: async (interruptedText) => {
+                    // sendToIM: false — 飞书卡片已在原卡片上完成收束，不重复发送
                     lastReplyMsgId = await sendMessage(
                       chatJid,
                       interruptedText,
                       {
                         sendToIM: false,
                         messageMeta: {
-                          turnId: result.streamEvent.turnId || lastProcessed.id,
+                          turnId:
+                            result.streamEvent!.turnId || lastProcessed.id,
                           sessionId:
-                            result.streamEvent.sessionId || activeSessionId,
+                            result.streamEvent!.sessionId || activeSessionId,
                           sourceKind: 'interrupt_partial',
                           finalizationReason: 'interrupted',
                         },
                       },
                     );
-                  }
-                  sentReply = true;
-                  clearStreamingSnapshot(chatJid);
-                  streamingAccumulatedText = '';
-                  streamingAccumulatedThinking = '';
-                  commitCursor(
-                    resolveContainerOutputInputTurnId(result, lastProcessed.id),
-                  );
-                } catch (err) {
-                  logger.warn(
-                    { err, chatJid },
-                    'Failed to save interrupted text on status event',
-                  );
-                }
+                  },
+                  onPersisted: () => {
+                    sentReply = true;
+                    clearStreamingSnapshot(chatJid);
+                    streamingAccumulatedText = '';
+                    streamingAccumulatedThinking = '';
+                  },
+                  commitCursor: () =>
+                    commitCursor(
+                      resolveContainerOutputInputTurnId(
+                        result,
+                        lastProcessed.id,
+                      ),
+                    ),
+                  logContext: (err) => ({ err, chatJid }),
+                  logMessage: 'Failed to save interrupted text on status event',
+                });
               }
             }
 
@@ -10208,20 +10203,11 @@ async function processAgentConversation(
           publishesFrameworkAnswer(interactionMode) &&
           !isCursorCommitted(output.inputTurnId ?? activeAgentInputTurnId)
         ) {
-          const interruptedText = steered
-            ? buildSteeredReply(agentStreamingAccText)
-            : buildStoppedReply(agentStreamingAccText);
-          try {
-            if (agentStreamingSession?.isActive()) {
-              if (steered) {
-                await agentStreamingSession
-                  .complete(agentStreamingAccText)
-                  .catch(() => {});
-              } else {
-                await agentStreamingSession.abort('已停止').catch(() => {});
-              }
-            }
-            if (interruptedText) {
+          await persistInterruptedStreamText({
+            steered,
+            accumulatedText: agentStreamingAccText,
+            session: agentStreamingSession,
+            persist: async (interruptedText) => {
               const msgId = crypto.randomUUID();
               const timestamp = new Date().toISOString();
               ensureChatExists(virtualChatJid);
@@ -10235,9 +10221,9 @@ async function processAgentConversation(
                 true,
                 {
                   meta: {
-                    turnId: output.streamEvent.turnId || lastProcessed.id,
+                    turnId: output.streamEvent!.turnId || lastProcessed.id,
                     sessionId:
-                      output.streamEvent.sessionId || currentAgentSessionId,
+                      output.streamEvent!.sessionId || currentAgentSessionId,
                     sourceKind: 'interrupt_partial',
                     finalizationReason: 'interrupted',
                   },
@@ -10253,27 +10239,27 @@ async function processAgentConversation(
                   content: interruptedText,
                   timestamp,
                   is_from_me: true,
-                  turn_id: output.streamEvent.turnId || lastProcessed.id,
+                  turn_id: output.streamEvent!.turnId || lastProcessed.id,
                   session_id:
-                    output.streamEvent.sessionId || currentAgentSessionId,
+                    output.streamEvent!.sessionId || currentAgentSessionId,
                   source_kind: 'interrupt_partial',
                   finalization_reason: 'interrupted',
                 },
                 agentId,
               );
-            }
-            agentInterruptFinalized = true;
-            clearStreamingSnapshot(virtualChatJid);
-            agentStreamingAccText = '';
-            // A deliberate stop/steer owns the superseded input: it must not
-            // be rediscovered from DB history after the warm runner settles.
-            commitCursor(output.inputTurnId ?? activeAgentInputTurnId);
-          } catch (err) {
-            logger.warn(
-              { err, chatJid, agentId },
-              'Failed to save interrupted agent text on status event',
-            );
-          }
+            },
+            onPersisted: () => {
+              agentInterruptFinalized = true;
+              clearStreamingSnapshot(virtualChatJid);
+              agentStreamingAccText = '';
+            },
+            commitCursor: () =>
+              // A deliberate stop/steer owns the superseded input: it must not
+              // be rediscovered from DB history after the warm runner settles.
+              commitCursor(output.inputTurnId ?? activeAgentInputTurnId),
+            logContext: (err) => ({ err, chatJid, agentId }),
+            logMessage: 'Failed to save interrupted agent text on status event',
+          });
         }
       }
 
