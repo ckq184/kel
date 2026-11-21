@@ -1,7 +1,4 @@
-import fs from 'fs';
 import { randomUUID } from 'node:crypto';
-import * as fsPromises from 'node:fs/promises';
-import * as path from 'node:path';
 import * as lark from '@larksuiteoapi/node-sdk';
 import {
   storeChatMetadata,
@@ -33,12 +30,12 @@ import {
   createFeishuBackfill,
   FEISHU_CURSOR_SCOPE,
 } from './feishu-backfill.js';
+import { createFeishuSender } from './feishu-outbound.js';
 import {
   buildAgentReplyCard,
   buildFollowUpActionResultCard,
   buildQueuedFollowUpCard,
   parseCardCallbackEnvelope,
-  parsePrebuiltInteractiveCardText,
 } from './feishu-cards/builder.js';
 import {
   evaluateMentionGate,
@@ -1340,129 +1337,42 @@ export function createFeishuConnection(
   // （readFeishuResourceBuffer / withFeishuHardTimeout）已抽至 ./feishu-media.ts
   // （ISSUE-12 单元 2.2 原文搬运）；client 经 () => client 访问器注入。
 
-  function getSenderName(openId: string): string {
-    return senderNameCache.get(openId) || openId;
-  }
-
-  async function addReaction(
-    messageId: string,
-    emojiType: string,
-  ): Promise<string | null> {
-    try {
-      const res = (await client!.im.messageReaction.create({
-        path: { message_id: messageId },
-        data: {
-          reaction_type: { emoji_type: emojiType },
-        },
-      })) as { data?: { reaction_id?: string } };
-      return res.data?.reaction_id || null;
-    } catch (err) {
-      logger.debug({ err, messageId, emojiType }, 'Failed to add reaction');
-      return null;
-    }
-  }
-
-  async function removeReactionStrict(
-    messageId: string,
-    reactionId: string,
-  ): Promise<void> {
-    await client!.im.messageReaction.delete({
-      path: { message_id: messageId, reaction_id: reactionId },
-    });
-  }
-
-  function clearAckForInput(
-    rawTarget: string,
-    inputMessageId: string,
-  ): Promise<void> {
-    const target = parseFeishuRouteTarget(rawTarget);
-    return ackReactions.clear(
-      processingIndicatorKey(target.raw, inputMessageId),
-    );
-  }
-
-  function p2pLastMessageId(target: FeishuRouteTarget): string | undefined {
-    return resolveFeishuMessageAnchor({
-      target,
-      chatType: chatTypeById.get(target.chatId),
-      lastMessageId: lastMessageIdByChat.get(target.chatId),
-    });
-  }
-
-  async function replyToFeishuMessage(
-    messageId: string,
-    msgType: string,
-    content: string,
-    replyInThread: boolean,
-  ): Promise<void> {
-    if (!client) throw new Error('Feishu client is not initialized');
-    const reply = async (threaded: boolean) => {
-      const response = await client!.im.message.reply({
-        path: { message_id: messageId },
-        data: {
-          content,
-          msg_type: msgType,
-          ...(threaded ? { reply_in_thread: true } : {}),
-        },
-      });
-      assertFeishuApiSuccess('Feishu message.reply', response);
-    };
-    try {
-      await reply(replyInThread);
-    } catch (error) {
-      const code = feishuApiErrorCode(error);
-      if (
-        !replyInThread ||
-        !code ||
-        !FEISHU_THREAD_REPLY_UNSUPPORTED_CODES.has(code)
-      ) {
-        throw error;
-      }
-      logger.info(
-        { messageId, msgType, code },
-        'Feishu reply_in_thread unsupported; retrying this message as a plain reply',
-      );
-      // Retry exactly this physical send step. Uploads and any already-sent
-      // sibling attachments remain untouched.
-      await reply(false);
-    }
-  }
-
-  /**
-   * Low-level send: explicit roots use reply_in_thread; known P2P chats may
-   * reply to their latest inbound message. A bare group target always creates
-   * a top-level message and can never inherit the group's most recent topic.
-   */
-  async function sendToFeishu(
-    chatId: string,
-    msgType: string,
-    content: string,
-  ): Promise<void> {
-    if (!client) throw new Error('Feishu client is not initialized');
-    const target = requireFeishuRouteTarget(chatId);
-    const receiveIdType = target.chatId.startsWith('oc_')
-      ? 'chat_id'
-      : 'open_id';
-    const replyMsgId = target.rootMessageId || p2pLastMessageId(target);
-    if (replyMsgId) {
-      await replyToFeishuMessage(
-        replyMsgId,
-        msgType,
-        content,
-        target.replyInThread,
-      );
-    } else {
-      const response = await client.im.v1.message.create({
-        params: { receive_id_type: receiveIdType },
-        data: {
-          receive_id: target.chatId,
-          msg_type: msgType,
-          content,
-        },
-      });
-      assertFeishuApiSuccess('Feishu message.create', response);
-    }
-  }
+  // 底层发送链（F8 辅助群 getSenderName/addReaction/removeReactionStrict/
+  // clearAckForInput/p2pLastMessageId、F9 replyToFeishuMessage/sendToFeishu 与
+  // connection 门面 sendMessage/sendImage/sendFile 本体）已抽至
+  // ./feishu-outbound.ts（ISSUE-12 单元 2.4 原文搬运）。可变 client 经
+  // getClient 访问器注入；senderNameCache/lastMessageIdByChat/chatTypeById/
+  // ackReactions 工厂闭包状态与模块级纯函数经 deps 同名注入，搬运体内引用
+  // 逐字节不变。sendTextToChat 的消费方为入站主管道
+  // （processClaimedIncomingMessage），本体按单元规则留在本文件。
+  const {
+    sendMessage,
+    sendImage,
+    sendFile,
+    sendToFeishu,
+    getSenderName,
+    addReaction,
+    removeReactionStrict,
+    clearAckForInput,
+    p2pLastMessageId,
+  } = createFeishuSender({
+    getClient: () => client,
+    senderNameCache,
+    lastMessageIdByChat,
+    chatTypeById,
+    ackReactions,
+    parseFeishuRouteTarget,
+    resolveFeishuMessageAnchor,
+    requireFeishuRouteTarget,
+    assertFeishuApiSuccess,
+    feishuApiErrorCode,
+    requireFeishuUploadKey,
+    getFileType,
+    buildInteractiveCard,
+    buildPostMdFallback,
+    CARD_TABLE_LIMIT,
+    FEISHU_THREAD_REPLY_UNSUPPORTED_CODES,
+  });
 
   async function sendTextToChat(chatId: string, text: string): Promise<void> {
     if (!client) {
@@ -3073,86 +2983,7 @@ export function createFeishuConnection(
       localImagePaths?: string[],
       options?: { presentation?: 'default' | 'native' },
     ): Promise<void> {
-      if (!client) {
-        throw new Error('Feishu client is not initialized');
-      }
-
-      requireFeishuRouteTarget(chatId);
-
-      try {
-        // Proactive-mode workspace Agents speak as ordinary native rich-text
-        // messages. They never enter the interactive-card presentation lane.
-        if (options?.presentation === 'native') {
-          await sendToFeishu(chatId, 'post', buildPostMdFallback(text));
-        } else {
-          const bareCard = parsePrebuiltInteractiveCardText(text);
-          if (bareCard) {
-            // Pre-built Feishu interactive card JSON — send the bare card
-            // object directly (the {type:'interactive'} wrapper is rejected
-            // by message.create with Feishu 200621, see builder.ts).
-            await sendToFeishu(chatId, 'interactive', JSON.stringify(bareCard));
-            return;
-          }
-
-          // Count markdown tables to decide format upfront — Feishu cards have
-          // a table limit. Each table has exactly one separator row.
-          const tableCount = (text.match(/^\|[\s:-]+\|/gm) || []).length;
-          const usePostMd = tableCount > CARD_TABLE_LIMIT;
-
-          if (usePostMd) {
-            await sendToFeishu(chatId, 'post', buildPostMdFallback(text));
-          } else {
-            const card = buildInteractiveCard(text);
-            const content = JSON.stringify(card);
-            try {
-              await sendToFeishu(chatId, 'interactive', content);
-            } catch (err) {
-              logger.warn(
-                { err, chatId },
-                'Feishu interactive send failed, fallback to post+md',
-              );
-              await sendToFeishu(chatId, 'post', buildPostMdFallback(text));
-            }
-          }
-        }
-        logger.debug(
-          { chatId, presentation: options?.presentation ?? 'default' },
-          'Sent Feishu message',
-        );
-
-        for (const localImagePath of localImagePaths || []) {
-          try {
-            const uploadRes = (await client.im.v1.image.create({
-              data: {
-                image_type: 'message',
-                image: fs.createReadStream(localImagePath),
-              },
-            })) as
-              | { image_key?: string; data?: { image_key?: string } }
-              | null
-              | undefined;
-            const imageKey = requireFeishuUploadKey(
-              'Feishu image.create',
-              uploadRes,
-              'image_key',
-            );
-            await sendToFeishu(
-              chatId,
-              'image',
-              JSON.stringify({ image_key: imageKey }),
-            );
-          } catch (imageErr) {
-            logger.error(
-              { chatId, localImagePath, err: imageErr },
-              'Failed to send Feishu image attachment',
-            );
-            throw imageErr;
-          }
-        }
-      } catch (err) {
-        logger.error({ err, chatId }, 'Failed to send Feishu message');
-        throw err;
-      }
+      return sendMessage(chatId, text, localImagePaths, options);
     },
 
     async sendImage(
@@ -3162,49 +2993,7 @@ export function createFeishuConnection(
       caption?: string,
       _fileName?: string /* Feishu image API has no filename field, intentionally unused */,
     ): Promise<void> {
-      if (!client) {
-        throw new Error('Feishu client is not initialized');
-      }
-
-      requireFeishuRouteTarget(chatId);
-
-      try {
-        // Step 1: Upload image to Feishu to get image_key
-        const uploadResult = (await client.im.v1.image.create({
-          data: {
-            image_type: 'message',
-            image: imageBuffer,
-          },
-        })) as
-          | { image_key?: string; data?: { image_key?: string } }
-          | null
-          | undefined;
-
-        const imageKey = requireFeishuUploadKey(
-          'Feishu image.create',
-          uploadResult,
-          'image_key',
-        );
-
-        // Step 2: Send image message
-        await sendToFeishu(
-          chatId,
-          'image',
-          JSON.stringify({ image_key: imageKey }),
-        );
-
-        // Step 3: If caption provided, send it as a follow-up text message
-        if (caption) {
-          await sendToFeishu(chatId, 'text', JSON.stringify({ text: caption }));
-        }
-        logger.info(
-          { chatId, imageKey, mimeType, size: imageBuffer.length },
-          'Feishu image sent',
-        );
-      } catch (err) {
-        logger.error({ err, chatId, mimeType }, 'Failed to send Feishu image');
-        throw err;
-      }
+      return sendImage(chatId, imageBuffer, mimeType, caption, _fileName);
     },
 
     async sendFile(
@@ -3212,66 +3001,7 @@ export function createFeishuConnection(
       filePath: string,
       fileName: string,
     ): Promise<void> {
-      if (!client) {
-        throw new Error('Feishu client is not initialized');
-      }
-
-      requireFeishuRouteTarget(chatId);
-
-      try {
-        const buffer = await fsPromises.readFile(filePath);
-
-        // Check file size limit (30MB)
-        const MAX_FILE_SIZE = 30 * 1024 * 1024;
-        if (buffer.length > MAX_FILE_SIZE) {
-          throw new Error(
-            `文件大小超过 30MB 限制 (${(buffer.length / 1024 / 1024).toFixed(2)}MB)`,
-          );
-        }
-
-        const ext = path.extname(fileName);
-        const fileType = getFileType(ext);
-
-        // Upload file
-        const uploadResult = (await client.im.v1.file.create({
-          data: {
-            file_type: fileType,
-            file_name: fileName,
-            file: buffer,
-          },
-        })) as
-          | { file_key?: string; data?: { file_key?: string } }
-          | null
-          | undefined;
-
-        const fileKey = requireFeishuUploadKey(
-          'Feishu file.create',
-          uploadResult,
-          'file_key',
-        );
-
-        // Determine msg_type: Feishu requires upload file_type and send msg_type to match.
-        // mp4 → media (video message), opus → audio (audio message), others → file.
-        const msgType =
-          fileType === 'mp4' ? 'media' : fileType === 'opus' ? 'audio' : 'file';
-
-        // Send file message
-        await sendToFeishu(
-          chatId,
-          msgType,
-          JSON.stringify({ file_key: fileKey }),
-        );
-        logger.info(
-          { chatId, fileName, fileSize: buffer.length },
-          'File sent to Feishu',
-        );
-      } catch (err) {
-        logger.error(
-          { err, chatId, filePath },
-          'Failed to send file to Feishu',
-        );
-        throw err;
-      }
+      return sendFile(chatId, filePath, fileName);
     },
 
     clearAckReaction(chatId: string, inputMessageId: string): Promise<void> {

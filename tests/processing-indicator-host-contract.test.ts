@@ -81,10 +81,18 @@ describe('exact processing indicator host contract', () => {
   });
 
   test('native message delivery itself does not clear a turn indicator', () => {
-    for (const file of ['src/feishu.ts']) {
+    // ISSUE-12 单元 2.4：sendMessage 门面本体迁入 src/feishu-outbound.ts，
+    // src/feishu.ts 门面只剩一行委托——两处的 sendMessage 切片都必须不触碰
+    // ack 清理。
+    const sendSlices: Array<[string, string, string]> = [
+      ['src/feishu.ts', 'async sendMessage(', '\n    },'],
+      ['src/feishu-outbound.ts', 'async function sendMessage(', '\n  }'],
+    ];
+    for (const [file, startMarker, endMarker] of sendSlices) {
       const source = fs.readFileSync(file, 'utf8');
-      const sendStart = source.indexOf('async sendMessage(');
-      const sendEnd = source.indexOf('\n    },', sendStart) + '\n    },'.length;
+      const sendStart = source.indexOf(startMarker);
+      expect(sendStart).toBeGreaterThanOrEqual(0);
+      const sendEnd = source.indexOf(endMarker, sendStart) + endMarker.length;
       expect(source.slice(sendStart, sendEnd)).not.toMatch(
         /clearAckReaction|ackReactions\.clear/,
       );
@@ -98,9 +106,13 @@ describe('exact processing indicator host contract', () => {
   });
 
   test('ack provider release failures propagate back to the ownership registry', () => {
+    // ISSUE-12 单元 2.4：removeReactionStrict / clearAckForInput 定义随 F8
+    // 发送块迁入 src/feishu-outbound.ts（sourceBetween 改读新模块）；ack
+    // 投影调用点（ackReactions → removeReactionStrict）仍在 src/feishu.ts。
     const feishu = fs.readFileSync('src/feishu.ts', 'utf8');
+    const outbound = fs.readFileSync('src/feishu-outbound.ts', 'utf8');
     const strictFeishuRemoval = sourceBetween(
-      feishu,
+      outbound,
       'async function removeReactionStrict(',
       'function clearAckForInput(',
     );
@@ -114,5 +126,6 @@ describe('exact processing indicator host contract', () => {
     // chat-level typing reaction that the exact per-input ack replaced.
     // Reintroducing a swallowing wrapper would silently orphan ack handles.
     expect(feishu).not.toMatch(/removeReactionBestEffort/);
+    expect(outbound).not.toMatch(/removeReactionBestEffort/);
   });
 });
