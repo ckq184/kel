@@ -26,10 +26,7 @@ import {
   FEISHU_RESOURCE_REQUEST_TIMEOUT_MS,
   withFeishuHardTimeout,
 } from './feishu-media.js';
-import {
-  createFeishuBackfill,
-  FEISHU_CURSOR_SCOPE,
-} from './feishu-backfill.js';
+import { createFeishuBackfill } from './feishu-backfill.js';
 import { createFeishuSender } from './feishu-outbound.js';
 import { buildFeishuEventHandlers } from './feishu-events.js';
 import { createFeishuWsLifecycle } from './feishu-ws-lifecycle.js';
@@ -60,18 +57,16 @@ import {
 } from './feishu-capability.js';
 import { enrichFeishuInboundContent } from './feishu-rich-content.js';
 import {
-  advanceChannelCursor,
-  claimChannelInboxById,
-  claimNextChannelInbox,
-  completeChannelInbox,
-  failChannelInbox,
-  ignoreChannelInbox,
-  listChannelCursors,
-  recordChannelInbox,
-  renewChannelInboxClaim,
   updateClaimedChannelInbox,
   type ClaimedChannelInboxItem,
 } from './channel-reliability-store.js';
+import {
+  createFeishuInboxController,
+  FEISHU_INBOX_GATE_RETRY_DELAY_MS,
+  FEISHU_INBOX_LEASE_MS,
+  type IncomingMessagePayload,
+  type FeishuMentionLike,
+} from './feishu-inbox.js';
 import {
   ExactAsyncIndicatorRegistry,
   processingIndicatorKey,
@@ -220,19 +215,8 @@ export interface FeishuConnection {
 
 // Feishu card allows at most 5 markdown tables; beyond this, skip card and use post+md directly
 const CARD_TABLE_LIMIT = 5;
-const FEISHU_INBOX_LEASE_MS = 5 * 60 * 1000;
-const FEISHU_INBOX_HEARTBEAT_MS = 60 * 1000;
-const FEISHU_INBOX_RETRY_DELAY_MS = 5_000;
-const FEISHU_INBOX_GATE_RETRY_DELAY_MS = 250;
-const FEISHU_INBOX_RECOVERY_LIMIT = 500;
 // "因 botOpenId 缺失而丢消息" 的 warn 节流间隔，避免日志刷屏
 const BOT_INFO_MISSING_WARN_INTERVAL_MS = 5 * 60 * 1000;
-
-interface FeishuMentionLike {
-  key?: string;
-  name?: string;
-  id?: { open_id?: string; user_id?: string; union_id?: string };
-}
 
 class FeishuTextDeliveryError extends Error {
   readonly outcome: 'rejected' | 'uncertain';
@@ -297,25 +281,6 @@ function parseFeishuSlashCommandCheckpoint(
   return typeof checkpoint.replyText === 'string'
     ? (checkpoint as FeishuSlashCommandCheckpoint)
     : undefined;
-}
-
-interface IncomingMessagePayload {
-  chatId: string;
-  messageId: string;
-  rootId?: string;
-  parentId?: string;
-  threadId?: string;
-  createTimeMs: number;
-  messageType: string;
-  content: string;
-  chatType?: string;
-  mentions?: FeishuMentionLike[];
-  senderOpenId?: string;
-  senderUserId?: string;
-  senderUnionId?: string;
-  senderName?: string;
-  senderTenantKey?: string;
-  senderType?: string;
 }
 
 interface CachedFeishuChatInfo {
@@ -1071,201 +1036,36 @@ export function createFeishuConnection(
   let lastBotInfoMissingWarnAt = 0;
   let botInfoMissingDroppedSinceLastWarn = 0;
 
-  function rememberChatProgress(
-    chatId: string,
-    createTimeMs: number,
-    chatType?: string,
-  ): void {
-    knownChatIds.add(chatId);
-    if (chatType) chatTypeById.set(chatId, chatType);
-    void createTimeMs;
-  }
-
-  function inboundPosition(
-    payload: IncomingMessagePayload,
-    claim?: Pick<ClaimedChannelInboxItem, 'createdAt'>,
-  ): number {
-    if (
-      Number.isSafeInteger(payload.createTimeMs) &&
-      payload.createTimeMs > 0
-    ) {
-      return payload.createTimeMs;
-    }
-    const recordedAt = claim ? Date.parse(claim.createdAt) : Number.NaN;
-    return Number.isSafeInteger(recordedAt) && recordedAt > 0
-      ? recordedAt
-      : Date.now();
-  }
-
-  /**
-   * A terminal Inbox row and its cursor intentionally form a recoverable pair:
-   * if the process dies between the two writes, a duplicate WS/backfill event
-   * sees the terminal row and calls this again, repairing the cursor without
-   * re-running user code.
-   */
-  function rememberTerminalProgress(
-    payload: IncomingMessagePayload,
-    claim?: Pick<ClaimedChannelInboxItem, 'createdAt'>,
-  ): void {
-    const position = inboundPosition(payload, claim);
-    try {
-      advanceChannelCursor({
-        provider: 'feishu',
-        accountId: reliabilityAccountId,
-        scope: FEISHU_CURSOR_SCOPE,
-        chatId: payload.chatId,
-        cursor: payload.messageId,
-        position,
-        tieBreaker: payload.messageId,
-      });
-      rememberChatProgress(payload.chatId, position, payload.chatType);
-    } catch (err) {
-      logger.error(
-        { err, chatId: payload.chatId, messageId: payload.messageId },
-        'Failed to advance durable Feishu cursor; a duplicate/backfill will repair it',
-      );
-    }
-  }
-
-  function completeClaimedInbound(
-    claim: ClaimedChannelInboxItem,
-    payload: IncomingMessagePayload,
-  ): void {
-    stopInboxHeartbeat(claim);
-    if (!completeChannelInbox(claim)) {
-      logger.warn(
-        { inboxId: claim.id, messageId: payload.messageId },
-        'Lost Feishu Inbox lease before completion',
-      );
-      return;
-    }
-    rememberTerminalProgress(payload, claim);
-  }
-
-  function ignoreClaimedInbound(
-    claim: ClaimedChannelInboxItem,
-    payload: IncomingMessagePayload,
-    reason: string,
-  ): void {
-    stopInboxHeartbeat(claim);
-    if (!ignoreChannelInbox(claim, reason)) {
-      logger.warn(
-        { inboxId: claim.id, messageId: payload.messageId, reason },
-        'Lost Feishu Inbox lease before ignore transition',
-      );
-      return;
-    }
-    rememberTerminalProgress(payload, claim);
-  }
-
-  function failClaimedInbound(
-    claim: ClaimedChannelInboxItem,
-    payload: IncomingMessagePayload,
-    error: unknown,
-    retry: boolean,
-    retryDelayMs = FEISHU_INBOX_RETRY_DELAY_MS,
-  ): void {
-    stopInboxHeartbeat(claim);
-    const message = error instanceof Error ? error.message : String(error);
-    const changed = failChannelInbox(claim, {
-      error: message,
-      ...(retry
-        ? {
-            retryAt: new Date(Date.now() + retryDelayMs).toISOString(),
-          }
-        : {}),
-    });
-    if (!changed) {
-      logger.warn(
-        { inboxId: claim.id, messageId: payload.messageId, retry },
-        'Lost Feishu Inbox lease before failure transition',
-      );
-      return;
-    }
-    if (!retry) {
-      rememberTerminalProgress(payload, claim);
-    } else {
-      scheduleInboxRecovery(retryDelayMs);
-    }
-  }
-
-  function claimHeartbeatKey(
-    claim: Pick<ClaimedChannelInboxItem, 'id' | 'leaseToken'>,
-  ): string {
-    return `${claim.id}:${claim.leaseToken}`;
-  }
-
-  function stopInboxHeartbeat(
-    claim: Pick<ClaimedChannelInboxItem, 'id' | 'leaseToken'>,
-  ): void {
-    const key = claimHeartbeatKey(claim);
-    const timer = inboxHeartbeatByClaim.get(key);
-    if (!timer) return;
-    clearInterval(timer);
-    inboxHeartbeatByClaim.delete(key);
-  }
-
-  function startInboxHeartbeat(claim: ClaimedChannelInboxItem): void {
-    const key = claimHeartbeatKey(claim);
-    stopInboxHeartbeat(claim);
-    const timer = setInterval(() => {
-      try {
-        if (!renewChannelInboxClaim(claim, FEISHU_INBOX_LEASE_MS)) {
-          stopInboxHeartbeat(claim);
-          logger.warn(
-            { inboxId: claim.id, leaseToken: claim.leaseToken },
-            'Lost Feishu Inbox lease during heartbeat renewal',
-          );
-        }
-      } catch (err) {
-        // A transient SQLite error must not permanently disable renewal. The
-        // next tick retries while the current lease remains fenced.
-        logger.warn(
-          { err, inboxId: claim.id, leaseToken: claim.leaseToken },
-          'Feishu Inbox heartbeat renewal failed',
-        );
-      }
-    }, FEISHU_INBOX_HEARTBEAT_MS);
-    timer.unref?.();
-    inboxHeartbeatByClaim.set(key, timer);
-  }
-
-  function scheduleInboxRecovery(delayMs = FEISHU_INBOX_RETRY_DELAY_MS): void {
-    if (!connectOptions) return;
-    // A startup/shutdown gate requests a prompt drain. Replace a slower
-    // generic retry timer instead of making the just-opened service wait 5s.
-    if (inboxRecoveryTimer) clearTimeout(inboxRecoveryTimer);
-    inboxRecoveryTimer = setTimeout(
-      () => {
-        inboxRecoveryTimer = null;
-        void recoverQueuedInbox('retry-timer').catch((err) => {
-          logger.error({ err }, 'Scheduled Feishu Inbox recovery failed');
-        });
-      },
-      Math.max(25, delayMs) + 50,
-    );
-    inboxRecoveryTimer.unref?.();
-  }
-
-  function restoreDurableChatProgress(): void {
-    try {
-      for (const cursor of listChannelCursors({
-        provider: 'feishu',
-        accountId: reliabilityAccountId,
-        limit: 10_000,
-      })) {
-        if (cursor.scope !== FEISHU_CURSOR_SCOPE || !cursor.chatId) continue;
-        rememberChatProgress(cursor.chatId, cursor.position);
-      }
-    } catch (err) {
-      // Some isolated transport tests intentionally instantiate Feishu without
-      // initializing the application DB. Production startup always binds it.
-      logger.warn(
-        { err, accountId: reliabilityAccountId },
-        'Unable to restore durable Feishu cursors',
-      );
-    }
-  }
+  // durable Inbox 辅助群（F2 进度 / F3 心跳与恢复调度 / F4 游标恢复 / F10
+  // handleIncomingMessage / F13 信封解析 / F14 恢复循环）已抽至
+  // ./feishu-inbox.ts（ISSUE-12 单元 2.7 原文搬运）。reliabilityAccountId 与
+  // inboxOwner 的推导保留在本函数原位（持久键，值注入）；knownChatIds /
+  // chatTypeById / inboxHeartbeatByClaim 为共享引用；inboxRecoveryTimer 与
+  // connectOptions 经访问器注入；claim 生命周期契约由
+  // tests/feishu-inbox-claim-lifecycle.test.ts 锁定。
+  const {
+    rememberChatProgress,
+    completeClaimedInbound,
+    ignoreClaimedInbound,
+    failClaimedInbound,
+    stopInboxHeartbeat,
+    startInboxHeartbeat,
+    restoreDurableChatProgress,
+    handleIncomingMessage,
+    recoverQueuedInbox,
+  } = createFeishuInboxController({
+    accountId: reliabilityAccountId,
+    owner: inboxOwner,
+    knownChatIds,
+    chatTypeById,
+    inboxHeartbeatByClaim,
+    getInboxRecoveryTimer: () => inboxRecoveryTimer,
+    setInboxRecoveryTimer: (timer) => {
+      inboxRecoveryTimer = timer;
+    },
+    getConnectOptions: () => connectOptions,
+    processClaimedIncomingMessage,
+  });
 
   // WS 状态探查（getWsConnectionState，lark SDK 私有属性访问，探查失败
   // 静默降级语义保留）与健康监控（startHealthMonitor / stopHealthMonitor）
@@ -1342,66 +1142,6 @@ export function createFeishuConnection(
         err,
       );
     }
-  }
-
-  async function handleIncomingMessage(
-    payload: IncomingMessagePayload,
-    source: 'ws' | 'backfill',
-  ): Promise<void> {
-    const { chatId, messageId } = payload;
-    if (!chatId || !messageId) return;
-    const rawChatJid = `feishu:${chatId}`;
-    const sourceJid =
-      connectOptions?.normalizeIncomingJid?.(rawChatJid) ?? rawChatJid;
-    let recorded: ReturnType<typeof recordChannelInbox>;
-    try {
-      recorded = recordChannelInbox({
-        provider: 'feishu',
-        accountId: reliabilityAccountId,
-        externalMessageId: messageId,
-        sourceJid,
-        chatId,
-        rootId: payload.rootId,
-        threadId: payload.threadId,
-        rawPayload: { version: 1, source, payload },
-        status: 'queued',
-      });
-    } catch (err) {
-      // Never fall back to volatile execution: without the Inbox uniqueness
-      // fence, two WS clients or a reconnect can launch the same Agent turn.
-      logger.error(
-        { err, messageId, chatId, source },
-        'Failed to durably record Feishu message; refusing unfenced execution',
-      );
-      throw err;
-    }
-
-    if (
-      recorded.item.status === 'processed' ||
-      recorded.item.status === 'ignored' ||
-      recorded.item.status === 'failed'
-    ) {
-      rememberTerminalProgress(payload);
-      logger.debug(
-        { messageId, inboxStatus: recorded.item.status, source },
-        'Duplicate terminal Feishu message, skipping execution',
-      );
-      return;
-    }
-
-    const claim = claimChannelInboxById(
-      recorded.item.id,
-      inboxOwner,
-      FEISHU_INBOX_LEASE_MS,
-    );
-    if (!claim) {
-      logger.debug(
-        { messageId, inboxStatus: recorded.item.status, source },
-        'Feishu message already claimed or awaiting retry',
-      );
-      return;
-    }
-    await processClaimedIncomingMessage(payload, source, claim);
   }
 
   async function processClaimedIncomingMessage(
@@ -2484,85 +2224,6 @@ export function createFeishuConnection(
       backfillRunning = running;
     },
   });
-
-  function parseRecoveredInbox(
-    claim: ClaimedChannelInboxItem,
-  ):
-    | { source: 'ws' | 'backfill'; payload: IncomingMessagePayload }
-    | undefined {
-    const raw = claim.rawPayload;
-    if (!raw || typeof raw !== 'object') return undefined;
-    const envelope = raw as {
-      source?: unknown;
-      payload?: Partial<IncomingMessagePayload>;
-    };
-    if (
-      (envelope.source !== 'ws' && envelope.source !== 'backfill') ||
-      !envelope.payload ||
-      typeof envelope.payload.chatId !== 'string' ||
-      !envelope.payload.chatId.trim() ||
-      typeof envelope.payload.messageId !== 'string' ||
-      !envelope.payload.messageId.trim() ||
-      typeof envelope.payload.createTimeMs !== 'number' ||
-      typeof envelope.payload.messageType !== 'string' ||
-      !envelope.payload.messageType.trim() ||
-      typeof envelope.payload.content !== 'string'
-    ) {
-      return undefined;
-    }
-    return {
-      source: envelope.source,
-      payload: envelope.payload as IncomingMessagePayload,
-    };
-  }
-
-  async function recoverQueuedInbox(reason: string): Promise<void> {
-    let recovered = 0;
-    while (recovered < FEISHU_INBOX_RECOVERY_LIMIT) {
-      let claim: ClaimedChannelInboxItem | undefined;
-      try {
-        claim = claimNextChannelInbox(inboxOwner, FEISHU_INBOX_LEASE_MS, {
-          provider: 'feishu',
-          accountId: reliabilityAccountId,
-        });
-      } catch (err) {
-        logger.warn(
-          { err, reason, accountId: reliabilityAccountId },
-          'Unable to recover durable Feishu Inbox',
-        );
-        return;
-      }
-      if (!claim) break;
-      const envelope = parseRecoveredInbox(claim);
-      if (!envelope) {
-        failClaimedInbound(
-          claim,
-          {
-            chatId: claim.chatId || '',
-            messageId: claim.externalMessageId,
-            createTimeMs: Date.parse(claim.createdAt),
-            messageType: '',
-            content: '',
-          },
-          new Error('Invalid durable Feishu Inbox payload'),
-          false,
-        );
-        continue;
-      }
-      await processClaimedIncomingMessage(
-        envelope.payload,
-        envelope.source,
-        claim,
-      );
-      recovered++;
-    }
-    if (recovered > 0) {
-      logger.info(
-        { reason, recovered, accountId: reliabilityAccountId },
-        'Recovered queued Feishu Inbox messages',
-      );
-    }
-  }
 
   // ISSUE-12 单元 2.6：getWsConnectionState / startHealthMonitor /
   // stopHealthMonitor / reconnectWebSocket / checkConnectionHealth 原文搬运

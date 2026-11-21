@@ -1,6 +1,10 @@
 import type * as lark from '@larksuiteoapi/node-sdk';
 import { getChannelCursor } from './channel-reliability-store.js';
 import { logger } from './logger.js';
+import type {
+  FeishuMentionLike,
+  IncomingMessagePayload,
+} from './feishu-inbox.js';
 
 // 飞书 im.v1.message.list 翻页回填（原 createFeishuConnection 工厂内闭包，
 // ISSUE-12 单元 2.3 原文搬运）。外层 client 为可变 let，经 getClient 访问器
@@ -16,32 +20,9 @@ const BACKFILL_MAX_PAGES_PER_CHAT = 5;
 // 故导出回接）。原 feishu.ts:235 随块迁移。
 export const FEISHU_CURSOR_SCOPE = 'chat_messages';
 
-// 本地结构副本：src/feishu.ts 的同名接口未导出（该文件导出面须保持不变），
-// 字段与其逐字节一致，结构化类型保证两侧 handleIncomingMessage 可互赋。
-interface FeishuMentionLike {
-  key?: string;
-  name?: string;
-  id?: { open_id?: string; user_id?: string; union_id?: string };
-}
-
-interface IncomingMessagePayload {
-  chatId: string;
-  messageId: string;
-  rootId?: string;
-  parentId?: string;
-  threadId?: string;
-  createTimeMs: number;
-  messageType: string;
-  content: string;
-  chatType?: string;
-  mentions?: FeishuMentionLike[];
-  senderOpenId?: string;
-  senderUserId?: string;
-  senderUnionId?: string;
-  senderName?: string;
-  senderTenantKey?: string;
-  senderType?: string;
-}
+// FeishuMentionLike / IncomingMessagePayload 的本地结构副本已随 ISSUE-12
+// 单元 2.7 收编：两接口现由 ./feishu-inbox.ts 导出（type-only import，无
+// 运行时环；feishu-inbox 对本文件的 FEISHU_CURSOR_SCOPE 运行时依赖不回环）。
 
 export interface FeishuBackfillDeps {
   getClient: () => lark.Client | null;

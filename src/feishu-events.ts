@@ -6,6 +6,10 @@ import {
   parseCardCallbackEnvelope,
 } from './feishu-cards/builder.js';
 import type { FollowUpAction, FollowUpActionResult } from './types.js';
+import type {
+  FeishuMentionLike,
+  IncomingMessagePayload,
+} from './feishu-inbox.js';
 
 // 飞书 WS 事件注册（原 createFeishuConnection 工厂 connect() 内注册段
 // feishu.ts:2749-2918，ISSUE-12 单元 2.5 原文搬运）。EventDispatcher 的创建
@@ -21,32 +25,8 @@ import type { FollowUpAction, FollowUpActionResult } from './types.js';
 // client 读取以一行 const client = getClient() 局部捕获后原文复用（守卫与
 // patch 调用之间无 await，与原闭包变量两次读取行为等价）。
 
-// 本地结构副本：src/feishu.ts 的同名接口未导出（该文件导出面须保持不变），
-// 字段与其逐字节一致，结构化类型保证两侧 handleIncomingMessage 可互赋。
-interface FeishuMentionLike {
-  key?: string;
-  name?: string;
-  id?: { open_id?: string; user_id?: string; union_id?: string };
-}
-
-interface IncomingMessagePayload {
-  chatId: string;
-  messageId: string;
-  rootId?: string;
-  parentId?: string;
-  threadId?: string;
-  createTimeMs: number;
-  messageType: string;
-  content: string;
-  chatType?: string;
-  mentions?: FeishuMentionLike[];
-  senderOpenId?: string;
-  senderUserId?: string;
-  senderUnionId?: string;
-  senderName?: string;
-  senderTenantKey?: string;
-  senderType?: string;
-}
+// FeishuMentionLike / IncomingMessagePayload 的本地结构副本已随 ISSUE-12
+// 单元 2.7 收编：两接口现由 ./feishu-inbox.ts 导出（type-only import）。
 
 // src/feishu.ts ConnectOptions（feishu.ts:109-176，未导出）的结构子集——
 // 仅收 5 个事件 handler 实际消费的 5 个回调字段，声明与其逐字节一致；
