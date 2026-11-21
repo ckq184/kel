@@ -226,9 +226,14 @@ import { extractErrorMessage } from '../web/src/utils/error';
 
 function listWebSources(dir = 'web/src'): string[] {
   const absolute = path.join(root, dir);
+  // ISSUE-15：清单字符串按 POSIX 分隔符归一——断言面书写仓库相对 posix 路径，
+  // Windows 下 path.join 产出 '\' 会错判（打开文件仍用原生 path.join）。
   return fs.readdirSync(absolute, { withFileTypes: true }).flatMap((entry) => {
-    if (entry.isDirectory()) return listWebSources(path.join(dir, entry.name));
-    return /\.(ts|tsx)$/.test(entry.name) ? [path.join(dir, entry.name)] : [];
+    if (entry.isDirectory())
+      return listWebSources(path.posix.join(dir, entry.name));
+    return /\.(ts|tsx)$/.test(entry.name)
+      ? [path.posix.join(dir, entry.name)]
+      : [];
   });
 }
 

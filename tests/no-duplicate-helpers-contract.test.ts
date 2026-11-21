@@ -37,13 +37,15 @@ const SOURCE_DIRS = ['src', 'shared', 'container/agent-runner/src'];
 
 function listSourceFiles(dir: string): string[] {
   const out: string[] = [];
+  // ISSUE-15：清单字符串按 POSIX 分隔符归一——断言面书写仓库相对 posix 路径，
+  // Windows 下 path.join 产出 '\' 会错判（打开文件仍用原生 path.join）。
   for (const entry of fs.readdirSync(path.join(root, dir), {
     withFileTypes: true,
   })) {
     if (entry.isDirectory()) {
-      out.push(...listSourceFiles(path.join(dir, entry.name)));
+      out.push(...listSourceFiles(path.posix.join(dir, entry.name)));
     } else if (entry.name.endsWith('.ts')) {
-      out.push(path.join(dir, entry.name));
+      out.push(path.posix.join(dir, entry.name));
     }
   }
   return out;
@@ -369,7 +371,10 @@ describe('each converged helper family has exactly one implementation', () => {
     );
     const db = { ok: 1 };
     expect(requireDatabase(db, 'Workspace memory')).toBe(db);
-    expect(new Date(nowIso()).toISOString()).toBe(nowIso());
+    // ISSUE-15：原写法连续调用两次 nowIso()，毫秒跨界即红（满载轮实测两翻）；
+    // 取值一次再验证 round-trip 恒等，断言语义不变、竞态消除。
+    const iso = nowIso();
+    expect(new Date(iso).toISOString()).toBe(iso);
   });
 
   test('OAuthUsageBucket is declared exactly once repo-wide', () => {

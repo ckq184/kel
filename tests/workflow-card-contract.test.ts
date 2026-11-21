@@ -2,16 +2,15 @@ import fs from 'node:fs';
 
 import { describe, expect, test } from 'vitest';
 
+// ISSUE-15：Windows（core.autocrlf=true）检出为 CRLF，跨行 toContain 锚点统一
+// 按 LF 匹配，读源先归一行尾（LF 环境零变化）。
+const readSource = (file: string) =>
+  fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
+
 describe('dynamic Workflow product contract', () => {
   test('renders workflow and normal answer as separate presentation regions', () => {
-    const bubble = fs.readFileSync(
-      'web/src/components/chat/MessageBubble.tsx',
-      'utf8',
-    );
-    const card = fs.readFileSync(
-      'web/src/components/chat/WorkflowRunCard.tsx',
-      'utf8',
-    );
+    const bubble = readSource('web/src/components/chat/MessageBubble.tsx');
+    const card = readSource('web/src/components/chat/WorkflowRunCard.tsx');
 
     expect(bubble).toContain('<WorkflowRunCard');
     expect(bubble).toContain('<MarkdownRenderer');
@@ -26,13 +25,9 @@ describe('dynamic Workflow product contract', () => {
   });
 
   test('makes the Workflow card the only running progress surface', () => {
-    const list = fs.readFileSync(
-      'web/src/components/chat/MessageList.tsx',
-      'utf8',
-    );
-    const streaming = fs.readFileSync(
+    const list = readSource('web/src/components/chat/MessageList.tsx');
+    const streaming = readSource(
       'web/src/components/chat/StreamingDisplay.tsx',
-      'utf8',
     );
 
     expect(list).toContain('isHeldBackgroundAcknowledgement');
@@ -41,17 +36,14 @@ describe('dynamic Workflow product contract', () => {
   });
 
   test('uses the same final-only presentation in conversation previews', () => {
-    const sidebar = fs.readFileSync(
-      'web/src/components/chat/SessionSidebar.tsx',
-      'utf8',
-    );
+    const sidebar = readSource('web/src/components/chat/SessionSidebar.tsx');
 
     expect(sidebar).toContain('getPresentedMessageContent');
   });
 
   test('keeps running Workflow state across a held background acknowledgement', () => {
-    const backend = fs.readFileSync('src/index.ts', 'utf8');
-    const store = fs.readFileSync('web/src/stores/chat.ts', 'utf8');
+    const backend = readSource('src/index.ts');
+    const store = readSource('web/src/stores/chat.ts');
 
     expect(backend).toContain('activeWorkflowRuns');
     expect(backend).toContain('activeAgentWorkflowRuns');
