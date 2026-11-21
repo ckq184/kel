@@ -24,7 +24,7 @@ interface ChannelAdmissionInput {
   ) => Promise<boolean>;
 }
 
-export interface ChannelRouteTarget {
+interface ChannelRouteTarget {
   effectiveJid: string;
   agentId: string | null;
   sourceJid?: string;

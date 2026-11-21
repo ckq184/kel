@@ -14,25 +14,25 @@ import {
   reconcileExpiredChannelOutbox,
 } from './channel-reliability-store.js';
 
-export interface ChannelDeliveryReceipt {
+interface ChannelDeliveryReceipt {
   providerMessageId: string;
   providerUploadKey?: string | null;
 }
 
-export interface ChannelDeliveryOperationContext {
+interface ChannelDeliveryOperationContext {
   item: ChannelOutboxItem;
   payload: unknown;
   signal?: AbortSignal;
 }
 
-export interface ChannelSingleStageDelivery {
+interface ChannelSingleStageDelivery {
   mode: 'single';
   send(
     context: ChannelDeliveryOperationContext,
   ): Promise<{ providerMessageId: string }>;
 }
 
-export interface ChannelUploadThenSendDelivery {
+interface ChannelUploadThenSendDelivery {
   mode: 'upload_then_send';
   upload(
     context: ChannelDeliveryOperationContext,
@@ -42,7 +42,7 @@ export interface ChannelUploadThenSendDelivery {
   ): Promise<{ providerMessageId: string }>;
 }
 
-export type ChannelPhysicalDelivery =
+type ChannelPhysicalDelivery =
   | ChannelSingleStageDelivery
   | ChannelUploadThenSendDelivery;
 
@@ -106,7 +106,7 @@ export interface DeliverChannelOutboxInput extends ChannelRouteSnapshot {
   ) => void | Promise<void>;
 }
 
-export type ChannelOutboxDeliveryOutcome =
+type ChannelOutboxDeliveryOutcome =
   | 'delivered'
   | 'uncertain'
   | 'failed'
