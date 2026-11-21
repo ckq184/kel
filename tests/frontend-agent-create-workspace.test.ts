@@ -10,29 +10,49 @@ const readAgentProfilesPage = () =>
 
 describe('Agent creation workspace', () => {
   test('opens creation in the main workspace instead of a compact sidebar panel', () => {
+    // ISSUE-12 波 5 单元 5.5：新建面板 section 已迁
+    // web/src/components/agents/AgentCreatePanel.tsx（原文搬运），锚随体迁
+    // ——面板内容断言改读组件文件，aside/main 结构断言仍读页面。
     const page = readAgentProfilesPage();
     const aside = page.slice(page.indexOf('<aside'), page.indexOf('</aside>'));
     const main = page.slice(page.indexOf('<main'));
+    const createPanel = fs.readFileSync(
+      path.join(
+        process.cwd(),
+        'web/src/components/agents/AgentCreatePanel.tsx',
+      ),
+      'utf8',
+    );
 
     expect(aside).toContain('onClick={handleOpenCreatePanel}');
     expect(aside).not.toContain('new-agent-description');
     expect(aside).not.toContain('<Textarea');
     expect(main).toContain('{createPanelOpen && !draftMode ? (');
-    expect(main).toContain('id="create-agent-title"');
-    expect(main).toContain('id="new-agent-description"');
-    expect(main).toContain('AI 生成配置');
-    expect(main).toContain('空白创建');
+    expect(main).toContain('<AgentCreatePanel');
+    expect(createPanel).toContain('id="create-agent-title"');
+    expect(createPanel).toContain('id="new-agent-description"');
+    expect(createPanel).toContain('AI 生成配置');
+    expect(createPanel).toContain('空白创建');
   });
 
   test('keeps the large creation workspace labelled, responsive, and keyboard accessible', () => {
-    const page = readAgentProfilesPage();
+    // ISSUE-12 波 5 单元 5.5：同上，锚随体迁改读组件文件，断言文本不变。
+    const createPanel = fs.readFileSync(
+      path.join(
+        process.cwd(),
+        'web/src/components/agents/AgentCreatePanel.tsx',
+      ),
+      'utf8',
+    );
 
-    expect(page).toContain('aria-labelledby="create-agent-title"');
-    expect(page).toContain('htmlFor="new-agent-description"');
-    expect(page).toContain('aria-describedby="new-agent-description-help"');
-    expect(page).toContain('min-h-[180px]');
-    expect(page).toContain('sm:flex-row');
-    expect(page).toContain('focus-visible:ring-2');
+    expect(createPanel).toContain('aria-labelledby="create-agent-title"');
+    expect(createPanel).toContain('htmlFor="new-agent-description"');
+    expect(createPanel).toContain(
+      'aria-describedby="new-agent-description-help"',
+    );
+    expect(createPanel).toContain('min-h-[180px]');
+    expect(createPanel).toContain('sm:flex-row');
+    expect(createPanel).toContain('focus-visible:ring-2');
   });
 
   test('routes create links to the same main-workspace entry flow', () => {
