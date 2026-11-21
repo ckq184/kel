@@ -982,7 +982,7 @@ let stuckRunnerScanTimer: ReturnType<typeof setInterval> | null = null;
 // Decoupled from the message poll loop on purpose: recovery must not depend
 // on message-traffic machinery being healthy — that is exactly when it is
 // needed most. (Was a per-15-polls counter inside startMessageLoop.)
-export function startStuckRunnerScan(): void {
+function startStuckRunnerScan(): void {
   if (stuckRunnerScanTimer) return;
   stuckRunnerScanTimer = setInterval(() => {
     void recoverStuckPendingGroups();
@@ -990,7 +990,7 @@ export function startStuckRunnerScan(): void {
   stuckRunnerScanTimer.unref?.();
 }
 
-export function stopStuckRunnerScan(): void {
+function stopStuckRunnerScan(): void {
   if (stuckRunnerScanTimer) {
     clearInterval(stuckRunnerScanTimer);
     stuckRunnerScanTimer = null;
@@ -2903,16 +2903,13 @@ async function settleAndRecordTaskIpcDeliveries(
   return { accepted: true, receipt: outcome.receipt };
 }
 
-export function isCursorAfter(
-  candidate: MessageCursor,
-  base: MessageCursor,
-): boolean {
+function isCursorAfter(candidate: MessageCursor, base: MessageCursor): boolean {
   if (candidate.timestamp > base.timestamp) return true;
   if (candidate.timestamp < base.timestamp) return false;
   return candidate.id > base.id;
 }
 
-export function normalizeCursor(value: unknown): MessageCursor {
+function normalizeCursor(value: unknown): MessageCursor {
   if (typeof value === 'string') {
     return { timestamp: value, id: '' };
   }
@@ -4756,7 +4753,7 @@ function bindActiveChannelTurn(
   });
 }
 
-export function collectMessageImages(
+function collectMessageImages(
   chatJid: string,
   messages: NewMessage[],
   options: { knownMessageIds?: ReadonlySet<string> } = {},
@@ -8809,11 +8806,11 @@ const STREAMING_BUFFER_DIR = path.join(DATA_DIR, 'streaming-buffer');
 const STREAMING_BUFFER_INTERVAL_MS = 5000;
 let streamingBufferInterval: ReturnType<typeof setInterval> | null = null;
 
-export function encodeJidForFilename(jid: string): string {
+function encodeJidForFilename(jid: string): string {
   return Buffer.from(jid).toString('base64url');
 }
 
-export function decodeJidFromFilename(filename: string): string {
+function decodeJidFromFilename(filename: string): string {
   const name = filename.endsWith('.txt') ? filename.slice(0, -4) : filename;
   return Buffer.from(name, 'base64url').toString();
 }
