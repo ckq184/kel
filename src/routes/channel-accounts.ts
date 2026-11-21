@@ -88,10 +88,7 @@ interface PendingWeChatQr {
 
 const pendingWeChatQr = new Map<string, PendingWeChatQr>();
 
-export const PAIRING_CHANNEL_PROVIDERS = new Set<ChannelProvider>([
-  'qq',
-  'wechat',
-]);
+const PAIRING_CHANNEL_PROVIDERS = new Set<ChannelProvider>(['qq', 'wechat']);
 
 export function channelProviderSupportsPairing(
   provider: ChannelProvider,
