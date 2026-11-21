@@ -106,6 +106,7 @@ import {
 } from './owner-profile-store.js';
 import { splitLegacyEmbeddedReferenceContent } from './message-prompt.js';
 import { ensureCoreTables } from './db-schema/core-tables.js';
+import { ensureAuthTables } from './db-schema/auth-tables.js';
 import type { DbMigrationContext } from './db-schema/context.js';
 
 let db: InstanceType<typeof Database>;
@@ -564,96 +565,7 @@ export function initDatabase(): void {
   createWorkspaceMemorySchema(db);
   bindWorkspaceMemoryDatabase(db);
 
-  // Auth tables
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      username TEXT NOT NULL UNIQUE,
-      password_hash TEXT NOT NULL,
-      display_name TEXT NOT NULL DEFAULT '',
-      role TEXT NOT NULL DEFAULT 'member',
-      status TEXT NOT NULL DEFAULT 'active',
-      permissions TEXT NOT NULL DEFAULT '[]',
-      must_change_password INTEGER NOT NULL DEFAULT 0,
-      disable_reason TEXT,
-      notes TEXT,
-      avatar_emoji TEXT,
-      avatar_color TEXT,
-      default_require_mention INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      last_login_at TEXT,
-      deleted_at TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS invite_codes (
-      code TEXT PRIMARY KEY,
-      created_by TEXT NOT NULL,
-      role TEXT NOT NULL DEFAULT 'member',
-      permission_template TEXT,
-      permissions TEXT NOT NULL DEFAULT '[]',
-      max_uses INTEGER NOT NULL DEFAULT 1,
-      used_count INTEGER NOT NULL DEFAULT 0,
-      expires_at TEXT,
-      created_at TEXT NOT NULL,
-      FOREIGN KEY (created_by) REFERENCES users(id)
-    );
-
-    CREATE TABLE IF NOT EXISTS user_sessions (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      ip_address TEXT,
-      user_agent TEXT,
-      created_at TEXT NOT NULL,
-      expires_at TEXT NOT NULL,
-      last_active_at TEXT NOT NULL,
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS auth_audit_log (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      event_type TEXT NOT NULL,
-      username TEXT NOT NULL,
-      actor_username TEXT,
-      ip_address TEXT,
-      user_agent TEXT,
-      details TEXT,
-      created_at TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_auth_audit_created ON auth_audit_log(created_at);
-    CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id);
-    CREATE INDEX IF NOT EXISTS idx_user_sessions_expires ON user_sessions(expires_at);
-    CREATE INDEX IF NOT EXISTS idx_users_status_role ON users(status, role);
-    CREATE INDEX IF NOT EXISTS idx_users_created_at ON users(created_at);
-    CREATE INDEX IF NOT EXISTS idx_invites_created_at ON invite_codes(created_at);
-  `);
-
-  // User pinned groups (per-user workspace pinning)
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS user_pinned_groups (
-      user_id TEXT NOT NULL,
-      jid TEXT NOT NULL,
-      pinned_at TEXT NOT NULL,
-      PRIMARY KEY (user_id, jid)
-    );
-  `);
-
-  // v65 -> v66: CKQClaw Owner Profile remains a reserved Workspace Memory
-  // item; this table tracks only its one-shot onboarding lifecycle. Duplicate
-  // legacy items must be reconciled before the reserved-key unique index is
-  // installed.
-  createOwnerProfileSchema(db);
-  bindOwnerProfileDatabase(db);
-  if (
-    rawSchemaVersionBeforeInit !== null &&
-    Number(rawSchemaVersionBeforeInit) < 66
-  ) {
-    reconcileLegacyOwnerProfileMemory();
-  } else {
-    // Fresh and already-v66 databases need the structural invariant, but must
-    // not re-run legacy sentinel inference on every normal restart.
-    enforceCkqclawOwnerAddressCanonicalInvariant();
-  }
+  ensureAuthTables(ctx);
 
   // Sub-agents table for multi-agent parallel execution
   db.exec(`
