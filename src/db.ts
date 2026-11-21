@@ -7738,14 +7738,14 @@ export function mergeAgentProfileRuntimePolicy(
   });
 }
 
-export function serializeAgentProfileRuntimePolicy(
+function serializeAgentProfileRuntimePolicy(
   input?: RuntimePolicyInput | AgentProfileRuntimePolicy | null,
 ): string {
   return JSON.stringify(normalizeAgentProfileRuntimePolicy(input));
 }
 
 /** Persist the v69 inherited effort default into legacy runtime-policy JSON. */
-export function migrateAgentProfileEffortPolicy(): number {
+function migrateAgentProfileEffortPolicy(): number {
   const rows = db
     .prepare('SELECT id, runtime_policy FROM agent_profiles')
     .all() as Array<{ id: string; runtime_policy: unknown }>;
@@ -8890,7 +8890,7 @@ export function getAgentProfileForWorkspace(
   return fallback;
 }
 
-export function backfillAgentProfileDefaultsAndWorkspaceMappings(): void {
+function backfillAgentProfileDefaultsAndWorkspaceMappings(): void {
   // initDatabase invokes this before the web server publishes routes or starts
   // runners, so no process-local profile membership lock is necessary here.
   const tx = db.transaction(() => {
@@ -9558,9 +9558,7 @@ export function listAgentChannelMountsByWorkspace(
   return rows.map(parseAgentChannelMountRecord);
 }
 
-export function countAgentChannelMountsForProfile(
-  agentProfileId: string,
-): number {
+function countAgentChannelMountsForProfile(agentProfileId: string): number {
   const row = db
     .prepare(
       'SELECT COUNT(*) as count FROM agent_channel_mounts WHERE agent_profile_id = ?',
@@ -9569,7 +9567,7 @@ export function countAgentChannelMountsForProfile(
   return row.count;
 }
 
-export function syncAllWorkspacesFromRegisteredGroups(): void {
+function syncAllWorkspacesFromRegisteredGroups(): void {
   const rows = db
     .prepare("SELECT * FROM registered_groups WHERE jid LIKE 'web:%'")
     .all() as RegisteredGroupRow[];
@@ -9578,7 +9576,7 @@ export function syncAllWorkspacesFromRegisteredGroups(): void {
   }
 }
 
-export function syncAllWorkspaceRuntimeSessionsFromSessions(): void {
+function syncAllWorkspaceRuntimeSessionsFromSessions(): void {
   const rows = db
     .prepare('SELECT group_folder, agent_id FROM sessions')
     .all() as Array<{ group_folder: string; agent_id: string | null }>;
@@ -9592,7 +9590,7 @@ export function syncAllWorkspaceRuntimeSessionsFromSessions(): void {
  * The whole pass is atomic and removes projection-only ghosts left by crashes
  * or historical non-transactional dual writes.
  */
-export function reconcileCanonicalRuntimeProjections(): void {
+function reconcileCanonicalRuntimeProjections(): void {
   db.transaction(() => {
     const ghostWorkspaces = db
       .prepare(
@@ -10462,7 +10460,7 @@ export function upsertChannelMount(
   })();
 }
 
-export function deleteChannelMount(channelJid: string): void {
+function deleteChannelMount(channelJid: string): void {
   if (!db) return;
   try {
     db.transaction(() => {
@@ -10506,7 +10504,7 @@ export function listChannelMountsBySession(sessionId: string): ChannelMount[] {
   return rows.map(parseChannelMountRow);
 }
 
-export function syncChannelMountFromRegisteredGroup(
+function syncChannelMountFromRegisteredGroup(
   channelJid: string,
   group: RegisteredGroup,
 ): void {
@@ -10522,7 +10520,7 @@ export function syncChannelMountFromRegisteredGroup(
   upsertChannelMount(mount);
 }
 
-export function syncAllChannelMountsFromRegisteredGroups(): void {
+function syncAllChannelMountsFromRegisteredGroups(): void {
   db.prepare('DELETE FROM channel_mounts').run();
   db.prepare('DELETE FROM agent_channel_mounts').run();
   const rows = db
@@ -10638,7 +10636,7 @@ export function listImContextBindingsByAgent(
   return rows.map(mapImContextBindingRow);
 }
 
-export function deleteImContextBindingsByAgent(agentId: string): void {
+function deleteImContextBindingsByAgent(agentId: string): void {
   db.prepare('DELETE FROM im_context_bindings WHERE agent_id = ?').run(agentId);
 }
 
@@ -10733,7 +10731,7 @@ export function deleteChatHistory(chatJid: string): void {
  * The generic Memory lineage and the hidden Home Owner Profile lifecycle are
  * reset atomically, while the workspace identity/configuration remains intact.
  */
-export function resetWorkspaceKnowledgeForRebuild(workspaceJid: string): void {
+function resetWorkspaceKnowledgeForRebuild(workspaceJid: string): void {
   db.transaction(() => {
     const workspace = db
       .prepare('SELECT is_home FROM workspaces WHERE jid = ?')
@@ -10761,7 +10759,7 @@ export function resetWorkspaceKnowledgeForRebuild(workspaceJid: string): void {
   })();
 }
 
-export class WorkspaceRebuildPersistentStateError extends Error {
+class WorkspaceRebuildPersistentStateError extends Error {
   constructor(
     public readonly code: 'workspace_missing' | 'active_task_runs',
     message: string,
