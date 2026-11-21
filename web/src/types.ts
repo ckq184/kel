@@ -169,7 +169,7 @@ export function withAgentContextSource(
   };
 }
 
-export interface AgentProfileWorkspaceRuntimeSession {
+interface AgentProfileWorkspaceRuntimeSession {
   runtime_agent_id: string;
   sdk_session_id: string;
   provider_id: string | null;
@@ -189,7 +189,7 @@ export interface AgentProfileWorkspace {
   runtime_sessions: AgentProfileWorkspaceRuntimeSession[];
 }
 
-export interface AgentProfileChannelMount {
+interface AgentProfileChannelMount {
   channel_jid: string;
   channel_type: string;
   workspace_jid: string;
@@ -399,18 +399,18 @@ export interface AvailableImGroup {
   sender_allowlist_locked?: boolean;
 }
 
-export interface WorkspaceDeleteBindingGroup {
+interface WorkspaceDeleteBindingGroup {
   jid: string;
   name: string;
 }
 
-export interface WorkspaceDeleteBindingSession {
+interface WorkspaceDeleteBindingSession {
   sessionId: string;
   sessionName: string;
   imGroups: WorkspaceDeleteBindingGroup[];
 }
 
-export interface WorkspaceDeleteThreadContext extends WorkspaceDeleteBindingGroup {
+interface WorkspaceDeleteThreadContext extends WorkspaceDeleteBindingGroup {
   context_id: string;
 }
 
