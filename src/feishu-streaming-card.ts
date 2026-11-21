@@ -29,14 +29,12 @@ import {
   CARD_ELEMENT_IDS,
   statusHeadline,
   buildStatusBannerText,
-  buildProgressListText,
   buildToolsTimelineText,
   buildThinkingBlockquote,
   buildAskQuestionText,
   collectAskQuestions,
   buildTimelineText,
   type StreamingPhase,
-  type TodoItemView,
   type ToolCallView,
 } from './feishu-cards/sections.js';
 
@@ -469,7 +467,6 @@ function formatElapsed(ms: number): string {
 const MAX_THINKING_CHARS = 2000;
 const MAX_RECENT_EVENTS = 20;
 const MAX_TOOL_DISPLAY = 5;
-const MAX_TODO_DISPLAY = 10;
 const MAX_TOOL_SUMMARY_CHARS = 60;
 const MAX_ELEMENT_CHARS = 4000;
 const MAX_COMPLETED_TOOL_AGE = 30000; // 30s — purge completed tools after this
@@ -479,8 +476,6 @@ export interface AuxiliaryState {
   isThinking: boolean;
   toolCalls: Map<string, ToolCallState>;
   systemStatus: string | null;
-  activeHook: { hookName: string; hookEvent: string } | null;
-  todos: Array<{ id: string; content: string; status: string }> | null;
   recentEvents: Array<{ text: string }>;
   tasks: Map<string, TaskRunState>;
 }
@@ -603,43 +598,7 @@ function buildAuxiliaryElements(aux: AuxiliaryState): {
     });
   }
 
-  // ⑤ Hook Status
-  if (aux.activeHook) {
-    before.push({
-      tag: 'markdown',
-      content: `🔗 Hook: ${aux.activeHook.hookName || aux.activeHook.hookEvent}`,
-      text_size: 'notation',
-    });
-  }
-
-  // ⑥ Todo Progress
-  if (aux.todos && aux.todos.length > 0) {
-    const total = aux.todos.length;
-    const done = aux.todos.filter((t) => t.status === 'completed').length;
-    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-    const header = `📋 **${done}/${total} (${pct}%)**`;
-    const items = aux.todos.slice(0, MAX_TODO_DISPLAY).map((t) => {
-      const icon =
-        t.status === 'completed'
-          ? '✅'
-          : t.status === 'in_progress'
-            ? '⏳'
-            : '○';
-      return `${icon} ${t.content}`;
-    });
-    const extra =
-      total > MAX_TODO_DISPLAY ? `\n... +${total - MAX_TODO_DISPLAY} 项` : '';
-    before.push({
-      tag: 'markdown',
-      content: `${header}\n${items.join('\n')}${extra}`.slice(
-        0,
-        MAX_ELEMENT_CHARS,
-      ),
-      text_size: 'notation',
-    });
-  }
-
-  // ⑦ Recent Events (call trace)
+  // ⑤ Recent Events (call trace)
   if (aux.recentEvents.length > 0) {
     const lines = aux.recentEvents.map((e) => `- ${e.text}`);
     after.push({
@@ -2004,13 +1963,6 @@ export class StreamingCardController {
 
   // Auxiliary display state
   private systemStatus: string | null = null;
-  /** 挂起完成状态：本 turn 回复已送达但后台任务/截断续写未结束，卡片保持
-   * 打开等待追加。pendingTasks=null 表示截断自动续写中。任何新 turn 活动
-   * （append/appendThinking/startTool）自动清除。 */
-  private heldOpen: { pendingTasks: number | null } | null = null;
-  private activeHook: { hookName: string; hookEvent: string } | null = null;
-  private todos: Array<{ id: string; content: string; status: string }> | null =
-    null;
   private recentEvents: Array<{ text: string }> = [];
   private traceUrl: string | null = null;
   private stateVersion = 0;
@@ -2125,7 +2077,6 @@ export class StreamingCardController {
    * Signal that a tool has started executing.
    */
   startTool(toolId: string, toolName: string): void {
-    this.heldOpen = null; // 新 turn 活动，退出挂起态
     if (toolName === 'AskUserQuestion') {
       // The model has yielded control to the user. Preserve thinkingText for
       // the terminal audit panel, but do not leave the live state marked as
@@ -2201,7 +2152,6 @@ export class StreamingCardController {
    * Append thinking text (accumulated, tail-truncated at MAX_THINKING_CHARS).
    */
   appendThinking(text: string): void {
-    this.heldOpen = null; // 新 turn 活动，退出挂起态
     this.thinkingText += text;
     if (this.thinkingText.length > MAX_THINKING_CHARS) {
       this.thinkingText =
@@ -2223,51 +2173,6 @@ export class StreamingCardController {
    */
   setSystemStatus(status: string | null): void {
     this.systemStatus = status;
-    this.stateVersion++;
-    if (this.state === 'streaming') {
-      this.backendMode === 'streaming'
-        ? this.scheduleAuxFlush()
-        : this.schedulePatch();
-    }
-  }
-
-  /**
-   * 标记卡片进入「挂起完成」态：本 turn 回复已送达，但后台任务（异步 Agent /
-   * backgrounded Bash）或截断自动续写仍在进行，卡片不定稿、状态横幅切到
-   * 「后台任务运行中 ⏳」。pendingTasks 为后台任务数，null 表示截断续写中。
-   * 下一 turn 的任何活动（append/appendThinking/startTool）自动清除该态，
-   * 恢复正常的 phase 推导。
-   */
-  setHeldOpen(pendingTasks: number | null): void {
-    this.heldOpen = { pendingTasks };
-    this.stateVersion++;
-    if (this.state === 'streaming') {
-      this.backendMode === 'streaming'
-        ? this.scheduleAuxFlush()
-        : this.schedulePatch();
-    }
-  }
-
-  /**
-   * Set or clear active hook state.
-   */
-  setHook(hook: { hookName: string; hookEvent: string } | null): void {
-    this.activeHook = hook;
-    this.stateVersion++;
-    if (this.state === 'streaming') {
-      this.backendMode === 'streaming'
-        ? this.scheduleAuxFlush()
-        : this.schedulePatch();
-    }
-  }
-
-  /**
-   * Set the todo list for progress panel display.
-   */
-  setTodos(
-    todos: Array<{ id: string; content: string; status: string }>,
-  ): void {
-    this.todos = todos;
     this.stateVersion++;
     if (this.state === 'streaming') {
       this.backendMode === 'streaming'
@@ -2339,7 +2244,6 @@ export class StreamingCardController {
    * Creates the card on first call, then patches on subsequent calls.
    */
   append(text: string): void {
-    this.heldOpen = null; // 新 turn 文本到达，退出挂起态
     this.accumulatedText = text;
     this.thinking = false; // Text arrived, no longer just thinking
 
@@ -2729,8 +2633,6 @@ export class StreamingCardController {
       isThinking: this.thinking,
       toolCalls: this.toolCalls,
       systemStatus: this.systemStatus,
-      activeHook: this.activeHook,
-      todos: this.todos,
       recentEvents: this.recentEvents,
       tasks: this.tasks,
     };
@@ -2823,11 +2725,6 @@ export class StreamingCardController {
    * Falls back to schedulePatch() if streaming backend is not available.
    */
   private derivePhase(): StreamingPhase {
-    // 挂起完成态优先：本 turn 已答复、等后台任务/续写。放在最前是有意的——
-    // backgrounded Bash 等工具的 tool_use 可能永远等不到 end 事件而滞留
-    // 'running'，若 tooling 优先会把挂起期一直显示成「调用工具」。
-    // 新 turn 的任何活动（append/appendThinking/startTool）会清除 heldOpen。
-    if (this.heldOpen) return 'waiting_bg';
     // A live AskUserQuestion is not an ordinary tool call. It is a protocol
     // boundary where the agent has yielded and is waiting for the user. Keep
     // it ahead of tooling/thinking so the banner can never claim 「思考中」and
@@ -2837,11 +2734,10 @@ export class StreamingCardController {
         return 'waiting';
       }
     }
-    // Priority: active tool > hook > thinking > streaming text > working > idle
+    // Priority: active tool > thinking > streaming text > working > idle
     for (const tc of this.toolCalls.values()) {
       if (tc.status === 'running') return 'tooling';
     }
-    if (this.activeHook) return 'hook';
     if (this.thinking && !this.accumulatedText) return 'thinking';
     if (this.accumulatedText) return 'streaming';
     if (this.systemStatus) return 'working';
@@ -2868,19 +2764,9 @@ export class StreamingCardController {
           : '';
       return `\`${name}\`${summary}${extra}`;
     }
-    if (phase === 'hook') {
-      return this.activeHook
-        ? `${this.activeHook.hookName || this.activeHook.hookEvent}`
-        : undefined;
-    }
     if (phase === 'streaming') {
       const chars = this.accumulatedText.length;
       return `已输出 ${chars} 字`;
-    }
-    if (phase === 'waiting_bg') {
-      if (this.systemStatus) return this.systemStatus;
-      const n = this.heldOpen?.pendingTasks;
-      return n ? `${n} 个后台任务运行中，完成后将继续汇总` : '自动续写中…';
     }
     if (phase === 'working') {
       return this.systemStatus ?? undefined;
@@ -2890,7 +2776,6 @@ export class StreamingCardController {
 
   private buildRichPanelPatches(): {
     statusBanner: string;
-    progressContent?: string;
     taskContent: string;
     toolsContent: string;
     thinkingContent?: string;
@@ -2913,16 +2798,6 @@ export class StreamingCardController {
     });
     // Footer is the short status echo only — recent events have their own panel.
     const footerNote = `<font color='grey'>${statusBanner.replace(/<[^>]+>/g, '').trim()}</font>`;
-
-    const progressContent =
-      this.todos && this.todos.length > 0
-        ? buildProgressListText(
-            this.todos.map((t) => ({
-              content: t.content,
-              status: t.status as TodoItemView['status'],
-            })),
-          )
-        : undefined;
 
     const now = Date.now();
     const taskViews = Array.from(this.tasks.values())
@@ -2996,7 +2871,6 @@ export class StreamingCardController {
 
     return {
       statusBanner,
-      progressContent,
       taskContent,
       toolsContent,
       thinkingContent,
@@ -3025,12 +2899,6 @@ export class StreamingCardController {
         {
           elementId: CARD_ELEMENT_IDS.ASK_CONTENT,
           content: patches.askContent ?? '',
-        },
-        {
-          elementId: CARD_ELEMENT_IDS.PROGRESS_CONTENT,
-          content:
-            patches.progressContent ??
-            "<font color='grey'>等待任务规划…</font>",
         },
         {
           elementId: CARD_ELEMENT_IDS.TASK_CONTENT,

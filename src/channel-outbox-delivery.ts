@@ -112,7 +112,6 @@ export type ChannelOutboxDeliveryOutcome =
   | 'failed'
   | 'retry_wait'
   | 'busy'
-  | 'cancelled'
   | 'lease_lost';
 
 export interface ChannelOutboxDeliveryResult {
@@ -181,14 +180,6 @@ function resultFromItem(
         itemId: item.id,
         status: 'failed',
         error: item.error ?? 'Channel delivery failed',
-        reused,
-        attempt: item.attempt,
-      };
-    case 'cancelled':
-      return {
-        itemId: item.id,
-        status: 'cancelled',
-        error: item.error ?? 'Channel delivery was cancelled',
         reused,
         attempt: item.attempt,
       };
@@ -287,8 +278,7 @@ export async function deliverChannelOutboxItem(
   if (
     enqueued.item.status === 'delivered' ||
     enqueued.item.status === 'uncertain' ||
-    enqueued.item.status === 'failed' ||
-    enqueued.item.status === 'cancelled'
+    enqueued.item.status === 'failed'
   ) {
     return resultFromItem(enqueued.item, enqueued.item.status === 'delivered');
   }

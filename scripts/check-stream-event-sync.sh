@@ -35,10 +35,9 @@ check_sync "$ROOT/shared/image-detector.ts" \
   "$ROOT/src/image-detector.ts" \
   "$ROOT/container/agent-runner/src/image-detector.ts"
 
-# Channel prefixes
+# Channel prefixes (backend only; agent-runner copy removed in ISSUE-10)
 check_sync "$ROOT/shared/channel-prefixes.ts" \
-  "$ROOT/src/channel-prefixes.ts" \
-  "$ROOT/container/agent-runner/src/channel-prefixes.ts"
+  "$ROOT/src/channel-prefixes.ts"
 
 if [ "$FAIL" -eq 0 ]; then
   echo "All shared type copies are in sync."

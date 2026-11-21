@@ -6,7 +6,7 @@
 
 // Streaming event types (canonical source: shared/stream-event.ts)
 export type { StreamEventType, StreamEvent } from './stream-event.types.js';
-import type { ClaudeContextAudit, StreamEvent } from './stream-event.types.js';
+import type { StreamEvent } from './stream-event.types.js';
 
 /**
  * Sanitized, per-input-turn channel identity supplied by the CKQClaw host.
@@ -238,7 +238,6 @@ export interface ContainerInput {
     version: number;
     /** Host-authoritative marker for the built-in CKQClaw AgentProfile. */
     isDefault: boolean;
-    identityHash: string;
     identityPrompt: string;
     /**
      * Host-resolved SDK effort override (ISSUE-04 ③), already narrowed to the
@@ -249,27 +248,6 @@ export interface ContainerInput {
     /** Opaque host-normalized policy; retained only for runtime provenance. */
     runtimePolicy?: unknown;
   };
-  /**
-   * True only for an interactive turn in the built-in CKQClaw Home
-   * Workspace before the owner-preferred-address memory has been established.
-   */
-  ckqclawBootstrapPending?: boolean;
-  /**
-   * Initial host-authoritative projection for the actual owner turn. A
-   * dedicated IPC read refreshes this before every cold/warm model turn.
-   */
-  ckqclawOwnerProfile?: {
-    workspaceJid: string;
-    preferredAddress: string | null;
-    revision: number | null;
-    onboarding: {
-      state: 'pending' | 'claimed' | 'completed' | 'skipped';
-      revision: number;
-      leaseOwner: string | null;
-      leaseToken: number | null;
-      leaseExpiresAt: string | null;
-    };
-  };
   /** Structural capability; the host re-authorizes the actual sender on every
    * cold/warm Owner Profile IPC request. */
   ckqclawOwnerProfileEnabled?: boolean;
@@ -277,11 +255,6 @@ export interface ContainerInput {
    * effective top-level AgentProfile is the built-in main CKQClaw. */
   agentBuilderEnabled?: boolean;
   agentId?: string;
-  agentName?: string;
-  /** Runtime context audit bootstrap from the host/container launcher. */
-  contextAudit?: ClaudeContextAudit;
-  /** Canonical effective Skill set resolved by the CKQClaw host. */
-  skillManifest?: { hash: string; selectedSkillIds: string[] };
 }
 
 export interface ContainerOutput {
@@ -304,13 +277,6 @@ export interface ContainerOutput {
    * remaining pool. The agent runner itself only emits providerFailure.
    */
   providerFailureTerminal?: boolean;
-  /** Internal host-control marker: this turn is being retried in-process. */
-  providerFailureRetrying?: boolean;
-  /**
-   * Provider failed during an internal side-query after the durable user turn
-   * completed. The host quarantines it without replaying or notifying again.
-   */
-  providerFailureMaintenance?: boolean;
   streamEvent?: StreamEvent;
   /**
    * Immutable identity of the user input turn that produced this output.
@@ -329,19 +295,10 @@ export interface ContainerOutput {
     | 'proactive_sdk_fallback'
     | 'input_rejection_warning'
     | 'interrupt_partial'
-    | 'overflow_partial'
-    | 'compact_partial'
-    | 'legacy'
-    | 'auto_continue'
-    | 'truncation_continue';
-  /** 'truncated'：上游断流截断的 partial（usage 双零指纹，runner 会自动续写） */
-  finalizationReason?: 'completed' | 'interrupted' | 'error' | 'truncated';
-  /** 本 result 发出时仍未 settle 的后台任务数（异步 Agent / backgrounded Bash）。
-   * >0 时主进程应把流式卡片保持在「后台任务运行中」而非定稿，后续 turn 的
-   * 内容会继续追加到同一张卡。仅 sdk_final 类 result 携带。 */
-  pendingBgTasks?: number;
+    | 'legacy';
+  finalizationReason?: 'completed' | 'interrupted' | 'error';
   /** This SDK result durably completed the user-input turn associated with it.
-   * False/absent for truncated, background-pending, interrupted, and error paths. */
+   * False/absent for background-pending, interrupted, and error paths. */
   inputTurnCompleted?: boolean;
   /** True only when the completed SDK input turn left no accepted steer turns
    * waiting in the same streaming query. Hosts use this—not merely a result—to

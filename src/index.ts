@@ -52,7 +52,6 @@ import {
   decideAssistantPrimaryProjection,
   isGenuineReplyResult,
   occupiesPrimaryReplyDeliverySlot,
-  resolveHeldReplyDbText,
   setIpcReplyInputTurn,
   shouldFinalizeScheduledGroupPrimaryResult,
   shouldSkipRetryAfterLateError,
@@ -527,7 +526,6 @@ import {
 import {
   ensureAgentDirectories,
   isRealpathInside,
-  isSystemMaintenanceNoise,
   stripAgentInternalTags,
   stripVirtualJidSuffix,
 } from './utils.js';
@@ -536,7 +534,6 @@ import {
   startWebServer,
   broadcastToWebClients,
   broadcastNewMessage,
-  broadcastTyping,
   broadcastStreamEvent,
   broadcastAgentStatus,
   broadcastAgentRemoved,
@@ -1118,15 +1115,9 @@ const activeChannelTurns = new ActiveChannelTurnRegistry();
 // prevents one thread/account from borrowing another thread's outbox.
 const activeChannelOutboxScopes = new ActiveChannelOutboxScopeRegistry();
 
-// ── 卡片挂起完成机制的共享工具 ──
-// 挂起卡内各 turn 文本之间的分隔线（最终定稿卡片正文按时间序拼接各 turn）。
-const HELD_TURN_DIVIDER = '\n\n---\n\n';
-// agent-runner 截断续写触顶放弃时发出的机器状态标记（与
-// container/agent-runner/src/index.ts 的 emit 保持字面一致），主进程据此
-// 把挂起中的卡片收口，不再等一个永远不会来的 healthy result。
-const TRUNCATION_EXHAUSTED_STATUS = 'truncation_continue_exhausted';
-// 挂起期间累计的 usage 增量（与 StreamEvent['usage'] 同形），定稿后与最终
-// turn 的 usage 合并成整个回合的总量补到卡片 usage note。
+// ── usage 账本批合并工具 ──
+// Ledger 分片事件（ISSUE-10 前的挂起合并语义已随截断链下线）按批累计合并，
+// 供迟到 usage 补丁与批内汇总使用（与 StreamEvent['usage'] 同形）。
 type HeldUsageTotals = NonNullable<StreamEvent['usage']>;
 function mergeHeldUsage(
   base: HeldUsageTotals | null,
@@ -1173,10 +1164,10 @@ function mergeHeldUsage(
   };
 }
 
-// Sub-Agent 路径的挂起卡 finalizer 注册表（key: virtualChatJid）。主路径复用
+// Sub-Agent 路径的新消息注入 admission hook（key: virtualChatJid）。主路径复用
 // activeRouteUpdaters（用户消息注入时必经），Sub-Agent 注入点不走 route updater，
 // 由 web.ts / 消息循环在注入成功回调里显式触发。
-const activeHeldCardFinalizers = new Map<
+const activeAgentAdmissionHooks = new Map<
   string,
   (sourceJid?: string | null, inputTurnId?: string) => void
 >();
@@ -1272,7 +1263,7 @@ function injectPreparedFollowUp(
         );
       }
       if (runtime?.agentId) {
-        activeHeldCardFinalizers.get(item.chat_jid)?.(
+        activeAgentAdmissionHooks.get(item.chat_jid)?.(
           sourceJid,
           receipt?.deliveryId,
         );
@@ -1883,7 +1874,6 @@ function toContainerAgentProfile(
     name: profile.name,
     version: profile.version,
     isDefault: profile.is_default,
-    identityHash: profile.identity_hash,
     identityPrompt: buildAgentProfilePrompt(profile),
     // ISSUE-04 ③: resolved effort rides the profile contract; `inherit`
     // stays undefined so the runner falls back to the provider env.
@@ -1891,56 +1881,6 @@ function toContainerAgentProfile(
     modelConfigId: profile.model_config_id,
     runtimePolicy: profile.runtime_policy,
   };
-}
-
-function resolveCkqclawOwnerProfileForTurn(input: {
-  group: RegisteredGroup;
-  profile: AgentProfile | undefined;
-  turnId?: string;
-  isScheduledTask?: boolean;
-  runtimeAgentId?: string | null;
-  runtimeAgentKind?: 'task' | 'conversation' | 'spawn' | null;
-}): CkqclawOwnerProfileProjection | undefined {
-  if (
-    !isCkqclawBootstrapTurn({
-      turnId: input.turnId,
-      isHome: input.group.is_home === true,
-      isDefaultProfile: input.profile?.is_default === true,
-      isScheduledTask: input.isScheduledTask,
-    }) ||
-    (input.runtimeAgentId && input.runtimeAgentKind !== 'conversation')
-  ) {
-    return undefined;
-  }
-  const ownerId = input.group.created_by;
-  const owner = ownerId ? getUserById(ownerId) : undefined;
-  if (!ownerId || owner?.status !== 'active') return undefined;
-  try {
-    activeAgentBuilderTurns.requireExactActiveOwnerHumanTurn(
-      agentBuilderTurnScope(input.group.folder, input.runtimeAgentId),
-      input.turnId,
-      getAgentBuilderInputMessage,
-      (persistedInput) =>
-        isAgentBuilderOwnerInput(
-          persistedInput,
-          ownerId,
-          (jid) => registeredGroups[jid] ?? getRegisteredGroup(jid),
-        ),
-    );
-  } catch {
-    // A Home group can admit non-owner audience turns. Owner Profile data and
-    // first-wake onboarding are intentionally absent from those turns.
-    return undefined;
-  }
-  const workspaceJid = getJidsByFolder(input.group.folder).find((jid) =>
-    jid.startsWith('web:'),
-  );
-  if (!workspaceJid) return undefined;
-  try {
-    return getCkqclawOwnerProfileProjection(workspaceJid);
-  } catch {
-    return undefined;
-  }
 }
 
 function isCkqclawOwnerProfileRuntimeEligible(input: {
@@ -4188,11 +4128,9 @@ async function setTyping(
   // Skip Feishu Reaction when a streaming card is active — the card itself
   // serves as a live typing indicator.
   if (isTyping && hasActiveStreamingSession(transportJid)) {
-    broadcastTyping(jid, isTyping);
     return;
   }
   await imManager.setTyping(transportJid, isTyping, leaseId);
-  broadcastTyping(jid, isTyping);
 }
 
 async function clearStandaloneProcessingIndicator(
@@ -4333,8 +4271,6 @@ interface SendMessageOptions {
   channelOutbox?: ChannelOutboxDeliveryRef;
   /** Message source identifier (e.g. 'scheduled_task') for frontend routing. */
   source?: string;
-  /** Completed Claude Code Workflow snapshots associated with this reply. */
-  workflowRuns?: NonNullable<StreamEvent['workflowRun']>[];
   /** Metadata used to preserve Claude SDK turn semantics for persisted messages. */
   messageMeta?: {
     turnId?: string;
@@ -5762,79 +5698,13 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   // 之后才执行（waitForOutputChain 30s 兜底只放行不取消）；此时绝不能再重建
   // 流式卡片——重建出的卡片永远无人 complete，成为僵尸「生成中」卡。
   let runEnded = false;
-  // ── 卡片挂起完成机制 ──
-  // pendingBgTasks>0 / truncated 的 result 不定稿卡片：本 turn 文本存入
-  // heldCardParts（DB 照常逐 turn 入库），卡片保持 streaming 态并显示
-  // 「后台任务运行中」，后续 turn 的流式增量继续追加到同一张卡；全部后台
-  // 任务 settle 后的 healthy result 才用累积全文定稿「已完成」——对齐
-  // Claude Code "一次委托 = 一个完整回合" 的体验，不再分段发多张卡。
-  let heldCardParts: string[] = [];
-  // All Workflow snapshots for the current logical turn. Running snapshots
-  // must survive the first held sdk_final so Web can keep rendering the live
-  // Workflow card while Claude waits for the background task notification.
-  let activeWorkflowRuns: NonNullable<StreamEvent['workflowRun']>[] = [];
-  let completedWorkflowRuns: NonNullable<StreamEvent['workflowRun']>[] = [];
-  // 挂起期间各 turn 的 usage 增量累计，定稿后与最终 turn 的 usage 合并
-  // 补到卡片 usage note（否则卡片只显示最后一个 turn 的用量）。
-  let heldCardUsage: HeldUsageTotals | null = null;
   // The runner emits one replay-safe ledger event per Anthropic message ID.
   // Buffer those siblings and expose one cumulative usage summary to UI/card.
   let pendingLedgerUsageBatch: HeldUsageTotals | null = null;
   // 定稿后等待最终 usage 事件合并补丁的卡片控制器。usage 事件在 result 之后
-  // 到达，而主路径定稿即轮换 session——不留引用的话 usage note 永远打在新空卡
+  // 到达，而主路径定稿即轮转 session——不留引用的话 usage note 永远打在新空卡
   // 上（no-op）。每条 result 开始时清空，避免打到过期卡。
   let heldUsagePatchTarget: StreamingSession | null = null;
-  // 挂起序列的 DB 合并锚点：整个序列（含收尾 turn）共用第一个 held turn 的
-  // turnId，storeMessageDirect 按 (chat_jid, turn_id) UPSERT 到同一行——
-  // 全渠道（Web / 历史 / 飞书卡）永远只有一条回复。与卡片存在性无关：
-  // 纯 Web 会话没有流式卡片，同样合并。
-  let heldDbTurnId: string | null = null;
-  const heldCardBaseText = (): string =>
-    heldCardParts.length > 0
-      ? heldCardParts.join(HELD_TURN_DIVIDER) + HELD_TURN_DIVIDER
-      : '';
-  // 挂起序列的异常收口：进程退出/中断/续写放弃时给合并行追加说明注记并广播，
-  // 否则 Web 上那条回复会永远停在"…运行中/续写中"的悬空提示上。
-  const finalizeHeldDbMessage = async (
-    note: string | null,
-    reason: 'interrupted' | 'truncated',
-    warning = true,
-  ): Promise<void> => {
-    if (!heldDbTurnId || heldCardParts.length === 0) return;
-    const suffix = note ? `\n\n> ${warning ? '⚠️ ' : ''}${note}` : '';
-    const joined = heldCardParts.join(HELD_TURN_DIVIDER) + suffix;
-    const tid = heldDbTurnId;
-    heldDbTurnId = null;
-    await sendMessage(chatJid, joined, {
-      sendToIM: false,
-      messageMeta: {
-        turnId: tid,
-        sessionId: activeSessionId,
-        sourceKind: 'sdk_final',
-        finalizationReason: reason,
-      },
-    });
-  };
-  // 用户在挂起期间发来新消息 → 先把挂起卡定稿并轮换新卡。IM 时间线上挂起卡
-  // 在用户消息之前，新 turn 的回复不能长在旧卡里。
-  const finalizeHeldCardForNewMessage = async (): Promise<void> => {
-    if (heldCardParts.length === 0) return;
-    const txt = heldCardParts.join(HELD_TURN_DIVIDER);
-    heldCardParts = [];
-    heldCardUsage = null;
-    // DB 合并行内容已随每个 held turn 更新到位，仅需结束序列锚点
-    heldDbTurnId = null;
-    if (!streamingSession?.isActive()) return;
-    try {
-      await streamingSession.complete(txt);
-    } catch {
-      await streamingSession.abort('').catch(() => {});
-    }
-    unregisterStreamingSession(streamingSessionJid);
-    streamingAccumulatedText = '';
-    streamingAccumulatedThinking = '';
-    streamingSession = undefined;
-  };
   logger.info(
     { chatJid, streamingSessionJid, hasSession: !!streamingSession },
     'Streaming session creation result',
@@ -5916,7 +5786,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
         streamingAccumulatedText = text;
         const projection = channelStreamingSessionsByInput.get(inputTurnId);
         if (projection?.session.isActive()) {
-          projection.session.append(heldCardBaseText() + text);
+          projection.session.append(text);
           projection.session.setSystemStatus('正在完成最终回复…');
         }
         return true;
@@ -5948,12 +5818,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     // left by an older warm callback so it cannot contaminate the next input.
     streamingAccumulatedText = '';
     streamingAccumulatedThinking = '';
-    heldCardParts = [];
-    heldCardUsage = null;
     heldUsagePatchTarget = null;
-    heldDbTurnId = null;
-    activeWorkflowRuns = [];
-    completedWorkflowRuns = [];
   };
   bindTurnOutputCoordinator(lastProcessed.id);
   activeRouteAdmissions.set(
@@ -6162,16 +6027,6 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
         activeDurableCardLifecycle = admittedInput.lifecycle;
         durableLifecycleForInput = admittedInput.lifecycle;
       }
-      // 用户新消息注入：挂起中的卡片先定稿轮换——IM 时间线上旧卡在用户消息
-      // 之前，新 turn 的回复不能长在旧卡里。route updater 在所有用户消息
-      // 注入点（index.ts 消息循环 / web.ts）都会被调用，是天然的挂钩位置。
-      if (!acceptedNewInput)
-        await finalizeHeldCardForNewMessage().catch((err) => {
-          logger.warn(
-            { err, chatJid },
-            'Failed to finalize held streaming card on new message',
-          );
-        });
       // New IPC user message arrived — reset sentReply so the next result
       // can be delivered to IM. This is the correct place to reset, NOT
       // in the streaming session rebuild (which also fires on SDK Task
@@ -6513,45 +6368,6 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
           }
           // 流式事件处理 - 广播 WebSocket + 持久化 SDK Task 生命周期到 DB
           if (result.status === 'stream' && result.streamEvent) {
-            if (result.streamEvent.workflowRun) {
-              const run = result.streamEvent.workflowRun;
-              activeWorkflowRuns = [
-                ...activeWorkflowRuns.filter(
-                  (item) => item.taskId !== run.taskId,
-                ),
-                run,
-              ];
-              if (run.status !== 'running') {
-                completedWorkflowRuns = [
-                  ...completedWorkflowRuns.filter(
-                    (item) => item.taskId !== run.taskId,
-                  ),
-                  run,
-                ];
-              }
-            }
-            // ── 截断续写触顶信号（机器标记，不广播不展示）──
-            // runner 连续续写仍被断流、放弃后发出。挂起中的卡片不能再等一个
-            // 永远不会来的 healthy result，就地收口为「已中断」。
-            if (
-              result.streamEvent.eventType === 'status' &&
-              result.streamEvent.statusText === TRUNCATION_EXHAUSTED_STATUS
-            ) {
-              if (heldCardParts.length > 0) {
-                await finalizeHeldDbMessage(
-                  '自动续写未能完成（上游连续断流），以上为已生成内容',
-                  'truncated',
-                ).catch(() => {});
-                heldCardParts = [];
-                heldCardUsage = null;
-                if (streamingSession?.isActive()) {
-                  await streamingSession
-                    .abort('自动续写未能完成（上游连续断流），以上为已生成内容')
-                    .catch(() => {});
-                }
-              }
-              return;
-            }
             // Claude SDK 的 costUSD 只是上游估算。实时 Web/飞书展示前先走
             // 与账本相同的 Kaboo 计价入口，确保流式金额和最终统计一致。
             // 后面的持久化调用会被 eventId 幂等去重，并负责关联最终消息。
@@ -6667,39 +6483,25 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
                 answerProjection?.visibleAnswerChanged &&
                 streamingSession.isActive()
               ) {
-                streamingSession.append(
-                  heldCardBaseText() + answerProjection.visibleAnswerText,
-                );
+                streamingSession.append(answerProjection.visibleAnswerText);
               }
               if (
                 se.eventType === 'usage' &&
                 se.usage &&
-                heldCardParts.length > 0
-              ) {
-                // 挂起中：累计本 turn 的 usage 增量，不喂卡
-                //（patchUsageNote 在 streaming 态本就 no-op，累计后定稿时合并补丁）。
-                heldCardUsage = mergeHeldUsage(heldCardUsage, se.usage);
-              } else if (
-                se.eventType === 'usage' &&
-                se.usage &&
                 heldUsagePatchTarget
               ) {
-                // 挂起回合刚定稿：合并挂起期累计 + 最终 turn 的 usage，
-                // 补到已定稿的旧卡上（session 已轮换，正常喂卡会打到新空卡上 no-op）。
+                // 回合刚定稿：把迟到的 usage 补丁打到已定稿的旧卡上
+                //（session 已轮换，正常喂卡会打到新空卡上 no-op）。
                 const target = heldUsagePatchTarget;
                 heldUsagePatchTarget = null;
-                const merged = heldCardUsage
-                  ? mergeHeldUsage(heldCardUsage, se.usage)
-                  : se.usage;
-                heldCardUsage = null;
-                void target.patchUsageNote(merged);
+                void target.patchUsageNote(se.usage);
               } else if (
                 !(se.eventType === 'text_delta' && !se.parentToolUseId)
               ) {
                 feedStreamEventToCard(
                   streamingSession,
                   se,
-                  heldCardBaseText() + streamingAccumulatedText,
+                  streamingAccumulatedText,
                   buildWebTraceUrl(
                     effectiveGroup.folder,
                     se.turnId || lastProcessed.id,
@@ -6721,24 +6523,6 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
               );
               streamInterrupted = true;
               streamSteered ||= steered;
-              // 引导是正常换向：干净收束已有内容；显式停止才显示中性停止状态。
-              if (heldCardParts.length > 0) {
-                const heldText = heldCardParts.join(HELD_TURN_DIVIDER);
-                await finalizeHeldDbMessage(
-                  steered ? null : '已停止',
-                  'interrupted',
-                  false,
-                ).catch(() => {});
-                heldCardParts = [];
-                heldCardUsage = null;
-                if (streamingSession?.isActive()) {
-                  if (steered) {
-                    await streamingSession.complete(heldText).catch(() => {});
-                  } else {
-                    await streamingSession.abort('已停止').catch(() => {});
-                  }
-                }
-              }
               // Skip if shutdown handler already saved this text (prevents duplicates)
               const inlineWebJid = chatJid.startsWith('web:')
                 ? chatJid
@@ -6802,10 +6586,9 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
             // Persist SDK Task lifecycle to DB so tabs survive page refresh
             const se = result.streamEvent;
             if (
-              (se.eventType === 'task_start' && se.toolUseId) ||
-              (se.eventType === 'tool_use_start' &&
-                se.toolName === 'Task' &&
-                se.toolUseId)
+              se.eventType === 'tool_use_start' &&
+              se.toolName === 'Task' &&
+              se.toolUseId
             ) {
               try {
                 const taskId = se.toolUseId;
@@ -6927,80 +6710,6 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
                 logger.warn(
                   { err, taskId: se.taskId },
                   'Failed to persist terminal task_progress to DB',
-                );
-              }
-            }
-            if (se.eventType === 'task_notification' && se.taskId) {
-              try {
-                const status =
-                  se.taskStatus === 'completed' ? 'completed' : 'error';
-                const summary = se.taskSummary?.slice(0, 2000);
-                let targetTaskId = se.taskId;
-                let existing = getAgent(targetTaskId);
-                if (!existing || existing.kind !== 'task') {
-                  // agent-runner now translates SDK task_id → toolUseId,
-                  // so this fallback should rarely trigger. Keep as safety net.
-                  const fallbackTaskId = pickRunningTaskForNotification();
-                  if (fallbackTaskId) {
-                    targetTaskId = fallbackTaskId;
-                    existing = getAgent(fallbackTaskId);
-                    logger.debug(
-                      {
-                        chatJid,
-                        sdkTaskId: se.taskId,
-                        mappedTaskId: fallbackTaskId,
-                      },
-                      'Task notification ID fallback to running task',
-                    );
-                  }
-                }
-
-                if (!existing) {
-                  createAgent({
-                    id: targetTaskId,
-                    group_folder: group.folder,
-                    chat_jid: chatJid,
-                    name: 'Task',
-                    prompt: '',
-                    status,
-                    kind: 'task',
-                    created_by: null,
-                    created_at: new Date().toISOString(),
-                    completed_at: new Date().toISOString(),
-                    result_summary: summary || null,
-                    last_im_jid: null,
-                    spawned_from_jid: null,
-                  });
-                  if (publishesFrameworkAnswer(interactionMode)) {
-                    broadcastAgentStatus(
-                      chatJid,
-                      targetTaskId,
-                      status,
-                      'Task',
-                      '',
-                      summary,
-                      'task',
-                    );
-                  }
-                } else if (existing.kind === 'task') {
-                  updateAgentStatus(existing.id, status, summary);
-                  queryTaskIds.delete(existing.id);
-                  if (publishesFrameworkAnswer(interactionMode)) {
-                    broadcastAgentStatus(
-                      chatJid,
-                      existing.id,
-                      status,
-                      existing.name,
-                      existing.prompt,
-                      summary,
-                      'task',
-                    );
-                  }
-                }
-              } catch (err) {
-                logger.warn(
-                  { err, taskId: se.taskId },
-                  'Failed to persist task_notification to DB',
                 );
               }
             }
@@ -7267,7 +6976,6 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
               ipcReceiptCount: result.ipcReceipts?.length,
               inputTurnCompleted: result.inputTurnCompleted,
               finalizationReason: result.finalizationReason,
-              pendingBgTasks: result.pendingBgTasks,
               primaryAlreadyProjected:
                 genuineReplyDeliveredByInput.get(resultInputTurnId) === true,
               anyReplyProjected:
@@ -7331,70 +7039,18 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
                 ? result.result
                 : JSON.stringify(result.result);
             let text = stripAgentInternalTags(raw);
-            if (
-              result.sourceKind === 'overflow_partial' ||
-              result.sourceKind === 'compact_partial'
-            ) {
-              text = buildOverflowPartialReply(text);
-            }
-            // auto_continue outputs that consist solely of system-maintenance
-            // acknowledgements (e.g. "OK", "已更新 CLAUDE.md") are suppressed from
-            // IM delivery. These arise when the agent's session transcript contains
-            // memory-flush / CLAUDE.md-update context from the compaction pipeline
-            // and the agent echoes it back in the resumption query. Substantive
-            // user-facing continuations (longer replies or actual task resumption)
-            // pass through normally. See issue #275.
-            if (
-              result.sourceKind === 'auto_continue' &&
-              isSystemMaintenanceNoise(text)
-            ) {
-              logger.info(
-                { group: group.name, textLen: text.length },
-                'auto_continue output suppressed (system maintenance noise)',
-              );
-              return;
-            }
             logger.info(
               { group: group.name },
               `Agent output: ${raw.slice(0, 200)}`,
             );
             if (text) {
-              // ── 挂起判定（消息级，与卡片存在性解耦）──
-              // 后台任务未 settle / 截断待续写的 result 进入挂起序列：内容进
-              // heldCardParts，DB 合并到同一条消息（全渠道一条回复），有卡片
-              // 则卡片同步保持活跃，全部结束后的 healthy result 才收尾。
-              const isPartialOutput =
-                result.sourceKind === 'compact_partial' ||
-                result.sourceKind === 'overflow_partial';
-              const holdReason: 'bg_tasks' | 'truncated' | null = runEnded
-                ? null
-                : result.finalizationReason === 'truncated' || isPartialOutput
-                  ? 'truncated'
-                  : (result.pendingBgTasks ?? 0) > 0
-                    ? 'bg_tasks'
-                    : null;
-              if (!holdReason) text = stripRedundantCompletionPreamble(text);
-              // Keep the substantive fragment separately: a healthy
-              // truncation_continue must concatenate the original fragment
-              // without preserving this transient progress notice.
-              const heldPartText = text;
-              // 状态提示追加进正文：进入 DB / Web / 卡片转录，非卡渠道（QQ 纯文本
-              // 等无法挂起的通道）也能看到"还没完"。
-              if (result.finalizationReason === 'truncated') {
-                text += '\n\n> ⚠️ 回复在生成中被上游截断，正在自动续写…';
-              } else if ((result.pendingBgTasks ?? 0) > 0) {
-                text += `\n\n> ⏳ ${result.pendingBgTasks} 个后台任务运行中，完成后将继续汇总`;
-              }
+              text = stripRedundantCompletionPreamble(text);
               const localImagePaths = extractLocalImImagePaths(
                 text,
                 effectiveGroup.folder,
               );
               // 新 result 到达即关闭上一轮的 usage 合并补丁窗口
               heldUsagePatchTarget = null;
-              // DB 合并用：进入卡片分支前留存已有挂起前缀（分支内会改动 parts）
-              const heldBaseForDb = heldCardBaseText();
-              const wasInHeldSeq = heldDbTurnId !== null;
-              const heldSequenceTurnId = heldDbTurnId;
               const occupiesPrimarySlot = occupiesPrimaryReplyDeliverySlot(
                 result.sourceKind,
               );
@@ -7404,44 +7060,10 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
               // The card replaces the normal IM sendMessage for the Feishu channel.
               let streamingCardHandledIM = false;
               let streamingCardAttachmentsDelivered = true;
-              let cardHeldThisResult = false;
               let pendingStreamingCardCompletion:
                 | NonNullable<typeof outputStreamingSession>
                 | undefined;
-              if (holdReason) {
-                heldCardParts.push(heldPartText);
-                cardHeldThisResult = true;
-                if (outputStreamingSession?.isActive()) {
-                  streamingCardHandledIM = true;
-                  const holdNote =
-                    holdReason === 'truncated'
-                      ? '检测到上游断流，自动续写中…'
-                      : `${result.pendingBgTasks} 个后台任务运行中，完成后将继续汇总`;
-                  outputStreamingSession.setSystemStatus(holdNote);
-                  if (
-                    outputStreamingSession instanceof StreamingCardController
-                  ) {
-                    outputStreamingSession.setHeldOpen(
-                      holdReason === 'bg_tasks'
-                        ? (result.pendingBgTasks ?? 0)
-                        : null,
-                    );
-                  }
-                }
-                logger.info(
-                  {
-                    chatJid,
-                    holdReason,
-                    pendingBgTasks: result.pendingBgTasks,
-                    heldParts: heldCardParts.length,
-                    cardActive: streamingCardHandledIM,
-                  },
-                  'Reply held open (background tasks / truncation continue)',
-                );
-              } else if (
-                occupiesPrimarySlot &&
-                outputStreamingSession?.isActive()
-              ) {
+              if (occupiesPrimarySlot && outputStreamingSession?.isActive()) {
                 pendingStreamingCardCompletion = outputStreamingSession;
                 streamingCardHandledIM = true;
               }
@@ -7505,22 +7127,20 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
                   }
                 }
 
-                if (!cardHeldThisResult) {
-                  channelStreamingSessionsByInput.delete(
-                    outputChannelScope.inputId,
-                  );
-                  streamingAccumulatedText = '';
-                  streamingAccumulatedThinking = '';
-                  // Do not pre-create the next provider card. Its deterministic
-                  // run id and lifecycle only exist after the next input receipt;
-                  // the route updater creates both together.
-                  if (outputStreamingSession === streamingSession) {
-                    if (outputCardProjection) {
-                      unregisterStreamingSession(outputCardProjection.jid);
-                    }
-                    streamingSession = undefined;
-                    activeDurableCardLifecycle = undefined;
+                channelStreamingSessionsByInput.delete(
+                  outputChannelScope.inputId,
+                );
+                streamingAccumulatedText = '';
+                streamingAccumulatedThinking = '';
+                // Do not pre-create the next provider card. Its deterministic
+                // run id and lifecycle only exist after the next input receipt;
+                // the route updater creates both together.
+                if (outputStreamingSession === streamingSession) {
+                  if (outputCardProjection) {
+                    unregisterStreamingSession(outputCardProjection.jid);
                   }
+                  streamingSession = undefined;
+                  activeDurableCardLifecycle = undefined;
                 }
               }
 
@@ -7545,35 +7165,9 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
               // Presentation turnId may rotate or be absent on a trailing host
               // lifecycle frame; never use that mutable field to fork DB identity.
               const effectiveTurnId = outputChannelScope.inputId;
-              // ── 挂起序列 DB 合并：全渠道一条回复 ──
-              // 序列内所有 turn（含收尾）共用第一个 held turn 的 turnId，
-              // storeMessageDirect 按 (chat_jid, turn_id) UPSERT 覆盖同一行，
-              // 正文为按时间序拼接的全量内容；Web 端按消息 id 原地替换气泡。
-              // 纯文本 IM 渠道无法编辑已发消息，经 imTextOverride 只发本 turn 增量。
-              let dbText = text;
-              let turnIdForDb: string | undefined;
-              if (holdReason || wasInHeldSeq) {
-                if (!heldDbTurnId) heldDbTurnId = effectiveTurnId;
-                turnIdForDb = heldDbTurnId;
-                // Intermediate held turns remain visible while running. The
-                // healthy completion replaces them with the authoritative
-                // final answer; WorkflowRunCard preserves the execution trace.
-                dbText = resolveHeldReplyDbText({
-                  heldBaseText: heldBaseForDb,
-                  text,
-                  sourceKind: result.sourceKind,
-                  holdReason,
-                  wasInHeldSequence: wasInHeldSeq,
-                });
-                if (!holdReason) heldDbTurnId = null; // healthy 收尾，序列结束
-              } else {
-                turnIdForDb = effectiveTurnId;
-              }
-              const scheduledGroupCorrelationInputId =
-                result.sourceKind === 'truncation_continue' &&
-                heldSequenceTurnId
-                  ? heldSequenceTurnId
-                  : effectiveTurnId;
+              const dbText = text;
+              const turnIdForDb = effectiveTurnId;
+              const scheduledGroupCorrelationInputId = effectiveTurnId;
               const correlatedScheduledGroupRuns = [
                 ...(scheduledGroupRunsByInput
                   .get(scheduledGroupCorrelationInputId)
@@ -7583,7 +7177,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
                 shouldFinalizeScheduledGroupPrimaryResult({
                   status: result.status,
                   providerFailure: result.providerFailure,
-                  holdReason,
+                  holdReason: null,
                   sourceKind: result.sourceKind,
                   finalizationReason: result.finalizationReason,
                   hasScheduledGroupRuns:
@@ -7626,9 +7220,6 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
                         operationKey: `main:${lastProcessed.id}:${effectiveTurnId}:${durableOutputIdentity}`,
                       }
                     : undefined,
-                  workflowRuns: holdReason
-                    ? activeWorkflowRuns
-                    : completedWorkflowRuns,
                   messageMeta: {
                     turnId: turnIdForDb,
                     sessionId: result.sessionId || activeSessionId,
@@ -7727,7 +7318,6 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
                 pendingStreamingCardCompleted = cardFinalization.acknowledged;
                 if (pendingStreamingCardCompleted) {
                   heldUsagePatchTarget = pendingStreamingCardCompletion;
-                  heldCardParts = [];
                 } else if (cardFinalization.error) {
                   logger.warn(
                     { cardError: cardFinalization.error, chatJid },
@@ -7775,10 +7365,6 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
                 scheduledGroupProjectionDurable
               ) {
                 replyDeliveryAcknowledged = true;
-              }
-              if (!holdReason) {
-                activeWorkflowRuns = [];
-                completedWorkflowRuns = [];
               }
               // For routed IM (web JID with IM source), only send the FIRST
               // substantive reply to IM. Subsequent results (e.g., SDK Task
@@ -7881,7 +7467,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
               if (
                 replyDeliveryAcknowledged &&
                 isGenuineReplyResult({
-                  holdReason,
+                  holdReason: null,
                   sourceKind: result.sourceKind,
                   finalizationReason: result.finalizationReason,
                 })
@@ -7898,14 +7484,9 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
               // Clear streaming snapshot so the next turn starts fresh.
               // Without this, saveInterruptedStreamingMessages() would merge
               // text from multiple turns into one message on shutdown.
-              // A held result is only an intermediate acknowledgement. Keep
-              // the Workflow task snapshot alive across the background wait;
-              // the authoritative completion result will clear it later.
-              if (!holdReason) {
-                clearStreamingSnapshot(chatJid);
-                streamingAccumulatedText = '';
-                streamingAccumulatedThinking = '';
-              }
+              clearStreamingSnapshot(chatJid);
+              streamingAccumulatedText = '';
+              streamingAccumulatedThinking = '';
               // Persist cursor as soon as a visible reply is emitted.
               // Long-lived runners may stay alive for idleTimeout, and waiting
               // until process exit would cause duplicate replay after restart.
@@ -7981,19 +7562,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
         // isActive() 仍为 true ⟹ 卡片从未被 complete()（result.result 非空路径会
         // 在 3594 complete 后令 isActive 转 false）。这里覆盖所有"卡片建了但没收口"的
         // 收尾场景，避免卡片永久停在「生成中」（僵尸卡片）。
-        if (heldCardParts.length > 0) {
-          // 挂起卡收口：后台任务未等到 settle 进程就结束了（空闲/容器超时、
-          // _close、出错）。DB 合并行补注记 + 卡片定稿为「已中断」+ 原因，
-          // 绝不留僵尸「后台任务运行中」卡，Web 上也不留悬空的"运行中"提示。
-          const heldNote =
-            hadError || !output || output.status === 'error'
-              ? '处理出错，后台任务可能未完成'
-              : '后台任务未全部完成，会话已结束';
-          await finalizeHeldDbMessage(heldNote, 'interrupted').catch(() => {});
-          heldCardParts = [];
-          heldCardUsage = null;
-          await streamingSession.abort(heldNote).catch(() => {});
-        } else if (providerFailoverPending) {
+        if (providerFailoverPending) {
           await streamingSession
             .abort('模型服务切换中，正在重试')
             .catch(() => {});
@@ -8038,18 +7607,6 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
         }
       }
       unregisterStreamingSession(streamingSessionJid);
-    }
-
-    // ── 无卡片场景（纯 Web / 卡片已死）的挂起序列 DB 收口 ──
-    // 上方卡片分支已处理的场景 parts 已清空，此处天然跳过。
-    if (heldCardParts.length > 0) {
-      const heldNote =
-        hadError || !output || output.status === 'error'
-          ? '处理出错，后台任务可能未完成'
-          : '后台任务未全部完成，会话已结束';
-      await finalizeHeldDbMessage(heldNote, 'interrupted').catch(() => {});
-      heldCardParts = [];
-      heldCardUsage = null;
     }
 
     if (channelTurnRuntimes.size > 0) {
@@ -8186,7 +7743,6 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     }
 
     // ── 兜底：进程异常退出导致累积文本未持久化 ──
-    // 使用 buildInterruptedReply 而非 buildOverflowPartialReply：
     // 进程被杀（SIGTERM/错误）后不会自动继续，"上下文压缩中"提示会误导用户。
     if (
       !sentReply &&
@@ -8867,15 +8423,6 @@ async function runAgent(
   }
   const sessionId = sessions[group.folder];
   const containerAgentProfile = toContainerAgentProfile(resolvedAgentProfile);
-  const ckqclawOwnerProfile = resolveCkqclawOwnerProfileForTurn({
-    group,
-    profile: resolvedAgentProfile,
-    turnId,
-    isScheduledTask: Boolean(messageTaskId),
-  });
-  const ckqclawBootstrapPending =
-    ckqclawOwnerProfile?.onboarding.state === 'pending' ||
-    ckqclawOwnerProfile?.onboarding.state === 'claimed';
   const ckqclawOwnerProfileEnabled = isCkqclawOwnerProfileRuntimeEligible({
     group,
     profile: resolvedAgentProfile,
@@ -9009,8 +8556,6 @@ async function runAgent(
           isMain: isAdminHome,
           isHome,
           isAdminHome,
-          ckqclawBootstrapPending,
-          ckqclawOwnerProfile,
           ckqclawOwnerProfileEnabled,
           agentBuilderEnabled: resolvedAgentProfile?.is_default === true,
           images,
@@ -9038,8 +8583,6 @@ async function runAgent(
           isMain: isAdminHome,
           isHome,
           isAdminHome,
-          ckqclawBootstrapPending,
-          ckqclawOwnerProfile,
           ckqclawOwnerProfileEnabled,
           agentBuilderEnabled: resolvedAgentProfile?.is_default === true,
           images,
@@ -9181,7 +8724,6 @@ async function sendMessageWithOutcome(
         session_id: options.messageMeta?.sessionId ?? null,
         source_kind: options.messageMeta?.sourceKind ?? null,
         finalization_reason: options.messageMeta?.finalizationReason ?? null,
-        workflow_runs: options.workflowRuns,
       },
       undefined,
       options.source,
@@ -9208,13 +8750,6 @@ async function sendMessage(
   options: SendMessageOptions = {},
 ): Promise<string | undefined> {
   return (await sendMessageWithOutcome(jid, text, options)).messageId;
-}
-
-export function buildOverflowPartialReply(partialText: string): string {
-  const trimmed = partialText.trimEnd();
-  return trimmed
-    ? `${trimmed}\n\n---\n*⚠️ 上下文压缩中，稍后自动继续*`
-    : '*⚠️ 上下文压缩中，稍后自动继续*';
 }
 
 /**
@@ -13844,84 +13379,9 @@ async function processAgentConversation(
   // the container drained mid-query so the finally block finalizes the card as
   // "reconnecting" instead of leaving a zombie 生成中 card.
   let agentClosed = false;
-  // ── 卡片挂起完成机制（与主路径 runContainerAgent 对齐）──
-  // Sub-Agent 路径首条回复后本就不再向 IM 发消息（isFirstReply 门控），挂起
-  // 机制在这里同时修复了"后台任务汇总只入库、飞书永远看不到"的消息丢失。
-  let heldAgentParts: string[] = [];
-  // Keep the running Workflow projection across the held acknowledgement
-  // turn. Otherwise sdk_final clears the browser's live task card while the
-  // actual SDK Workflow continues in the background.
-  let activeAgentWorkflowRuns: NonNullable<StreamEvent['workflowRun']>[] = [];
-  let completedAgentWorkflowRuns: NonNullable<StreamEvent['workflowRun']>[] =
-    [];
-  let heldAgentUsage: HeldUsageTotals | null = null;
   let pendingAgentLedgerUsageBatch: HeldUsageTotals | null = null;
   // 定稿后等待最终 usage 事件做合并补丁（Sub 路径 session 不轮换，引用即当前卡）
   let heldAgentUsagePatchPending = false;
-  // 挂起序列的 DB 合并锚点（全渠道一条回复）：序列内所有 turn 复用同一
-  // 消息 id / turnId，INSERT OR REPLACE 覆盖同一行。与卡片存在性无关。
-  let heldAgentDbMsgId: string | null = null;
-  let heldAgentDbTurnId: string | null = null;
-  const heldAgentBaseText = (): string =>
-    heldAgentParts.length > 0
-      ? heldAgentParts.join(HELD_TURN_DIVIDER) + HELD_TURN_DIVIDER
-      : '';
-  // 挂起序列异常收口：给合并行追加说明注记并广播（对齐主路径 finalizeHeldDbMessage）
-  const finalizeHeldAgentDbMessage = (
-    note: string | null,
-    reason: 'interrupted' | 'truncated',
-    warning = true,
-  ): void => {
-    if (!heldAgentDbMsgId || heldAgentParts.length === 0) return;
-    const suffix = note ? `\n\n> ${warning ? '⚠️ ' : ''}${note}` : '';
-    const joined = heldAgentParts.join(HELD_TURN_DIVIDER) + suffix;
-    const msgId = heldAgentDbMsgId;
-    const tid = heldAgentDbTurnId;
-    heldAgentDbMsgId = null;
-    heldAgentDbTurnId = null;
-    try {
-      const timestamp = new Date().toISOString();
-      storeMessageDirect(
-        msgId,
-        virtualChatJid,
-        'ckqclaw-agent',
-        ASSISTANT_NAME,
-        joined,
-        timestamp,
-        true,
-        {
-          meta: {
-            turnId: tid ?? undefined,
-            sessionId: currentAgentSessionId,
-            sourceKind: 'sdk_final',
-            finalizationReason: reason,
-          },
-        },
-      );
-      broadcastNewMessage(
-        virtualChatJid,
-        {
-          id: msgId,
-          chat_jid: virtualChatJid,
-          sender: 'ckqclaw-agent',
-          sender_name: ASSISTANT_NAME,
-          content: joined,
-          timestamp,
-          is_from_me: true,
-          turn_id: tid,
-          session_id: currentAgentSessionId,
-          source_kind: 'sdk_final',
-          finalization_reason: reason,
-        },
-        agentId,
-      );
-    } catch (err) {
-      logger.warn(
-        { err, chatJid, agentId },
-        'Failed to finalize held agent DB message',
-      );
-    }
-  };
   if (agentStreamingSession && streamingSessionJid) {
     registerStreamingSession(streamingSessionJid, agentStreamingSession);
     agentStreamingSessionsByInput.set(lastProcessed.id, {
@@ -14005,7 +13465,7 @@ async function processAgentConversation(
         agentStreamingAccText = text;
         const projection = agentStreamingSessionsByInput.get(inputTurnId);
         if (projection?.session.isActive()) {
-          projection.session.append(heldAgentBaseText() + text);
+          projection.session.append(text);
           projection.session.setSystemStatus('正在完成最终回复…');
         }
         return true;
@@ -14032,16 +13492,10 @@ async function processAgentConversation(
       activeTurnOutputs.unbind(agentAdmissionKey, inputId, coordinator);
       agentTurnOutputCoordinators.delete(inputId);
     }
-    // Proactive output has no framework-owned answer/held lane. Reset any
+    // Proactive output has no framework-owned answer lane. Reset any
     // legacy warm-process residue at the durable input completion boundary.
     agentStreamingAccText = '';
-    heldAgentParts = [];
-    heldAgentUsage = null;
     heldAgentUsagePatchPending = false;
-    heldAgentDbMsgId = null;
-    heldAgentDbTurnId = null;
-    activeAgentWorkflowRuns = [];
-    completedAgentWorkflowRuns = [];
   };
   bindAgentTurnOutputCoordinator(lastProcessed.id);
   activeRouteAdmissions.set(
@@ -14178,9 +13632,9 @@ async function processAgentConversation(
       };
     },
   );
-  // 用户在挂起期间发来新消息 → 先定稿旧卡、开新卡（注入点在 web.ts /
-  // 消息循环，经 activeHeldCardFinalizers 以 virtualChatJid 为键触达）。
-  activeHeldCardFinalizers.set(virtualChatJid, (newSourceJid, inputTurnId) => {
+  // 用户在 agent 会话进行中发来新消息 → 先收束旧卡、开新卡（注入点在 web.ts /
+  // 消息循环，经 activeAgentAdmissionHooks 以 virtualChatJid 为键触达）。
+  activeAgentAdmissionHooks.set(virtualChatJid, (newSourceJid, inputTurnId) => {
     const admittedInput = inputTurnId
       ? admittedWarmAgentInputs.get(inputTurnId)
       : undefined;
@@ -14239,20 +13693,7 @@ async function processAgentConversation(
       unregisterStreamingSession(streamingSessionJid);
     }
     void (async () => {
-      if (heldAgentParts.length > 0) {
-        const txt = heldAgentParts.join(HELD_TURN_DIVIDER);
-        heldAgentParts = [];
-        heldAgentUsage = null;
-        heldAgentDbMsgId = null;
-        heldAgentDbTurnId = null;
-        if (previousAgentSession?.isActive()) {
-          try {
-            await previousAgentSession.complete(txt);
-          } catch {
-            await previousAgentSession.abort('').catch(() => {});
-          }
-        }
-      } else if (previousAgentSession?.isActive()) {
+      if (previousAgentSession?.isActive()) {
         await previousAgentSession.abort('新消息已开始').catch(() => {});
       }
       previousAgentSession?.dispose();
@@ -14516,43 +13957,6 @@ async function processAgentConversation(
 
     // Stream events
     if (output.status === 'stream' && output.streamEvent) {
-      if (output.streamEvent.workflowRun) {
-        const run = output.streamEvent.workflowRun;
-        activeAgentWorkflowRuns = [
-          ...activeAgentWorkflowRuns.filter(
-            (item) => item.taskId !== run.taskId,
-          ),
-          run,
-        ];
-        if (run.status !== 'running') {
-          completedAgentWorkflowRuns = [
-            ...completedAgentWorkflowRuns.filter(
-              (item) => item.taskId !== run.taskId,
-            ),
-            run,
-          ];
-        }
-      }
-      // ── 截断续写触顶信号（机器标记，不广播不展示）──
-      if (
-        output.streamEvent.eventType === 'status' &&
-        output.streamEvent.statusText === TRUNCATION_EXHAUSTED_STATUS
-      ) {
-        if (heldAgentParts.length > 0) {
-          finalizeHeldAgentDbMessage(
-            '自动续写未能完成（上游连续断流），以上为已生成内容',
-            'truncated',
-          );
-          heldAgentParts = [];
-          heldAgentUsage = null;
-          if (agentStreamingSession?.isActive()) {
-            await agentStreamingSession
-              .abort('自动续写未能完成（上游连续断流），以上为已生成内容')
-              .catch(() => {});
-          }
-        }
-        return;
-      }
       // Keep live Web/Feishu cost on the same Kaboo ledger authority as the
       // persisted usage page. The later write is replay-safe on eventId.
       if (
@@ -14619,30 +14023,21 @@ async function processAgentConversation(
           agentAnswerProjection?.visibleAnswerChanged &&
           agentStreamingSession.isActive()
         ) {
-          agentStreamingSession.append(
-            heldAgentBaseText() + agentAnswerProjection.visibleAnswerText,
-          );
+          agentStreamingSession.append(agentAnswerProjection.visibleAnswerText);
         }
-        if (se.eventType === 'usage' && se.usage && heldAgentParts.length > 0) {
-          // 挂起中：累计 usage 增量，不喂卡（定稿后合并补丁）
-          heldAgentUsage = mergeHeldUsage(heldAgentUsage, se.usage);
-        } else if (
+        if (
           se.eventType === 'usage' &&
           se.usage &&
           heldAgentUsagePatchPending
         ) {
-          // 挂起回合刚定稿：合并挂起期累计 + 最终 turn 的 usage 打到卡上
+          // 回合刚定稿：迟到的 usage 补丁打到已定稿的卡上
           heldAgentUsagePatchPending = false;
-          const merged = heldAgentUsage
-            ? mergeHeldUsage(heldAgentUsage, se.usage)
-            : se.usage;
-          heldAgentUsage = null;
-          void agentStreamingSession.patchUsageNote(merged);
+          void agentStreamingSession.patchUsageNote(se.usage);
         } else if (!(se.eventType === 'text_delta' && !se.parentToolUseId)) {
           feedStreamEventToCard(
             agentStreamingSession,
             se,
-            heldAgentBaseText() + agentStreamingAccText,
+            agentStreamingAccText,
             buildWebTraceUrl(
               effectiveGroup.folder,
               se.turnId || lastProcessed.id,
@@ -14662,24 +14057,6 @@ async function processAgentConversation(
         );
         agentStreamInterrupted = true;
         agentStreamSteered ||= steered;
-        // 引导是正常换向：干净收束已有内容；显式停止才显示中性停止状态。
-        if (heldAgentParts.length > 0) {
-          const heldText = heldAgentParts.join(HELD_TURN_DIVIDER);
-          finalizeHeldAgentDbMessage(
-            steered ? null : '已停止',
-            'interrupted',
-            false,
-          );
-          heldAgentParts = [];
-          heldAgentUsage = null;
-          if (agentStreamingSession?.isActive()) {
-            if (steered) {
-              await agentStreamingSession.complete(heldText).catch(() => {});
-            } else {
-              await agentStreamingSession.abort('已停止').catch(() => {});
-            }
-          }
-        }
         if (
           publishesFrameworkAnswer(interactionMode) &&
           !isCursorCommitted(output.inputTurnId ?? activeAgentInputTurnId)
@@ -14935,7 +14312,6 @@ async function processAgentConversation(
         ipcReceiptCount: output.ipcReceipts?.length,
         inputTurnCompleted: output.inputTurnCompleted,
         finalizationReason: output.finalizationReason,
-        pendingBgTasks: output.pendingBgTasks,
         primaryAlreadyProjected:
           agentGenuineReplyDeliveredByInput.get(resultInputTurnId) === true,
         anyReplyProjected:
@@ -14997,52 +14373,8 @@ async function processAgentConversation(
           ? output.result
           : JSON.stringify(output.result);
       let text = stripAgentInternalTags(raw);
-      if (
-        output.sourceKind === 'overflow_partial' ||
-        output.sourceKind === 'compact_partial'
-      ) {
-        // Spawn agents are fire-and-forget: context compression is an internal
-        // detail. Don't append the "上下文压缩中" suffix — it confuses users
-        // seeing the Feishu card suddenly change to a warning.
-        if (agent.kind !== 'spawn') {
-          text = buildOverflowPartialReply(text);
-        }
-      }
-      // Suppress system-maintenance noise from auto_continue outputs (issue #275).
-      // Short acknowledgements ("OK", "已更新 CLAUDE.md") that leak from the
-      // compaction pipeline are dropped; substantive continuations pass through.
-      if (
-        output.sourceKind === 'auto_continue' &&
-        isSystemMaintenanceNoise(text)
-      ) {
-        logger.info(
-          { chatJid, agentId, textLen: text.length },
-          'auto_continue output suppressed (system maintenance noise)',
-        );
-        return;
-      }
       if (text) {
-        // ── 挂起判定（消息级，与卡片存在性解耦，对齐主路径）──
-        const isPartialOutput =
-          output.sourceKind === 'compact_partial' ||
-          output.sourceKind === 'overflow_partial';
-        const holdReason: 'bg_tasks' | 'truncated' | null =
-          output.finalizationReason === 'truncated' || isPartialOutput
-            ? 'truncated'
-            : (output.pendingBgTasks ?? 0) > 0
-              ? 'bg_tasks'
-              : null;
-        if (!holdReason) text = stripRedundantCompletionPreamble(text);
-        // Retain only business content in the held accumulator. The visible
-        // checkpoint may carry a progress notice, but the completed
-        // truncation continuation must not include that obsolete notice.
-        const heldPartText = text;
-        // 状态提示追加进正文（DB / Web / 卡片转录一致可见）
-        if (output.finalizationReason === 'truncated') {
-          text += '\n\n> ⚠️ 回复在生成中被上游截断，正在自动续写…';
-        } else if ((output.pendingBgTasks ?? 0) > 0) {
-          text += `\n\n> ⏳ ${output.pendingBgTasks} 个后台任务运行中，完成后将继续汇总`;
-        }
+        text = stripRedundantCompletionPreamble(text);
         const occupiesPrimarySlot = occupiesPrimaryReplyDeliverySlot(
           output.sourceKind,
         );
@@ -15050,25 +14382,9 @@ async function processAgentConversation(
         const isFirstReply = !(
           agentReplySentByInput.get(outputAgentScope.inputId) ?? false
         );
-        // ── 挂起序列 DB 合并：全渠道一条回复 ──
-        // 序列内所有 turn 复用第一个 held turn 的消息 id 与 turnId，
-        // INSERT OR REPLACE 覆盖同一行，正文为按时间序拼接的全量内容；
-        // Web 端按消息 id 原地替换气泡。
-        const heldBaseForDb = heldAgentBaseText();
-        const inHeldSeq = holdReason !== null || heldAgentDbMsgId !== null;
-        const msgId = heldAgentDbMsgId ?? crypto.randomUUID();
-        // Keep progress visible while held, then replace it with the final
-        // answer so process narration never becomes part of the conclusion.
-        const dbText = resolveHeldReplyDbText({
-          heldBaseText: heldBaseForDb,
-          text,
-          sourceKind: output.sourceKind,
-          holdReason,
-          wasInHeldSequence: heldAgentDbTurnId !== null,
-        });
-        const dbTurnId = inHeldSeq
-          ? heldAgentDbTurnId || outputAgentScope.inputId
-          : outputAgentScope.inputId;
+        const msgId = crypto.randomUUID();
+        const dbText = text;
+        const dbTurnId = outputAgentScope.inputId;
         lastAgentReplyMsgId = msgId;
         lastAgentReplyText = dbText;
         const timestamp = new Date().toISOString();
@@ -15090,13 +14406,6 @@ async function processAgentConversation(
             },
           },
         );
-        if (holdReason) {
-          heldAgentDbMsgId = persistedMsgId;
-          heldAgentDbTurnId = dbTurnId;
-        } else {
-          heldAgentDbMsgId = null;
-          heldAgentDbTurnId = null;
-        }
         broadcastNewMessage(
           virtualChatJid,
           {
@@ -15111,21 +14420,14 @@ async function processAgentConversation(
             session_id: output.sessionId || currentAgentSessionId,
             source_kind: output.sourceKind || 'sdk_final',
             finalization_reason: output.finalizationReason || 'completed',
-            workflow_runs: holdReason
-              ? activeAgentWorkflowRuns
-              : completedAgentWorkflowRuns,
           },
           agentId,
         );
         // Persistence/Web projection is independent from physical IM ACK.
-        // A held Feishu card deliberately has no final delivery ACK yet, but
-        // its canonical DB/Web checkpoint must still block a trailing
+        // A provider Feishu card deliberately has no final delivery ACK yet,
+        // but its canonical DB/Web checkpoint must still block a trailing
         // session-only success from resurrecting the same SDK candidate.
         agentAnyReplyProjectedByInput.set(outputAgentScope.inputId, true);
-        if (!holdReason) {
-          activeAgentWorkflowRuns = [];
-          completedAgentWorkflowRuns = [];
-        }
 
         // Async LLM title upgrade after the first substantive reply.
         if (
@@ -15151,41 +14453,7 @@ async function processAgentConversation(
         let pendingAgentCardCompletion:
           | NonNullable<typeof outputAgentStreamingSession>
           | undefined;
-        if (holdReason) {
-          // 挂起：不定稿，正文进 heldAgentParts，有卡片则状态行提示，后续
-          // turn 的流式增量继续追加到同一张卡（Sub 路径 session 本就不轮换）。
-          heldAgentParts.push(heldPartText);
-          agentStreamingAccText = '';
-          if (outputAgentStreamingSession?.isActive()) {
-            streamingCardHandledIM = true;
-            const holdNote =
-              holdReason === 'truncated'
-                ? '检测到上游断流，自动续写中…'
-                : `${output.pendingBgTasks} 个后台任务运行中，完成后将继续汇总`;
-            outputAgentStreamingSession.setSystemStatus(holdNote);
-            if (
-              outputAgentStreamingSession instanceof StreamingCardController
-            ) {
-              outputAgentStreamingSession.setHeldOpen(
-                holdReason === 'bg_tasks' ? (output.pendingBgTasks ?? 0) : null,
-              );
-            }
-          }
-          logger.info(
-            {
-              chatJid,
-              agentId,
-              holdReason,
-              pendingBgTasks: output.pendingBgTasks,
-              heldParts: heldAgentParts.length,
-              cardActive: streamingCardHandledIM,
-            },
-            'Agent reply held open (background tasks / truncation continue)',
-          );
-        } else if (
-          occupiesPrimarySlot &&
-          outputAgentStreamingSession?.isActive()
-        ) {
+        if (occupiesPrimarySlot && outputAgentStreamingSession?.isActive()) {
           // Provisional only: DB/Web persistence above is durable, but the
           // provider card must remain active until every local attachment has
           // a physical, exact-turn Outbox ACK.
@@ -15252,16 +14520,13 @@ async function processAgentConversation(
           );
           const cardCompleted = cardFinalization.acknowledged;
           if (cardCompleted) {
-            // 定稿后等最终 usage 事件做合并补丁（挂起期累计 + 最终 turn）
+            // 定稿后等最终 usage 事件做合并补丁
             heldAgentUsagePatchPending = true;
-            heldAgentParts = [];
           } else if (cardFinalization.error) {
             logger.warn(
               { err: cardFinalization.error, chatJid, agentId },
               'Agent streaming card final ACK failed, falling back to exact static delivery',
             );
-            heldAgentParts = [];
-            heldAgentUsage = null;
           } else {
             logger.error(
               { chatJid, agentId, inputTurnId: outputAgentScope.inputId },
@@ -15389,9 +14654,7 @@ async function processAgentConversation(
           (!outputAgentReplySourceJid ||
             agentPhysicalDeliveryAckByInput.get(outputAgentScope.inputId) ===
               true ||
-            (streamingCardHandledIM &&
-              !holdReason &&
-              agentCardAttachmentsDelivered) ||
+            (streamingCardHandledIM && agentCardAttachmentsDelivered) ||
             agentStaticImDelivered) &&
           agentMirrorDeliveryAcknowledged;
         if (agentReplyDeliveryAcknowledged && occupiesPrimarySlot) {
@@ -15402,9 +14665,8 @@ async function processAgentConversation(
             agentPhysicalDeliveryAckByInput.set(inputId, true);
             agentReplySentByInput.set(inputId, true);
             if (
-              !holdReason &&
               isGenuineReplyResult({
-                holdReason,
+                holdReason: null,
                 sourceKind: output.sourceKind,
                 finalizationReason: output.finalizationReason,
               })
@@ -15428,34 +14690,15 @@ async function processAgentConversation(
         // Per-turn snapshot cleanup — mirror of the main path (clearStreamingSnapshot
         // after each substantive reply). Conversation agents stay warm for
         // IDLE_TIMEOUT; without this, refreshing the page during the warm window
-        // restores a zombie「生成中」spinner from the stale agent snapshot. Skip
-        // partials (intermediate compression outputs, not the final reply).
-        if (
-          !holdReason &&
-          output.sourceKind !== 'overflow_partial' &&
-          output.sourceKind !== 'compact_partial'
-        ) {
-          clearStreamingSnapshot(virtualChatJid);
-        }
+        // restores a zombie「生成中」spinner from the stale agent snapshot.
+        clearStreamingSnapshot(virtualChatJid);
 
         // Spawn agents are fire-and-forget: close after first reply to free process slot.
         // Conversation agents stay warm and are reclaimed by IDLE_TIMEOUT — closing them
         // after every reply would cold-start the runner each turn (seconds in container mode).
         // A post-reply tool call that hangs is handled runner-side by the post-result
         // interrupt fallback, not by tearing down a warm conversation runner here.
-        // Skip for overflow_partial/compact_partial — those are intermediate context
-        // compression outputs, not the final result; closing now would kill the agent
-        // before it finishes the actual task.
-        if (
-          agent.kind === 'spawn' &&
-          text &&
-          output.sourceKind !== 'overflow_partial' &&
-          output.sourceKind !== 'compact_partial' &&
-          // 有未 settle 的后台任务 / 截断待续写时不能关流——关流会连坐杀掉
-          // 还在跑的任务（runner 侧同理保持 query 存活）。等最终 result 再关。
-          (output.pendingBgTasks ?? 0) === 0 &&
-          output.finalizationReason !== 'truncated'
-        ) {
+        if (agent.kind === 'spawn' && text) {
           logger.info(
             { agentId, chatJid },
             'Spawn agent replied, sending close signal',
@@ -15521,14 +14764,6 @@ async function processAgentConversation(
       });
     };
 
-    const ckqclawOwnerProfile = resolveCkqclawOwnerProfileForTurn({
-      group: effectiveGroup,
-      profile: agentProfile,
-      turnId: lastProcessed.id,
-      isScheduledTask: Boolean(lastProcessed.task_id),
-      runtimeAgentId: agentId,
-      runtimeAgentKind: agent.kind,
-    });
     const ckqclawOwnerProfileEnabled = isCkqclawOwnerProfileRuntimeEligible({
       group: effectiveGroup,
       profile: agentProfile,
@@ -15552,13 +14787,8 @@ async function processAgentConversation(
       isAdminHome,
       agentBuilderEnabled:
         agent.kind === 'conversation' && agentProfile?.is_default === true,
-      ckqclawBootstrapPending:
-        ckqclawOwnerProfile?.onboarding.state === 'pending' ||
-        ckqclawOwnerProfile?.onboarding.state === 'claimed',
-      ckqclawOwnerProfile,
       ckqclawOwnerProfileEnabled,
       agentId,
-      agentName: agent.name,
       images: imagesForAgent,
       agentProfile: toContainerAgentProfile(agentProfile),
     };
@@ -15754,7 +14984,7 @@ async function processAgentConversation(
     const wasSteered = wasInterrupted && agentStreamSteered;
 
     // ── Streaming card cleanup ──
-    activeHeldCardFinalizers.delete(virtualChatJid);
+    activeAgentAdmissionHooks.delete(virtualChatJid);
     activeRouteAdmissions.delete(agentAdmissionKey);
     for (const [inputTurnId, coordinator] of agentTurnOutputCoordinators) {
       activeTurnOutputs.unbind(agentAdmissionKey, inputTurnId, coordinator);
@@ -15764,17 +14994,7 @@ async function processAgentConversation(
         // Symmetric with the main session's five-way finalize (index.ts ~3804):
         // every "card built but never completed" path must finalize so the card
         // can't get stuck at 生成中 (zombie card).
-        if (heldAgentParts.length > 0) {
-          // 挂起收口：后台任务未等到 settle 进程就结束了。DB 合并行补注记 +
-          // 卡片定稿「已中断」+ 原因，不留僵尸「后台任务运行中」卡。
-          const heldNote = hadError
-            ? '处理出错，后台任务可能未完成'
-            : '后台任务未全部完成，会话已结束';
-          finalizeHeldAgentDbMessage(heldNote, 'interrupted');
-          heldAgentParts = [];
-          heldAgentUsage = null;
-          await agentStreamingSession.abort(heldNote).catch(() => {});
-        } else if (agentProviderFailoverPending) {
+        if (agentProviderFailoverPending) {
           await agentStreamingSession
             .abort('模型服务切换中，正在重试')
             .catch(() => {});
@@ -15815,19 +15035,6 @@ async function processAgentConversation(
       if (streamingSessionJid) {
         unregisterStreamingSession(streamingSessionJid);
       }
-    }
-
-    // ── 无卡片场景（纯 Web agent 会话）的挂起序列 DB 收口 ──
-    // 上方卡片分支已处理的场景 parts 已清空，此处天然跳过。
-    if (heldAgentParts.length > 0) {
-      finalizeHeldAgentDbMessage(
-        hadError
-          ? '处理出错，后台任务可能未完成'
-          : '后台任务未全部完成，会话已结束',
-        'interrupted',
-      );
-      heldAgentParts = [];
-      heldAgentUsage = null;
     }
 
     if (agentChannelTurnRuntimes.size > 0) {
@@ -17820,7 +17027,7 @@ function buildOnAgentMessage(): (baseChatJid: string, agentId: string) => void {
             imagesForAgent,
             (receipt) => {
               // 用户消息注入成功 → 挂起中的 agent 卡先定稿轮换
-              activeHeldCardFinalizers.get(virtualChatJid)?.(
+              activeAgentAdmissionHooks.get(virtualChatJid)?.(
                 lastAgentSourceJid,
                 receipt?.deliveryId,
               );
@@ -18151,7 +17358,6 @@ async function reloadChannelAccountById(accountId: string): Promise<boolean> {
   const common = {
     accountId: account.id,
     scopeIncomingJids: !account.is_legacy_default,
-    ignoreMessagesBefore: Date.now(),
     onCommand: handleCommand,
     resolveGroupFolder: (jid: string) => resolveEffectiveFolder(jid),
     resolveEffectiveChatJid: buildResolveEffectiveChatJid(),
@@ -18240,9 +17446,7 @@ async function reloadChannelAccountById(accountId: string): Promise<boolean> {
           ...common,
           // A durable cursor is a replay boundary. Do not discard replayed
           // messages after a crash merely because they predate this process.
-          ignoreMessagesBefore: secret.getUpdatesBuf
-            ? undefined
-            : common.ignoreMessagesBefore,
+          ignoreMessagesBefore: secret.getUpdatesBuf ? undefined : Date.now(),
           isChatAuthorized: buildIsChatAuthorized(
             account.owner_user_id,
             account.id,
@@ -18706,7 +17910,6 @@ async function main(): Promise<void> {
       return false;
     }
     const homeFolder = homeGroup.folder;
-    const ignoreMessagesBefore = Date.now();
     const onNewChat = buildOnNewChat(userId, homeFolder);
 
     // Old per-provider config routes are a compatibility facade over the
@@ -18746,7 +17949,6 @@ async function main(): Promise<void> {
           config,
           onNewChat,
           {
-            ignoreMessagesBefore,
             onCommand: handleCommand,
             resolveGroupFolder: (chatJid: string) =>
               resolveEffectiveFolder(chatJid),
@@ -19014,13 +18216,16 @@ async function main(): Promise<void> {
         const agentRuntimeKey = inputChatJid?.includes('#agent:')
           ? inputChatJid
           : `web:${folder}#agent:${runtimeAgentId}`;
-        activeHeldCardFinalizers.get(agentRuntimeKey)?.(sourceJid, inputTurnId);
+        activeAgentAdmissionHooks.get(agentRuntimeKey)?.(
+          sourceJid,
+          inputTurnId,
+        );
         return;
       }
       invokeActiveRouteUpdater(folder, sourceJid, inputTurnId, inputCursor);
     },
     finalizeHeldCard: (key: string) => {
-      activeHeldCardFinalizers.get(key)?.();
+      activeAgentAdmissionHooks.get(key)?.();
     },
     applyAutoIsolateContext: (userId: string, enable: boolean) =>
       applyAutoIsolateContext(userId, enable),

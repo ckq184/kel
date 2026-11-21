@@ -194,7 +194,6 @@ async function connect(
   expect(
     await connection.connect({
       onReady: vi.fn(),
-      ignoreMessagesBefore: Date.now() + 60_000,
       resolveEffectiveChatJid: (jid) => ({
         effectiveJid: 'web:durable-feishu-test',
         agentId: null,

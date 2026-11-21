@@ -111,7 +111,6 @@ import path from 'node:path';
 // SSRF helpers 抽到 ../url-safety.ts；本文件 re-export isPrivateHostname 以保留旧导入路径。
 import { broadcastNewMessage } from '../web.js';
 import { getStreamingSession } from '../feishu-streaming-card.js';
-import { attachSessionWorkflowRuns } from '../session-workflows.js';
 import {
   buildPinnedGitEnvironment,
   startPinnedHttpsProxy,
@@ -2344,18 +2343,12 @@ groupRoutes.get('/:jid/messages', authMiddleware, async (c) => {
 
     const virtualJid = `${jid}#agent:${agentIdParam}`;
     if (after) {
-      const messages = attachSessionWorkflowRuns(
-        getMessagesAfter(virtualJid, after, limit),
-        { groupFolder: group.folder, agentId: agentIdParam },
-      );
+      const messages = getMessagesAfter(virtualJid, after, limit);
       return c.json({ messages });
     }
     const rows = getMessagesPage(virtualJid, before, limit + 1);
     const hasMore = rows.length > limit;
-    const messages = attachSessionWorkflowRuns(
-      hasMore ? rows.slice(0, limit) : rows,
-      { groupFolder: group.folder, agentId: agentIdParam },
-    );
+    const messages = hasMore ? rows.slice(0, limit) : rows;
     return c.json({ messages, hasMore });
   }
 
@@ -2393,35 +2386,23 @@ groupRoutes.get('/:jid/messages', authMiddleware, async (c) => {
   if (queryJids.length === 1) {
     // 单 JID 走原路径
     if (after) {
-      const messages = attachSessionWorkflowRuns(
-        getMessagesAfter(jid, after, limit),
-        { groupFolder: group.folder, agentId: null },
-      );
+      const messages = getMessagesAfter(jid, after, limit);
       return c.json({ messages });
     }
     const rows = getMessagesPage(jid, before, limit + 1);
     const hasMore = rows.length > limit;
-    const messages = attachSessionWorkflowRuns(
-      hasMore ? rows.slice(0, limit) : rows,
-      { groupFolder: group.folder, agentId: null },
-    );
+    const messages = hasMore ? rows.slice(0, limit) : rows;
     return c.json({ messages, hasMore });
   }
 
   // 多 JID 合并查询
   if (after) {
-    const messages = attachSessionWorkflowRuns(
-      getMessagesAfterMulti(queryJids, after, limit),
-      { groupFolder: group.folder, agentId: null },
-    );
+    const messages = getMessagesAfterMulti(queryJids, after, limit);
     return c.json({ messages });
   }
   const rows = getMessagesPageMulti(queryJids, before, limit + 1);
   const hasMore = rows.length > limit;
-  const messages = attachSessionWorkflowRuns(
-    hasMore ? rows.slice(0, limit) : rows,
-    { groupFolder: group.folder, agentId: null },
-  );
+  const messages = hasMore ? rows.slice(0, limit) : rows;
   return c.json({ messages, hasMore });
 });
 

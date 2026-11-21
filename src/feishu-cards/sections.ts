@@ -34,8 +34,6 @@ export const CARD_ELEMENT_IDS = {
 
   // Rich streaming slots (Phase C)
   STATUS_BANNER: 'status_banner',
-  PROGRESS_PANEL: 'progress_panel',
-  PROGRESS_CONTENT: 'progress_md',
   TASK_PANEL: 'task_live',
   TASK_CONTENT: 'task_live_md',
   TOOLS_PANEL: 'tools_live',
@@ -341,10 +339,8 @@ export type StreamingPhase =
   | 'thinking'
   | 'working'
   | 'tooling'
-  | 'hook'
   | 'streaming'
   | 'waiting'
-  | 'waiting_bg'
   | 'completed'
   | 'aborted'
   | 'error';
@@ -370,16 +366,10 @@ export function buildStatusBannerText(input: {
       return `${tag('执行中', 'turquoise')} ⚙️${detailPart}${elapsed}`;
     case 'tooling':
       return `${tag('调用工具', 'turquoise')} 🛠${detailPart}${elapsed}`;
-    case 'hook':
-      return `${tag('运行 Hook', 'indigo')} 🔗${detailPart}${elapsed}`;
     case 'streaming':
       return `${tag('生成回复', 'violet')} ✨${detailPart}${elapsed}`;
     case 'waiting':
       return `${tag('等待输入', 'grey')} ⏸${detailPart}`;
-    case 'waiting_bg':
-      // 本 turn 回复已送达，但后台任务（异步 Agent / 截断自动续写）仍在跑，
-      // 卡片保持打开等待追加——不能显示成绿色「已完成」误导用户。
-      return `${tag('后台任务运行中', 'violet')} ⏳${detailPart}${elapsed}`;
     case 'completed':
       return `${tag('已完成', 'green')} ✅${detailPart}${elapsed}`;
     case 'aborted':
@@ -390,43 +380,6 @@ export function buildStatusBannerText(input: {
     default:
       return `${tag('准备中', 'grey')} ⏳`;
   }
-}
-
-export interface TodoItemView {
-  content: string;
-  status: 'pending' | 'in_progress' | 'completed';
-}
-
-/** TodoWrite list with pseudo progress bar. */
-export function buildProgressListText(todos: TodoItemView[]): string {
-  if (todos.length === 0) return "<font color='grey'>暂无任务计划</font>";
-  const total = todos.length;
-  const done = todos.filter((t) => t.status === 'completed').length;
-  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-  const barFilled = Math.max(0, Math.min(10, Math.round((done / total) * 10)));
-  const bar = '▓'.repeat(barFilled) + '░'.repeat(10 - barFilled);
-  const header = `**进度 ${done}/${total}** <font color='grey'>${bar} ${pct}%</font>`;
-  const MAX_VISIBLE = 12;
-  const items = todos.slice(0, MAX_VISIBLE).map((t) => {
-    const icon =
-      t.status === 'completed'
-        ? '✅'
-        : t.status === 'in_progress'
-          ? '🔄'
-          : '⏳';
-    const styled =
-      t.status === 'in_progress'
-        ? `**${t.content}** <font color='blue'>_(进行中)_</font>`
-        : t.status === 'completed'
-          ? `<font color='grey'>${t.content}</font>`
-          : t.content;
-    return `${icon} ${styled}`;
-  });
-  const extra =
-    total > MAX_VISIBLE
-      ? `\n<font color='grey'>… 还有 ${total - MAX_VISIBLE} 项未展开</font>`
-      : '';
-  return `${header}\n\n${items.join('\n')}${extra}`;
 }
 
 export interface ToolCallView {
@@ -590,7 +543,6 @@ function truncate(text: string, limit: number): string {
 export interface StreamingPanelsInit {
   /** Initial markdown content for each slot — empty strings get placeholder text. */
   statusBanner?: string;
-  progressContent?: string;
   taskContent?: string;
   toolsContent?: string;
   thinkingContent?: string;
@@ -629,14 +581,6 @@ export function buildStreamingPanels(init: StreamingPanelsInit): El[] {
       element_id: CARD_ELEMENT_IDS.ASK_CONTENT,
       content: init.askContent ?? '',
     },
-    buildRuntimePanel({
-      elementId: CARD_ELEMENT_IDS.PROGRESS_PANEL,
-      contentElementId: CARD_ELEMENT_IDS.PROGRESS_CONTENT,
-      title: '**📋 任务进度**',
-      expanded: init.expandProgress ?? false,
-      content:
-        init.progressContent ?? "<font color='grey'>等待任务规划…</font>",
-    }),
     buildRuntimePanel({
       elementId: CARD_ELEMENT_IDS.TASK_PANEL,
       contentElementId: CARD_ELEMENT_IDS.TASK_CONTENT,

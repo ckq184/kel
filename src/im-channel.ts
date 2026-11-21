@@ -287,7 +287,6 @@ export function createFeishuChannel(config: FeishuConnectionConfig): IMChannel {
       const connected = await inner.connect({
         onReady: opts.onReady,
         onNewChat: opts.onNewChat,
-        ignoreMessagesBefore: opts.ignoreMessagesBefore,
         onCommand: opts.onCommand,
         resolveGroupFolder: opts.resolveGroupFolder,
         resolveEffectiveChatJid: opts.resolveEffectiveChatJid,
