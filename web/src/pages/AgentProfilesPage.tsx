@@ -59,17 +59,14 @@ import { useAgentProfilesStore } from '../stores/agent-profiles';
 import { useAuthStore } from '../stores/auth';
 import { useSkillsStore } from '../stores/skills';
 import { useMcpServersStore } from '../stores/mcp-servers';
-import { type AgentEffortLevel, type AgentProfilePromptMode } from '../types';
+import { type AgentEffortLevel } from '../types';
 import { getCustomAgentProfiles } from '../utils/agent-product';
 import { extractErrorMessage } from '../utils/error';
-import {
-  buildAgentPromptPatch,
-  type AgentPromptParts,
-  type AgentPromptSection,
-} from '../utils/agent-prompts';
+import { buildAgentPromptPatch } from '../utils/agent-prompts';
 import { useUnsavedNavigationGuard } from '../hooks/useUnsavedNavigationGuard';
 import { useAgentRuntimePolicy } from '../hooks/useAgentRuntimePolicy';
 import { useHostSkillAutosave } from '../hooks/useHostSkillAutosave';
+import { useAgentProfileForm } from '../hooks/useAgentProfileForm';
 import {
   skillPolicySummary,
   type RuntimePolicyMode,
@@ -125,21 +122,6 @@ export function AgentProfilesPage() {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draftMode, setDraftMode] = useState(false);
-  const [name, setName] = useState('');
-  const [identityPrompt, setIdentityPrompt] = useState('');
-  const [soulPrompt, setSoulPrompt] = useState('');
-  const [agentsPrompt, setAgentsPrompt] = useState('');
-  const [toolsPrompt, setToolsPrompt] = useState('');
-  const [promptMode, setPromptMode] =
-    useState<AgentProfilePromptMode>('append');
-  const [modelConfigId, setModelConfigId] = useState('inherit');
-  const [assistantSection, setAssistantSection] =
-    useState<AgentPromptSection>('identity');
-  const [avatarEmoji, setAvatarEmoji] = useState<string | null>(null);
-  const [avatarColor, setAvatarColor] = useState<string | null>(null);
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  const [uploadingAvatar, setUploadingAvatar] = useState(false);
-  const [avatarStyleOpen, setAvatarStyleOpen] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -156,21 +138,6 @@ export function AgentProfilesPage() {
   const [deleteTargetId, setDeleteTargetId] = useState('');
   const [createPanelOpen, setCreatePanelOpen] = useState(false);
   const [draftStep, setDraftStep] = useState(1);
-  const currentPrompts = useMemo<AgentPromptParts>(
-    () => ({
-      identity_prompt: identityPrompt,
-      soul_prompt: soulPrompt,
-      agents_prompt: agentsPrompt,
-      tools_prompt: toolsPrompt,
-    }),
-    [agentsPrompt, identityPrompt, soulPrompt, toolsPrompt],
-  );
-  const setCurrentPrompts = (next: AgentPromptParts) => {
-    setIdentityPrompt(next.identity_prompt);
-    setSoulPrompt(next.soul_prompt);
-    setAgentsPrompt(next.agents_prompt);
-    setToolsPrompt(next.tools_prompt);
-  };
   const isAdmin = useAuthStore((state) => state.user?.role === 'admin');
   const mainAppearance = useAuthStore((state) => state.appearance);
 
@@ -298,40 +265,40 @@ export function AgentProfilesPage() {
     return () => cancelAnimationFrame(frame);
   }, [location.hash, selected]);
 
-  useEffect(() => {
-    if (draftMode) return;
-    if (!selected) {
-      setName('');
-      setCurrentPrompts({
-        identity_prompt: '',
-        soul_prompt: '',
-        agents_prompt: '',
-        tools_prompt: '',
-      });
-      setPromptMode('append');
-      setModelConfigId('inherit');
-      setAvatarEmoji(null);
-      setAvatarColor(null);
-      setAvatarUrl(null);
-      setAvatarStyleOpen(false);
-      applyRuntimePolicyToForm(DEFAULT_RUNTIME_POLICY);
-      return;
-    }
-    setName(selected.name);
-    setCurrentPrompts({
-      identity_prompt: selected.identity_prompt,
-      soul_prompt: selected.soul_prompt,
-      agents_prompt: selected.agents_prompt,
-      tools_prompt: selected.tools_prompt,
-    });
-    setPromptMode(selected.prompt_mode);
-    setModelConfigId(selected.model_config_id ?? 'inherit');
-    setAvatarEmoji(selected.avatar_emoji);
-    setAvatarColor(selected.avatar_color);
-    setAvatarUrl(selected.avatar_url);
-    setAvatarStyleOpen(!!(selected.avatar_emoji || selected.avatar_color));
-    applyRuntimePolicyToForm(selected.runtime_policy);
-  }, [draftMode, selected?.id]);
+  // ISSUE-12 波 5 单元 5.4：表单状态簇（name/四段提示词/promptMode/
+  // modelConfigId/assistantSection/头像四态）、currentPrompts、回填效应与
+  // dirty/draftDirty 已迁 ../hooks/useAgentProfileForm.ts（原文搬运；
+  // 回填效应依赖数组 [draftMode, selected?.id] 刻意不补全，逐字保留），
+  // 同名解构零调用点改动。
+  const {
+    name,
+    setName,
+    promptMode,
+    setPromptMode,
+    modelConfigId,
+    setModelConfigId,
+    assistantSection,
+    setAssistantSection,
+    avatarEmoji,
+    setAvatarEmoji,
+    avatarColor,
+    setAvatarColor,
+    avatarUrl,
+    setAvatarUrl,
+    uploadingAvatar,
+    setUploadingAvatar,
+    avatarStyleOpen,
+    setAvatarStyleOpen,
+    currentPrompts,
+    setCurrentPrompts,
+    dirty,
+    draftDirty,
+  } = useAgentProfileForm({
+    selected,
+    draftMode,
+    applyRuntimePolicyToForm,
+    currentRuntimePolicy,
+  });
 
   useEffect(() => {
     if (draftMode || !selected) return;
@@ -340,33 +307,6 @@ export function AgentProfilesPage() {
     });
   }, [draftMode, loadProfileGovernance, selected?.id]);
 
-  const dirty =
-    !draftMode &&
-    !!selected &&
-    (name.trim() !== selected.name ||
-      identityPrompt !== selected.identity_prompt ||
-      soulPrompt !== selected.soul_prompt ||
-      agentsPrompt !== selected.agents_prompt ||
-      toolsPrompt !== selected.tools_prompt ||
-      promptMode !== selected.prompt_mode ||
-      (modelConfigId === 'inherit' ? null : modelConfigId) !==
-        selected.model_config_id ||
-      avatarEmoji !== selected.avatar_emoji ||
-      avatarColor !== selected.avatar_color ||
-      !sameRuntimePolicy(currentRuntimePolicy, selected.runtime_policy));
-
-  const draftDirty =
-    draftMode &&
-    (!!name.trim() ||
-      !!identityPrompt.trim() ||
-      !!soulPrompt.trim() ||
-      !!agentsPrompt.trim() ||
-      !!toolsPrompt.trim() ||
-      promptMode !== 'append' ||
-      modelConfigId !== 'inherit' ||
-      avatarEmoji !== null ||
-      avatarColor !== null ||
-      !sameRuntimePolicy(currentRuntimePolicy, DEFAULT_RUNTIME_POLICY));
   const createDirty =
     createPanelOpen && !draftMode && createDescription.trim().length > 0;
   const editorUnsavedChanges = dirty || draftDirty;
