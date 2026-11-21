@@ -116,6 +116,7 @@ import {
   migrateUsageHistory,
   migrateUsageEventLedger,
 } from './db-schema/usage-tables.js';
+import { ensureTaskTableColumns } from './db-schema/task-tables.js';
 import type { DbMigrationContext } from './db-schema/context.js';
 
 let db: InstanceType<typeof Database>;
@@ -580,96 +581,7 @@ export function initDatabase(): void {
 
   ensureUsageTables(ctx);
 
-  // Lightweight migrations for existing DBs
-  ensureColumn('users', 'permissions', "TEXT NOT NULL DEFAULT '[]'");
-  ensureColumn('users', 'must_change_password', 'INTEGER NOT NULL DEFAULT 0');
-  ensureColumn('users', 'disable_reason', 'TEXT');
-  ensureColumn('users', 'notes', 'TEXT');
-  ensureColumn('users', 'deleted_at', 'TEXT');
-  ensureColumn('invite_codes', 'permission_template', 'TEXT');
-  ensureColumn('invite_codes', 'permissions', "TEXT NOT NULL DEFAULT '[]'");
-  ensureColumn('users', 'avatar_emoji', 'TEXT');
-  ensureColumn('users', 'avatar_color', 'TEXT');
-  ensureColumn(
-    'registered_groups',
-    'execution_mode',
-    "TEXT DEFAULT 'container'",
-  );
-  ensureColumn('registered_groups', 'custom_cwd', 'TEXT');
-  ensureColumn('registered_groups', 'init_source_path', 'TEXT');
-  ensureColumn('registered_groups', 'init_git_url', 'TEXT');
-  ensureColumn('messages', 'attachments', 'TEXT');
-  ensureColumn('messages', 'source_jid', 'TEXT');
-  ensureColumn('registered_groups', 'created_by', 'TEXT');
-  ensureColumn('registered_groups', 'is_home', 'INTEGER DEFAULT 0');
-  // v56 -> v57: cache provider chat avatars so binding lists do not need an
-  // N+1 provider lookup on every open. Provider sync refreshes this URL.
-  ensureColumn('registered_groups', 'avatar_url', 'TEXT');
-  ensureColumn('users', 'avatar_url', 'TEXT');
-  ensureColumn(
-    'users',
-    'default_require_mention',
-    'INTEGER NOT NULL DEFAULT 0',
-  );
-  ensureColumn('scheduled_tasks', 'created_by', 'TEXT');
-  ensureColumn('scheduled_tasks', 'execution_type', "TEXT DEFAULT 'agent'");
-  ensureColumn('scheduled_tasks', 'script_command', 'TEXT');
-  ensureColumn('scheduled_tasks', 'notify_channels', 'TEXT');
-  ensureColumn('scheduled_tasks', 'execution_mode', 'TEXT');
-  ensureColumn('scheduled_tasks', 'workspace_jid', 'TEXT');
-  ensureColumn('scheduled_tasks', 'workspace_folder', 'TEXT');
-  ensureColumn('scheduled_tasks', 'running_until', 'TEXT');
-  ensureColumn('scheduled_tasks', 'runner_id', 'TEXT');
-  ensureColumn('scheduled_tasks', 'revision', 'INTEGER NOT NULL DEFAULT 1');
-  ensureColumn('scheduled_tasks', 'updated_at', "TEXT NOT NULL DEFAULT ''");
-  ensureColumn('scheduled_tasks', 'deleted_at', 'TEXT');
-  // v62 -> v63: a task stored only the workspace-level `chat_jid`, so execution
-  // had to re-derive its target and fell back to "any group in this folder,
-  // preferring web:". Capture the concrete delivery route instead — CKQClaw's
-  // JID already encodes provider, external chat, channel account and Feishu
-  // thread/root, so one column carries the whole binding. Existing rows are
-  // backfilled from `chat_jid`, which is exactly the route they used before.
-  ensureColumn('scheduled_tasks', 'delivery_route_jid', 'TEXT');
-  db.prepare(
-    `UPDATE scheduled_tasks
-     SET delivery_route_jid = chat_jid
-     WHERE delivery_route_jid IS NULL AND chat_jid IS NOT NULL`,
-  ).run();
-  ensureColumn('task_runs', 'notification_summary', 'TEXT');
-  ensureColumn('task_runs', 'notification_payload', 'TEXT');
-  ensureColumn(
-    'task_runs',
-    'notification_attempt',
-    'INTEGER NOT NULL DEFAULT 0',
-  );
-  ensureColumn('task_runs', 'notification_available_at', 'TEXT');
-  ensureColumn('task_runs', 'notification_lease_owner', 'TEXT');
-  ensureColumn(
-    'task_runs',
-    'notification_lease_token',
-    'INTEGER NOT NULL DEFAULT 0',
-  );
-  ensureColumn('task_runs', 'notification_lease_expires_at', 'TEXT');
-  ensureColumn('task_runs', 'notification_lease_payload', 'TEXT');
-  ensureColumn(
-    'task_runs',
-    'notification_generation',
-    'INTEGER NOT NULL DEFAULT 0',
-  );
-  // v70 -> v71: long-task continuation chain. A run whose Agent declared
-  // itself unfinished (runner tool task_request_continuation) carries the
-  // declared reason/next step and its chain position; the scheduler sweep
-  // settles continuation_state to continued/needs_human/abandoned exactly
-  // once per request.
-  ensureColumn('task_runs', 'continuation_count', 'INTEGER NOT NULL DEFAULT 0');
-  ensureColumn('task_runs', 'continuation_reason', 'TEXT');
-  ensureColumn('task_runs', 'continuation_next_step', 'TEXT');
-  ensureColumn('task_runs', 'continuation_state', 'TEXT');
-  ensureColumn('task_runs', 'continuation_child_run_id', 'TEXT');
-  // Old rows predate updated_at; created_at is the least-surprising baseline.
-  db.prepare(
-    "UPDATE scheduled_tasks SET updated_at = created_at WHERE updated_at = '' OR updated_at IS NULL",
-  ).run();
+  ensureTaskTableColumns(ctx);
   // Migration: remove UNIQUE constraint from registered_groups.folder
   // Multiple groups (web:main + feishu chats) share folder='main' by design.
   // The old UNIQUE constraint caused INSERT OR REPLACE to silently delete
