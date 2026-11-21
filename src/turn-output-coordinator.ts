@@ -8,7 +8,7 @@ import { isRedundantProactiveSdkClosure } from './proactive-final-classifier.js'
  */
 export type TurnMessageDeliveryRole = 'progress' | 'final' | 'separate';
 
-export interface TurnOutputStreamEvent {
+interface TurnOutputStreamEvent {
   eventType: string;
   text?: string;
   parentToolUseId?: string | null;
@@ -17,7 +17,7 @@ export interface TurnOutputStreamEvent {
   rawType?: string;
 }
 
-export interface TurnOutputProjection {
+interface TurnOutputProjection {
   answerText: string;
   answerChanged: boolean;
   visibleAnswerText: string;
@@ -26,7 +26,7 @@ export interface TurnOutputProjection {
   provisionalText: string;
 }
 
-export interface ResolvedPrimaryAnswer {
+interface ResolvedPrimaryAnswer {
   text: string | null;
   source: 'sdk_final' | 'mcp_final' | 'candidate' | 'empty';
 }
@@ -358,7 +358,7 @@ export class TurnOutputCoordinator {
   }
 }
 
-export interface ActiveTurnOutputCallbacks {
+interface ActiveTurnOutputCallbacks {
   onProgress: (text: string) => boolean;
   onFinalCandidate: (text: string) => boolean;
   onUtteranceDelivered?: () => void;
@@ -369,7 +369,7 @@ interface ActiveTurnOutputBinding {
   callbacks: ActiveTurnOutputCallbacks;
 }
 
-export interface StageTurnMessageInput {
+interface StageTurnMessageInput {
   scopeKey: string;
   inputTurnId: string;
   role: Exclude<TurnMessageDeliveryRole, 'separate'>;
@@ -382,20 +382,20 @@ export interface StageTurnMessageResult {
   reason?: 'inactive_turn' | 'finalized' | 'projection_unavailable';
 }
 
-export interface RecordDeliveredUtteranceInput {
+interface RecordDeliveredUtteranceInput {
   scopeKey: string;
   inputTurnId: string;
   role?: TurnMessageDeliveryRole;
   text?: string;
 }
 
-export interface RecordAttemptedFinalInput {
+interface RecordAttemptedFinalInput {
   scopeKey: string;
   inputTurnId: string;
   text: string;
 }
 
-export interface ResolveProactiveFinalRecoveryInput {
+interface ResolveProactiveFinalRecoveryInput {
   scopeKey: string;
   inputTurnId: string;
   text: string | null | undefined;

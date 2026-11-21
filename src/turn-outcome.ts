@@ -6,7 +6,7 @@
  * legacy contract.  In particular, `status: 'closed'` is not automatically a
  * success: an in-flight input without a reply or healthy completion must replay.
  */
-export type TurnOutcome =
+type TurnOutcome =
   | {
       kind: 'completed';
       cursor: 'commit' | 'already_committed';
@@ -28,7 +28,7 @@ export type TurnOutcome =
       reason: 'configuration_or_input';
     };
 
-export interface ResolveTurnOutcomeInput {
+interface ResolveTurnOutcomeInput {
   status: 'success' | 'error' | 'stream' | 'closed';
   healthyInputTurnCompleted: boolean;
   cursorCommitted: boolean;

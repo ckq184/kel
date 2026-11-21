@@ -1,7 +1,7 @@
 import type { ContainerOutput } from './container-runner.js';
 import { recordUsageEvent } from './usage-service.js';
 
-export interface IsolatedTaskUsageContext {
+interface IsolatedTaskUsageContext {
   taskId: string;
   workspaceFolder: string;
   /**

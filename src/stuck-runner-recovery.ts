@@ -23,7 +23,7 @@ export interface StuckRecoveryCandidate {
   ipcOwedMs: number | null;
 }
 
-export type StuckRecoveryDecision =
+type StuckRecoveryDecision =
   | {
       action: 'restart';
       reason: 'idle' | 'idle_ceiling' | 'absolute_ipc_ceiling';
@@ -40,7 +40,7 @@ type HostRunnerCpuProbe = (
 ) => Promise<RunnerCpuActivity>;
 type HostProcessLivenessProbe = (pid: number) => boolean;
 
-export interface RunnerCpuResolutionOptions {
+interface RunnerCpuResolutionOptions {
   /** Test seam: defaults to the real host platform. */
   platform?: NodeJS.Platform;
   isProcessAlive?: HostProcessLivenessProbe;

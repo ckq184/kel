@@ -596,7 +596,7 @@ export function formatScheduledTaskWorkspaceResult(input: {
   return `${title}\n\n${metadata.join('\n')}\n\n${emptyNotice}`;
 }
 
-export interface RunTaskOptions {
+interface RunTaskOptions {
   /** Unique ID for isolated task IPC namespace (tasks-run/{taskRunId}/) */
   taskRunId?: string;
   /** Manual trigger — don't update next_run, skip isTaskStillActive check */
