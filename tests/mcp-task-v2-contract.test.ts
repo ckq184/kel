@@ -238,8 +238,10 @@ describe('scheduled-task MCP V2 contract', () => {
   });
 
   test('host IPC enforces script-operation and execution-mode boundaries', () => {
+    // ISSUE-12 波 4 单元 4.6：任务生命周期十 case（含本测试全部锚文本）已
+    // 迁 src/ipc/task-ops.ts（原文搬运），锚随体迁、断言文本逐字不变。
     const hostSource = fs.readFileSync(
-      path.join(process.cwd(), 'src/index.ts'),
+      path.join(process.cwd(), 'src/ipc/task-ops.ts'),
       'utf8',
     );
     expect(hostSource).toContain('targetGroupEntry.executionMode');
