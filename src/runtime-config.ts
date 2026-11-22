@@ -274,22 +274,6 @@ export interface ClaudeProviderConfig {
   updatedAt: string | null;
 }
 
-interface ClaudeProviderPublicConfig {
-  anthropicBaseUrl: string;
-  anthropicModel: string;
-  contextWindow?: ContextWindowPreset;
-  updatedAt: string | null;
-  hasAnthropicAuthToken: boolean;
-  hasAnthropicApiKey: boolean;
-  hasClaudeCodeOauthToken: boolean;
-  anthropicAuthTokenMasked: string | null;
-  anthropicApiKeyMasked: string | null;
-  claudeCodeOauthTokenMasked: string | null;
-  hasClaudeOAuthCredentials: boolean;
-  claudeOAuthCredentialsExpiresAt: number | null;
-  claudeOAuthCredentialsAccessTokenMasked: string | null;
-}
-
 interface ClaudeThirdPartyProfile {
   id: string;
   name: string;
@@ -308,15 +292,6 @@ interface FeishuProviderConfig {
 }
 
 type FeishuConfigSource = 'runtime' | 'env' | 'none';
-
-interface FeishuProviderPublicConfig {
-  appId: string;
-  hasAppSecret: boolean;
-  appSecretMasked: string | null;
-  enabled: boolean;
-  updatedAt: string | null;
-  source: FeishuConfigSource;
-}
 
 interface SecretPayload {
   anthropicAuthToken: string;
@@ -1778,77 +1753,11 @@ export function getFeishuProviderConfigWithSource(): {
   return { config: fromEnv, source: 'none' };
 }
 
-export function getFeishuProviderConfig(): FeishuProviderConfig {
-  return getFeishuProviderConfigWithSource().config;
-}
-
-export function saveFeishuProviderConfig(
-  next: Omit<FeishuProviderConfig, 'updatedAt'>,
-): FeishuProviderConfig {
-  const normalized: FeishuProviderConfig = {
-    appId: normalizeFeishuAppId(next.appId),
-    appSecret: normalizeSecret(next.appSecret, 'appSecret'),
-    enabled: next.enabled,
-    updatedAt: new Date().toISOString(),
-  };
-
-  const payload: StoredFeishuProviderConfigV1 = {
-    version: 1,
-    appId: normalized.appId,
-    enabled: normalized.enabled,
-    updatedAt: normalized.updatedAt || new Date().toISOString(),
-    secret: encryptChannelSecret<FeishuSecretPayload>({
-      appSecret: normalized.appSecret,
-    }),
-  };
-
-  fs.mkdirSync(CLAUDE_CONFIG_DIR, { recursive: true });
-  writeSecretFile(FEISHU_CONFIG_FILE, JSON.stringify(payload, null, 2) + '\n');
-  return normalized;
-}
-
-export function toPublicFeishuProviderConfig(
-  config: FeishuProviderConfig,
-  source: FeishuConfigSource,
-): FeishuProviderPublicConfig {
-  return {
-    appId: config.appId,
-    hasAppSecret: !!config.appSecret,
-    appSecretMasked: maskSecret(config.appSecret),
-    enabled: config.enabled !== false,
-    updatedAt: config.updatedAt,
-    source,
-  };
-}
-
 function maskSecret(value: string): string | null {
   if (!value) return null;
   if (value.length <= 8)
     return `${'*'.repeat(Math.max(value.length - 2, 1))}${value.slice(-2)}`;
   return `${value.slice(0, 3)}${'*'.repeat(Math.max(value.length - 7, 4))}${value.slice(-4)}`;
-}
-
-export function toPublicClaudeProviderConfig(
-  config: ClaudeProviderConfig,
-): ClaudeProviderPublicConfig {
-  return {
-    anthropicBaseUrl: config.anthropicBaseUrl,
-    anthropicModel: config.anthropicModel,
-    contextWindow: config.contextWindow,
-    updatedAt: config.updatedAt,
-    hasAnthropicAuthToken: !!config.anthropicAuthToken,
-    hasAnthropicApiKey: !!config.anthropicApiKey,
-    hasClaudeCodeOauthToken: !!config.claudeCodeOauthToken,
-    anthropicAuthTokenMasked: maskSecret(config.anthropicAuthToken),
-    anthropicApiKeyMasked: maskSecret(config.anthropicApiKey),
-    claudeCodeOauthTokenMasked: maskSecret(config.claudeCodeOauthToken),
-    hasClaudeOAuthCredentials: !!config.claudeOAuthCredentials,
-    claudeOAuthCredentialsExpiresAt:
-      config.claudeOAuthCredentials?.expiresAt ?? null,
-    claudeOAuthCredentialsAccessTokenMasked: config.claudeOAuthCredentials
-      ? maskSecret(config.claudeOAuthCredentials.accessToken)
-      : null,
-  };
 }
 
 export function getClaudeProviderConfig(): ClaudeProviderConfig {
@@ -2118,21 +2027,6 @@ export function appendClaudeConfigAudit(
  * 审计；调用方需提供 channel ('feishu'|'qq'|...) 和 changedFields
  * （如 ['appSecret','encryptKey']）。同 appendClaudeConfigAudit 一样不抛错。
  */
-export function appendImConfigAudit(
-  actor: string,
-  channel: string,
-  action: string,
-  changedFields: string[],
-  metadata?: Record<string, unknown>,
-): void {
-  appendClaudeConfigAudit(
-    actor,
-    `im_${channel}_${action}`,
-    changedFields,
-    metadata,
-  );
-}
-
 // ─── Per-container environment config ───────────────────────────
 
 const CONTAINER_ENV_DIR = path.join(DATA_DIR, 'config', 'container-env');

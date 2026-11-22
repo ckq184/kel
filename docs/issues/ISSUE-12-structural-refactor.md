@@ -71,4 +71,4 @@
 - 台账勘误补记（按 6.1 先例）：d1b5fdb 新模块实 199 行（非 215）、index.ts 实净 -69（非 -72）；62b74ce 次级声明"runAgent 247→302 行"中 302 为含 RunAgentTurnOptions/RunAgentOutcome 接口与 JSDoc 的泛化块整体口径，函数本体顶层边界 274 行。
 - 实机冒烟：未执行（真实 Provider 会产生费用且需凭据，安全红线禁止写入日志）——按流程要求 §2 如实登记，待用户点验后补记。
 
-**遗留待用户拍板**：31 个死导出处置；真实渠道冒烟清单；是否推送合并 main。
+**遗留待用户拍板**：~~31 个死导出处置~~（用户 2026-11-22 拍板「删除」，已处置：HEAD 复扫确证仍为 31 个——runtime-config×5（get/saveFeishuProviderConfig、toPublicFeishu/ClaudeProviderConfig、appendImConfigAudit）+ schemas×3（QQ/ClaudeCustomEnv/WeChatConfigSchema）+ web.ts×1（broadcastGroupCreated）+ web UI 组件×22（radix 转发族），随删级联孤儿 interface×2（FeishuProviderPublicConfig/ClaudeProviderPublicConfig），共 33 声明净 -398 行，删后复扫死导出=0、verify 六步全绿）；真实渠道冒烟清单；是否推送合并 main。

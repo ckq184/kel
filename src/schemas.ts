@@ -825,26 +825,6 @@ export const FeishuConfigSchema = z
     { message: 'At least one config field must be provided' },
   );
 
-export const QQConfigSchema = z
-  .object({
-    appId: z.string().max(2000).optional(),
-    appSecret: z.string().max(2000).optional(),
-    clearAppSecret: z.boolean().optional(),
-    enabled: z.boolean().optional(),
-  })
-  .refine(
-    (data) =>
-      typeof data.appId === 'string' ||
-      typeof data.appSecret === 'string' ||
-      data.clearAppSecret === true ||
-      typeof data.enabled === 'boolean',
-    { message: 'At least one config field must be provided' },
-  );
-
-export const ClaudeCustomEnvSchema = z.object({
-  customEnv: z.record(z.string().max(256), z.string().max(4096)),
-});
-
 export const ContainerEnvSchema = z.object({
   anthropicBaseUrl: z.string().max(2000).optional(),
   anthropicAuthToken: z.string().max(2000).optional(),
@@ -1028,12 +1008,6 @@ export const BalancingConfigSchema = z.object({
     .optional(),
   unhealthyThreshold: z.number().int().min(1).max(20).optional(),
   recoveryIntervalMs: z.number().int().min(30000).max(3600000).optional(),
-});
-
-export const WeChatConfigSchema = z.object({
-  enabled: z.boolean().optional(),
-  clearBotToken: z.boolean().optional(),
-  bypassProxy: z.boolean().optional(),
 });
 
 // --- Custom model pricing schemas (task V) ---
