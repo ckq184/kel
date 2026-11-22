@@ -296,6 +296,10 @@ import {
 } from './im-channel.js';
 import { ConversationIndicatorLedger } from './conversation-indicator-ledger.js';
 import {
+  completeChannelTurnRuntimesForOutput,
+  resolveChannelScopeForOutput,
+} from './channel-turn-governance.js';
+import {
   persistInterruptedStreamText,
   saveInterruptedTextOnExit,
   saveFallbackPartialTextOnExit,
@@ -5250,107 +5254,59 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   if (channelTurnRuntime) {
     channelTurnRuntimes.set(lastProcessed.id, channelTurnRuntime);
   }
+  // ISSUE-12 波 6 单元 6.4：M8/M9 镜像收敛 src/channel-turn-governance.ts
+  // （原文搬运）。分歧②（拍板①）：complete 台账载荷键 A=sentReply 经
+  // completePayloadKey 参数化保留原名，不统一、不做 DB 兼容读取。
   const completeChannelRuntimesForOutput = async (
     result: ContainerOutput,
-  ): Promise<boolean> => {
-    if (!result.inputTurnCompleted) return false;
-    let allCompleted = true;
-    const inputIds = result.ipcReceipts?.length
-      ? result.ipcReceipts.map((receipt) => receipt.deliveryId)
-      : [result.inputTurnId ?? lastProcessed.id];
-    for (const inputId of inputIds) {
-      healthyCompletedInputTurns.add(inputId);
-      const runtime = channelTurnRuntimes.get(inputId);
-      if (!runtime) {
-        await clearProcessingIndicatorForInput(inputId);
-        continue;
-      }
-      const uncertainDelivery = getUncertainChannelOutboxForTurn(runtime.runId);
-      if (uncertainDelivery) {
+  ): Promise<boolean> =>
+    completeChannelTurnRuntimesForOutput({
+      result,
+      runtimes: channelTurnRuntimes,
+      scopesByInput: channelOutboxScopesByInput,
+      ackByInput: channelPhysicalDeliveryAckByInput,
+      markHealthyInput: (inputId) => healthyCompletedInputTurns.add(inputId),
+      clearIndicatorForInput: clearProcessingIndicatorForInput,
+      onNeedsManualReconciliation: () => {
         channelDeliveryNeedsManualReconciliation = true;
-        const interrupted = runtime.interrupt(
-          `Channel delivery ${uncertainDelivery.id} is uncertain; manual reconciliation required`,
-        );
-        const exactScope = channelOutboxScopesByInput.get(inputId);
-        const notified = exactScope?.chatId
-          ? await deliverChannelManualReconciliationNotice({
-              logicalChatJid: chatJid,
-              scopeKey: channelTurnScope(effectiveGroup.folder),
-              targetJid: exactScope.sourceJid,
-              runtime,
-              presentation:
-                interactionMode === 'proactive' ? 'native' : 'default',
-              route: { ...exactScope, chatId: exactScope.chatId },
-            })
-          : false;
-        if (interrupted && notified) {
-          await clearProcessingIndicatorForInput(inputId);
-          runtime.dispose();
-          channelTurnRuntimes.delete(inputId);
-        } else {
-          allCompleted = false;
-        }
-        continue;
-      }
-      const utteranceDelivered =
-        channelPhysicalDeliveryAckByInput.get(inputId) === true;
-      if (publishesFrameworkAnswer(interactionMode) && !utteranceDelivered) {
-        allCompleted = false;
-        logger.error(
-          { chatJid, inputTurnId: inputId, runId: runtime.runId },
-          'Refusing to complete channel input without exact physical delivery ACK',
-        );
-        continue;
-      }
-      const completed =
-        runtime.markFinalizing() &&
-        runtime.complete({
-          cursorCommitted: true,
-          sentReply: utteranceDelivered,
-          silent: !utteranceDelivered,
-          inputTurnId: inputId,
-        });
-      if (completed) {
-        // Keep the immutable scope projection until the whole warm runner
-        // exits. A late duplicate SDK callback for this already-completed
-        // input must still resolve the same delivered Outbox item instead of
-        // falling back to an ungoverned legacy send.
-        await clearProcessingIndicatorForInput(inputId);
-        runtime.dispose();
-        channelTurnRuntimes.delete(inputId);
-      } else {
-        allCompleted = false;
-        logger.error(
-          {
-            chatJid,
-            inputTurnId: inputId,
-            runId: runtime.runId,
-            durabilityFailure: runtime.hasDurabilityFailure,
-            lostFence: runtime.hasLostFence,
-          },
-          'Completed input could not terminalize its channel turn ledger',
-        );
-      }
-    }
-    return allCompleted;
-  };
+      },
+      deliverManualReconciliationNotice: ({
+        targetJid,
+        runtime,
+        presentation,
+        route,
+      }) =>
+        deliverChannelManualReconciliationNotice({
+          logicalChatJid: chatJid,
+          scopeKey: channelTurnScope(effectiveGroup.folder),
+          targetJid,
+          runtime,
+          presentation,
+          route,
+        }),
+      presentation: interactionMode === 'proactive' ? 'native' : 'default',
+      fallbackInputId: lastProcessed.id,
+      publishesAnswer: publishesFrameworkAnswer(interactionMode),
+      completePayloadKey: 'sentReply',
+      baseLogContext: { chatJid },
+      refusalLogMessage:
+        'Refusing to complete channel input without exact physical delivery ACK',
+      terminalFailureLogMessage:
+        'Completed input could not terminalize its channel turn ledger',
+    });
   const channelScopeForOutput = (
     result: ContainerOutput,
   ): {
     inputId: string;
     scope?: ActiveChannelOutboxScope;
     rejected: boolean;
-  } => {
-    const inputIds = result.ipcReceipts?.length
-      ? result.ipcReceipts.map((receipt) => receipt.deliveryId)
-      : [];
-    const inputId = resolveContainerOutputInputTurnId(result, lastProcessed.id);
-    return {
-      inputId,
-      scope: channelOutboxScopesByInput.get(inputId),
-      rejected: inputIds.some((id) => rejectedChannelInputTurns.has(id)),
-    };
-  };
+  } =>
+    resolveChannelScopeForOutput({
+      result,
+      scopesByInput: channelOutboxScopesByInput,
+      rejectedInputTurns: rejectedChannelInputTurns,
+      fallbackInputId: lastProcessed.id,
+    });
   if (
     channelTurnRuntime &&
     channelTurnRuntime.executionDisposition !== 'execute'
@@ -9350,106 +9306,61 @@ async function processAgentConversation(
   if (agentChannelTurnRuntime) {
     agentChannelTurnRuntimes.set(lastProcessed.id, agentChannelTurnRuntime);
   }
+  // ISSUE-12 波 6 单元 6.4：M8/M9 镜像收敛 src/channel-turn-governance.ts
+  // （原文搬运）。分歧②（拍板①）：B 载荷键保留 replyDelivered 原名，
+  // 不统一、不做 DB 兼容读取。
   const completeAgentChannelRuntimesForOutput = async (
     result: ContainerOutput,
-  ): Promise<boolean> => {
-    if (!result.inputTurnCompleted) return false;
-    let allCompleted = true;
-    const inputIds = result.ipcReceipts?.length
-      ? result.ipcReceipts.map((receipt) => receipt.deliveryId)
-      : [result.inputTurnId ?? lastProcessed.id];
-    for (const inputId of inputIds) {
-      healthyAgentCompletedInputTurns.add(inputId);
-      const runtime = agentChannelTurnRuntimes.get(inputId);
-      if (!runtime) {
-        await clearAgentProcessingIndicatorForInput(inputId);
-        continue;
-      }
-      const uncertainDelivery = getUncertainChannelOutboxForTurn(runtime.runId);
-      if (uncertainDelivery) {
+  ): Promise<boolean> =>
+    completeChannelTurnRuntimesForOutput({
+      result,
+      runtimes: agentChannelTurnRuntimes,
+      scopesByInput: agentChannelOutboxScopesByInput,
+      ackByInput: agentPhysicalDeliveryAckByInput,
+      markHealthyInput: (inputId) =>
+        healthyAgentCompletedInputTurns.add(inputId),
+      clearIndicatorForInput: clearAgentProcessingIndicatorForInput,
+      onNeedsManualReconciliation: () => {
         agentDeliveryNeedsManualReconciliation = true;
-        const interrupted = runtime.interrupt(
-          `Channel delivery ${uncertainDelivery.id} is uncertain; manual reconciliation required`,
-        );
-        const exactScope = agentChannelOutboxScopesByInput.get(inputId);
-        const notified = exactScope?.chatId
-          ? await deliverChannelManualReconciliationNotice({
-              logicalChatJid: virtualChatJid,
-              scopeKey: channelTurnScope(effectiveGroup.folder, agentId),
-              targetJid: exactScope.sourceJid,
-              runtime,
-              agentId,
-              presentation:
-                interactionMode === 'proactive' ? 'native' : 'default',
-              route: { ...exactScope, chatId: exactScope.chatId },
-            })
-          : false;
-        if (interrupted && notified) {
-          await clearAgentProcessingIndicatorForInput(inputId);
-          runtime.dispose();
-          agentChannelTurnRuntimes.delete(inputId);
-        } else {
-          allCompleted = false;
-        }
-        continue;
-      }
-      const utteranceDelivered =
-        agentPhysicalDeliveryAckByInput.get(inputId) === true;
-      if (publishesFrameworkAnswer(interactionMode) && !utteranceDelivered) {
-        allCompleted = false;
-        logger.error(
-          { chatJid, agentId, inputTurnId: inputId, runId: runtime.runId },
-          'Refusing to complete agent input without exact physical delivery ACK',
-        );
-        continue;
-      }
-      const completed =
-        runtime.markFinalizing() &&
-        runtime.complete({
-          cursorCommitted: true,
-          replyDelivered: utteranceDelivered,
-          silent: !utteranceDelivered,
-          inputTurnId: inputId,
-        });
-      if (completed) {
-        // Retain exact scope until runner finally; see main-path comment.
-        await clearAgentProcessingIndicatorForInput(inputId);
-        runtime.dispose();
-        agentChannelTurnRuntimes.delete(inputId);
-      } else {
-        allCompleted = false;
-        logger.error(
-          {
-            chatJid,
-            agentId,
-            inputTurnId: inputId,
-            runId: runtime.runId,
-            durabilityFailure: runtime.hasDurabilityFailure,
-            lostFence: runtime.hasLostFence,
-          },
-          'Completed agent input could not terminalize its channel turn ledger',
-        );
-      }
-    }
-    return allCompleted;
-  };
+      },
+      deliverManualReconciliationNotice: ({
+        targetJid,
+        runtime,
+        presentation,
+        route,
+      }) =>
+        deliverChannelManualReconciliationNotice({
+          logicalChatJid: virtualChatJid,
+          scopeKey: channelTurnScope(effectiveGroup.folder, agentId),
+          targetJid,
+          runtime,
+          agentId,
+          presentation,
+          route,
+        }),
+      presentation: interactionMode === 'proactive' ? 'native' : 'default',
+      fallbackInputId: lastProcessed.id,
+      publishesAnswer: publishesFrameworkAnswer(interactionMode),
+      completePayloadKey: 'replyDelivered',
+      baseLogContext: { chatJid, agentId },
+      refusalLogMessage:
+        'Refusing to complete agent input without exact physical delivery ACK',
+      terminalFailureLogMessage:
+        'Completed agent input could not terminalize its channel turn ledger',
+    });
   const agentScopeForOutput = (
     result: ContainerOutput,
   ): {
     inputId: string;
     scope?: ActiveChannelOutboxScope;
     rejected: boolean;
-  } => {
-    const inputIds = result.ipcReceipts?.length
-      ? result.ipcReceipts.map((receipt) => receipt.deliveryId)
-      : [];
-    const inputId = resolveContainerOutputInputTurnId(result, lastProcessed.id);
-    return {
-      inputId,
-      scope: agentChannelOutboxScopesByInput.get(inputId),
-      rejected: inputIds.some((id) => rejectedAgentInputTurns.has(id)),
-    };
-  };
+  } =>
+    resolveChannelScopeForOutput({
+      result,
+      scopesByInput: agentChannelOutboxScopesByInput,
+      rejectedInputTurns: rejectedAgentInputTurns,
+      fallbackInputId: lastProcessed.id,
+    });
   if (
     agentChannelTurnRuntime &&
     agentChannelTurnRuntime.executionDisposition !== 'execute'
