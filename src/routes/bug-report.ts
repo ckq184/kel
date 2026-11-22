@@ -1,4 +1,5 @@
 import { execFile } from 'child_process';
+import { zodBadRequest } from '../validation-response.js';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -378,10 +379,7 @@ bugReportRoutes.post('/generate', authMiddleware, async (c) => {
 
   const parseResult = BugReportGenerateSchema.safeParse(await c.req.json());
   if (!parseResult.success) {
-    return c.json(
-      { error: 'Invalid request', details: parseResult.error.issues },
-      400,
-    );
+    return zodBadRequest(c, parseResult.error, 'request-issues');
   }
   const { description, screenshots } = parseResult.data;
 
@@ -484,10 +482,7 @@ bugReportRoutes.post('/submit', authMiddleware, async (c) => {
 
   const parseResult = BugReportSubmitSchema.safeParse(await c.req.json());
   if (!parseResult.success) {
-    return c.json(
-      { error: 'Invalid request', details: parseResult.error.issues },
-      400,
-    );
+    return zodBadRequest(c, parseResult.error, 'request-issues');
   }
   const { title, body } = parseResult.data;
 

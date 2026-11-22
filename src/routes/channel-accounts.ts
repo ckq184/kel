@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { zodBadRequest } from '../validation-response.js';
 import crypto from 'node:crypto';
 import type { Variables } from '../web-context.js';
 import { authMiddleware } from '../middleware/auth.js';
@@ -384,10 +385,7 @@ routes.post('/', authMiddleware, async (c) => {
     await c.req.json().catch(() => ({})),
   );
   if (!parsed.success) {
-    return c.json(
-      { error: 'Invalid request', details: parsed.error.format() },
-      400,
-    );
+    return zodBadRequest(c, parsed.error, 'request-format');
   }
 
   // The web server becomes available before the startup migration finishes.
@@ -481,10 +479,7 @@ routes.patch('/:id', authMiddleware, async (c) => {
     await c.req.json().catch(() => ({})),
   );
   if (!parsed.success) {
-    return c.json(
-      { error: 'Invalid request', details: parsed.error.format() },
-      400,
-    );
+    return zodBadRequest(c, parsed.error, 'request-format');
   }
   const targetError = validateTargets(user, parsed.data);
   if (targetError) return c.json({ error: targetError }, 400);

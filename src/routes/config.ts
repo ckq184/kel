@@ -1,6 +1,7 @@
 // Configuration management routes
 
 import { randomBytes, createHash } from 'node:crypto';
+import { zodBadRequest } from '../validation-response.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Hono } from 'hono';
@@ -857,10 +858,7 @@ configRoutes.post(
     const body = await c.req.json().catch(() => ({}));
     const validation = UnifiedProviderCreateSchema.safeParse(body);
     if (!validation.success) {
-      return c.json(
-        { error: 'Invalid request body', details: validation.error.format() },
-        400,
-      );
+      return zodBadRequest(c, validation.error, 'body-format');
     }
 
     const actor = (c.get('user') as AuthUser).username;
@@ -892,10 +890,7 @@ configRoutes.patch(
     const body = await c.req.json().catch(() => ({}));
     const validation = UnifiedProviderPatchSchema.safeParse(body);
     if (!validation.success) {
-      return c.json(
-        { error: 'Invalid request body', details: validation.error.format() },
-        400,
-      );
+      return zodBadRequest(c, validation.error, 'body-format');
     }
 
     const actor = (c.get('user') as AuthUser).username;
@@ -1049,10 +1044,7 @@ configRoutes.put(
     const body = await c.req.json().catch(() => ({}));
     const validation = UnifiedProviderSecretsSchema.safeParse(body);
     if (!validation.success) {
-      return c.json(
-        { error: 'Invalid request body', details: validation.error.format() },
-        400,
-      );
+      return zodBadRequest(c, validation.error, 'body-format');
     }
 
     const actor = (c.get('user') as AuthUser).username;
@@ -1330,10 +1322,7 @@ configRoutes.put(
     const body = await c.req.json().catch(() => ({}));
     const validation = BalancingConfigSchema.safeParse(body);
     if (!validation.success) {
-      return c.json(
-        { error: 'Invalid request body', details: validation.error.format() },
-        400,
-      );
+      return zodBadRequest(c, validation.error, 'body-format');
     }
 
     const actor = (c.get('user') as AuthUser).username;
@@ -1592,10 +1581,7 @@ configRoutes.put(
     const body = await c.req.json().catch(() => ({}));
     const validation = RegistrationConfigSchema.safeParse(body);
     if (!validation.success) {
-      return c.json(
-        { error: 'Invalid request body', details: validation.error.format() },
-        400,
-      );
+      return zodBadRequest(c, validation.error, 'body-format');
     }
 
     try {
@@ -1638,10 +1624,7 @@ configRoutes.put(
     const body = await c.req.json().catch(() => ({}));
     const validation = AppearanceConfigSchema.safeParse(body);
     if (!validation.success) {
-      return c.json(
-        { error: 'Invalid request body', details: validation.error.format() },
-        400,
-      );
+      return zodBadRequest(c, validation.error, 'body-format');
     }
 
     try {
@@ -1757,10 +1740,7 @@ configRoutes.put(
     const body = await c.req.json().catch(() => ({}));
     const validation = SystemSettingsSchema.safeParse(body);
     if (!validation.success) {
-      return c.json(
-        { error: 'Invalid request body', details: validation.error.format() },
-        400,
-      );
+      return zodBadRequest(c, validation.error, 'body-format');
     }
 
     try {
@@ -1835,10 +1815,7 @@ configRoutes.put(
     const body = await c.req.json().catch(() => ({}));
     const validation = HostIntegrationSettingsSchema.safeParse(body);
     if (!validation.success) {
-      return c.json(
-        { error: 'Invalid request body', details: validation.error.format() },
-        400,
-      );
+      return zodBadRequest(c, validation.error, 'body-format');
     }
     const requestedDir = validation.data.externalClaudeDir?.trim();
     if (requestedDir) {

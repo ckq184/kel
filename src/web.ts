@@ -17,6 +17,7 @@
  * - startWebServer / shutdownWebServer / createAppForTest（测试用装配镜像）
  */
 import fs from 'node:fs';
+import { zodBadRequest } from './validation-response.js';
 import path from 'node:path';
 import { Hono } from 'hono';
 import { compress } from 'hono/compress';
@@ -241,10 +242,7 @@ app.post('/api/messages', authMiddleware, async (c) => {
 
   const validation = MessageCreateSchema.safeParse(body);
   if (!validation.success) {
-    return c.json(
-      { error: 'Invalid request body', details: validation.error.format() },
-      400,
-    );
+    return zodBadRequest(c, validation.error, 'body-format');
   }
 
   const { chatJid, agentId, content, attachments, followUpBehavior } =

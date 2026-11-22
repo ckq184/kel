@@ -7,6 +7,7 @@
  */
 
 import { Hono } from 'hono';
+import { zodBadRequest } from '../validation-response.js';
 
 import { authMiddleware, systemConfigMiddleware } from '../middleware/auth.js';
 import {
@@ -59,10 +60,7 @@ pricingRoutes.post('/rules', async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const validation = CustomPricingCreateSchema.safeParse(body);
   if (!validation.success) {
-    return c.json(
-      { error: 'Invalid request body', details: validation.error.format() },
-      400,
-    );
+    return zodBadRequest(c, validation.error, 'body-format');
   }
 
   const data = validation.data;
@@ -96,10 +94,7 @@ pricingRoutes.patch('/rules/:id', async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const validation = CustomPricingPatchSchema.safeParse(body);
   if (!validation.success) {
-    return c.json(
-      { error: 'Invalid request body', details: validation.error.format() },
-      400,
-    );
+    return zodBadRequest(c, validation.error, 'body-format');
   }
 
   const updates = validation.data;
@@ -135,10 +130,7 @@ pricingRoutes.post('/preview', async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const validation = CustomPricingPreviewSchema.safeParse(body);
   if (!validation.success) {
-    return c.json(
-      { error: 'Invalid request body', details: validation.error.format() },
-      400,
-    );
+    return zodBadRequest(c, validation.error, 'body-format');
   }
 
   const model = validation.data.model;

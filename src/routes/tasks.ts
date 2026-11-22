@@ -1,6 +1,7 @@
 // Task management routes
 
 import { Hono, type Context } from 'hono';
+import { zodBadRequest } from '../validation-response.js';
 import * as crypto from 'node:crypto';
 import { sdkQuery } from '../sdk-query.js';
 import type { Variables } from '../web-context.js';
@@ -187,10 +188,7 @@ tasksRoutes.post('/', authMiddleware, async (c) => {
 
   const validation = TaskCreateSchema.safeParse(body);
   if (!validation.success) {
-    return c.json(
-      { error: 'Invalid request body', details: validation.error.format() },
-      400,
-    );
+    return zodBadRequest(c, validation.error, 'body-format');
   }
 
   const {
@@ -321,10 +319,7 @@ tasksRoutes.post('/purge', authMiddleware, async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const validation = TaskPurgeSchema.safeParse(body);
   if (!validation.success) {
-    return c.json(
-      { error: 'Invalid request body', details: validation.error.format() },
-      400,
-    );
+    return zodBadRequest(c, validation.error, 'body-format');
   }
 
   const authUser = c.get('user') as AuthUser;
@@ -437,10 +432,7 @@ tasksRoutes.patch('/:id', authMiddleware, async (c) => {
 
   const validation = TaskPatchSchema.safeParse(patchBody);
   if (!validation.success) {
-    return c.json(
-      { error: 'Invalid request body', details: validation.error.format() },
-      400,
-    );
+    return zodBadRequest(c, validation.error, 'body-format');
   }
 
   if (existing.status === 'parsing') {

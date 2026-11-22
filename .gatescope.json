@@ -23,6 +23,8 @@
     "src/ipc/**",
     "src/db-schema/**",
     "src/web-context.ts",
+    "src/validation-response.ts",
+    "src/web.ts",
     "src/routes/**",
     "web/src/pages/AgentProfilesPage.tsx",
     "web/src/hooks/**",

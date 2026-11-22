@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { zodBadRequest } from '../validation-response.js';
 import type { Variables } from '../web-context.js';
 import { authMiddleware } from '../middleware/auth.js';
 import {
@@ -1113,7 +1114,7 @@ groupRoutes.patch('/:jid', authMiddleware, async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const validation = GroupPatchSchema.safeParse(body);
   if (!validation.success) {
-    return c.json({ error: 'Invalid request body' }, 400);
+    return zodBadRequest(c, validation.error, 'body-plain');
   }
 
   const {
@@ -1436,7 +1437,7 @@ groupRoutes.patch('/:jid/agent-profile', authMiddleware, async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const validation = GroupAgentProfilePatchSchema.safeParse(body);
   if (!validation.success) {
-    return c.json({ error: 'Invalid request body' }, 400);
+    return zodBadRequest(c, validation.error, 'body-plain');
   }
 
   const profile = getAgentProfileForUser(
@@ -2522,7 +2523,7 @@ groupRoutes.put('/:jid/env', authMiddleware, async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const validation = ContainerEnvSchema.safeParse(body);
   if (!validation.success) {
-    return c.json({ error: 'Invalid request body' }, 400);
+    return zodBadRequest(c, validation.error, 'body-plain');
   }
 
   const data = validation.data;

@@ -16,6 +16,7 @@
  * execution_mode、运行时会话、挂载明细）从响应中剔除而非报错。
  */
 import { Hono, type Context } from 'hono';
+import { zodBadRequest } from '../validation-response.js';
 import type { Variables } from '../web-context.js';
 import {
   canAccessGroup,
@@ -237,10 +238,7 @@ workspaceRoutes.patch('/:jid/owner-profile', authMiddleware, async (c) => {
   const body = await c.req.json().catch(() => null);
   const parsed = CkqclawOwnerProfileMutationSchema.safeParse(body);
   if (!parsed.success) {
-    return c.json(
-      { error: 'Invalid request', details: parsed.error.format() },
-      400,
-    );
+    return zodBadRequest(c, parsed.error, 'request-format');
   }
   const context = {
     actorId: user.id,

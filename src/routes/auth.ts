@@ -1,6 +1,7 @@
 // Authentication routes
 
 import fs from 'fs';
+import { zodBadRequest } from '../validation-response.js';
 import { readFile } from 'fs/promises';
 import path from 'path';
 import { Hono } from 'hono';
@@ -381,10 +382,7 @@ authRoutes.post('/register', async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const validation = RegisterSchema.safeParse(body);
   if (!validation.success) {
-    return c.json(
-      { error: 'Invalid request', details: validation.error.format() },
-      400,
-    );
+    return zodBadRequest(c, validation.error, 'request-format');
   }
 
   // Username 大小写归一化：避免 'admin' / 'Admin' / 'ADMIN' 是三个独立账号
@@ -569,10 +567,7 @@ authRoutes.put('/profile', authMiddleware, async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const validation = ProfileUpdateSchema.safeParse(body);
   if (!validation.success) {
-    return c.json(
-      { error: 'Invalid request', details: validation.error.format() },
-      400,
-    );
+    return zodBadRequest(c, validation.error, 'request-format');
   }
 
   const user = c.get('user') as AuthUser;
@@ -635,10 +630,7 @@ authRoutes.put('/password', authMiddleware, async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const validation = ChangePasswordSchema.safeParse(body);
   if (!validation.success) {
-    return c.json(
-      { error: 'Invalid request', details: validation.error.format() },
-      400,
-    );
+    return zodBadRequest(c, validation.error, 'request-format');
   }
 
   const user = c.get('user') as AuthUser;
