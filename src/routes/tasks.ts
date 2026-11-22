@@ -35,6 +35,7 @@ import {
   hasHostExecutionPermission,
   canAccessGroup,
   getWebDeps,
+  groupAccessDeniedResponse,
 } from '../web-context.js';
 import {
   computeNextRunForSchedule,
@@ -224,7 +225,7 @@ tasksRoutes.post('/', authMiddleware, async (c) => {
   }
 
   if (!canAccessGroup({ id: authUser.id, role: authUser.role }, group)) {
-    return c.json({ error: 'Group not found' }, 404);
+    return groupAccessDeniedResponse(c, 'Group not found');
   }
   if (isHostExecutionGroup(group) && !hasHostExecutionPermission(authUser)) {
     return c.json(
@@ -401,7 +402,7 @@ tasksRoutes.patch('/:id', authMiddleware, async (c) => {
       return c.json({ error: 'Task not found' }, 404);
   } else {
     if (!canAccessGroup({ id: authUser.id, role: authUser.role }, group)) {
-      return c.json({ error: 'Task not found' }, 404);
+      return groupAccessDeniedResponse(c, 'Task not found');
     }
     if (isHostExecutionGroup(group) && !hasHostExecutionPermission(authUser)) {
       return c.json(
@@ -661,7 +662,7 @@ tasksRoutes.delete('/:id', authMiddleware, (c) => {
       return c.json({ error: 'Task not found' }, 404);
   } else {
     if (!canAccessGroup({ id: authUser.id, role: authUser.role }, group)) {
-      return c.json({ error: 'Task not found' }, 404);
+      return groupAccessDeniedResponse(c, 'Task not found');
     }
     if (isHostExecutionGroup(group) && !hasHostExecutionPermission(authUser)) {
       return c.json(
@@ -971,7 +972,7 @@ tasksRoutes.post('/ai', authMiddleware, async (c) => {
     const group = getRegisteredGroup(requestedChatJid);
     if (!group) return c.json({ error: 'Group not found' }, 404);
     if (!canAccessGroup({ id: authUser.id, role: authUser.role }, group)) {
-      return c.json({ error: 'Group not found' }, 404);
+      return groupAccessDeniedResponse(c, 'Group not found');
     }
     if (isHostExecutionGroup(group) && !hasHostExecutionPermission(authUser)) {
       return c.json(

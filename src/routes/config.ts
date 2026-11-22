@@ -7,7 +7,11 @@ import { Hono } from 'hono';
 import { avatarUploadBodyLimit } from '../http-upload-policy.js';
 import { reapAvatarFiles, storeAvatarUpload } from '../avatar-upload.js';
 import type { Variables } from '../web-context.js';
-import { canAccessGroup, canModifyGroup } from '../web-context.js';
+import {
+  canAccessGroup,
+  canModifyGroup,
+  groupAccessDeniedResponse,
+} from '../web-context.js';
 import { getChannelType } from '../im-channel.js';
 import {
   getRegisteredGroup,
@@ -2197,7 +2201,7 @@ configRoutes.put('/user-im/bindings/:imJid', authMiddleware, async (c) => {
   // 非成员用 access 检查隐藏存在性（404），成员但非 owner 拒绝写（403）。
   // IM 路由变更必须由对应工作区所有者执行。
   if (!canAccessGroup(user, { ...imGroup, jid: imJid })) {
-    return c.json({ error: 'IM group not found' }, 404);
+    return groupAccessDeniedResponse(c, 'IM group not found');
   }
   if (!canModifyGroup(user, { ...imGroup, jid: imJid })) {
     return c.json({ error: 'Forbidden' }, 403);
@@ -2222,7 +2226,7 @@ configRoutes.put('/user-im/bindings/:imJid', authMiddleware, async (c) => {
       return c.json({ error: 'IM group not found' }, 404);
     }
     if (!canAccessGroup(user, { ...freshImGroup, jid: imJid })) {
-      return c.json({ error: 'IM group not found' }, 404);
+      return groupAccessDeniedResponse(c, 'IM group not found');
     }
     if (!canModifyGroup(user, { ...freshImGroup, jid: imJid })) {
       return c.json({ error: 'Forbidden' }, 403);
@@ -2315,7 +2319,7 @@ configRoutes.put('/user-im/bindings/:imJid', authMiddleware, async (c) => {
     // Re-run authorization against the fresh row — the handler's top-level
     // checks only proved it against the stale imGroup read before the await.
     if (!canAccessGroup(user, { ...freshImGroup, jid: imJid })) {
-      return c.json({ error: 'IM group not found' }, 404);
+      return groupAccessDeniedResponse(c, 'IM group not found');
     }
     if (!canModifyGroup(user, { ...freshImGroup, jid: imJid })) {
       return c.json({ error: 'Forbidden' }, 403);
@@ -2438,7 +2442,7 @@ configRoutes.put('/user-im/bindings/:imJid', authMiddleware, async (c) => {
       return c.json({ error: 'IM group not found' }, 404);
     }
     if (!canAccessGroup(user, { ...freshImGroup, jid: imJid })) {
-      return c.json({ error: 'IM group not found' }, 404);
+      return groupAccessDeniedResponse(c, 'IM group not found');
     }
     if (!canModifyGroup(user, { ...freshImGroup, jid: imJid })) {
       return c.json({ error: 'Forbidden' }, 403);

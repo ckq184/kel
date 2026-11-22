@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import type { Variables } from '../web-context.js';
-import { getWebDeps } from '../web-context.js';
+import { getWebDeps, groupAccessDeniedResponse } from '../web-context.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { canAccessGroup, canModifyGroup } from '../web-context.js';
 import {
@@ -283,7 +283,7 @@ router.post('/:jid/sessions', authMiddleware, async (c) => {
     return c.json({ error: 'Group not found' }, 404);
   }
   if (!canAccessGroup(user, { ...group, jid })) {
-    return c.json({ error: 'Group not found' }, 404);
+    return groupAccessDeniedResponse(c, 'Group not found');
   }
   if (!canModifyGroup(user, { ...group, jid })) {
     return c.json(
@@ -368,7 +368,7 @@ router.patch('/:jid/sessions/:sessionId', authMiddleware, async (c) => {
     return c.json({ error: 'Group not found' }, 404);
   }
   if (!canAccessGroup(user, { ...group, jid })) {
-    return c.json({ error: 'Group not found' }, 404);
+    return groupAccessDeniedResponse(c, 'Group not found');
   }
   if (!canModifyGroup(user, { ...group, jid })) {
     return c.json(
@@ -426,7 +426,7 @@ router.delete('/:jid/sessions/:sessionId', authMiddleware, async (c) => {
     return c.json({ error: 'Group not found' }, 404);
   }
   if (!canAccessGroup(user, { ...group, jid })) {
-    return c.json({ error: 'Group not found' }, 404);
+    return groupAccessDeniedResponse(c, 'Group not found');
   }
   if (!canModifyGroup(user, { ...group, jid })) {
     return c.json(
@@ -789,7 +789,7 @@ router.put(
       return c.json({ error: 'Binding target must be a workspace' }, 400);
     }
     if (!canAccessGroup(user, { ...group, jid })) {
-      return c.json({ error: 'Group not found' }, 404);
+      return groupAccessDeniedResponse(c, 'Group not found');
     }
     if (!canModifyGroup(user, { ...group, jid })) {
       return c.json(
@@ -1049,7 +1049,7 @@ router.delete(
       return c.json({ error: 'Group not found' }, 404);
     }
     if (!canAccessGroup(user, { ...group, jid })) {
-      return c.json({ error: 'Group not found' }, 404);
+      return groupAccessDeniedResponse(c, 'Group not found');
     }
     if (!canModifyGroup(user, { ...group, jid })) {
       return c.json(
@@ -1131,7 +1131,7 @@ router.put('/:jid/im-binding', authMiddleware, async (c) => {
     return c.json({ error: 'Binding target must be a workspace' }, 400);
   }
   if (!canAccessGroup(user, { ...group, jid })) {
-    return c.json({ error: 'Group not found' }, 404);
+    return groupAccessDeniedResponse(c, 'Group not found');
   }
   // Binding an IM group to the main conversation mutates the owner's workspace
   // routing → owner-only (the imGroup-side check below stays Access).
@@ -1315,7 +1315,7 @@ router.delete('/:jid/im-binding/:imJid', authMiddleware, async (c) => {
     return c.json({ error: 'Group not found' }, 404);
   }
   if (!canAccessGroup(user, { ...group, jid })) {
-    return c.json({ error: 'Group not found' }, 404);
+    return groupAccessDeniedResponse(c, 'Group not found');
   }
   // Unbinding mutates the owner's workspace routing → owner-only.
   if (!canModifyGroup(user, { ...group, jid })) {

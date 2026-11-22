@@ -27,6 +27,7 @@ import {
   canDeleteGroup,
   MAX_GROUP_NAME_LEN,
   getWebDeps,
+  groupAccessDeniedResponse,
 } from '../web-context.js';
 import {
   clearSessionChannelOwner,
@@ -1869,7 +1870,7 @@ groupRoutes.post('/:jid/stop', authMiddleware, async (c) => {
   if (!group) return c.json({ error: 'Group not found' }, 404);
   const authUser = c.get('user') as AuthUser;
   if (!canAccessGroup({ id: authUser.id, role: authUser.role }, group)) {
-    return c.json({ error: 'Group not found' }, 404);
+    return groupAccessDeniedResponse(c, 'Group not found');
   }
   if (
     !canModifyGroup({ id: authUser.id, role: authUser.role }, { ...group, jid })
@@ -1900,7 +1901,7 @@ groupRoutes.post('/:jid/interrupt', authMiddleware, async (c) => {
   if (!group) return c.json({ error: 'Group not found' }, 404);
   const authUser = c.get('user') as AuthUser;
   if (!canAccessGroup({ id: authUser.id, role: authUser.role }, group)) {
-    return c.json({ error: 'Group not found' }, 404);
+    return groupAccessDeniedResponse(c, 'Group not found');
   }
   if (
     !canModifyGroup(
@@ -2316,7 +2317,7 @@ groupRoutes.get('/:jid/messages', authMiddleware, async (c) => {
 
   const authUser = c.get('user') as AuthUser;
   if (!canAccessGroup({ id: authUser.id, role: authUser.role }, group)) {
-    return c.json({ error: 'Group not found' }, 404);
+    return groupAccessDeniedResponse(c, 'Group not found');
   }
   if (isHostExecutionGroup(group) && !hasHostExecutionPermission(authUser)) {
     return c.json(
@@ -2417,7 +2418,7 @@ groupRoutes.delete('/:jid/messages/:messageId', authMiddleware, (c) => {
 
   const authUser = c.get('user') as AuthUser;
   if (!canAccessGroup({ id: authUser.id, role: authUser.role }, group)) {
-    return c.json({ error: 'Group not found' }, 404);
+    return groupAccessDeniedResponse(c, 'Group not found');
   }
 
   // Ownership check: admin can delete any message, non-admin can only delete their own
@@ -2449,7 +2450,7 @@ groupRoutes.get('/:jid/env', authMiddleware, (c) => {
 
   const user = c.get('user') as AuthUser;
   if (!canAccessGroup({ id: user.id, role: user.role }, group)) {
-    return c.json({ error: 'Group not found' }, 404);
+    return groupAccessDeniedResponse(c, 'Group not found');
   }
   if (isHostExecutionGroup(group) && !hasHostExecutionPermission(user)) {
     return c.json(
@@ -2490,7 +2491,7 @@ groupRoutes.put('/:jid/env', authMiddleware, async (c) => {
 
   const envUser = c.get('user') as AuthUser;
   if (!canAccessGroup({ id: envUser.id, role: envUser.role }, group)) {
-    return c.json({ error: 'Group not found' }, 404);
+    return groupAccessDeniedResponse(c, 'Group not found');
   }
   if (isHostExecutionGroup(group) && !hasHostExecutionPermission(envUser)) {
     return c.json(
