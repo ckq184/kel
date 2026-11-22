@@ -10,7 +10,9 @@ import { logger } from './logger.js';
  * ISSUE-12 波 6 单元 6.2：流式卡生命周期（M12 建卡 / M13 回滚 / M35 五分支
  * 收尾）自 src/index.ts 的 processGroupMessages / processAgentConversation
  * 两侧镜像收敛（原文搬运）。M24 卡喂入与 usage 补丁（target-ref /
- * pending-flag）与答复投影状态深耦合，按计划随 6.5/6.6 状态收编迁移。
+ * pending-flag）及其余深水区镜像族（M7/M11/M16/M17/M22/M24/M27/M30/M36）
+ * 经用户拍板"接受现状，修订收官"（2026-11-22）维持两侧现状，不迁本模块
+ * ——见 docs/issues/ISSUE-12-structural-refactor.md 交付记录。
  *
  * 两侧差异全部经参数注入：
  * - 分歧① suppressOnRetry：A 重试轮静默不建卡（true）/ B 无此判断（false）；
