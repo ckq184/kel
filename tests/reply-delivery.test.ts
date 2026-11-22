@@ -479,7 +479,6 @@ describe('Assistant primary projection boundary', () => {
     expect(source).toContain(
       'const effectiveTurnId = outputChannelScope.inputId;',
     );
-    expect(source).toContain('? heldAgentDbTurnId || outputAgentScope.inputId');
     expect(source).toContain(
       'const agentAnyReplyProjectedByInput = new Map<string, boolean>',
     );

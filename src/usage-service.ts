@@ -13,7 +13,7 @@ import {
 } from './kaboo-pricing.js';
 import { getEffectiveCustomPricing } from './custom-pricing-store.js';
 
-export interface UsagePayload {
+interface UsagePayload {
   eventId?: string;
   inputTokens: number;
   outputTokens: number;
@@ -36,7 +36,7 @@ export interface UsagePayload {
   >;
 }
 
-export interface RecordUsageEventOptions {
+interface RecordUsageEventOptions {
   userId: string;
   groupFolder: string;
   agentId?: string | null;
@@ -109,15 +109,14 @@ export function deriveUsageEventId(options: RecordUsageEventOptions): string {
  * The sole application entry point for usage accounting.
  *
  * - one logical run = one eventId
- * - all model rows, analytics and quota ledgers are committed atomically
- * - balance deduction is replay-safe on the same eventId
+ * - all model rows and analytics are committed atomically
+ * - replaying the same eventId is a no-op
  * - zero-cost events still count every token category toward token quotas
  */
 export function recordUsageEvent(options: RecordUsageEventOptions): {
   eventId: string;
   inserted: boolean;
   providerEstimatedCostUSD: number;
-  billedCostUSD: number;
 } {
   const eventId = deriveUsageEventId(options);
   const existing = getRecordedUsageEventCost(eventId);
@@ -181,17 +180,10 @@ export function recordUsageEvent(options: RecordUsageEventOptions): {
       cacheCreationInputTokens: model.cacheCreationInputTokens,
       reasoningTokens: model.reasoningTokens,
       providerEstimatedCostUSD: incrementalCostUSD,
-      // Billing subscriptions were removed (thesis-lite); no plan multiplier
-      // applies, so the billed column mirrors the provider estimate.
-      billedCostUSD: incrementalCostUSD,
     };
   });
   const providerEstimatedCostUSD = models.reduce(
     (sum, model) => sum + model.providerEstimatedCostUSD,
-    0,
-  );
-  const billedCostUSD = models.reduce(
-    (sum, model) => sum + model.billedCostUSD,
     0,
   );
 
@@ -207,7 +199,6 @@ export function recordUsageEvent(options: RecordUsageEventOptions): {
     cacheCreationInputTokens: priced.usage.cacheCreationInputTokens,
     reasoningTokens: priced.usage.reasoningTokens,
     providerEstimatedCostUSD,
-    billedCostUSD,
     durationMs: safe(usage.durationMs),
     numTurns: safe(usage.numTurns),
     source,
@@ -219,6 +210,5 @@ export function recordUsageEvent(options: RecordUsageEventOptions): {
     eventId,
     inserted: result.inserted,
     providerEstimatedCostUSD,
-    billedCostUSD,
   };
 }

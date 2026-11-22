@@ -33,13 +33,11 @@ describe('product terminology', () => {
   test('keeps Pi runtime and subagent terminology technically explicit', () => {
     const login = read('web/src/pages/LoginPage.tsx');
     const streaming = read('web/src/components/chat/StreamingDisplay.tsx');
-    const workflow = read('web/src/components/chat/WorkflowRunCard.tsx');
     const tools = read('web/src/components/chat/ToolActivityCard.tsx');
     const readme = read('README.md');
 
     expect(login).toContain('Powered by Pi Agent Runtime');
     expect(streaming).toContain('子 Agent:');
-    expect(workflow).toContain('个 Agent');
     expect(tools).toContain("case 'Agent':");
     expect(readme).toContain('Pi Agent Runtime');
     // Asserted against README's actual positioning line (task K §4-3

@@ -3,7 +3,7 @@ import {
   parseChannelAddress,
 } from './channel-address.js';
 
-export interface AgentBuilderTurnContext {
+interface AgentBuilderTurnContext {
   chatJid: string;
   messageId: string;
   /** Host-issued identity used by the runner for this cold/warm input turn. */
@@ -115,7 +115,7 @@ export function ownerImIdFromDirectConversationJid(
 /** Convert the provider-specific persisted message sender back to the exact
  * representation used by registered_groups.owner_im_id. Unknown or malformed
  * formats fail closed; callers must never use suffix matching. */
-export function ownerImIdFromPersistedSender(
+function ownerImIdFromPersistedSender(
   sourceJid: string,
   sender: string,
 ): string | null {

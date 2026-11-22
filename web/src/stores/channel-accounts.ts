@@ -96,7 +96,7 @@ export type ChannelAccountPatchInput = Partial<
   Omit<ChannelAccountCreateInput, 'provider' | 'credentials'>
 > & { credentials?: Record<string, string> };
 
-export interface ChannelAccountStatusEvent {
+interface ChannelAccountStatusEvent {
   accountId: string;
   transportStatus: ChannelTransportStatus;
   lastError?: string | null;

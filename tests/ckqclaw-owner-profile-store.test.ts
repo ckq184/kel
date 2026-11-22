@@ -431,11 +431,10 @@ describe('CKQClaw owner preferred-address facade', () => {
     raw
       .prepare(
         `INSERT INTO workspace_memory_provenance (
-        item_id, revision, source_type, source_id, session_id, observed_at,
-        recorded_at
-      ) VALUES (?, 2, 'migration', 'legacy-delete', NULL, NULL, ?)`,
+        item_id, revision, source_type, source_id, session_id, observed_at
+      ) VALUES (?, 2, 'migration', 'legacy-delete', NULL, NULL)`,
       )
-      .run(item.id, deletedAt);
+      .run(item.id);
     raw
       .prepare(
         `INSERT INTO workspace_memory_tombstones (
@@ -1117,11 +1116,10 @@ describe('reserved canonical-key integrity', () => {
     raw
       .prepare(
         `INSERT INTO workspace_memory_provenance (
-        item_id, revision, source_type, source_id, session_id, observed_at,
-        recorded_at
-      ) VALUES (?, 1, 'migration', 'legacy', NULL, NULL, ?)`,
+        item_id, revision, source_type, source_id, session_id, observed_at
+      ) VALUES (?, 1, 'migration', 'legacy', NULL, NULL)`,
       )
-      .run(duplicateId, '2026-01-01T00:00:00.000Z');
+      .run(duplicateId);
     raw
       .prepare(
         `INSERT INTO workspace_memory_fts (

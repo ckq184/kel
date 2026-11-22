@@ -5,6 +5,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
 
 import { removeTmpDirRecursive } from './helpers/remove-tmp-dir.js';
+import { asSystemSettingsTestUser } from './helpers/route-test-user.js';
 
 const tmpDir = fs.mkdtempSync(
   path.join(os.tmpdir(), 'ckqclaw-system-settings-security-'),
@@ -84,11 +85,6 @@ const app = web.createAppForTest({
   reconnectUserIMChannels,
 } as any);
 
-function asUser(role: 'admin' | 'member', permissions: string[] = []): void {
-  process.env.CKQCLAW_TEST_ROLE = role;
-  process.env.CKQCLAW_TEST_PERMISSIONS = JSON.stringify(permissions);
-}
-
 beforeAll(() => {
   fs.mkdirSync(path.join(tmpDir, 'db'), { recursive: true });
   fs.mkdirSync(path.join(tmpDir, 'groups'), { recursive: true });
@@ -115,7 +111,7 @@ afterAll(() => {
 
 describe('system settings capability boundaries', () => {
   test('system config response excludes host and billing fields', async () => {
-    asUser('member', ['manage_system_config']);
+    asSystemSettingsTestUser('member', ['manage_system_config']);
     const response = await app.request('/api/config/system');
     expect(response.status).toBe(200);
     const body = await response.json();
@@ -130,7 +126,7 @@ describe('system settings capability boundaries', () => {
   });
 
   test('system config rejects billing fields instead of silently accepting them', async () => {
-    asUser('member', ['manage_system_config']);
+    asSystemSettingsTestUser('member', ['manage_system_config']);
     const response = await app.request('/api/config/system', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
@@ -140,7 +136,7 @@ describe('system settings capability boundaries', () => {
   });
 
   test('stale clients may submit retired automation fields, which are ignored', async () => {
-    asUser('member', ['manage_system_config']);
+    asSystemSettingsTestUser('member', ['manage_system_config']);
     const response = await app.request('/api/config/system', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
@@ -162,7 +158,7 @@ describe('system settings capability boundaries', () => {
   });
 
   test('member with system permission cannot read or write host integration', async () => {
-    asUser('member', ['manage_system_config']);
+    asSystemSettingsTestUser('member', ['manage_system_config']);
     expect((await app.request('/api/config/host-integration')).status).toBe(
       403,
     );
@@ -178,7 +174,7 @@ describe('system settings capability boundaries', () => {
   });
 
   test('admin host update logs names but never the sensitive path', async () => {
-    asUser('admin');
+    asSystemSettingsTestUser('admin');
     const response = await app.request('/api/config/host-integration', {
       method: 'PUT',
       headers: {
@@ -254,7 +250,7 @@ describe('system settings capability boundaries', () => {
     const nextClaudeDir = path.join(tmpDir, 'next-claude');
     fs.mkdirSync(nextClaudeDir);
     stopGroup.mockClear();
-    asUser('admin');
+    asSystemSettingsTestUser('admin');
     const response = await app.request('/api/config/host-integration', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
@@ -346,7 +342,7 @@ describe('system settings capability boundaries', () => {
     });
 
     stopGroup.mockClear();
-    asUser('admin');
+    asSystemSettingsTestUser('admin');
     const response = await app.request('/api/config/host-integration', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
@@ -383,7 +379,7 @@ describe('system settings capability boundaries', () => {
   });
 
   test('an exact retry repairs a persisted host-integration cleanup failure', async () => {
-    asUser('admin');
+    asSystemSettingsTestUser('admin');
     await app.request('/api/config/host-integration', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
@@ -448,7 +444,7 @@ describe('system settings capability boundaries', () => {
   });
 
   test('host-only enable serializes with workspace publication and prewarm', async () => {
-    asUser('admin');
+    asSystemSettingsTestUser('admin');
     await app.request('/api/config/host-integration', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
@@ -555,7 +551,7 @@ describe('system settings capability boundaries', () => {
       }
     });
     runtimeSafetyBlocks.clear();
-    asUser('admin');
+    asSystemSettingsTestUser('admin');
     const failed = await app.request(
       '/api/admin/users/settings-promoted-admin',
       {

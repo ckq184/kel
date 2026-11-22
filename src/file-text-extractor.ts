@@ -47,7 +47,7 @@ const TEXT_EXTS = new Set([
 
 const OFFICE_EXTS = new Set(['.doc', '.docx', '.rtf']);
 
-export interface ExtractResult {
+interface ExtractResult {
   /** Extracted plain text (possibly truncated with a marker). */
   text: string;
   /** True when extracted text exceeded the cap and was truncated. */
@@ -102,7 +102,11 @@ export async function extractFileText(
     if (OFFICE_EXTS.has(ext)) {
       // Try textutil first (macOS), then pandoc (Linux container).
       for (const [bin, args, label] of [
-        ['textutil', ['-convert', 'txt', '-stdout', filePath], 'textutil'] as const,
+        [
+          'textutil',
+          ['-convert', 'txt', '-stdout', filePath],
+          'textutil',
+        ] as const,
         ['pandoc', ['--to=plain', filePath], 'pandoc'] as const,
       ]) {
         try {

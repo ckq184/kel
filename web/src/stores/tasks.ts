@@ -55,21 +55,21 @@ export type TaskRunTrigger =
   | 'continuation'
   | 'retry';
 
-export type TaskNotificationStatus =
+type TaskNotificationStatus =
   | 'pending'
   | 'success'
   | 'partial_failed'
   | 'failed'
   | 'skipped';
 
-export interface TaskNotificationSummary {
+interface TaskNotificationSummary {
   attempted: number;
   succeeded: number;
   failed: number;
   failed_channels: string[];
 }
 
-export interface TaskPermissions {
+interface TaskPermissions {
   can_edit: boolean;
   can_run: boolean;
   can_pause: boolean;

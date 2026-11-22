@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-export interface EffectiveMcpManifest {
+interface EffectiveMcpManifest {
   schemaVersion: 1;
   hash: string;
   serverIds: string[];

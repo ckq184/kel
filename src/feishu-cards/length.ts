@@ -17,7 +17,7 @@ export const SECTION_SOFT_LIMIT = 2000;
 export const SECTION_HARD_LIMIT = 4000;
 export const MAX_SECTIONS = 4;
 
-export interface BodySection {
+interface BodySection {
   text: string;
   expanded: boolean;
 }

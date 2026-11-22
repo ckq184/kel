@@ -29,14 +29,14 @@ export const HOST_CLAUDE_SETTINGS_FILES = [
   'settings.local.json',
 ] as const;
 
-export interface ClaudeNativeConfigEntry {
+interface ClaudeNativeConfigEntry {
   name: string;
   kind: 'file' | 'directory';
   sourcePath: string;
   runtimePath: string;
 }
 
-export interface ClaudeContextPlanArgs {
+interface ClaudeContextPlanArgs {
   executionMode: 'host' | 'container';
   group: RegisteredGroup;
   ownerHomeFolder?: string;
@@ -57,7 +57,7 @@ export interface ClaudeContextPlanArgs {
   workspaceSkillsDirOverride?: string;
 }
 
-export interface ClaudeContextPlan {
+interface ClaudeContextPlan {
   executionMode: 'host' | 'container';
   isAdminOwned: boolean;
   externalClaudeDir: string;
@@ -74,12 +74,12 @@ export interface ClaudeContextPlan {
   audit: ClaudeContextAudit;
 }
 
-export interface HostClaudeContextSyncResult {
+interface HostClaudeContextSyncResult {
   claudeMdStatus: ClaudeContextAudit['claudeMd']['status'];
   warnings: string[];
 }
 
-export interface SyncHostClaudeContextOptions {
+interface SyncHostClaudeContextOptions {
   /**
    * Host mode materializes symlinks. Container mode only clears stale session
    * links because Docker supplies read-only nested mounts at the same paths.

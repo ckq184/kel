@@ -371,13 +371,12 @@ describe('Feishu capability mutation outbox', () => {
   });
 
   test('the host integration requires exact input scope for mutations', () => {
-    const main = fs.readFileSync(
-      path.join(process.cwd(), 'src/index.ts'),
+    // ISSUE-12 波 4 单元 4.9：feishu_capability case 体已迁
+    // src/ipc/feishu-capability-ops.ts（原文搬运），锚随体迁——整模块即
+    // 该分支（壳层仅剩 case 标签与单行调用），断言文本不变。
+    const branch = fs.readFileSync(
+      path.join(process.cwd(), 'src/ipc/feishu-capability-ops.ts'),
       'utf8',
-    );
-    const branch = main.slice(
-      main.indexOf("case 'feishu_capability':"),
-      main.indexOf("case 'register_group':"),
     );
     expect(branch).toContain('isFeishuCapabilityMutation(request)');
     expect(branch).toContain('activeChannelOutboxScopes.resolveInput');

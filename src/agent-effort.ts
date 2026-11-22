@@ -9,7 +9,7 @@ export const AGENT_EFFORT_LEVELS = [
   'max',
 ] as const satisfies readonly AgentEffortLevel[];
 
-export const SDK_AGENT_EFFORT_LEVELS = [
+const SDK_AGENT_EFFORT_LEVELS = [
   'low',
   'medium',
   'high',

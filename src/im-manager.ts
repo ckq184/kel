@@ -49,7 +49,7 @@ import {
 } from './channel-address.js';
 import { ChannelRouteRejectedError } from './channel-admission.js';
 
-export interface UserIMConnection {
+interface UserIMConnection {
   userId: string;
   channels: Map<string, IMChannel>;
 }
@@ -76,10 +76,9 @@ export interface WeChatConnectConfig {
   enabled?: boolean;
 }
 
-export interface ConnectFeishuOptions {
+interface ConnectFeishuOptions {
   accountId?: string;
   scopeIncomingJids?: boolean;
-  ignoreMessagesBefore?: number;
   onCommand?: (
     chatJid: string,
     command: string,
@@ -1074,7 +1073,6 @@ export class IMConnectionManager {
           logger.info({ userId }, 'User Feishu WebSocket connected');
         },
         onNewChat,
-        ignoreMessagesBefore: options?.ignoreMessagesBefore,
         onCommand: options?.onCommand,
         resolveGroupFolder: options?.resolveGroupFolder,
         resolveEffectiveChatJid: options?.resolveEffectiveChatJid,
@@ -1249,24 +1247,6 @@ export class IMConnectionManager {
 
   async disconnectUserWeChat(userId: string): Promise<void> {
     await this.disconnectChannel(userId, 'wechat');
-  }
-
-  /**
-   * Send a message to a Feishu chat.
-   * @deprecated Use sendMessage(jid, text) which auto-routes.
-   */
-  async sendFeishuMessage(
-    chatJid: string,
-    text: string,
-    localImagePaths?: string[],
-  ): Promise<void> {
-    const chatId = extractProviderTarget(chatJid);
-    const channel = this.findChannelForJid(chatJid, 'feishu');
-    if (channel) {
-      await channel.sendMessage(chatId, text, localImagePaths);
-      return;
-    }
-    logger.warn({ chatJid }, 'No Feishu connection available to send message');
   }
 
   /**

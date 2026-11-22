@@ -12,6 +12,10 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { removeTmpDirRecursive } from './helpers/remove-tmp-dir.js';
+import {
+  asRouteTestUser,
+  createTestUserRow,
+} from './helpers/route-test-user.js';
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'routes-workspaces-'));
 const tmpStoreDir = path.join(tmpDir, 'db');
@@ -48,30 +52,10 @@ const OWNER_ID = 'routes-workspace-owner';
 const STRANGER_ID = 'routes-workspace-stranger';
 const OTHER_OWNER_ID = 'routes-workspace-other-owner';
 
-function asUser(userId: string, role: 'admin' | 'member' = 'member'): void {
-  process.env.CKQCLAW_TEST_USER_ID = userId;
-  process.env.CKQCLAW_TEST_USER_ROLE = role;
-}
-
-function createUser(id: string): void {
-  const now = new Date().toISOString();
-  db.createUser({
-    id,
-    username: id,
-    password_hash: 'hash',
-    display_name: id,
-    role: 'member',
-    status: 'active',
-    created_at: now,
-    updated_at: now,
-    must_change_password: false,
-  });
-}
-
 beforeAll(() => {
   db.initDatabase();
   for (const id of [OWNER_ID, STRANGER_ID, OTHER_OWNER_ID]) {
-    createUser(id);
+    createTestUserRow(db, id);
   }
 });
 
@@ -113,7 +97,7 @@ describe('/api/workspaces canonical read routes', () => {
       reply_policy: 'mirror',
     });
 
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     const listRes = await routes.request('/', { method: 'GET' });
     expect(listRes.status).toBe(200);
     const listBody = await listRes.json();
@@ -158,7 +142,7 @@ describe('/api/workspaces canonical read routes', () => {
   });
 
   test('non-owners cannot list or inspect another account workspace', async () => {
-    asUser(STRANGER_ID);
+    asRouteTestUser(STRANGER_ID);
     const strangerListRes = await routes.request('/', { method: 'GET' });
     const strangerListBody = await strangerListRes.json();
     expect(strangerListBody.workspaces).not.toContainEqual(
@@ -186,7 +170,7 @@ describe('/api/workspaces canonical read routes', () => {
       target_main_jid: 'web:canonical-other',
     });
 
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     const res = await routes.request('/mounts', { method: 'GET' });
     expect(res.status).toBe(200);
     const body = await res.json();

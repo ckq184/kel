@@ -143,15 +143,27 @@ describe('buildInlinedFileContent（入站文件文本内联 helper）', () => {
 describe('三渠道入站文件内联接线（源码契约）', () => {
   const channels = [
     {
-      file: 'src/feishu.ts',
+      // ISSUE-12 单元 2.9：飞书入站文件内联接线随附件段自 src/feishu.ts
+      // 原文搬至 src/feishu-inbound-attachments.ts，本条三断言（im-downloader
+      // import / (groupFolder, relPath) 调用形 / ?? 回退）等强改锚新模块，
+      // 断言文本逐字不变，仅锚点文件随搬运体搬家。
+      file: 'src/feishu-inbound-attachments.ts',
       call: 'buildInlinedFileContent(groupFolder, relPath)',
     },
     {
-      file: 'src/qq.ts',
+      // ISSUE-12 单元 2.13：QQ 入站附件接线随媒体链（processQQAttachment）
+      // 自 src/qq.ts 原文搬至 src/qq-media.ts，本条两断言（im-downloader
+      // import / (groupFolder, relPath) 调用形）等强改锚新模块，断言文本
+      // 逐字不变，仅锚点文件随搬运体搬家。
+      file: 'src/qq-media.ts',
       call: 'buildInlinedFileContent(groupFolder, relPath)',
     },
     {
-      file: 'src/wechat.ts',
+      // ISSUE-12 单元 2.19：微信入站文件内联接线随媒体段（processFileItem）
+      // 自 src/wechat.ts 原文搬至 src/wechat-media.ts，本条两断言
+      //（im-downloader import / (groupFolder, result.savedPath) 调用形）
+      // 等强改锚新模块，断言文本逐字不变，仅锚点文件随搬运体搬家。
+      file: 'src/wechat-media.ts',
       call: 'buildInlinedFileContent(groupFolder, result.savedPath)',
     },
   ] as const;

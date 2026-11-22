@@ -596,7 +596,7 @@ export function formatScheduledTaskWorkspaceResult(input: {
   return `${title}\n\n${metadata.join('\n')}\n\n${emptyNotice}`;
 }
 
-export interface RunTaskOptions {
+interface RunTaskOptions {
   /** Unique ID for isolated task IPC namespace (tasks-run/{taskRunId}/) */
   taskRunId?: string;
   /** Manual trigger — don't update next_run, skip isTaskStillActive check */
@@ -1883,7 +1883,7 @@ export function scheduledGroupPromptMessageId(runId: string): string {
 }
 
 /** Return a durable run id only for scheduler-owned prompt identities. */
-export function scheduledGroupRunIdFromPromptMessageId(
+function scheduledGroupRunIdFromPromptMessageId(
   messageId: string,
 ): string | null {
   if (!messageId.startsWith(SCHEDULED_GROUP_PROMPT_ID_PREFIX)) return null;

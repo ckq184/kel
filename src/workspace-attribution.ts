@@ -5,7 +5,7 @@ import { resolveWorkspaceJid } from './channel-mount-service.js';
  * Dependencies for resolving where a channel chat's output belongs.
  * Injected so this module stays side-effect free and unit-testable.
  */
-export interface WorkspaceAttributionDeps {
+interface WorkspaceAttributionDeps {
   getRegisteredGroup: (jid: string) => RegisteredGroup | null | undefined;
   getAgent: (agentId: string) => { chat_jid: string } | null | undefined;
   getJidsByFolder: (folder: string) => string[];

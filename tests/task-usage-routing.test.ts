@@ -19,8 +19,8 @@ vi.mock('../src/config.js', async (importOriginal) => ({
 
 vi.mock('../src/runtime-config.js', async (importOriginal) => ({
   ...((await importOriginal()) as Record<string, unknown>),
-  // 路由测试只关心落库与幂等；钱包扣费路径由 usage-accounting 覆盖。
-  getSystemSettings: () => ({ billingEnabled: false }),
+  // 隔离宿主机的真实系统设置文件；本文件只关心落库与幂等。
+  getSystemSettings: () => ({}),
 }));
 
 vi.mock('../src/logger.js', () => ({

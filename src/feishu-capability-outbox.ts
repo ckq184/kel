@@ -23,7 +23,7 @@ import {
   DefinitiveFeishuCapabilityError,
 } from './feishu-capability.js';
 
-export interface DeliverFeishuCapabilityMutationInput extends ChannelRouteSnapshot {
+interface DeliverFeishuCapabilityMutationInput extends ChannelRouteSnapshot {
   turnRunId: string;
   requestId?: string;
   request: FeishuCapabilityRequest;
@@ -37,7 +37,7 @@ export interface DeliverFeishuCapabilityMutationInput extends ChannelRouteSnapsh
   ) => void | Promise<void>;
 }
 
-export interface FeishuCapabilityMutationDelivery {
+interface FeishuCapabilityMutationDelivery {
   delivery: ChannelOutboxDeliveryResult;
   /** Present only when this process performed the physical provider call. */
   result?: FeishuCapabilityResult;

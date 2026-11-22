@@ -40,11 +40,11 @@ const MAX_EXPANDED_BYTES = 25 * 1024 * 1024;
 /** 归档条目数与目录扫描深度上限（防耗尽 inode / 深层遍历拖垮事件循环）。 */
 const MAX_ENTRIES = 1_000;
 const MAX_SCAN_DEPTH = 5;
-export const MAX_GIT_REPOSITORY_BYTES = 64 * 1024 * 1024;
+const MAX_GIT_REPOSITORY_BYTES = 64 * 1024 * 1024;
 /** 子进程合并输出的保留上限（防超长报错撑爆内存/日志）。 */
 const MAX_COMMAND_OUTPUT_BYTES = 64 * 1024;
 
-export interface SkillImportResult {
+interface SkillImportResult {
   installed: string[];
   sourceUrl?: string;
   version?: string;

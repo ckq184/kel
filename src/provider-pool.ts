@@ -9,7 +9,7 @@ import type { BalancingConfig } from './runtime-config.js';
 
 // ─── 类型定义 ──────────────────────────────────────────────
 
-export interface ProviderPoolMember {
+interface ProviderPoolMember {
   profileId: string;
   weight: number;
   enabled: boolean;

@@ -32,7 +32,7 @@ import {
   type ChannelConversationKind,
 } from './channel-conversation-kind.js';
 
-export interface ChannelMountResolutionDeps {
+interface ChannelMountResolutionDeps {
   getAgent: (
     sessionId: string,
   ) => Pick<SubAgent, 'id' | 'chat_jid'> | undefined;
@@ -40,14 +40,14 @@ export interface ChannelMountResolutionDeps {
   getJidsByFolder?: (folder: string) => string[];
 }
 
-export interface ChannelMountUpdateOptions {
+interface ChannelMountUpdateOptions {
   replyPolicy?: 'source_only' | 'mirror';
   activationMode?: ChannelMount['activation_mode'];
   audienceMode?: ChannelMount['audience_mode'];
   ownerImId?: string | null;
 }
 
-export interface NativeContextMetadata {
+interface NativeContextMetadata {
   chat_mode?: string | null;
   group_message_type?: string | null;
   native_context_type?: string | null;
@@ -55,7 +55,7 @@ export interface NativeContextMetadata {
   activation_mode?: RegisteredGroup['activation_mode'] | null;
 }
 
-export interface RestoreDefaultChannelMountDeps {
+interface RestoreDefaultChannelMountDeps {
   getAccount: (id: string) => ChannelAccount | undefined;
   getDefaultAccount: (
     ownerUserId: string,
@@ -74,13 +74,13 @@ export interface RestoreDefaultChannelMountDeps {
   excludedWorkspaceJids?: ReadonlySet<string>;
 }
 
-export interface ThreadMapMountLookupDeps {
+interface ThreadMapMountLookupDeps {
   getAllGroups: () => Record<string, RegisteredGroup>;
   getGroup: (jid: string) => RegisteredGroup | undefined;
   getJidsByFolder?: (folder: string) => string[];
 }
 
-export type RestoreDefaultChannelMountResult =
+type RestoreDefaultChannelMountResult =
   | {
       status: 'resolved';
       workspaceJid: string;
@@ -96,14 +96,14 @@ export type RestoreDefaultChannelMountResult =
         | 'missing_default_workspace';
     };
 
-export type NativeContextMountUpgradeResult =
+type NativeContextMountUpgradeResult =
   | { status: 'upgraded' | 'unchanged'; updated: RegisteredGroup }
   | {
       status: 'conflict';
       reason: 'bound_to_session' | 'missing_workspace';
     };
 
-export type ChannelMountTargetResolution =
+type ChannelMountTargetResolution =
   | {
       status: 'resolved';
       effectiveJid: string;

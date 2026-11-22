@@ -1,4 +1,4 @@
-export interface FeishuTokenUsage {
+interface FeishuTokenUsage {
   inputTokens?: number;
   outputTokens?: number;
   cacheReadInputTokens?: number;
@@ -6,7 +6,7 @@ export interface FeishuTokenUsage {
   reasoningTokens?: number;
 }
 
-export interface FeishuUsageNoteInput extends FeishuTokenUsage {
+interface FeishuUsageNoteInput extends FeishuTokenUsage {
   inputTokens: number;
   outputTokens: number;
   costUSD: number;
@@ -18,7 +18,7 @@ function tokenCount(value: number | undefined): number {
   return value !== undefined && Number.isFinite(value) && value > 0 ? value : 0;
 }
 
-export function formatFeishuTokenCount(value: number | undefined): string {
+function formatFeishuTokenCount(value: number | undefined): string {
   if (value === undefined || !Number.isFinite(value) || value < 0) return '-';
   return value >= 1000 ? `${(value / 1000).toFixed(1)}K` : String(value);
 }

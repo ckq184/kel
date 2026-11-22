@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { zodBadRequest } from '../validation-response.js';
 import type { Variables } from '../web-context.js';
 import { getWebDeps } from '../web-context.js';
 import { authMiddleware } from '../middleware/auth.js';
@@ -119,7 +120,7 @@ agentProfileRoutes.post('/', authMiddleware, async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const parsed = AgentProfileCreateSchema.safeParse(body);
   if (!parsed.success) {
-    return c.json({ error: 'Invalid request body' }, 400);
+    return zodBadRequest(c, parsed.error, 'body-plain');
   }
   if (isUnauthorizedHostClaudeContext(user, parsed.data.runtime_policy)) {
     return c.json({ error: 'host_claude context requires an admin role' }, 403);
@@ -193,7 +194,7 @@ agentProfileRoutes.post('/generate', authMiddleware, async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const parsed = AgentProfileGenerateSchema.safeParse(body);
   if (!parsed.success) {
-    return c.json({ error: 'Invalid request body' }, 400);
+    return zodBadRequest(c, parsed.error, 'body-plain');
   }
 
   try {
@@ -369,7 +370,7 @@ agentProfileRoutes.post('/:id/refine-prompt', authMiddleware, async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const parsed = AgentProfileRefinePromptSchema.safeParse(body);
   if (!parsed.success) {
-    return c.json({ error: 'Invalid request body' }, 400);
+    return zodBadRequest(c, parsed.error, 'body-plain');
   }
 
   try {
@@ -414,7 +415,7 @@ agentProfileRoutes.patch('/:id', authMiddleware, async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const parsed = AgentProfilePatchSchema.safeParse(body);
   if (!parsed.success) {
-    return c.json({ error: 'Invalid request body' }, 400);
+    return zodBadRequest(c, parsed.error, 'body-plain');
   }
   if (isUnauthorizedHostClaudeContext(user, parsed.data.runtime_policy)) {
     return c.json({ error: 'host_claude context requires an admin role' }, 403);

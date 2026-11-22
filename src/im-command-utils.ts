@@ -19,7 +19,7 @@ export interface WorkspaceInfo {
   agents: AgentInfo[];
 }
 
-export interface MessageForContext {
+interface MessageForContext {
   sender: string;
   sender_name: string;
   content: string;
@@ -95,13 +95,13 @@ export function formatWorkspaceList(
 
 // ─── Location Info ────────────────────────────────────────────
 
-export interface LocationInfo {
+interface LocationInfo {
   locationLine: string;
   folder: string;
   replyPolicy: string | null;
 }
 
-export interface BoundChatTarget {
+interface BoundChatTarget {
   baseChatJid: string;
   targetChatJid: string;
   folder: string;
@@ -216,7 +216,7 @@ export function resolveBoundChatTarget(
 
 // ─── System Status Formatting ─────────────────────────────────
 
-export interface QueueStatusInfo {
+interface QueueStatusInfo {
   activeContainerCount: number;
   activeHostProcessCount: number;
   maxContainers: number;
@@ -291,7 +291,7 @@ export const OWNER_REQUIRED_IM_COMMANDS: ReadonlySet<string> = new Set([
   'release_owner',
 ]);
 
-export interface ImOwnerCheckGroup {
+interface ImOwnerCheckGroup {
   owner_im_id?: string | null;
 }
 

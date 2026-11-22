@@ -11,7 +11,7 @@ const FEISHU_CLI_CREDENTIAL_ENV_KEYS = [
   'FEISHU_USER_ACCESS_TOKEN',
 ] as const;
 
-export class FeishuCliCredentialBindingError extends Error {
+class FeishuCliCredentialBindingError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'FeishuCliCredentialBindingError';
@@ -32,7 +32,7 @@ interface FeishuCliBindingDependencies {
   ) => Record<string, string | undefined> | null;
 }
 
-export interface ResolveFeishuCliRuntimeBindingInput {
+interface ResolveFeishuCliRuntimeBindingInput {
   ownerUserId?: string | null;
   channelContext?: ChannelTurnContext;
   workspaceChannelAccountId?: string | null;

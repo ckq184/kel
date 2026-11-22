@@ -19,7 +19,8 @@ vi.mock('../src/config.js', async (importOriginal) => ({
 
 vi.mock('../src/runtime-config.js', async (importOriginal) => ({
   ...((await importOriginal()) as Record<string, unknown>),
-  getSystemSettings: () => ({ billingEnabled: true }),
+  // 隔离宿主机的真实系统设置文件；落库路径不读任何系统设置。
+  getSystemSettings: () => ({}),
 }));
 
 vi.mock('../src/logger.js', () => ({
@@ -174,10 +175,8 @@ describe('v51 usage event accounting', () => {
       cacheReadInputTokens: 100,
       cacheCreationInputTokens: 20,
       providerEstimatedCostUSD: 0,
-      billedCostUSD: 0,
       durationMs: 100,
       numTurns: 1,
-      trackBillingUsage: true,
       models: [
         {
           model: 'model-a',
@@ -186,7 +185,6 @@ describe('v51 usage event accounting', () => {
           cacheReadInputTokens: 60,
           cacheCreationInputTokens: 10,
           providerEstimatedCostUSD: 0,
-          billedCostUSD: 0,
         },
         {
           model: 'model-b',
@@ -195,7 +193,6 @@ describe('v51 usage event accounting', () => {
           cacheReadInputTokens: 40,
           cacheCreationInputTokens: 10,
           providerEstimatedCostUSD: 0,
-          billedCostUSD: 0,
         },
       ],
     } as const;
@@ -325,11 +322,9 @@ describe('v51 usage event accounting', () => {
     // rounding would lose both; one bucket rounds their $0.009798 total to 1¢.
     expect(make('cent-carry-1', '2026-07-16T06:01:00.000Z')).toMatchObject({
       providerEstimatedCostUSD: 0,
-      billedCostUSD: 0,
     });
     expect(make('cent-carry-2', '2026-07-16T06:20:00.000Z')).toMatchObject({
       providerEstimatedCostUSD: 0.01,
-      billedCostUSD: 0.01,
     });
     expect(
       db.getUsageAnalytics({
@@ -478,7 +473,6 @@ describe('v51 usage event accounting', () => {
       groupFolder: 'workspace-root-cost',
     });
     expect(analytics.summary.providerEstimatedCostUSD).toBeCloseTo(4.5);
-    expect(analytics.summary.billedCostUSD).toBeCloseTo(4.5);
     expect(
       analytics.attributions.models.reduce(
         (sum, item) => sum + item.providerEstimatedCostUSD,
@@ -523,12 +517,10 @@ describe('v51 usage event accounting', () => {
     });
 
     expect(result.providerEstimatedCostUSD).toBe(5.29);
-    expect(result.billedCostUSD).toBe(5.29);
     const event = probe
       .prepare(
         `SELECT input_tokens, output_tokens, cache_read_input_tokens,
-          cache_creation_input_tokens, provider_estimated_cost_usd,
-          billed_cost_usd
+          cache_creation_input_tokens, provider_estimated_cost_usd
          FROM usage_events WHERE event_id = 'model-token-mismatch'`,
       )
       .get() as any;
@@ -538,7 +530,6 @@ describe('v51 usage event accounting', () => {
       cache_read_input_tokens: 200_000,
       cache_creation_input_tokens: 75_000,
       provider_estimated_cost_usd: 5.29,
-      billed_cost_usd: 5.29,
     });
     const modelTotals = probe
       .prepare(
@@ -546,8 +537,7 @@ describe('v51 usage event accounting', () => {
           SUM(output_tokens) AS output_tokens,
           SUM(cache_read_input_tokens) AS cache_read_input_tokens,
           SUM(cache_creation_input_tokens) AS cache_creation_input_tokens,
-          SUM(provider_estimated_cost_usd) AS provider_estimated_cost_usd,
-          SUM(billed_cost_usd) AS billed_cost_usd
+          SUM(provider_estimated_cost_usd) AS provider_estimated_cost_usd
          FROM usage_records WHERE event_id = 'model-token-mismatch'`,
       )
       .get() as any;
@@ -561,7 +551,6 @@ describe('v51 usage event accounting', () => {
     expect(modelTotals.provider_estimated_cost_usd).toBeCloseTo(
       event.provider_estimated_cost_usd,
     );
-    expect(modelTotals.billed_cost_usd).toBeCloseTo(event.billed_cost_usd);
     expect(
       (
         probe
@@ -599,7 +588,6 @@ describe('v51 usage event accounting', () => {
         cacheReadInputTokens: 2,
         cacheCreationInputTokens: 3,
         providerEstimatedCostUSD: cost,
-        billedCostUSD: cost,
         models: [
           {
             model: 'snapshot-model',
@@ -608,7 +596,6 @@ describe('v51 usage event accounting', () => {
             cacheReadInputTokens: 2,
             cacheCreationInputTokens: 3,
             providerEstimatedCostUSD: cost,
-            billedCostUSD: cost,
           },
         ],
       });

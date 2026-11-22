@@ -4,10 +4,11 @@ import { describe, expect, test } from 'vitest';
 
 describe('graceful shutdown lifecycle order', () => {
   test('stops intake and agents, terminalizes cards, then disconnects IM', () => {
-    const source = fs.readFileSync(
-      path.join(process.cwd(), 'src/index.ts'),
-      'utf8',
-    );
+    // ISSUE-15：Windows（core.autocrlf=true）检出为 CRLF，跨行锚点统一按 LF
+    // 匹配，读源先归一行尾（LF 环境零变化）。
+    const source = fs
+      .readFileSync(path.join(process.cwd(), 'src/index.ts'), 'utf8')
+      .replace(/\r\n/g, '\n');
     const shutdownStart = source.indexOf(
       'const shutdown = async (signal: string)',
     );

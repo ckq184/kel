@@ -1,7 +1,7 @@
 import { useCallback, useSyncExternalStore } from 'react';
 import { useAuthStore } from '../stores/auth';
 
-export type DisplayMode = 'chat' | 'compact';
+type DisplayMode = 'chat' | 'compact';
 
 const DEFAULT_MODE: DisplayMode = 'chat';
 const listeners = new Set<() => void>();

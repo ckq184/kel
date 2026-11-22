@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-export type McpServerMap = Record<string, Record<string, unknown>>;
+type McpServerMap = Record<string, Record<string, unknown>>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);

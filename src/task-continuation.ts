@@ -36,7 +36,7 @@ const DEFAULT_MAX_CONTINUATIONS = 3;
 const DEFAULT_BACKOFF_MS = 60_000;
 const MAX_FIELD_CHARS = 4_000;
 
-export interface TaskContinuationRequest {
+interface TaskContinuationRequest {
   reason: string;
   nextStep: string | null;
   turnId: string | null;
@@ -88,11 +88,7 @@ export function readContinuationRequest(
   return { reason, nextStep, turnId, at };
 }
 
-export type ContinuationOutcome =
-  | 'continue'
-  | 'needs_human'
-  | 'abandon'
-  | 'none';
+type ContinuationOutcome = 'continue' | 'needs_human' | 'abandon' | 'none';
 
 /**
  * Explicit state transition for one pending continuation request.
@@ -116,7 +112,7 @@ export function decideContinuationOutcome(input: {
   return 'continue';
 }
 
-export interface TaskContinuationConfig {
+interface TaskContinuationConfig {
   /** Per-chain cap on automatic continuation runs; 0 disables continuation. */
   maxContinuations: number;
   /** Delay before a queued continuation run becomes claimable. */

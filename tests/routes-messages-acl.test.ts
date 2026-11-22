@@ -35,6 +35,7 @@ import {
   test,
   vi,
 } from 'vitest';
+import { asRouteTestUser } from './helpers/route-test-user.js';
 
 const SHARED_TMP =
   process.env.CKQCLAW_TEST_DATA_DIR ??
@@ -168,11 +169,6 @@ function seedTestGroup(): void {
   } as any);
 }
 
-function asUser(userId: string, role: 'admin' | 'member' = 'member'): void {
-  process.env.CKQCLAW_TEST_USER_ID = userId;
-  process.env.CKQCLAW_TEST_USER_ROLE = role;
-}
-
 async function postMessage(
   body: unknown,
 ): Promise<{ status: number; body: any }> {
@@ -226,14 +222,14 @@ afterEach(() => {
 describe('POST /api/messages — validation & lookup', () => {
   test('invalid body returns 400', async () => {
     seedTestGroup();
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     const { status, body } = await postMessage({ content: '/clear' }); // no chatJid
     expect(status).toBe(400);
     expect(body.error).toMatch(/invalid/i);
   });
 
   test('unknown group returns 404', async () => {
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     const { status, body } = await postMessage({
       chatJid: 'web:does-not-exist',
       content: '/clear',
@@ -246,7 +242,7 @@ describe('POST /api/messages — validation & lookup', () => {
 describe('POST /api/messages — /clear interception ACL', () => {
   test('non-owner is denied (403 Access denied)', async () => {
     seedTestGroup();
-    asUser(OUTSIDER_ID);
+    asRouteTestUser(OUTSIDER_ID);
     const { status, body } = await postMessage({
       chatJid: GROUP_JID,
       content: '/clear',
@@ -258,7 +254,7 @@ describe('POST /api/messages — /clear interception ACL', () => {
 
   test('owner can /clear (200, session reset)', async () => {
     seedTestGroup();
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     const { status, body } = await postMessage({
       chatJid: GROUP_JID,
       content: '/clear',
@@ -277,7 +273,7 @@ describe('POST /api/messages — /clear interception ACL', () => {
 
   test('owner with leading/trailing whitespace still triggers /clear', async () => {
     seedTestGroup();
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     const { status, body } = await postMessage({
       chatJid: GROUP_JID,
       content: '  /clear  ',
@@ -290,7 +286,7 @@ describe('POST /api/messages — /clear interception ACL', () => {
 describe('POST /api/messages — active-run steering', () => {
   test('keeps steer durable and requests a controlled interrupt', async () => {
     seedTestGroup();
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     activeQueryId = 'run-active';
 
     const { status, body } = await postMessage({
@@ -325,7 +321,7 @@ describe('POST /api/messages — active-run steering', () => {
 
   test('queued send-now and direct steer target the same current run', async () => {
     seedTestGroup();
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     activeQueryId = 'run-original';
 
     const queued = await postMessage({
@@ -369,7 +365,7 @@ describe('POST /api/messages — active-run steering', () => {
 
   test('routes queued edit and reorder operations', async () => {
     seedTestGroup();
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
 
     const edit = await postFollowUpAction('queued-message', {
       chatJid: GROUP_JID,

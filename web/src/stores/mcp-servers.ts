@@ -54,7 +54,7 @@ export interface McpServerCreate {
   memberAccess?: 'admin_only' | 'shared';
 }
 
-export interface McpServerUpdate {
+interface McpServerUpdate {
   command?: string;
   args?: string[];
   env?: Record<string, string> | null;

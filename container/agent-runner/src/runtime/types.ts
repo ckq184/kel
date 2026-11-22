@@ -45,7 +45,7 @@ export type RuntimeUsage = {
 export type RuntimeResult = {
   text: string;
   sessionId: string;
-  finalizationReason: 'completed' | 'interrupted' | 'error' | 'truncated';
+  finalizationReason: 'completed' | 'interrupted' | 'error';
   stopReason?: string;
   usage?: RuntimeUsage;
   error?: string;
@@ -79,15 +79,6 @@ export type RuntimeEvent =
       isError?: boolean;
     }
   | {
-      type: 'usage';
-      sessionId: string;
-      usage: RuntimeUsage;
-    }
-  | {
-      type: 'session';
-      sessionId: string;
-    }
-  | {
       type: 'status';
       sessionId: string;
       statusText: string;
@@ -117,12 +108,6 @@ export type RuntimeEvent =
       type: 'result';
       sessionId: string;
       result: RuntimeResult;
-    }
-  | {
-      type: 'error';
-      sessionId: string;
-      error: string;
-      fatal: boolean;
     };
 
 export type RuntimeEventListener = (event: RuntimeEvent) => void;

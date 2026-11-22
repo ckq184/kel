@@ -18,12 +18,12 @@ export interface FeishuRichContentClient {
   };
 }
 
-export interface FeishuParsedContent {
+interface FeishuParsedContent {
   text: string;
   imageKeys?: string[];
 }
 
-export interface FeishuRichContentLimits {
+interface FeishuRichContentLimits {
   /** Timeout for one Feishu API request. */
   requestTimeoutMs: number;
   /** Overall budget for current-message and reference enrichment. */
@@ -40,7 +40,7 @@ export interface FeishuRichContentLimits {
   maxImageKeys: number;
 }
 
-export const DEFAULT_FEISHU_RICH_CONTENT_LIMITS: FeishuRichContentLimits = {
+const DEFAULT_FEISHU_RICH_CONTENT_LIMITS: FeishuRichContentLimits = {
   requestTimeoutMs: 1_500,
   totalTimeoutMs: 4_000,
   maxForwardItems: 20,
@@ -77,7 +77,7 @@ interface NormalizedItem {
   senderLabel?: string;
 }
 
-export interface EnrichFeishuInboundContentInput {
+interface EnrichFeishuInboundContentInput {
   client: FeishuRichContentClient;
   messageId: string;
   messageType: string;
@@ -92,7 +92,7 @@ export interface EnrichFeishuInboundContentInput {
   limits?: Partial<FeishuRichContentLimits>;
 }
 
-export interface EnrichedFeishuInboundContent {
+interface EnrichedFeishuInboundContent {
   /** Current user-visible message only; quoted ancestors are kept separately. */
   text: string;
   imageKeys?: string[];

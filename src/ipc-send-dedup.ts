@@ -3,7 +3,7 @@ import crypto from 'crypto';
 const IPC_SEND_DEDUP_TTL_MS = 10 * 60_000;
 const IPC_SEND_DEDUP_MAX = 500;
 
-export interface IpcSendDedupDeps {
+interface IpcSendDedupDeps {
   getRetryCount(jid: string): number;
   getJidsByFolder(folder: string): string[];
   now?: () => number;

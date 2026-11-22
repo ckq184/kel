@@ -24,9 +24,7 @@ function canonicalNotifyChannels(channels: string[] | null | undefined) {
   return channels ? [...new Set(channels)].sort() : [];
 }
 
-export function buildTaskExecutionFingerprint(
-  task: TaskExecutionDefinition,
-): string {
+function buildTaskExecutionFingerprint(task: TaskExecutionDefinition): string {
   return JSON.stringify({
     version: 1,
     groupFolder: task.group_folder,

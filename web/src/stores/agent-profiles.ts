@@ -27,7 +27,7 @@ export interface AgentPromptChatMessage {
   content: string;
 }
 
-export interface AgentPromptRefinement extends Omit<
+interface AgentPromptRefinement extends Omit<
   AgentProfilePrompts,
   'prompt_mode'
 > {

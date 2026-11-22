@@ -79,7 +79,11 @@ describe('Agent prompt and capability frontend contract', () => {
       /基本信息[\s\S]*四段提示词[\s\S]*宿主机配置[\s\S]*Skills \/ MCP[\s\S]*确认创建/,
     );
     expect(page).toContain('draftStep');
-    expect(page).toContain('提示词完成度');
+    // ISSUE-12 波 5 单元 5.6：确认创建汇总 section（含提示词完成度）已迁
+    // web/src/components/agents/AgentDraftSummary.tsx（原文搬运），锚随体迁。
+    expect(read('web/src/components/agents/AgentDraftSummary.tsx')).toContain(
+      '提示词完成度',
+    );
     expect(editor).toContain('一键填入推荐模板');
     expect(editor).toContain('DEFAULT_AGENT_PROMPTS');
     expect(history).toContain('对比当前');
@@ -99,10 +103,19 @@ describe('Agent prompt and capability frontend contract', () => {
       'web/src/components/settings/SystemSettingsSection.tsx',
     );
 
-    expect(profiles).toMatch(
+    // ISSUE-12 波 5 单元 5.7：宿主机配置开关说明（CKQClaw MCP 与宿主机
+    // Skills 独立控制注记）已随身份区迁
+    // web/src/components/agents/AgentIdentitySection.tsx（原文搬运），
+    // 锚随体迁、断言语义不变。
+    expect(read('web/src/components/agents/AgentIdentitySection.tsx')).toMatch(
       /CKQClaw MCP[\s\S]*宿主机 Skills[\s\S]*“能力配置”独立控制/,
     );
-    expect(profiles).toContain("skill.source === 'external' && skill.enabled");
+    // ISSUE-12 波 5 单元 5.3：hostSkillOptions memo（external 过滤）已随
+    // useAgentRuntimePolicy hook 迁 web/src/hooks/useAgentRuntimePolicy.ts
+    // （原文搬运），锚随体迁、断言文本不变。
+    expect(read('web/src/hooks/useAgentRuntimePolicy.ts')).toContain(
+      "skill.source === 'external' && skill.enabled",
+    );
     expect(skillEditor).toMatch(/不使用[\s\S]*选择部分[\s\S]*全部使用/);
     expect(skillEditor).toContain('来自 ~/.claude/skills，可单独启用');
     expect(main).toContain('<AgentSkillsPolicyEditor');
@@ -123,9 +136,18 @@ describe('Agent prompt and capability frontend contract', () => {
     ).toEqual({ mode: 'custom', ids: ['research', 'docs'] });
 
     const profiles = read('web/src/pages/AgentProfilesPage.tsx');
-    expect(profiles).toContain('onHostModeChange={handleHostSkillsModeChange}');
-    expect(profiles).toContain('void persistHostSkillPolicy(');
-    expect(profiles).toMatch(
+    // ISSUE-12 波 5 单元 5.8：能力配置区 JSX 已迁
+    // web/src/components/agents/AgentCapabilitiesSection.tsx（原文搬运），
+    // onHostModeChange 接线锚随体迁、断言文本不变。
+    expect(
+      read('web/src/components/agents/AgentCapabilitiesSection.tsx'),
+    ).toContain('onHostModeChange={handleHostSkillsModeChange}');
+    // ISSUE-12 波 5 单元 5.2：persistHostSkillPolicy 及其调用点已随
+    // useHostSkillAutosave hook 迁 web/src/hooks/useHostSkillAutosave.ts
+    // （原文搬运），锚随体迁、断言文本不变；JSX 接线锚仍读页面。
+    const autosave = read('web/src/hooks/useHostSkillAutosave.ts');
+    expect(autosave).toContain('void persistHostSkillPolicy(');
+    expect(autosave).toMatch(
       /runtime_policy:\s*\{\s*skills:\s*\{\s*host: nextPolicy/,
     );
   });
@@ -186,12 +208,15 @@ describe('Agent prompt and capability frontend contract', () => {
   });
 
   test('allows every saved model configuration to be selected by an Agent', () => {
-    const profiles = read('web/src/pages/AgentProfilesPage.tsx');
+    // ISSUE-12 波 5 单元 5.7：模型配置选择器已随身份区迁
+    // web/src/components/agents/AgentIdentitySection.tsx（原文搬运），
+    // 锚随体迁、双断言逐字不变。
+    const identity = read('web/src/components/agents/AgentIdentitySection.tsx');
     const main = read(
       'web/src/components/settings/MainAgentCapabilitiesSection.tsx',
     );
 
-    for (const source of [profiles, main]) {
+    for (const source of [identity, main]) {
       expect(source).not.toContain('disabled={!model.enabled}');
       expect(source).toContain("!model.enabled ? '（仅显式使用）' : ''");
     }

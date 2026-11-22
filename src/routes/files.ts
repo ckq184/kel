@@ -5,6 +5,7 @@ import {
   isHostExecutionGroup,
   hasHostExecutionPermission,
   canAccessGroup,
+  groupAccessDeniedResponse,
 } from '../web-context.js';
 import type { AuthUser } from '../types.js';
 import type { RegisteredGroup } from '../types.js';
@@ -17,7 +18,6 @@ import {
   createDirectory,
   isSystemPath,
   MAX_FILE_SIZE,
-  invalidateGroupStorageUsage,
   getFileRoot,
 } from '../file-manager.js';
 import { MAX_FILE_SIZE_MB } from '../config.js';
@@ -252,7 +252,7 @@ fileRoutes.get('/:jid/files', authMiddleware, (c) => {
 
   const authUser = c.get('user') as AuthUser;
   if (!canAccessGroup({ id: authUser.id, role: authUser.role }, group)) {
-    return c.json({ error: 'Group not found' }, 404);
+    return groupAccessDeniedResponse(c, 'Group not found');
   }
   if (isHostExecutionGroup(group) && !hasHostExecutionPermission(authUser)) {
     return c.json(
@@ -285,7 +285,7 @@ fileRoutes.post('/:jid/files', authMiddleware, async (c) => {
 
   const authUser = c.get('user') as AuthUser;
   if (!canAccessGroup({ id: authUser.id, role: authUser.role }, group)) {
-    return c.json({ error: 'Group not found' }, 404);
+    return groupAccessDeniedResponse(c, 'Group not found');
   }
   if (isHostExecutionGroup(group) && !hasHostExecutionPermission(authUser)) {
     return c.json(
@@ -382,7 +382,6 @@ fileRoutes.post('/:jid/files', authMiddleware, async (c) => {
       uploadedFiles.push(file.name);
     }
 
-    invalidateGroupStorageUsage(group.folder, rootOverride);
     return c.json({ success: true, files: uploadedFiles });
   } catch (error) {
     logger.error({ err: error }, `Failed to upload files for ${jid}`);
@@ -401,7 +400,7 @@ fileRoutes.post('/:jid/files/open-directory', authMiddleware, async (c) => {
 
   const authUser = c.get('user') as AuthUser;
   if (!canAccessGroup({ id: authUser.id, role: authUser.role }, group)) {
-    return c.json({ error: 'Group not found' }, 404);
+    return groupAccessDeniedResponse(c, 'Group not found');
   }
   // 打开本地目录属于宿主机操作，限制为有宿主机权限的用户
   if (!hasHostExecutionPermission(authUser)) {
@@ -462,7 +461,7 @@ fileRoutes.get('/:jid/files/download/:path', authMiddleware, (c) => {
 
   const authUser = c.get('user') as AuthUser;
   if (!canAccessGroup({ id: authUser.id, role: authUser.role }, group)) {
-    return c.json({ error: 'Group not found' }, 404);
+    return groupAccessDeniedResponse(c, 'Group not found');
   }
   if (isHostExecutionGroup(group) && !hasHostExecutionPermission(authUser)) {
     return c.json(
@@ -563,7 +562,7 @@ fileRoutes.get('/:jid/files/preview/:path', authMiddleware, (c) => {
 
   const authUser = c.get('user') as AuthUser;
   if (!canAccessGroup({ id: authUser.id, role: authUser.role }, group)) {
-    return c.json({ error: 'Group not found' }, 404);
+    return groupAccessDeniedResponse(c, 'Group not found');
   }
   if (isHostExecutionGroup(group) && !hasHostExecutionPermission(authUser)) {
     return c.json(
@@ -704,7 +703,7 @@ fileRoutes.get('/:jid/files/content/:path', authMiddleware, (c) => {
 
   const authUser = c.get('user') as AuthUser;
   if (!canAccessGroup({ id: authUser.id, role: authUser.role }, group)) {
-    return c.json({ error: 'Group not found' }, 404);
+    return groupAccessDeniedResponse(c, 'Group not found');
   }
   if (isHostExecutionGroup(group) && !hasHostExecutionPermission(authUser)) {
     return c.json(
@@ -767,7 +766,7 @@ fileRoutes.put('/:jid/files/content/:path', authMiddleware, async (c) => {
 
   const authUser = c.get('user') as AuthUser;
   if (!canAccessGroup({ id: authUser.id, role: authUser.role }, group)) {
-    return c.json({ error: 'Group not found' }, 404);
+    return groupAccessDeniedResponse(c, 'Group not found');
   }
   if (isHostExecutionGroup(group) && !hasHostExecutionPermission(authUser)) {
     return c.json(
@@ -895,7 +894,6 @@ fileRoutes.put('/:jid/files/content/:path', authMiddleware, async (c) => {
       }
     }
 
-    invalidateGroupStorageUsage(group.folder, rootOverride);
     return c.json({ success: true });
   } catch (error) {
     logger.error({ err: error }, `Failed to save file content for ${jid}`);
@@ -915,7 +913,7 @@ fileRoutes.delete('/:jid/files/:path', authMiddleware, (c) => {
 
   const authUser = c.get('user') as AuthUser;
   if (!canAccessGroup({ id: authUser.id, role: authUser.role }, group)) {
-    return c.json({ error: 'Group not found' }, 404);
+    return groupAccessDeniedResponse(c, 'Group not found');
   }
   if (isHostExecutionGroup(group) && !hasHostExecutionPermission(authUser)) {
     return c.json(
@@ -931,7 +929,6 @@ fileRoutes.delete('/:jid/files/:path', authMiddleware, (c) => {
       'utf-8',
     );
     deleteFile(group.folder, relativePath, rootOverride);
-    invalidateGroupStorageUsage(group.folder, rootOverride);
 
     return c.json({ success: true });
   } catch (error) {
@@ -963,7 +960,7 @@ fileRoutes.post('/:jid/directories', authMiddleware, async (c) => {
 
   const authUser = c.get('user') as AuthUser;
   if (!canAccessGroup({ id: authUser.id, role: authUser.role }, group)) {
-    return c.json({ error: 'Group not found' }, 404);
+    return groupAccessDeniedResponse(c, 'Group not found');
   }
   if (isHostExecutionGroup(group) && !hasHostExecutionPermission(authUser)) {
     return c.json(

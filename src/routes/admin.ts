@@ -1,4 +1,5 @@
 import fs from 'fs';
+import { zodBadRequest } from '../validation-response.js';
 import path from 'path';
 import { Hono } from 'hono';
 import type { Variables } from '../web-context.js';
@@ -297,10 +298,7 @@ adminRoutes.post('/users', authMiddleware, usersManageMiddleware, async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const validation = AdminCreateUserSchema.safeParse(body);
   if (!validation.success) {
-    return c.json(
-      { error: 'Invalid request', details: validation.error.format() },
-      400,
-    );
+    return zodBadRequest(c, validation.error, 'request-format');
   }
 
   const {
@@ -401,10 +399,7 @@ adminRoutes.patch(
     const body = await c.req.json().catch(() => ({}));
     const validation = AdminPatchUserSchema.safeParse(body);
     if (!validation.success) {
-      return c.json(
-        { error: 'Invalid request', details: validation.error.format() },
-        400,
-      );
+      return zodBadRequest(c, validation.error, 'request-format');
     }
 
     return withCapabilityScopeLocks(
@@ -982,10 +977,7 @@ adminRoutes.post(
     const body = await c.req.json().catch(() => ({}));
     const validation = InviteCreateSchema.safeParse(body);
     if (!validation.success) {
-      return c.json(
-        { error: 'Invalid request', details: validation.error.format() },
-        400,
-      );
+      return zodBadRequest(c, validation.error, 'request-format');
     }
 
     const actor = c.get('user') as AuthUser;

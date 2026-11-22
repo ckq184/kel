@@ -69,7 +69,10 @@ describe('settings information architecture', () => {
   });
 
   test('keeps workspaces private and removes the abandoned collaboration surface', () => {
-    const database = read('src/db.ts');
+    // ISSUE-12 波 3 单元 3.7：DROP group_members 语句随投递调和段迁入
+    // src/db-schema/migrations-data-reconcile.ts（原文搬运），锚随体迁、
+    // 断言文本不变。
+    const database = read('src/db-schema/migrations-data-reconcile.ts');
     const groupRoutes = read('src/routes/groups.ts');
     const chatView = read('web/src/components/chat/ChatView.tsx');
     const groupTypes = read('web/src/types.ts');

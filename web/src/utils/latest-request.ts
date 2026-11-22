@@ -3,7 +3,7 @@ export interface LatestRequestTicket {
   readonly sequence: number;
 }
 
-export interface LatestRequestGate {
+interface LatestRequestGate {
   begin: (key: string) => LatestRequestTicket;
   isCurrent: (
     ticket: LatestRequestTicket,

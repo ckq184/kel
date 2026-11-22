@@ -9,215 +9,58 @@
  * 主 CKQClaw 不可自改）；dirty 状态经 useBlocker + beforeunload 拦截
  * 误触导航离开（createUnsavedNavigationGuard）。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  useBeforeUnload,
-  useBlocker,
-  useLocation,
-  useSearchParams,
-  type BlockerFunction,
-} from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import {
   ArrowRight,
   Bot,
   Loader2,
   Plus,
   RefreshCw,
-  RotateCcw,
   Save,
   Trash2,
-  Upload,
-  Wand2,
   X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { AgentPromptAssistant } from '../components/agents/AgentPromptAssistant';
 import { AgentPromptEditor } from '../components/agents/AgentPromptEditor';
 import { AgentPromptVersionHistory } from '../components/agents/AgentPromptVersionHistory';
 import { EffectiveCapabilitiesPreview } from '../components/agents/EffectiveCapabilitiesPreview';
 import { AgentGovernanceSection } from '../components/agents/AgentGovernanceSection';
-import {
-  AgentSkillsPolicyEditor,
-  type HostSkillSaveStatus,
-} from '../components/agents/AgentSkillsPolicyEditor';
-import { PolicyResourcePicker } from '../components/agents/PolicyResourcePicker';
-import { EmojiAvatar } from '../components/common/EmojiAvatar';
-import { EmojiPicker } from '../components/common/EmojiPicker';
-import { ColorPicker } from '../components/common/ColorPicker';
+import { AgentCreatePanel } from '../components/agents/AgentCreatePanel';
+import { AgentDraftSummary } from '../components/agents/AgentDraftSummary';
+import { AgentProfilesSidebar } from '../components/agents/AgentProfilesSidebar';
+import { AgentDeleteMigrationDialog } from '../components/agents/AgentDeleteMigrationDialog';
+import { AgentCapabilitiesSection } from '../components/agents/AgentCapabilitiesSection';
+import { AgentIdentitySection } from '../components/agents/AgentIdentitySection';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
 import { useAgentProfilesStore } from '../stores/agent-profiles';
 import { useAuthStore } from '../stores/auth';
 import { useSkillsStore } from '../stores/skills';
 import { useMcpServersStore } from '../stores/mcp-servers';
-import type { ApiError } from '../api/client';
-import {
-  buildMcpPolicyOptions,
-  normalizeMcpPolicyReferences,
-} from '../utils/mcp-servers';
-import {
-  getAgentContextSource,
-  type AgentEffortLevel,
-  type AgentProfilePromptMode,
-  type AgentContextSource,
-  type AgentProfileRuntimePolicy,
-} from '../types';
 import { getCustomAgentProfiles } from '../utils/agent-product';
 import { extractErrorMessage } from '../utils/error';
+import { buildAgentPromptPatch } from '../utils/agent-prompts';
+import { useUnsavedNavigationGuard } from '../hooks/useUnsavedNavigationGuard';
+import { useAgentRuntimePolicy } from '../hooks/useAgentRuntimePolicy';
+import { useHostSkillAutosave } from '../hooks/useHostSkillAutosave';
+import { useAgentProfileForm } from '../hooks/useAgentProfileForm';
 import {
-  buildAgentPromptPatch,
-  type AgentPromptParts,
-  type AgentPromptSection,
-} from '../utils/agent-prompts';
-import { createUnsavedNavigationGuard } from '../utils/unsaved-navigation';
-import {
-  getHostSkillPolicy,
-  hostSkillPolicyForMode,
-  skillPolicySummary,
-  skillSelectionError,
-  type RuntimePolicyMode,
-} from '../utils/agent-runtime-policy';
+  asApiError,
+  DEFAULT_RUNTIME_POLICY,
+  sameRuntimePolicy,
+} from '../utils/agent-runtime-policy-form';
 
-const DEFAULT_RUNTIME_POLICY: AgentProfileRuntimePolicy = {
-  reasoning: { effort: 'inherit' },
-  context: {
-    source: 'managed',
-    auto_compact_window: 0,
-    auto_compact_percentage: 0,
-  },
-  skills: {
-    mode: 'inherit',
-    ids: [],
-    host: { mode: 'disabled', ids: [] },
-  },
-  mcp: { mode: 'inherit', ids: [] },
-};
-
-const AGENT_EFFORT_OPTIONS: Array<{
-  value: AgentEffortLevel;
-  label: string;
-}> = [
-  { value: 'inherit', label: '跟随模型配置' },
-  { value: 'low', label: 'Low' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'high', label: 'High' },
-  { value: 'xhigh', label: 'XHigh' },
-  { value: 'max', label: 'Max' },
-];
-
-const AGENT_EFFORT_VALUES = new Set<AgentEffortLevel>(
-  AGENT_EFFORT_OPTIONS.map((option) => option.value),
-);
-
-function normalizeRuntimePolicy(
-  policy?: Partial<AgentProfileRuntimePolicy> | null,
-): AgentProfileRuntimePolicy {
-  return {
-    reasoning: {
-      effort: AGENT_EFFORT_VALUES.has(
-        policy?.reasoning?.effort as AgentEffortLevel,
-      )
-        ? (policy?.reasoning?.effort as AgentEffortLevel)
-        : 'inherit',
-    },
-    context: {
-      source: getAgentContextSource(policy),
-      auto_compact_window:
-        typeof policy?.context?.auto_compact_window === 'number'
-          ? policy.context.auto_compact_window
-          : 0,
-      auto_compact_percentage:
-        typeof policy?.context?.auto_compact_percentage === 'number'
-          ? policy.context.auto_compact_percentage
-          : 0,
-    },
-    skills: {
-      mode: policy?.skills?.mode ?? 'inherit',
-      ids: policy?.skills?.ids ?? [],
-      host: getHostSkillPolicy(policy),
-    },
-    mcp: {
-      mode: policy?.mcp?.mode ?? 'inherit',
-      ids: policy?.mcp?.ids ?? [],
-    },
-  };
-}
-
-function SummaryItem({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg bg-muted/50 p-3">
-      <dt className="text-[11px] font-medium text-muted-foreground">{label}</dt>
-      <dd className="mt-1 text-sm font-medium text-foreground">{value}</dd>
-    </div>
-  );
-}
-
-function sameRuntimePolicy(
-  a?: Partial<AgentProfileRuntimePolicy> | null,
-  b?: Partial<AgentProfileRuntimePolicy> | null,
-): boolean {
-  return (
-    JSON.stringify(normalizeRuntimePolicy(a)) ===
-    JSON.stringify(normalizeRuntimePolicy(b))
-  );
-}
-
-function sameSkillSourcePolicy(
-  a: ReturnType<typeof hostSkillPolicyForMode>,
-  b: ReturnType<typeof hostSkillPolicyForMode>,
-): boolean {
-  return a.mode === b.mode && JSON.stringify(a.ids) === JSON.stringify(b.ids);
-}
-
-function asApiError(error: unknown): ApiError | null {
-  if (!error || typeof error !== 'object' || !('status' in error)) return null;
-  const candidate = error as Partial<ApiError>;
-  return typeof candidate.status === 'number' &&
-    typeof candidate.message === 'string'
-    ? (candidate as ApiError)
-    : null;
-}
+// ISSUE-12 波 5 单元 5.3：DEFAULT_RUNTIME_POLICY / AGENT_EFFORT_OPTIONS /
+// AGENT_EFFORT_VALUES / normalizeRuntimePolicy / sameRuntimePolicy /
+// sameSkillSourcePolicy / asApiError 已迁 ../utils/agent-runtime-policy-form.ts
+// （原文搬运），经同名 import 回接零调用点改动。
 
 export function AgentProfilesPage() {
   const location = useLocation();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const navigationGuardRef = useRef(createUnsavedNavigationGuard());
-  const setAllowedSearchParams = useCallback(
-    (
-      next: URLSearchParams | Record<string, string>,
-      options: { replace?: boolean } = {},
-    ) => {
-      const normalized =
-        next instanceof URLSearchParams ? next : new URLSearchParams(next);
-      const serialized = normalized.toString();
-      const token = navigationGuardRef.current.allowNext({
-        pathname: location.pathname,
-        search: serialized ? `?${serialized}` : '',
-        hash: '',
-      });
-      setSearchParams(next, options);
-      queueMicrotask(() => navigationGuardRef.current.cancelAllowance(token));
-    },
-    [location.pathname, setSearchParams],
-  );
+  const [searchParams] = useSearchParams();
   const requestedProfileId = searchParams.get('agent');
   const {
     profiles,
@@ -245,49 +88,7 @@ export function AgentProfilesPage() {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draftMode, setDraftMode] = useState(false);
-  const [name, setName] = useState('');
-  const [identityPrompt, setIdentityPrompt] = useState('');
-  const [soulPrompt, setSoulPrompt] = useState('');
-  const [agentsPrompt, setAgentsPrompt] = useState('');
-  const [toolsPrompt, setToolsPrompt] = useState('');
-  const [promptMode, setPromptMode] =
-    useState<AgentProfilePromptMode>('append');
-  const [modelConfigId, setModelConfigId] = useState('inherit');
-  const [effort, setEffort] = useState<AgentEffortLevel>('inherit');
-  const [assistantSection, setAssistantSection] =
-    useState<AgentPromptSection>('identity');
-  const [avatarEmoji, setAvatarEmoji] = useState<string | null>(null);
-  const [avatarColor, setAvatarColor] = useState<string | null>(null);
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  const [uploadingAvatar, setUploadingAvatar] = useState(false);
-  const [avatarStyleOpen, setAvatarStyleOpen] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
-  const [contextSource, setContextSource] =
-    useState<AgentContextSource>('managed');
-  // ISSUE-04 ⑤：自动压缩百分比/固定阈值旋钮已下线（Pi 运行时自主决定压缩
-  // 时机）。存量策略值仅透传保存，不再提供编辑控件。
-  const [storedAutoCompactWindow, setStoredAutoCompactWindow] = useState(0);
-  const [storedAutoCompactPercentage, setStoredAutoCompactPercentage] =
-    useState(0);
-  const [skillsMode, setSkillsMode] = useState<RuntimePolicyMode>('inherit');
-  const [skillIds, setSkillIds] = useState<string[]>([]);
-  const [hostSkillsMode, setHostSkillsMode] =
-    useState<RuntimePolicyMode>('disabled');
-  const [hostSkillIds, setHostSkillIds] = useState<string[]>([]);
-  const [hostSkillsSaving, setHostSkillsSaving] = useState(false);
-  const [runtimeCleanupRepairing, setRuntimeCleanupRepairing] = useState(false);
-  const [hostSkillsSaveStatus, setHostSkillsSaveStatus] =
-    useState<HostSkillSaveStatus>('idle');
-  const hostSkillsSavingRef = useRef(false);
-  const selectedIdRef = useRef<string | null>(null);
-  const confirmedHostSkillPolicyRef = useRef(
-    hostSkillPolicyForMode('disabled', []),
-  );
-  const attemptedHostSkillPolicyRef = useRef(
-    hostSkillPolicyForMode('disabled', []),
-  );
-  const [mcpMode, setMcpMode] = useState<RuntimePolicyMode>('inherit');
-  const [mcpIds, setMcpIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -303,21 +104,6 @@ export function AgentProfilesPage() {
   const [deleteTargetId, setDeleteTargetId] = useState('');
   const [createPanelOpen, setCreatePanelOpen] = useState(false);
   const [draftStep, setDraftStep] = useState(1);
-  const currentPrompts = useMemo<AgentPromptParts>(
-    () => ({
-      identity_prompt: identityPrompt,
-      soul_prompt: soulPrompt,
-      agents_prompt: agentsPrompt,
-      tools_prompt: toolsPrompt,
-    }),
-    [agentsPrompt, identityPrompt, soulPrompt, toolsPrompt],
-  );
-  const setCurrentPrompts = (next: AgentPromptParts) => {
-    setIdentityPrompt(next.identity_prompt);
-    setSoulPrompt(next.soul_prompt);
-    setAgentsPrompt(next.agents_prompt);
-    setToolsPrompt(next.tools_prompt);
-  };
   const isAdmin = useAuthStore((state) => state.user?.role === 'admin');
   const mainAppearance = useAuthStore((state) => state.appearance);
 
@@ -326,14 +112,64 @@ export function AgentProfilesPage() {
     [profiles],
   );
 
-  const skills = useSkillsStore((state) => state.skills);
   const skillsLoading = useSkillsStore((state) => state.loading);
   const skillsError = useSkillsStore((state) => state.error);
   const loadSkills = useSkillsStore((state) => state.loadSkills);
-  const mcpServers = useMcpServersStore((state) => state.servers);
   const mcpLoading = useMcpServersStore((state) => state.loading);
   const mcpError = useMcpServersStore((state) => state.error);
   const loadMcpServers = useMcpServersStore((state) => state.loadServers);
+
+  // ISSUE-12 波 5 单元 5.3：运行时策略状态簇/applyRuntimePolicyToForm/
+  // 错误与选项 memos 已迁 ../hooks/useAgentRuntimePolicy.ts（原文搬运，
+  // hook 内自读 skills/mcpServers 两 store），同名解构零调用点改动。
+  const {
+    effort,
+    setEffort,
+    contextSource,
+    setContextSource,
+    skillsMode,
+    setSkillsMode,
+    skillIds,
+    setSkillIds,
+    hostSkillsMode,
+    setHostSkillsMode,
+    hostSkillIds,
+    setHostSkillIds,
+    hostSkillsSaving,
+    setHostSkillsSaving,
+    runtimeCleanupRepairing,
+    setRuntimeCleanupRepairing,
+    hostSkillsSaveStatus,
+    setHostSkillsSaveStatus,
+    hostSkillsSavingRef,
+    selectedIdRef,
+    confirmedHostSkillPolicyRef,
+    attemptedHostSkillPolicyRef,
+    mcpMode,
+    setMcpMode,
+    mcpIds,
+    setMcpIds,
+    applyRuntimePolicyToForm,
+    managedSkillsError,
+    hostSkillsError,
+    capabilityError,
+    currentRuntimePolicy,
+    skillOptions,
+    hostSkillOptions,
+    mcpOptions,
+  } = useAgentRuntimePolicy();
+
+  // ISSUE-12 波 5 单元 5.1：导航守卫（shouldBlockNavigation/useBlocker/
+  // useBeforeUnload/阻断确认效应/?create=1 路由效应）已迁
+  // ../hooks/useUnsavedNavigationGuard.ts（原文搬运，getter 惰性取值）。
+  // 调用点必须在下方 selection 效应（消费 setAllowedSearchParams）之前；
+  // getHasUnsavedChanges 惰性取值打破其晚于本行的声明顺序。
+  const { setAllowedSearchParams } = useUnsavedNavigationGuard({
+    getHasUnsavedChanges: () => hasUnsavedChanges,
+    searchParams,
+    setDraftMode,
+    setCreatePanelOpen,
+  });
 
   useEffect(() => {
     void loadProfiles();
@@ -395,119 +231,40 @@ export function AgentProfilesPage() {
     return () => cancelAnimationFrame(frame);
   }, [location.hash, selected]);
 
-  const applyRuntimePolicyToForm = (
-    policy?: AgentProfileRuntimePolicy | null,
-  ) => {
-    const normalized = normalizeRuntimePolicy(policy);
-    setEffort(normalized.reasoning.effort);
-    setSkillsMode(normalized.skills.mode);
-    setSkillIds(normalized.skills.ids);
-    const hostPolicy = normalized.skills.host ?? {
-      mode: 'disabled' as const,
-      ids: [],
-    };
-    setHostSkillsMode(hostPolicy.mode);
-    setHostSkillIds(hostPolicy.ids);
-    confirmedHostSkillPolicyRef.current = {
-      mode: hostPolicy.mode,
-      ids: [...hostPolicy.ids],
-    };
-    attemptedHostSkillPolicyRef.current = {
-      mode: hostPolicy.mode,
-      ids: [...hostPolicy.ids],
-    };
-    setHostSkillsSaveStatus('idle');
-    setMcpMode(normalized.mcp.mode);
-    setMcpIds(normalizeMcpPolicyReferences(normalized.mcp.ids));
-    setContextSource(getAgentContextSource(normalized));
-    setStoredAutoCompactWindow(normalized.context?.auto_compact_window ?? 0);
-    setStoredAutoCompactPercentage(
-      normalized.context?.auto_compact_percentage ?? 0,
-    );
-  };
-
-  const managedSkillsError = useMemo(
-    () =>
-      skillSelectionError(' CKQClaw Skill', {
-        mode: skillsMode,
-        ids: skillIds,
-      }),
-    [skillIds, skillsMode],
-  );
-  const hostSkillsError = useMemo(
-    () =>
-      skillSelectionError('宿主机 Skill', {
-        mode: hostSkillsMode,
-        ids: hostSkillIds,
-      }),
-    [hostSkillIds, hostSkillsMode],
-  );
-  const capabilityError = managedSkillsError ?? hostSkillsError;
-
-  const currentRuntimePolicy = useMemo(
-    () =>
-      normalizeRuntimePolicy({
-        reasoning: { effort },
-        context: {
-          source: contextSource,
-          auto_compact_window: storedAutoCompactWindow,
-          auto_compact_percentage: storedAutoCompactPercentage,
-        },
-        skills: {
-          mode: skillsMode,
-          ids: skillIds,
-          host: { mode: hostSkillsMode, ids: hostSkillIds },
-        },
-        mcp: { mode: mcpMode, ids: mcpIds },
-      }),
-    [
-      contextSource,
-      effort,
-      hostSkillIds,
-      hostSkillsMode,
-      mcpIds,
-      mcpMode,
-      skillIds,
-      skillsMode,
-      storedAutoCompactPercentage,
-      storedAutoCompactWindow,
-    ],
-  );
-
-  useEffect(() => {
-    if (draftMode) return;
-    if (!selected) {
-      setName('');
-      setCurrentPrompts({
-        identity_prompt: '',
-        soul_prompt: '',
-        agents_prompt: '',
-        tools_prompt: '',
-      });
-      setPromptMode('append');
-      setModelConfigId('inherit');
-      setAvatarEmoji(null);
-      setAvatarColor(null);
-      setAvatarUrl(null);
-      setAvatarStyleOpen(false);
-      applyRuntimePolicyToForm(DEFAULT_RUNTIME_POLICY);
-      return;
-    }
-    setName(selected.name);
-    setCurrentPrompts({
-      identity_prompt: selected.identity_prompt,
-      soul_prompt: selected.soul_prompt,
-      agents_prompt: selected.agents_prompt,
-      tools_prompt: selected.tools_prompt,
-    });
-    setPromptMode(selected.prompt_mode);
-    setModelConfigId(selected.model_config_id ?? 'inherit');
-    setAvatarEmoji(selected.avatar_emoji);
-    setAvatarColor(selected.avatar_color);
-    setAvatarUrl(selected.avatar_url);
-    setAvatarStyleOpen(!!(selected.avatar_emoji || selected.avatar_color));
-    applyRuntimePolicyToForm(selected.runtime_policy);
-  }, [draftMode, selected?.id]);
+  // ISSUE-12 波 5 单元 5.4：表单状态簇（name/四段提示词/promptMode/
+  // modelConfigId/assistantSection/头像四态）、currentPrompts、回填效应与
+  // dirty/draftDirty 已迁 ../hooks/useAgentProfileForm.ts（原文搬运；
+  // 回填效应依赖数组 [draftMode, selected?.id] 刻意不补全，逐字保留），
+  // 同名解构零调用点改动。
+  const {
+    name,
+    setName,
+    promptMode,
+    setPromptMode,
+    modelConfigId,
+    setModelConfigId,
+    assistantSection,
+    setAssistantSection,
+    avatarEmoji,
+    setAvatarEmoji,
+    avatarColor,
+    setAvatarColor,
+    avatarUrl,
+    setAvatarUrl,
+    uploadingAvatar,
+    setUploadingAvatar,
+    avatarStyleOpen,
+    setAvatarStyleOpen,
+    currentPrompts,
+    setCurrentPrompts,
+    dirty,
+    draftDirty,
+  } = useAgentProfileForm({
+    selected,
+    draftMode,
+    applyRuntimePolicyToForm,
+    currentRuntimePolicy,
+  });
 
   useEffect(() => {
     if (draftMode || !selected) return;
@@ -516,152 +273,44 @@ export function AgentProfilesPage() {
     });
   }, [draftMode, loadProfileGovernance, selected?.id]);
 
-  const dirty =
-    !draftMode &&
-    !!selected &&
-    (name.trim() !== selected.name ||
-      identityPrompt !== selected.identity_prompt ||
-      soulPrompt !== selected.soul_prompt ||
-      agentsPrompt !== selected.agents_prompt ||
-      toolsPrompt !== selected.tools_prompt ||
-      promptMode !== selected.prompt_mode ||
-      (modelConfigId === 'inherit' ? null : modelConfigId) !==
-        selected.model_config_id ||
-      avatarEmoji !== selected.avatar_emoji ||
-      avatarColor !== selected.avatar_color ||
-      !sameRuntimePolicy(currentRuntimePolicy, selected.runtime_policy));
-
-  const draftDirty =
-    draftMode &&
-    (!!name.trim() ||
-      !!identityPrompt.trim() ||
-      !!soulPrompt.trim() ||
-      !!agentsPrompt.trim() ||
-      !!toolsPrompt.trim() ||
-      promptMode !== 'append' ||
-      modelConfigId !== 'inherit' ||
-      avatarEmoji !== null ||
-      avatarColor !== null ||
-      !sameRuntimePolicy(currentRuntimePolicy, DEFAULT_RUNTIME_POLICY));
   const createDirty =
     createPanelOpen && !draftMode && createDescription.trim().length > 0;
   const editorUnsavedChanges = dirty || draftDirty;
   const hasUnsavedChanges = editorUnsavedChanges || createDirty;
-  const shouldBlockNavigation = useCallback<BlockerFunction>(
-    ({ currentLocation, nextLocation }) =>
-      navigationGuardRef.current.shouldBlock(
-        hasUnsavedChanges,
-        currentLocation,
-        nextLocation,
-      ),
-    [hasUnsavedChanges],
-  );
-  const navigationBlocker = useBlocker(shouldBlockNavigation);
-
-  useBeforeUnload(
-    useCallback(
-      (event) => {
-        if (!hasUnsavedChanges) return;
-        event.preventDefault();
-        event.returnValue = '';
-      },
-      [hasUnsavedChanges],
-    ),
-  );
-
-  useEffect(() => {
-    if (navigationBlocker.state !== 'blocked') return;
-    if (confirm('当前智能体有未保存修改，离开页面会丢失。是否继续？')) {
-      navigationBlocker.proceed();
-    } else {
-      navigationBlocker.reset();
-    }
-  }, [navigationBlocker]);
-
-  useEffect(() => {
-    if (searchParams.get('create') !== '1') return;
-    const next = new URLSearchParams(searchParams);
-    next.delete('create');
-    setDraftMode(false);
-    setCreatePanelOpen(true);
-    setAllowedSearchParams(next, { replace: true });
-  }, [searchParams, setAllowedSearchParams]);
 
   const governance = selected ? governanceByProfile[selected.id] : undefined;
   const governanceBusy = selected ? !!governanceLoading[selected.id] : false;
   const governanceError = selected ? governanceErrors[selected.id] : undefined;
-  useEffect(() => {
-    if (
-      draftMode ||
-      !selected ||
-      !governance?.runtime_cleanup_pending ||
-      governance.profile.id !== selected.id ||
-      hostSkillsSavingRef.current
-    ) {
-      return;
-    }
-    const persistedPolicy = getHostSkillPolicy(selected.runtime_policy);
-    confirmedHostSkillPolicyRef.current = {
-      mode: persistedPolicy.mode,
-      ids: [...persistedPolicy.ids],
-    };
-    attemptedHostSkillPolicyRef.current = {
-      mode: persistedPolicy.mode,
-      ids: [...persistedPolicy.ids],
-    };
-    setHostSkillsSaveStatus('warning');
-  }, [draftMode, governance, selected]);
-  const skillOptions = useMemo(() => {
-    const available = skills
-      .filter((skill) => skill.source === 'user' && skill.enabled)
-      .map((skill) => ({
-        id: skill.id,
-        name: skill.name || skill.id,
-        description: skill.description,
-      }));
-    const known = new Set(available.map((option) => option.id));
-    return [
-      ...available,
-      ...skillIds
-        .filter((id) => !known.has(id))
-        .map((id) => ({ id, name: id, unavailable: true })),
-    ];
-  }, [skillIds, skills]);
-
-  const hostSkillOptions = useMemo(() => {
-    const available = skills
-      .filter((skill) => skill.source === 'external' && skill.enabled)
-      .map((skill) => ({
-        id: skill.id,
-        name: skill.name || skill.id,
-        description: skill.description,
-        sourceLabel: '宿主机',
-      }));
-    const known = new Set(available.map((option) => option.id));
-    return [
-      ...available,
-      ...hostSkillIds
-        .filter((id) => !known.has(id))
-        .map((id) => ({
-          id,
-          name: id,
-          sourceLabel: '宿主机',
-          unavailable: true,
-        })),
-    ];
-  }, [hostSkillIds, skills]);
-
-  const mcpOptions = useMemo(() => {
-    const available = buildMcpPolicyOptions(mcpServers);
-    const known = new Set(available.map((option) => option.id));
-    return [
-      ...available,
-      ...mcpIds
-        .filter((id) => !known.has(id))
-        .map((id) => ({ id, name: id, unavailable: true })),
-    ];
-  }, [mcpIds, mcpServers]);
-
+  // ISSUE-12 波 5 单元 5.2：宿主机 Skills 自动保存簇（治理同步效应与
+  // persistHostSkillPolicy/双 retry/双 change 处理器）已迁
+  // ../hooks/useHostSkillAutosave.ts（原文搬运），同名解构零调用点改动。
+  const {
+    handleRetryProfileRuntimeCleanup,
+    handleRetryHostSkillSave,
+    handleHostSkillsModeChange,
+    handleHostSkillIdsChange,
+  } = useHostSkillAutosave({
+    selected,
+    draftMode,
+    governance,
+    updateProfile,
+    refreshProfile,
+    loadProfileGovernance,
+    retryRuntimeCleanup,
+    hostSkillsMode,
+    hostSkillIds,
+    hostSkillsSaveStatus,
+    runtimeCleanupRepairing,
+    hostSkillsSavingRef,
+    selectedIdRef,
+    confirmedHostSkillPolicyRef,
+    attemptedHostSkillPolicyRef,
+    setHostSkillsSaving,
+    setHostSkillsSaveStatus,
+    setHostSkillsMode,
+    setHostSkillIds,
+    setRuntimeCleanupRepairing,
+  });
   const confirmDiscardUnsavedChanges = () =>
     !hasUnsavedChanges ||
     confirm('当前智能体有未保存修改，继续会丢失。是否继续？');
@@ -826,184 +475,6 @@ export function AgentProfilesPage() {
       toast.error(extractErrorMessage(err, '保存失败'));
     } finally {
       setSaving(false);
-    }
-  };
-
-  const persistHostSkillPolicy = async (
-    nextPolicy: ReturnType<typeof hostSkillPolicyForMode>,
-  ) => {
-    if (!selected || draftMode || hostSkillsSavingRef.current) return;
-    const profileId = selected.id;
-    attemptedHostSkillPolicyRef.current = {
-      mode: nextPolicy.mode,
-      ids: [...nextPolicy.ids],
-    };
-    hostSkillsSavingRef.current = true;
-    setHostSkillsSaving(true);
-    setHostSkillsSaveStatus('idle');
-    try {
-      await updateProfile(profileId, {
-        runtime_policy: {
-          skills: {
-            host: nextPolicy,
-          },
-        },
-      });
-      if (selectedIdRef.current === profileId) {
-        attemptedHostSkillPolicyRef.current = {
-          mode: nextPolicy.mode,
-          ids: [...nextPolicy.ids],
-        };
-        confirmedHostSkillPolicyRef.current = {
-          mode: nextPolicy.mode,
-          ids: [...nextPolicy.ids],
-        };
-        setHostSkillsSaveStatus('saved');
-        toast.success('宿主机 Skills 已保存并生效');
-      }
-    } catch (err) {
-      if (selectedIdRef.current === profileId) {
-        // The user may have visited another profile and returned while this
-        // request was in flight. Restore this request's attempted policy so a
-        // retry cannot accidentally send the other render's stale value.
-        attemptedHostSkillPolicyRef.current = {
-          mode: nextPolicy.mode,
-          ids: [...nextPolicy.ids],
-        };
-        const apiError = asApiError(err);
-        if (apiError?.body?.persisted === true) {
-          confirmedHostSkillPolicyRef.current = {
-            mode: nextPolicy.mode,
-            ids: [...nextPolicy.ids],
-          };
-          setHostSkillsMode(nextPolicy.mode);
-          setHostSkillIds([...nextPolicy.ids]);
-          setHostSkillsSaveStatus('warning');
-          toast.warning('配置已保存，但工作区运行时清理失败，请重试清理');
-        } else if (apiError?.status === 0 || apiError?.status === 408) {
-          try {
-            const [freshProfile, freshGovernance] = await Promise.all([
-              refreshProfile(profileId),
-              loadProfileGovernance(profileId),
-            ]);
-            if (selectedIdRef.current === profileId) {
-              attemptedHostSkillPolicyRef.current = {
-                mode: nextPolicy.mode,
-                ids: [...nextPolicy.ids],
-              };
-              const freshPolicy = getHostSkillPolicy(
-                freshProfile.runtime_policy,
-              );
-              confirmedHostSkillPolicyRef.current = {
-                mode: freshPolicy.mode,
-                ids: [...freshPolicy.ids],
-              };
-              if (sameSkillSourcePolicy(freshPolicy, nextPolicy)) {
-                setHostSkillsMode(freshPolicy.mode);
-                setHostSkillIds([...freshPolicy.ids]);
-                if (freshGovernance.runtime_cleanup_pending) {
-                  setHostSkillsSaveStatus('warning');
-                  toast.warning('配置已保存，但工作区运行时清理仍未完成');
-                } else {
-                  setHostSkillsSaveStatus('saved');
-                  toast.success('宿主机 Skills 已确认保存并生效');
-                }
-              } else {
-                // The timed-out PATCH may still be completing on the server.
-                // Keep the requested selection visible and offer an
-                // idempotent retry instead of claiming either outcome.
-                setHostSkillsMode(nextPolicy.mode);
-                setHostSkillIds([...nextPolicy.ids]);
-                setHostSkillsSaveStatus('uncertain');
-                toast.warning('连接中断，暂时无法确认宿主机 Skills 状态');
-              }
-            }
-          } catch {
-            if (selectedIdRef.current === profileId) {
-              attemptedHostSkillPolicyRef.current = {
-                mode: nextPolicy.mode,
-                ids: [...nextPolicy.ids],
-              };
-              setHostSkillsMode(nextPolicy.mode);
-              setHostSkillIds([...nextPolicy.ids]);
-              setHostSkillsSaveStatus('uncertain');
-              toast.warning('连接中断，暂时无法确认宿主机 Skills 状态');
-            }
-          }
-        } else {
-          const confirmed = confirmedHostSkillPolicyRef.current;
-          setHostSkillsMode(confirmed.mode);
-          setHostSkillIds([...confirmed.ids]);
-          setHostSkillsSaveStatus('error');
-          toast.error(extractErrorMessage(err, '宿主机 Skills 保存失败'));
-        }
-      }
-    } finally {
-      hostSkillsSavingRef.current = false;
-      setHostSkillsSaving(false);
-    }
-  };
-
-  const handleRetryProfileRuntimeCleanup = async () => {
-    if (!selected || draftMode || runtimeCleanupRepairing) return;
-    const profileId = selected.id;
-    setRuntimeCleanupRepairing(true);
-    try {
-      await retryRuntimeCleanup(profileId);
-      if (selectedIdRef.current === profileId) {
-        setHostSkillsSaveStatus('saved');
-        toast.success('工作区运行时清理已完成');
-      }
-    } catch (err) {
-      if (selectedIdRef.current === profileId) {
-        setHostSkillsSaveStatus('warning');
-        toast.error(extractErrorMessage(err, '工作区运行时清理失败'));
-      }
-    } finally {
-      setRuntimeCleanupRepairing(false);
-    }
-  };
-
-  const handleRetryHostSkillSave = () => {
-    if (hostSkillsSavingRef.current || draftMode || !selected) return;
-    if (hostSkillsSaveStatus === 'warning') {
-      void handleRetryProfileRuntimeCleanup();
-      return;
-    }
-    const attempted = attemptedHostSkillPolicyRef.current;
-    setHostSkillsMode(attempted.mode);
-    setHostSkillIds([...attempted.ids]);
-    void persistHostSkillPolicy(attempted);
-  };
-
-  const handleHostSkillsModeChange = (mode: RuntimePolicyMode) => {
-    if (hostSkillsSavingRef.current || mode === hostSkillsMode) return;
-    const nextPolicy = hostSkillPolicyForMode(mode, hostSkillIds);
-    setHostSkillsMode(nextPolicy.mode);
-    setHostSkillIds(nextPolicy.ids);
-    setHostSkillsSaveStatus('idle');
-    if (
-      !draftMode &&
-      selected &&
-      !(nextPolicy.mode === 'custom' && nextPolicy.ids.length === 0)
-    ) {
-      void persistHostSkillPolicy(nextPolicy);
-    }
-  };
-
-  const handleHostSkillIdsChange = (ids: string[]) => {
-    if (hostSkillsSavingRef.current) return;
-    const nextPolicy = hostSkillPolicyForMode(hostSkillsMode, ids);
-    setHostSkillIds(nextPolicy.ids);
-    setHostSkillsSaveStatus('idle');
-    if (
-      !draftMode &&
-      selected &&
-      nextPolicy.mode === 'custom' &&
-      nextPolicy.ids.length > 0 &&
-      nextPolicy.ids.length <= 100
-    ) {
-      void persistHostSkillPolicy(nextPolicy);
     }
   };
 
@@ -1173,210 +644,30 @@ export function AgentProfilesPage() {
 
   return (
     <div className="min-h-full bg-background lg:flex">
-      <aside className="border-b border-border bg-muted/20 lg:sticky lg:top-0 lg:flex lg:h-dvh lg:w-72 lg:flex-none lg:flex-col lg:border-b-0 lg:border-r">
-        <div className="flex items-center gap-3 px-4 py-4 lg:px-5 lg:pt-6">
-          <div className="min-w-0 flex-1">
-            <h1 className="text-lg font-semibold text-foreground">
-              自定义智能体
-            </h1>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {customProfiles.length} 个智能体
-            </p>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={handleRefreshProfiles}
-            disabled={loading}
-            aria-label="刷新智能体列表"
-            title="刷新智能体列表"
-          >
-            <RefreshCw
-              className={loading ? 'h-4 w-4 animate-spin' : 'h-4 w-4'}
-            />
-          </Button>
-          <Button
-            size="sm"
-            variant={createPanelOpen ? 'secondary' : 'default'}
-            onClick={handleOpenCreatePanel}
-            aria-expanded={createPanelOpen}
-            aria-current={createPanelOpen ? 'page' : undefined}
-          >
-            <Plus className="h-4 w-4" />
-            新建
-          </Button>
-        </div>
-
-        <nav
-          aria-label="自定义智能体列表"
-          className="flex gap-2 overflow-x-auto px-3 pb-4 lg:block lg:min-h-0 lg:flex-1 lg:space-y-1 lg:overflow-y-auto lg:px-4"
-        >
-          {draftMode && (
-            <button
-              className="flex min-w-[220px] items-center gap-3 rounded-lg bg-brand-50 px-3 py-2.5 text-left ring-1 ring-inset ring-primary/20 transition-colors lg:min-w-0 lg:w-full"
-              onClick={() => setDraftMode(true)}
-            >
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-semibold text-foreground">
-                  {name.trim() || '新智能体草稿'}
-                </span>
-                <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
-                  尚未保存
-                </span>
-              </span>
-              <Badge variant="secondary">草稿</Badge>
-            </button>
-          )}
-          {loading && customProfiles.length === 0 ? (
-            <div className="flex min-w-48 justify-center py-8 lg:min-w-0">
-              <Loader2 className="h-6 w-6 animate-spin text-primary" />
-            </div>
-          ) : profilesError ? (
-            <div className="min-w-56 space-y-3 py-4 text-center lg:min-w-0">
-              <div className="text-sm text-error">{profilesError}</div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleRefreshProfiles}
-              >
-                重试
-              </Button>
-            </div>
-          ) : (
-            customProfiles.map((profile) => {
-              const active = profile.id === selectedId && !createPanelOpen;
-              return (
-                <button
-                  key={profile.id}
-                  onClick={() => handleSelectProfile(profile.id)}
-                  className={`flex min-w-[220px] items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:min-w-0 lg:w-full ${
-                    active && !draftMode
-                      ? 'bg-brand-50 text-foreground ring-1 ring-inset ring-primary/15'
-                      : 'hover:bg-accent/70'
-                  }`}
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-semibold text-foreground">
-                      {profile.name}
-                    </span>
-                    <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
-                      {profile.identity_prompt.replace(/\s+/g, ' ').trim() ||
-                        '尚未设置身份描述'}
-                    </span>
-                  </span>
-                </button>
-              );
-            })
-          )}
-        </nav>
-      </aside>
-
+      <AgentProfilesSidebar
+        customProfiles={customProfiles}
+        loading={loading}
+        profilesError={profilesError}
+        createPanelOpen={createPanelOpen}
+        draftMode={draftMode}
+        setDraftMode={setDraftMode}
+        selectedId={selectedId}
+        name={name}
+        handleRefreshProfiles={handleRefreshProfiles}
+        handleOpenCreatePanel={handleOpenCreatePanel}
+        handleSelectProfile={handleSelectProfile}
+      />
       <main className="min-w-0 flex-1">
         <div className="mx-auto max-w-5xl p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">
           {createPanelOpen && !draftMode ? (
-            <section
-              className="min-h-[calc(100dvh-8rem)]"
-              aria-labelledby="create-agent-title"
-            >
-              <header className="flex flex-col gap-5 border-b border-border pb-6 sm:flex-row sm:items-start sm:justify-between">
-                <div className="max-w-2xl">
-                  <div className="mb-3 inline-flex items-center gap-2 text-sm font-medium text-primary">
-                    <Wand2 className="h-4 w-4" />
-                    新建自定义智能体
-                  </div>
-                  <h1
-                    id="create-agent-title"
-                    className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl"
-                  >
-                    先说说它要帮你做什么
-                  </h1>
-                  <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground sm:text-base">
-                    描述角色、任务和关注重点，AI
-                    会生成一份可继续编辑的完整配置；你也可以直接从空白配置开始。
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="min-h-11 self-start"
-                  onClick={() => setCreatePanelOpen(false)}
-                >
-                  <X className="h-4 w-4" />
-                  返回智能体
-                </Button>
-              </header>
-
-              <div className="max-w-3xl py-8 sm:py-10">
-                <label
-                  htmlFor="new-agent-description"
-                  className="text-sm font-semibold text-foreground"
-                >
-                  智能体角色描述
-                </label>
-                <p
-                  id="new-agent-description-help"
-                  className="mt-1 text-sm leading-6 text-muted-foreground"
-                >
-                  写清楚主要任务、输出方式或需要特别关注的事项，生成结果会更贴合预期。
-                </p>
-                <Textarea
-                  id="new-agent-description"
-                  aria-describedby="new-agent-description-help"
-                  autoFocus
-                  value={createDescription}
-                  onChange={(event) => setCreateDescription(event.target.value)}
-                  className="mt-4 min-h-[180px] resize-y bg-card p-4 text-base leading-7 shadow-sm"
-                  placeholder="例如：帮我做代码评审，重点关注架构风险、并发问题和测试缺口。输出时先给结论，再按严重程度列出问题和修改建议。"
-                />
-
-                <div className="mt-5">
-                  <div className="text-xs font-medium text-muted-foreground">
-                    可以从这些例子开始
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {[
-                      '做代码评审，关注架构风险和测试缺口',
-                      '整理调研资料，给出有依据的结论和来源',
-                      '把产品想法拆成清晰、可执行的研发任务',
-                    ].map((example) => (
-                      <button
-                        key={example}
-                        type="button"
-                        onClick={() => setCreateDescription(example)}
-                        className="min-h-11 rounded-full border border-border bg-background px-4 py-2 text-left text-sm text-muted-foreground transition-colors hover:border-primary/40 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        {example}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="mt-8 flex flex-col gap-3 border-t border-border pt-6 sm:flex-row">
-                  <Button
-                    size="lg"
-                    className="min-h-11 justify-center sm:min-w-40"
-                    onClick={handleGenerateDraft}
-                    disabled={generatingDraft || !createDescription.trim()}
-                  >
-                    {generatingDraft ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Wand2 className="h-4 w-4" />
-                    )}
-                    AI 生成配置
-                  </Button>
-                  <Button
-                    size="lg"
-                    variant="outline"
-                    className="min-h-11 justify-center sm:min-w-40"
-                    onClick={handleBlankDraft}
-                  >
-                    <Plus className="h-4 w-4" />
-                    空白创建
-                  </Button>
-                </div>
-              </div>
-            </section>
+            <AgentCreatePanel
+              createDescription={createDescription}
+              setCreateDescription={setCreateDescription}
+              generatingDraft={generatingDraft}
+              onClose={() => setCreatePanelOpen(false)}
+              handleGenerateDraft={handleGenerateDraft}
+              handleBlankDraft={handleBlankDraft}
+            />
           ) : !selected && !draftMode ? (
             <div className="flex min-h-[420px] flex-col items-center justify-center rounded-xl border border-dashed border-border px-6 text-center">
               <div className="grid h-12 w-12 place-items-center rounded-full bg-muted text-muted-foreground">
@@ -1473,242 +764,33 @@ export function AgentProfilesPage() {
 
               <div className="space-y-5">
                 <div className="space-y-5">
-                  <section
-                    hidden={draftMode && draftStep !== 1}
-                    className="overflow-hidden rounded-xl border border-border bg-card"
-                  >
-                    <div className="border-b border-border px-5 py-4">
-                      <h2 className="text-sm font-semibold text-foreground">
-                        身份
-                      </h2>
-                      <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                        定义这个智能体
-                        如何称呼自己，以及它处理任务时遵循的角色设定。
-                      </p>
-                    </div>
-                    <div className="space-y-4 px-5 py-5">
-                      <div>
-                        <label
-                          htmlFor="agent-profile-name"
-                          className="mb-2 flex items-center gap-2 text-sm font-medium"
-                        >
-                          名称
-                        </label>
-                        <Input
-                          id="agent-profile-name"
-                          value={name}
-                          onChange={(event) => setName(event.target.value)}
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-2 block text-sm font-medium">
-                          模型配置
-                        </label>
-                        <Select
-                          value={modelConfigId}
-                          onValueChange={setModelConfigId}
-                        >
-                          <SelectTrigger aria-label="智能体模型配置">
-                            <SelectValue placeholder="选择模型配置" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="inherit">
-                              跟随系统默认
-                              {defaultModelConfigId
-                                ? `（${modelConfigs.find((item) => item.id === defaultModelConfigId)?.name ?? '当前默认'}）`
-                                : '（尚未配置）'}
-                            </SelectItem>
-                            {modelConfigs.map((model) => (
-                              <SelectItem key={model.id} value={model.id}>
-                                {model.name}
-                                {model.anthropic_model
-                                  ? ` · ${model.anthropic_model}`
-                                  : ''}
-                                {!model.enabled ? '（仅显式使用）' : ''}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
-                          该智能体所属的所有工作区、会话和定时任务都会使用这里解析出的完整模型网关环境。未启用的配置不会参与系统自动选择，但仍可由智能体显式使用。
-                        </p>
-                      </div>
-                      <div>
-                        <label className="mb-2 block text-sm font-medium">
-                          推理努力档位
-                        </label>
-                        <Select
-                          value={effort}
-                          onValueChange={(value) =>
-                            setEffort(value as AgentEffortLevel)
-                          }
-                        >
-                          <SelectTrigger aria-label="智能体推理努力档位">
-                            <SelectValue placeholder="选择推理努力档位" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {AGENT_EFFORT_OPTIONS.map((option) => (
-                              <SelectItem
-                                key={option.value}
-                                value={option.value}
-                              >
-                                {option.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
-                          “跟随模型配置”保留 Provider 高级设置中的
-                          CLAUDE_CODE_EFFORT_LEVEL；显式档位通过 Agent SDK
-                          传入并覆盖该环境变量。不支持所选档位的模型会由 Claude
-                          静默降级，实际值可在会话的 CLAUDE_EFFORT
-                          环境变量中查看。
-                        </p>
-                      </div>
-                      <div className="space-y-3 rounded-lg border bg-muted/20 p-4">
-                        <div className="flex flex-wrap items-center gap-4">
-                          <EmojiAvatar
-                            imageUrl={
-                              avatarUrl ||
-                              (!avatarEmoji && !avatarColor
-                                ? mainAppearance?.aiAvatarUrl ||
-                                  (mainAppearance?.aiAvatarMode !== 'emoji'
-                                    ? `${import.meta.env.BASE_URL}icons/icon-192.png`
-                                    : undefined)
-                                : undefined)
-                            }
-                            emoji={
-                              avatarEmoji ||
-                              (!avatarUrl && !avatarColor
-                                ? mainAppearance?.aiAvatarMode === 'emoji'
-                                  ? mainAppearance.aiAvatarEmoji
-                                  : undefined
-                                : undefined)
-                            }
-                            color={
-                              avatarColor ||
-                              (!avatarUrl && !avatarEmoji
-                                ? mainAppearance?.aiAvatarMode === 'emoji'
-                                  ? mainAppearance.aiAvatarColor
-                                  : undefined
-                                : undefined)
-                            }
-                            fallbackChar={name || 'A'}
-                            size="lg"
-                            className="!h-12 !w-12 !text-xl"
-                          />
-                          <div className="min-w-0 flex-1">
-                            <div className="text-sm font-medium text-foreground">
-                              智能体头像
-                            </div>
-                            <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                              {avatarUrl || avatarEmoji || avatarColor
-                                ? '当前使用这个智能体的自定义头像。'
-                                : '未单独设置，自动继承主 CKQClaw 头像。'}
-                            </p>
-                          </div>
-                          <div className="flex flex-wrap gap-2">
-                            <input
-                              ref={avatarInputRef}
-                              type="file"
-                              accept="image/jpeg,image/png,image/gif,image/webp"
-                              className="hidden"
-                              onChange={handleAvatarUpload}
-                            />
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              disabled={draftMode || uploadingAvatar}
-                              onClick={() => avatarInputRef.current?.click()}
-                            >
-                              {uploadingAvatar ? (
-                                <Loader2 className="size-3.5 animate-spin" />
-                              ) : (
-                                <Upload className="size-3.5" />
-                              )}
-                              上传图片
-                            </Button>
-                            {!avatarStyleOpen && (
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setAvatarStyleOpen(true)}
-                              >
-                                使用 Emoji
-                              </Button>
-                            )}
-                            {(avatarUrl || avatarEmoji || avatarColor) && (
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                disabled={uploadingAvatar}
-                                onClick={handleInheritMainAvatar}
-                              >
-                                <RotateCcw className="size-3.5" />
-                                使用主头像
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                        {avatarStyleOpen && (
-                          <div className="grid gap-3 border-t pt-3 sm:grid-cols-2">
-                            <div>
-                              <span className="mb-1.5 block text-xs text-muted-foreground">
-                                Emoji（可选）
-                              </span>
-                              <EmojiPicker
-                                value={avatarEmoji ?? undefined}
-                                onChange={setAvatarEmoji}
-                              />
-                            </div>
-                            <div>
-                              <span className="mb-1.5 block text-xs text-muted-foreground">
-                                背景色（可选）
-                              </span>
-                              <ColorPicker
-                                value={avatarColor ?? undefined}
-                                onChange={setAvatarColor}
-                              />
-                            </div>
-                          </div>
-                        )}
-                        {draftMode && (
-                          <p className="text-[11px] text-muted-foreground">
-                            创建智能体后即可上传图片；Emoji
-                            与背景色会随创建一起保存。
-                          </p>
-                        )}
-                      </div>
-                      {isAdmin && !draftMode && (
-                        <div className="flex items-start justify-between gap-4 rounded-lg border bg-muted/20 px-3 py-3">
-                          <div className="min-w-0">
-                            <div className="text-sm font-medium text-foreground">
-                              加载完整宿主机 Claude Code 配置
-                            </div>
-                            <div className="mt-1 text-xs leading-5 text-muted-foreground">
-                              将 ~/.claude 作为用户配置层叠加，包含提示词、
-                              Rules、Agents、Commands、Hooks、Workflows、 Output
-                              Styles 与设置（含宿主机 MCP）。工作区仍是
-                              运行目录；CKQClaw MCP 与宿主机 Skills
-                              继续由“能力配置”独立控制。
-                            </div>
-                          </div>
-                          <Switch
-                            checked={contextSource === 'host_claude'}
-                            onCheckedChange={(checked) =>
-                              setContextSource(
-                                checked ? 'host_claude' : 'managed',
-                              )
-                            }
-                            aria-label="加载完整宿主机 Claude Code 配置"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  </section>
+                  <AgentIdentitySection
+                    draftMode={draftMode}
+                    draftStep={draftStep}
+                    isAdmin={isAdmin}
+                    mainAppearance={mainAppearance}
+                    name={name}
+                    setName={setName}
+                    modelConfigId={modelConfigId}
+                    setModelConfigId={setModelConfigId}
+                    modelConfigs={modelConfigs}
+                    defaultModelConfigId={defaultModelConfigId}
+                    effort={effort}
+                    setEffort={setEffort}
+                    avatarUrl={avatarUrl}
+                    avatarEmoji={avatarEmoji}
+                    setAvatarEmoji={setAvatarEmoji}
+                    avatarColor={avatarColor}
+                    setAvatarColor={setAvatarColor}
+                    uploadingAvatar={uploadingAvatar}
+                    avatarStyleOpen={avatarStyleOpen}
+                    setAvatarStyleOpen={setAvatarStyleOpen}
+                    avatarInputRef={avatarInputRef}
+                    handleAvatarUpload={handleAvatarUpload}
+                    handleInheritMainAvatar={handleInheritMainAvatar}
+                    contextSource={contextSource}
+                    setContextSource={setContextSource}
+                  />
 
                   {draftMode && draftStep === 3 && (
                     <section className="overflow-hidden rounded-xl border border-border bg-card">
@@ -1804,199 +886,54 @@ export function AgentProfilesPage() {
                   )}
 
                   {draftMode && draftStep === 5 && (
-                    <section className="overflow-hidden rounded-xl border border-border bg-card">
-                      <div className="border-b px-5 py-4">
-                        <h2 className="text-sm font-semibold">确认创建</h2>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          检查核心设置。创建后仍可随时修改并通过版本历史回退提示词。
-                        </p>
-                      </div>
-                      <dl className="grid gap-4 p-5 sm:grid-cols-2">
-                        <SummaryItem
-                          label="名称"
-                          value={name.trim() || '未填写'}
-                        />
-                        <SummaryItem
-                          label="提示词完成度"
-                          value={`${Object.values(currentPrompts).filter((value) => value.trim()).length}/4 段`}
-                        />
-                        <SummaryItem
-                          label="模型配置"
-                          value={
-                            modelConfigId === 'inherit'
-                              ? `跟随系统默认${defaultModelConfigId ? `：${modelConfigs.find((item) => item.id === defaultModelConfigId)?.name ?? '当前默认'}` : ''}`
-                              : (modelConfigs.find(
-                                  (item) => item.id === modelConfigId,
-                                )?.name ?? '不可用模型配置')
-                          }
-                        />
-                        <SummaryItem
-                          label="推理努力档位"
-                          value={
-                            AGENT_EFFORT_OPTIONS.find(
-                              (option) => option.value === effort,
-                            )?.label ?? '跟随模型配置'
-                          }
-                        />
-                        <SummaryItem
-                          label="宿主机配置"
-                          value={
-                            contextSource === 'host_claude'
-                              ? '完整加载 ~/.claude（宿主机 Skills 独立）'
-                              : '不加载'
-                          }
-                        />
-                        <SummaryItem
-                          label="CKQClaw Skills"
-                          value={
-                            skillsMode === 'inherit'
-                              ? '全部已启用'
-                              : skillsMode === 'disabled'
-                                ? '关闭'
-                                : `所选 ${skillIds.length} 项`
-                          }
-                        />
-                        <SummaryItem
-                          label="宿主机 Skills"
-                          value={skillPolicySummary(
-                            { mode: hostSkillsMode, ids: hostSkillIds },
-                            '全部使用',
-                          )}
-                        />
-                        <SummaryItem
-                          label="CKQClaw MCP"
-                          value={
-                            mcpMode === 'inherit'
-                              ? '全部已启用'
-                              : mcpMode === 'disabled'
-                                ? '关闭'
-                                : `所选 ${mcpIds.length} 项`
-                          }
-                        />
-                      </dl>
-                      {!name.trim() && (
-                        <p
-                          role="alert"
-                          className="mx-5 mb-5 rounded-lg bg-error-bg px-3 py-2 text-xs text-error"
-                        >
-                          请返回“基本信息”填写名称。
-                        </p>
-                      )}
-                      {capabilityError && (
-                        <p
-                          role="alert"
-                          className="mx-5 mb-5 rounded-lg bg-error-bg px-3 py-2 text-xs text-error"
-                        >
-                          {capabilityError}
-                        </p>
-                      )}
-                    </section>
+                    <AgentDraftSummary
+                      name={name}
+                      currentPrompts={currentPrompts}
+                      modelConfigId={modelConfigId}
+                      defaultModelConfigId={defaultModelConfigId}
+                      modelConfigs={modelConfigs}
+                      effort={effort}
+                      contextSource={contextSource}
+                      skillsMode={skillsMode}
+                      skillIds={skillIds}
+                      hostSkillsMode={hostSkillsMode}
+                      hostSkillIds={hostSkillIds}
+                      mcpMode={mcpMode}
+                      mcpIds={mcpIds}
+                      capabilityError={capabilityError}
+                    />
                   )}
 
-                  <section
-                    id="agent-capabilities"
-                    hidden={draftMode && draftStep !== 4}
-                    className="scroll-mt-6 overflow-hidden rounded-xl border border-border bg-card"
-                  >
-                    <div className="border-b border-border px-5 py-4">
-                      <h2 className="text-sm font-semibold text-foreground">
-                        能力配置
-                      </h2>
-                      <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                        按来源配置
-                        Skills。CKQClaw、宿主机与工作区能力会在运行时叠加；
-                        同名项以“最终生效能力”中的结果为准。
-                      </p>
-                    </div>
-                    <div className="space-y-5 px-5 py-5">
-                      <AgentSkillsPolicyEditor
-                        managedPolicy={{ mode: skillsMode, ids: skillIds }}
-                        onManagedModeChange={setSkillsMode}
-                        onManagedIdsChange={setSkillIds}
-                        managedOptions={skillOptions}
-                        hostPolicy={{
-                          mode: hostSkillsMode,
-                          ids: hostSkillIds,
-                        }}
-                        onHostModeChange={handleHostSkillsModeChange}
-                        onHostIdsChange={handleHostSkillIdsChange}
-                        hostOptions={hostSkillOptions}
-                        loading={skillsLoading}
-                        error={skillsError}
-                        hostAvailable={isAdmin}
-                        hostAutoSave={!draftMode}
-                        hostSaving={hostSkillsSaving || runtimeCleanupRepairing}
-                        hostSaveStatus={hostSkillsSaveStatus}
-                        onRetryHostSave={handleRetryHostSkillSave}
-                        managedError={managedSkillsError}
-                        hostError={hostSkillsError}
-                      />
-
-                      <section className="min-w-0 space-y-2 border-t border-border pt-5">
-                        <div>
-                          <h3 className="text-sm font-semibold text-foreground">
-                            CKQClaw MCP
-                          </h3>
-                          <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                            控制 CKQClaw 额外附加的 MCP；宿主机 MCP
-                            仍由上一步的宿主机配置控制。
-                          </p>
-                        </div>
-                        <div className="max-w-xl">
-                          <label className="block text-xs font-medium text-muted-foreground">
-                            使用方式
-                          </label>
-                          <Select
-                            value={mcpMode}
-                            onValueChange={(value) =>
-                              setMcpMode(value as RuntimePolicyMode)
-                            }
-                          >
-                            <SelectTrigger aria-label="智能体 MCP">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="inherit">
-                                使用全部 CKQClaw MCP
-                              </SelectItem>
-                              <SelectItem value="custom">
-                                只允许所选 CKQClaw MCP
-                              </SelectItem>
-                              <SelectItem value="disabled">
-                                关闭 CKQClaw MCP
-                              </SelectItem>
-                            </SelectContent>
-                          </Select>
-                          {mcpMode === 'custom' && (
-                            <PolicyResourcePicker
-                              label="选择 CKQClaw MCP"
-                              options={mcpOptions}
-                              selectedIds={mcpIds}
-                              onChange={setMcpIds}
-                              loading={mcpLoading}
-                              error={mcpError}
-                              emptyText="没有已启用的 CKQClaw MCP"
-                            />
-                          )}
-                        </div>
-                      </section>
-
-                      <div className="border-t border-border pt-5">
-                        <div className="min-w-0">
-                          <p className="text-xs font-medium text-muted-foreground">
-                            SDK 自动压缩
-                          </p>
-                          <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
-                            根据当前模型自动决定压缩时机。普通模型通常为 200K
-                            上下文；模型配置中声明的上下文窗口（如
-                            1M）优先，历史 [1m] 后缀仍按 1M 处理。历史百分比与
-                            固定阈值配置已于 Pi 运行时下线（存量值仅保留存储
-                            兼容），实际压缩时机由运行时决定。
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </section>
+                  <AgentCapabilitiesSection
+                    draftMode={draftMode}
+                    draftStep={draftStep}
+                    skillsMode={skillsMode}
+                    setSkillsMode={setSkillsMode}
+                    skillIds={skillIds}
+                    setSkillIds={setSkillIds}
+                    skillOptions={skillOptions}
+                    hostSkillsMode={hostSkillsMode}
+                    hostSkillIds={hostSkillIds}
+                    handleHostSkillsModeChange={handleHostSkillsModeChange}
+                    handleHostSkillIdsChange={handleHostSkillIdsChange}
+                    hostSkillOptions={hostSkillOptions}
+                    skillsLoading={skillsLoading}
+                    skillsError={skillsError}
+                    isAdmin={isAdmin}
+                    hostSkillsSaving={hostSkillsSaving}
+                    runtimeCleanupRepairing={runtimeCleanupRepairing}
+                    hostSkillsSaveStatus={hostSkillsSaveStatus}
+                    handleRetryHostSkillSave={handleRetryHostSkillSave}
+                    managedSkillsError={managedSkillsError}
+                    hostSkillsError={hostSkillsError}
+                    mcpMode={mcpMode}
+                    setMcpMode={setMcpMode}
+                    mcpOptions={mcpOptions}
+                    mcpIds={mcpIds}
+                    setMcpIds={setMcpIds}
+                    mcpLoading={mcpLoading}
+                    mcpError={mcpError}
+                  />
                   {!draftMode && selected && (
                     <ErrorBoundary resetKeys={[selected.id]}>
                       <EffectiveCapabilitiesPreview
@@ -2115,77 +1052,17 @@ export function AgentProfilesPage() {
         </div>
       </main>
 
-      <Dialog
-        open={deleteDialogOpen}
-        onOpenChange={(open) => !deleting && setDeleteDialogOpen(open)}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>迁移工作区后删除智能体</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 text-sm">
-            <p className="leading-6 text-muted-foreground">
-              「{selected?.name}」仍归属 {governance?.workspaces.length ?? 0}{' '}
-              个工作区。删除前必须把它们迁移到同一个目标
-              智能体；渠道绑定会随工作区归属一起更新。
-            </p>
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                目标智能体
-              </label>
-              <Select
-                value={deleteTargetId}
-                onValueChange={setDeleteTargetId}
-                disabled={deleting}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="选择目标智能体" />
-                </SelectTrigger>
-                <SelectContent>
-                  {profiles
-                    .filter((profile) => profile.id !== selected?.id)
-                    .map((profile) => (
-                      <SelectItem key={profile.id} value={profile.id}>
-                        {profile.is_default ? '主智能体' : profile.name}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="max-h-40 overflow-auto rounded-md border bg-muted/20 p-2">
-              {governance?.workspaces.map((workspace) => (
-                <div
-                  key={workspace.jid}
-                  className="truncate px-1 py-1 text-xs text-muted-foreground"
-                >
-                  {workspace.name} · {workspace.folder}
-                </div>
-              ))}
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setDeleteDialogOpen(false)}
-              disabled={deleting}
-            >
-              取消
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => void handleMigrateAndDelete()}
-              disabled={deleting || !deleteTargetId}
-            >
-              {deleting ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <ArrowRight className="h-4 w-4" />
-              )}
-              迁移并删除
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <AgentDeleteMigrationDialog
+        deleteDialogOpen={deleteDialogOpen}
+        setDeleteDialogOpen={setDeleteDialogOpen}
+        deleting={deleting}
+        selected={selected}
+        governance={governance}
+        profiles={profiles}
+        deleteTargetId={deleteTargetId}
+        setDeleteTargetId={setDeleteTargetId}
+        handleMigrateAndDelete={handleMigrateAndDelete}
+      />
     </div>
   );
 }

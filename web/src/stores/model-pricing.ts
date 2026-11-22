@@ -18,7 +18,7 @@ export interface ModelPricingRule {
   updatedAt: string;
 }
 
-export interface ModelPricingPreviewPricing {
+interface ModelPricingPreviewPricing {
   pattern: string;
   displayName: string;
   family: string;
@@ -35,7 +35,7 @@ export interface ModelPricingPreview {
   pricing: ModelPricingPreviewPricing;
 }
 
-export interface ModelPricingRuleInput {
+interface ModelPricingRuleInput {
   kind: 'pattern' | 'fallback';
   pattern?: string;
   displayName?: string;
@@ -48,9 +48,7 @@ export interface ModelPricingRuleInput {
   enabled?: boolean;
 }
 
-export type ModelPricingRuleUpdates = Partial<
-  Omit<ModelPricingRuleInput, 'kind'>
->;
+type ModelPricingRuleUpdates = Partial<Omit<ModelPricingRuleInput, 'kind'>>;
 
 interface ModelPricingState {
   rules: ModelPricingRule[];

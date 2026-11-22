@@ -24,6 +24,7 @@ import {
   test,
   vi,
 } from 'vitest';
+import { asRouteTestUser } from './helpers/route-test-user.js';
 
 const SHARED_TMP =
   process.env.CKQCLAW_TEST_DATA_DIR ??
@@ -87,11 +88,6 @@ const agentProfileRoutes = agentProfileRoutesModule.default;
 const OWNER_ID = 'alice';
 const ADMIN_ID = 'zadmin';
 
-function asUser(userId: string, role: 'admin' | 'member' = 'member'): void {
-  process.env.CKQCLAW_TEST_USER_ID = userId;
-  process.env.CKQCLAW_TEST_USER_ROLE = role;
-}
-
 // Persistent stub cache (see setWebDeps below) — stable across getRegisteredGroups() calls.
 const webDepsCache: Record<string, unknown> = {};
 
@@ -140,7 +136,7 @@ describe('POST /:jid/reset-owner (admin break-glass)', () => {
   });
 
   test('admin clears owner_im_id + allowlist and downgrades activation_mode', async () => {
-    asUser(ADMIN_ID, 'admin');
+    asRouteTestUser(ADMIN_ID, 'admin');
     const res = await groupRoutes.request(
       `/${encodeURIComponent(JID)}/reset-owner`,
       { method: 'POST' },
@@ -154,7 +150,7 @@ describe('POST /:jid/reset-owner (admin break-glass)', () => {
   });
 
   test('non-admin member is denied (403)', async () => {
-    asUser(OWNER_ID, 'member');
+    asRouteTestUser(OWNER_ID, 'member');
     const res = await groupRoutes.request(
       `/${encodeURIComponent(JID)}/reset-owner`,
       { method: 'POST' },
@@ -167,7 +163,7 @@ describe('POST /:jid/reset-owner (admin break-glass)', () => {
   });
 
   test('non-admin downgrade attempt does not change activation_mode', async () => {
-    asUser(OWNER_ID, 'member');
+    asRouteTestUser(OWNER_ID, 'member');
     await groupRoutes.request(`/${encodeURIComponent(JID)}/reset-owner`, {
       method: 'POST',
     });
@@ -202,7 +198,7 @@ describe('PATCH /:jid preserves owner fields on rename (regression)', () => {
   });
 
   test('renaming a web group keeps owner_im_id / allowlist / nav_mode', async () => {
-    asUser(OWNER_ID, 'member');
+    asRouteTestUser(OWNER_ID, 'member');
     const res = await groupRoutes.request(`/${encodeURIComponent(JID)}`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
@@ -231,7 +227,7 @@ describe('PATCH /:jid execution mode runtime boundary', () => {
     });
     webDepsCache[jid] = db.getRegisteredGroup(jid)!;
     runtimeConfig.saveSystemSettings({ adminHostOnlyMode: true });
-    asUser(ADMIN_ID, 'admin');
+    asRouteTestUser(ADMIN_ID, 'admin');
 
     try {
       const response = await groupRoutes.request(
@@ -279,7 +275,7 @@ describe('PATCH /:jid execution mode runtime boundary', () => {
       },
     } as unknown as Parameters<typeof webContext.setWebDeps>[0]);
 
-    asUser(ADMIN_ID, 'admin');
+    asRouteTestUser(ADMIN_ID, 'admin');
     const response = await groupRoutes.request(`/${encodeURIComponent(jid)}`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
@@ -350,7 +346,7 @@ describe('DELETE /:jid blocks channel_mounts-bound workspaces', () => {
   });
 
   test('owner gets 409 until mounted IM channel is unbound', async () => {
-    asUser(OWNER_ID, 'member');
+    asRouteTestUser(OWNER_ID, 'member');
     const res = await groupRoutes.request(`/${encodeURIComponent(JID)}`, {
       method: 'DELETE',
     });
@@ -362,7 +358,7 @@ describe('DELETE /:jid blocks channel_mounts-bound workspaces', () => {
   });
 
   test('preflight reports the channels that will be detached', async () => {
-    asUser(OWNER_ID, 'member');
+    asRouteTestUser(OWNER_ID, 'member');
     const res = await groupRoutes.request(
       `/${encodeURIComponent(JID)}/delete-impact`,
     );
@@ -410,7 +406,7 @@ describe('DELETE /:jid blocks channel_mounts-bound workspaces', () => {
     } as unknown as Parameters<typeof webContext.setWebDeps>[0]);
 
     try {
-      asUser(OWNER_ID, 'member');
+      asRouteTestUser(OWNER_ID, 'member');
       const res = await groupRoutes.request(
         `/${encodeURIComponent(JID)}?unbind_channels=true`,
         { method: 'DELETE' },
@@ -518,7 +514,7 @@ describe('DELETE /:jid mutation pause', () => {
     } as unknown as Parameters<typeof webContext.setWebDeps>[0]);
 
     try {
-      asUser(OWNER_ID);
+      asRouteTestUser(OWNER_ID);
       const deletePromise = groupRoutes.request(`/${encodeURIComponent(jid)}`, {
         method: 'DELETE',
       });
@@ -649,7 +645,7 @@ describe('DELETE /:jid mutation pause', () => {
     } as unknown as Parameters<typeof webContext.setWebDeps>[0]);
 
     try {
-      asUser(OWNER_ID);
+      asRouteTestUser(OWNER_ID);
       const response = await groupRoutes.request(
         `/${encodeURIComponent(jid)}`,
         { method: 'DELETE' },
@@ -686,7 +682,7 @@ describe('PATCH /:jid/agent-profile two-phase runtime quiesce', () => {
     });
     db.assignWorkspaceAgentProfile(folder, builtIn.id);
 
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     const response = await groupRoutes.request(
       `/${encodeURIComponent(jid)}/agent-profile`,
       {
@@ -734,7 +730,7 @@ describe('PATCH /:jid/agent-profile two-phase runtime quiesce', () => {
       },
     } as unknown as Parameters<typeof webContext.setWebDeps>[0]);
 
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     const res = await groupRoutes.request(
       `/${encodeURIComponent(jid)}/agent-profile`,
       {
@@ -790,7 +786,7 @@ describe('PATCH /:jid/agent-profile two-phase runtime quiesce', () => {
     } as unknown as Parameters<typeof webContext.setWebDeps>[0]);
 
     const request = () => {
-      asUser(OWNER_ID);
+      asRouteTestUser(OWNER_ID);
       return groupRoutes.request(`/${encodeURIComponent(jid)}/agent-profile`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
@@ -872,7 +868,7 @@ describe('PATCH /:jid/agent-profile two-phase runtime quiesce', () => {
       },
     } as unknown as Parameters<typeof webContext.setWebDeps>[0]);
 
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     const patchPromise = agentProfileRoutes.request(`/${targetA.id}`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
@@ -976,7 +972,7 @@ describe('PATCH /:jid/agent-profile two-phase runtime quiesce', () => {
         stopGroup,
       },
     } as unknown as Parameters<typeof webContext.setWebDeps>[0]);
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     const migrationPromise = groupRoutes.request(
       `/${encodeURIComponent(jid)}/agent-profile`,
       {
@@ -1048,7 +1044,7 @@ describe('PATCH /:jid/agent-profile two-phase runtime quiesce', () => {
       },
     } as unknown as Parameters<typeof webContext.setWebDeps>[0]);
 
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     const migrationPromise = groupRoutes.request(
       `/${encodeURIComponent(jid)}/agent-profile`,
       {
@@ -1123,7 +1119,7 @@ describe('PATCH /:jid/agent-profile two-phase runtime quiesce', () => {
       },
     } as unknown as Parameters<typeof webContext.setWebDeps>[0]);
 
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     const migrationPromise = groupRoutes.request(
       `/${encodeURIComponent(jid)}/agent-profile`,
       {
@@ -1187,7 +1183,7 @@ describe('POST / workspace Agent membership publication lock', () => {
     );
     await patchEnteredPromise;
 
-    asUser(ADMIN_ID, 'admin');
+    asRouteTestUser(ADMIN_ID, 'admin');
     const createPromise = groupRoutes.request('/', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -1247,7 +1243,7 @@ describe('POST / workspace Agent membership publication lock', () => {
     } as unknown as Parameters<typeof webContext.setWebDeps>[0]);
 
     try {
-      asUser(ADMIN_ID, 'admin');
+      asRouteTestUser(ADMIN_ID, 'admin');
       const createPromise = groupRoutes.request('/', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -1309,7 +1305,7 @@ describe('POST / workspace Agent membership publication lock', () => {
       ensureTerminalContainerStarted,
     } as unknown as Parameters<typeof webContext.setWebDeps>[0]);
 
-    asUser(ADMIN_ID, 'admin');
+    asRouteTestUser(ADMIN_ID, 'admin');
     const createPromise = groupRoutes.request('/', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

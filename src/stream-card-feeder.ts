@@ -6,7 +6,6 @@
  * machine-testable seam for the Feishu/QQ card event contract.
  */
 import type { StreamEvent } from './stream-event.types.js';
-import { logger } from './logger.js';
 import { StreamingCardController } from './feishu-streaming-card.js';
 import type { StreamingSession } from './im-channel.js';
 
@@ -89,20 +88,6 @@ export function feedStreamEventToCard(
         }
       }
       break;
-    case 'tool_result': {
-      // Surface the (truncated + sanitized) tool output in the timeline so the
-      // card shows *what* a tool returned, aligning with Claude Code's trace.
-      if (se.toolResult) {
-        const resultInfo = se.toolUseId
-          ? session.getToolInfo(se.toolUseId)
-          : undefined;
-        const toolLabel = resultInfo?.name ? `\`${resultInfo.name}\` ` : '';
-        session.pushRecentEvent(
-          `↳ <font color='grey'>结果</font> ${toolLabel}${se.toolResult.slice(0, 120)}`,
-        );
-      }
-      break;
-    }
     case 'tool_progress':
       if (se.toolUseId && se.toolInputSummary) {
         session.updateToolSummary(se.toolUseId, se.toolInputSummary);
@@ -128,44 +113,6 @@ export function feedStreamEventToCard(
               ? '正在整理上下文…'
               : se.statusText,
         );
-      }
-      break;
-    case 'hook_started':
-      session.setHook({
-        hookName: se.hookName || '',
-        hookEvent: se.hookEvent || '',
-      });
-      break;
-    case 'hook_response':
-      if (se.hookName) {
-        session.pushRecentEvent(`✅ Hook: ${se.hookName}`);
-      }
-      session.setHook(null);
-      break;
-    case 'todo_update':
-      if (se.todos) session.setTodos(se.todos);
-      break;
-    case 'task_start':
-      if (se.toolUseId) {
-        session.setThinking();
-        const label = se.taskDescription
-          ? `Task: ${se.taskDescription.slice(0, 40)}`
-          : 'Task';
-        if (session instanceof StreamingCardController) {
-          session.updateTask(se.toolUseId, {
-            title: se.taskDescription || se.toolInputSummary || 'Task',
-            status: 'running',
-            subagentType: se.subagentType,
-            summary: se.summary,
-          });
-        }
-        session.startTool(se.toolUseId, label);
-        session.setSystemStatus(
-          se.taskDescription
-            ? `正在执行任务：${se.taskDescription.slice(0, 80)}`
-            : '正在执行子任务…',
-        );
-        session.pushRecentEvent(`🚀 ${label}`);
       }
       break;
     case 'task_progress': {
@@ -206,78 +153,14 @@ export function feedStreamEventToCard(
       }
       break;
     }
-    case 'task_updated': {
-      const id = se.toolUseId || se.taskId;
-      if (id && session instanceof StreamingCardController) {
-        const patchStatus = se.taskPatch?.status;
-        session.updateTask(id, {
-          status:
-            patchStatus === 'completed'
-              ? 'completed'
-              : patchStatus === 'failed' || patchStatus === 'killed'
-                ? 'error'
-                : se.taskPatch?.is_backgrounded
-                  ? 'backgrounded'
-                  : 'running',
-          summary:
-            se.summary || se.taskPatch?.description || se.taskPatch?.error,
-        });
-      }
-      break;
-    }
-    case 'task_notification':
-      if (se.toolUseId || se.taskId) {
-        const id = se.toolUseId || se.taskId || '';
-        if (session instanceof StreamingCardController) {
-          session.updateTask(id, {
-            status: se.taskStatus === 'completed' ? 'completed' : 'error',
-            summary: se.taskSummary || se.summary,
-          });
-        }
-        // ISSUE-03: keep the legacy branch coherent — an errored notification
-        // must not render a success tool end. (Branch deletion is ISSUE-10.)
-        session.endTool(id, se.taskStatus !== 'completed');
-        const label = se.taskSummary
-          ? `Task: ${se.taskSummary.slice(0, 40)}`
-          : 'Task 完成';
-        session.pushRecentEvent(`✅ ${label}`);
-      }
-      break;
-    case 'hook_progress':
-      // Update hook state (no card push needed — card already shows hook indicator)
-      session.setHook({
-        hookName: se.hookName || '',
-        hookEvent: se.hookEvent || '',
-      });
-      break;
     case 'usage':
       if (se.usage) session.patchUsageNote(se.usage);
       break;
-    case 'permission_denied': {
-      // A denied tool call is a real signal (the agent wanted to do something
-      // it wasn't allowed to) — render it in red so it stands out from the
-      // grey routine-event stream instead of being buried as plain text.
-      const pd = se.permissionDenied;
-      const toolName = pd?.toolName || se.toolName || '';
-      const reason = pd?.reason || pd?.message || se.summary || '';
-      const toolPart = toolName ? ` \`${toolName}\`` : '';
-      const reasonPart = reason
-        ? ` <font color='grey'>${reason.slice(0, 80)}</font>`
-        : '';
-      session.pushRecentEvent(
-        `🚫 <text_tag color='red'>权限拒绝</text_tag>${toolPart}${reasonPart}`,
-      );
-      break;
-    }
-    case 'memory_recall':
     case 'compact_boundary':
-    case 'notification':
-    case 'prompt_suggestion':
       if (se.summary || se.title) {
-        // memory_recall / compact_boundary carry the matched memory or the
-        // pre-compaction summary in `detail`; surface it (clamped) after the
-        // headline so the runtime trace shows *what* was recalled/compacted,
-        // not just that something happened.
+        // compact_boundary carries the pre-compaction summary in `detail`;
+        // surface it (clamped) after the headline so the runtime trace shows
+        // *what* was compacted, not just that something happened.
         const detail = se.detail
           ? ` <font color='grey'>${se.detail.slice(0, 120)}</font>`
           : '';
@@ -285,20 +168,7 @@ export function feedStreamEventToCard(
           `${se.title || se.eventType}: ${(se.summary || '').slice(0, 80)}${detail}`,
         );
       }
-      if (se.eventType === 'compact_boundary') {
-        session.setSystemStatus(se.summary || '上下文已压缩');
-      }
-      break;
-    case 'context_audit':
-      // Context audits describe CKQClaw/Claude runtime wiring. Keep them in
-      // service logs for operators, but never leak framework internals into a
-      // user's conversation or streaming card.
-      if (se.contextAudit?.warnings?.length) {
-        logger.warn(
-          { warnings: se.contextAudit.warnings },
-          'Agent context audit warning',
-        );
-      }
+      session.setSystemStatus(se.summary || '上下文已压缩');
       break;
     case 'raw_sdk_event':
       if (se.displayLevel === 'primary') {
@@ -306,9 +176,6 @@ export function feedStreamEventToCard(
           `${se.title || se.rawType || 'SDK'}: ${(se.summary || '').slice(0, 80)}`,
         );
       }
-      break;
-    case 'init':
-      // Internal signal, no card display needed
       break;
   }
 }

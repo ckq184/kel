@@ -5,7 +5,7 @@ import {
   type TurnMessageDeliveryRole,
 } from './turn-output-coordinator.js';
 
-export interface HostIpcOutputRouteInput {
+interface HostIpcOutputRouteInput {
   sourceGroup: string;
   agentId?: string | null;
   inputTurnId?: unknown;
@@ -52,7 +52,7 @@ export function resolveHostIpcLogicalChatJid(input: {
   return baseChatJid;
 }
 
-export type HostIpcOutputRoute =
+type HostIpcOutputRoute =
   | {
       path: 'primary_projection';
       delivered: boolean;

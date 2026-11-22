@@ -4,11 +4,7 @@ import { promisify } from 'util';
 import { logger } from './logger.js';
 
 export type RunnerRuntime = 'host' | 'container';
-export type RunnerCpuActivity =
-  | 'active'
-  | 'inactive'
-  | 'unknown'
-  | 'unavailable';
+type RunnerCpuActivity = 'active' | 'inactive' | 'unknown' | 'unavailable';
 
 export interface StuckRecoveryCandidate {
   jid: string;
@@ -27,7 +23,7 @@ export interface StuckRecoveryCandidate {
   ipcOwedMs: number | null;
 }
 
-export type StuckRecoveryDecision =
+type StuckRecoveryDecision =
   | {
       action: 'restart';
       reason: 'idle' | 'idle_ceiling' | 'absolute_ipc_ceiling';
@@ -37,14 +33,14 @@ export type StuckRecoveryDecision =
       reason: 'container_grace' | 'cpu_active' | 'cpu_unknown';
     };
 
-export type HostProcessTableReader = () => Promise<string>;
-export type HostRunnerCpuProbe = (
+type HostProcessTableReader = () => Promise<string>;
+type HostRunnerCpuProbe = (
   pid: number,
   context: StuckRecoveryCandidate,
 ) => Promise<RunnerCpuActivity>;
-export type HostProcessLivenessProbe = (pid: number) => boolean;
+type HostProcessLivenessProbe = (pid: number) => boolean;
 
-export interface RunnerCpuResolutionOptions {
+interface RunnerCpuResolutionOptions {
   /** Test seam: defaults to the real host platform. */
   platform?: NodeJS.Platform;
   isProcessAlive?: HostProcessLivenessProbe;
@@ -88,7 +84,7 @@ export function isHostProcessAlive(pid: number): boolean {
  * recovery ceilings (absolute IPC ceiling / idle ceiling) rather than an
  * unlimited cpu_unknown veto.
  */
-export async function probeHostRunnerLivenessWin32(
+async function probeHostRunnerLivenessWin32(
   pid: number,
   context: Pick<
     StuckRecoveryCandidate,

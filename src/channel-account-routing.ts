@@ -1,6 +1,6 @@
 import type { ChannelAccount, RegisteredGroup } from './types.js';
 
-export interface ChannelAccountFallbackWorkspace {
+interface ChannelAccountFallbackWorkspace {
   jid: string;
   folder: string;
 }

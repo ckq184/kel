@@ -14,7 +14,7 @@ import { logger } from './logger.js';
 
 const execFileAsync = promisify(execFile);
 
-export interface AgentCapability {
+interface AgentCapability {
   /** Human-readable name */
   name: string;
   /** Binary to look up in $PATH */
@@ -29,7 +29,7 @@ export interface AgentCapability {
   installHint: string;
 }
 
-export const AGENT_CAPABILITIES: AgentCapability[] = [
+const AGENT_CAPABILITIES: AgentCapability[] = [
   {
     name: 'node',
     binary: 'node',
@@ -87,7 +87,7 @@ async function resolveBinaryPath(binary: string): Promise<string | null> {
   }
 }
 
-export interface CapabilityCheckResult {
+interface CapabilityCheckResult {
   available: AgentCapability[];
   missing: AgentCapability[];
   /** Env vars to inject into the host process (only for available tools) */

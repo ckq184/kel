@@ -5,7 +5,6 @@ import { useAuthStore } from './auth';
 import {
   showToast,
   notifyIfHidden,
-  shouldEmitBackgroundTaskNotice,
   showNotificationPromptToast,
 } from '../utils/toast';
 import {
@@ -53,7 +52,6 @@ export interface Message {
   is_from_me: boolean;
   attachments?: string;
   token_usage?: string;
-  workflow_runs?: import('../stream-event.types').WorkflowRunSnapshot[];
   turn_id?: string | null;
   session_id?: string | null;
   source_kind?:
@@ -110,20 +108,11 @@ export interface FollowUpTransition {
 import type { StreamEventType, StreamEvent } from '../stream-event.types';
 export type { StreamEventType, StreamEvent };
 
-export interface StreamingTimelineEvent {
+interface StreamingTimelineEvent {
   id: string;
   timestamp: number;
   text: string;
-  kind:
-    | 'tool'
-    | 'skill'
-    | 'hook'
-    | 'status'
-    | 'task'
-    | 'memory'
-    | 'debug'
-    | 'context'
-    | 'permission';
+  kind: 'tool' | 'skill' | 'status' | 'task' | 'memory' | 'debug' | 'context';
 }
 
 export interface StreamingTraceEvent {
@@ -147,7 +136,6 @@ export interface StreamingTaskRuntimeState {
   subagentType?: string;
   taskType?: string;
   workflowName?: string;
-  workflowRun?: StreamEvent['workflowRun'];
   usage?: StreamEvent['sdkTaskUsage'];
   latestSummary?: string;
   lastToolName?: string;
@@ -159,7 +147,7 @@ export interface StreamingTaskRuntimeState {
 }
 
 /** Shape of the snapshot payload pushed from the backend on WS reconnect (stream_snapshot). */
-export interface StreamSnapshotData {
+interface StreamSnapshotData {
   partialText: string;
   thinkingText?: string;
   activeTools: Array<{
@@ -177,15 +165,12 @@ export interface StreamSnapshotData {
   }>;
   traceEvents?: StreamingTraceEvent[];
   taskStates?: Record<string, StreamingTaskRuntimeState>;
-  contextAudit?: StreamEvent['contextAudit'];
-  todos?: Array<{ id: string; content: string; status: string }>;
   systemStatus: string | null;
   isThinking?: boolean;
-  activeHook?: { hookName: string; hookEvent: string } | null;
   turnId?: string;
 }
 
-export interface ActiveRunSnapshotData {
+interface ActiveRunSnapshotData {
   chatJid: string;
   runId: string;
   startedAt: string;
@@ -213,12 +198,10 @@ export interface StreamingState {
     toolInputSummary?: string;
     toolInput?: Record<string, unknown>;
   }>;
-  activeHook: { hookName: string; hookEvent: string } | null;
   systemStatus: string | null;
   recentEvents: StreamingTimelineEvent[];
   traceEvents: StreamingTraceEvent[];
   taskStates: Record<string, StreamingTaskRuntimeState>;
-  todos?: Array<{ id: string; content: string; status: string }>;
   interrupted?: boolean;
 }
 
@@ -236,8 +219,6 @@ function mergeMessagesChronologically(
       old.content !== m.content ||
       old.timestamp !== m.timestamp ||
       old.token_usage !== m.token_usage ||
-      JSON.stringify(old.workflow_runs ?? []) !==
-        JSON.stringify(m.workflow_runs ?? []) ||
       old.turn_id !== m.turn_id ||
       old.session_id !== m.session_id ||
       old.source_kind !== m.source_kind ||
@@ -526,7 +507,6 @@ const DEFAULT_STREAMING_STATE: StreamingState = {
   thinkingText: '',
   isThinking: false,
   activeTools: [],
-  activeHook: null,
   systemStatus: null,
   recentEvents: [],
   traceEvents: [],
@@ -547,41 +527,6 @@ export function shouldRecoverStaleWaiting(input: {
     ? STALE_WAITING_WITH_DATA_MS
     : STALE_WAITING_NO_DATA_MS;
   return input.elapsedMs > threshold;
-}
-
-/**
- * Transfer SDK Workflow ownership from a finishing Claude turn to the
- * background-wait UI. The acknowledgement is a held result, not the logical
- * end of the user's request, so the Workflow card must remain live while the
- * runner waits for task_notification.
- */
-function streamingStateFromWorkflowRuns(
-  runs: import('../stream-event.types').WorkflowRunSnapshot[],
-): StreamingState {
-  const now = Date.now();
-  const taskStates: Record<string, StreamingTaskRuntimeState> = {};
-  for (const run of runs) {
-    taskStates[run.taskId] = {
-      id: run.taskId,
-      title: run.summary || run.workflowName || '动态工作流',
-      status: 'backgrounded',
-      taskType: 'local_workflow',
-      workflowName: run.workflowName,
-      workflowRun: run,
-      thinkingTail: '',
-      textTail: '',
-      activeTools: [],
-      recentTools: [],
-      updatedAt: now,
-    };
-  }
-  return {
-    ...DEFAULT_STREAMING_STATE,
-    activeTools: [],
-    recentEvents: [],
-    traceEvents: [],
-    taskStates,
-  };
 }
 
 /**
@@ -621,7 +566,6 @@ function freezeStreamingState(
     ...state,
     isThinking: false,
     activeTools: [],
-    activeHook: null,
     systemStatus: null,
     interrupted: true,
     thinkingDurationMs,
@@ -725,7 +669,6 @@ function saveStreamingToSession(
               .filter(isUserVisibleTraceEvent)
               .slice(-50),
             taskStates: state.taskStates,
-            todos: state.todos,
             systemStatus: state.systemStatus,
             turnId: state.turnId,
             ts: Date.now(),
@@ -1073,14 +1016,8 @@ function tail(text: string, max: number): string {
 function traceKind(event: StreamEvent): StreamingTraceEvent['kind'] {
   if (event.eventType.startsWith('tool_'))
     return event.skillName ? 'skill' : 'tool';
-  if (event.eventType.startsWith('hook_')) return 'hook';
   if (event.eventType.startsWith('task_')) return 'task';
-  if (
-    event.eventType === 'memory_recall' ||
-    event.eventType === 'compact_boundary'
-  )
-    return 'memory';
-  if (event.eventType === 'permission_denied') return 'permission';
+  if (event.eventType === 'compact_boundary') return 'memory';
   if (event.eventType === 'raw_sdk_event') return 'debug';
   return 'status';
 }
@@ -1094,30 +1031,14 @@ function traceTitle(event: StreamEvent): string {
         : `工具 ${event.toolName || 'unknown'}`;
     case 'tool_use_end':
       return `工具完成 ${event.toolName || event.toolUseId || ''}`.trim();
-    case 'tool_result':
-      return '工具结果';
     case 'tool_progress':
       return `工具进度 ${event.toolName || event.toolUseId || ''}`.trim();
-    case 'task_start':
-      return `Task 启动`;
     case 'task_progress':
       return `Task 进度`;
-    case 'task_updated':
-      return `Task 更新`;
-    case 'task_notification':
-      return `Task ${event.taskStatus || '完成'}`;
     case 'status':
       return event.statusText || '状态更新';
-    case 'permission_denied':
-      return `权限拒绝 ${event.toolName || ''}`.trim();
-    case 'memory_recall':
-      return '记忆召回';
     case 'compact_boundary':
       return '上下文压缩';
-    case 'notification':
-      return '通知';
-    case 'prompt_suggestion':
-      return '建议';
     default:
       return event.rawType || event.eventType;
   }
@@ -1131,8 +1052,6 @@ function pushTrace(
     event.eventType === 'text_delta' ||
     event.eventType === 'thinking_delta' ||
     event.eventType === 'usage' ||
-    event.eventType === 'init' ||
-    event.eventType === 'context_audit' ||
     (event.eventType === 'status' &&
       isInternalLifecycleStatus(event.statusText))
   ) {
@@ -1162,12 +1081,7 @@ function taskIdFromEvent(event: StreamEvent): string | null {
   return (
     event.parentToolUseId ||
     event.taskId ||
-    (event.eventType === 'task_start' ||
-    event.eventType === 'task_progress' ||
-    event.eventType === 'task_updated' ||
-    event.eventType === 'task_notification'
-      ? event.toolUseId || null
-      : null)
+    (event.eventType === 'task_progress' ? event.toolUseId || null : null)
   );
 }
 
@@ -1188,7 +1102,6 @@ function ensureTaskRuntime(
       subagentType: event.subagentType,
       taskType: event.taskType,
       workflowName: event.workflowName,
-      workflowRun: event.workflowRun,
       usage: event.sdkTaskUsage,
       thinkingTail: '',
       textTail: '',
@@ -1215,20 +1128,6 @@ function updateTaskRuntime(
   if (event.taskType) task.taskType = event.taskType;
   if (event.workflowName) task.workflowName = event.workflowName;
   if (event.sdkTaskUsage) task.usage = event.sdkTaskUsage;
-  if (event.workflowRun) {
-    task.workflowRun = {
-      ...(task.workflowRun ?? {}),
-      ...event.workflowRun,
-      phases:
-        event.workflowRun.phases.length > 0
-          ? event.workflowRun.phases
-          : (task.workflowRun?.phases ?? []),
-      agents:
-        event.workflowRun.agents.length > 0
-          ? event.workflowRun.agents
-          : (task.workflowRun?.agents ?? []),
-    };
-  }
 
   if (event.eventType === 'text_delta') {
     task.textTail = tail(task.textTail + (event.text || ''), MAX_TASK_TAIL);
@@ -1252,36 +1151,6 @@ function updateTaskRuntime(
       event.taskDescription ||
       task.latestSummary;
     task.lastToolName = event.lastToolName || task.lastToolName;
-    if (task.workflowRun && event.sdkTaskUsage) {
-      task.workflowRun = {
-        ...task.workflowRun,
-        status: 'running',
-        totalTokens: event.sdkTaskUsage.totalTokens,
-        totalToolCalls: event.sdkTaskUsage.toolUses,
-        durationMs: event.sdkTaskUsage.durationMs,
-      };
-    }
-  } else if (event.eventType === 'task_updated') {
-    const patch = event.taskPatch;
-    if (patch?.status === 'completed') task.status = 'completed';
-    else if (patch?.status === 'failed' || patch?.status === 'killed')
-      task.status = 'error';
-    else if (patch?.is_backgrounded) task.status = 'backgrounded';
-    else if (patch?.status === 'running' || patch?.status === 'pending')
-      task.status = 'running';
-    task.latestSummary =
-      event.summary || patch?.description || patch?.error || task.latestSummary;
-  } else if (event.eventType === 'task_notification') {
-    task.status = event.taskStatus === 'completed' ? 'completed' : 'error';
-    task.latestSummary =
-      event.taskSummary || event.summary || task.latestSummary;
-    if (task.workflowRun) {
-      task.workflowRun = {
-        ...task.workflowRun,
-        status: event.taskStatus === 'completed' ? 'completed' : 'failed',
-        completedAt: task.workflowRun.completedAt ?? Date.now(),
-      };
-    }
   } else if (event.eventType === 'tool_use_start' && event.parentToolUseId) {
     const tool = {
       toolName: event.toolName || 'unknown',
@@ -1490,20 +1359,6 @@ function applyStreamEvent(
       }
       break;
     }
-    case 'task_start': {
-      updateTaskRuntime(prev, next, event);
-      const desc =
-        event.taskDescription ||
-        event.toolInputSummary ||
-        event.summary ||
-        'Task';
-      next.recentEvents = pushEvent(
-        prev.recentEvents,
-        'task',
-        `Task 启动: ${desc}`,
-      );
-      break;
-    }
     case 'task_progress': {
       updateTaskRuntime(prev, next, event);
       const label = event.lastToolName
@@ -1516,54 +1371,6 @@ function applyStreamEvent(
       );
       break;
     }
-    case 'task_updated': {
-      updateTaskRuntime(prev, next, event);
-      next.recentEvents = pushEvent(
-        prev.recentEvents,
-        'task',
-        `Task 更新: ${event.summary || event.taskPatch?.status || ''}`,
-      );
-      break;
-    }
-    case 'task_notification': {
-      updateTaskRuntime(prev, next, event);
-      next.recentEvents = pushEvent(
-        prev.recentEvents,
-        'task',
-        `Task ${event.taskStatus === 'completed' ? '完成' : '结束'}: ${event.taskSummary || event.summary || ''}`,
-      );
-      break;
-    }
-    case 'hook_started':
-      next.activeHook = {
-        hookName: event.hookName || '',
-        hookEvent: event.hookEvent || '',
-      };
-      next.recentEvents = pushEvent(
-        prev.recentEvents,
-        'hook',
-        `Hook 开始: ${event.hookName || 'unknown'} (${event.hookEvent || 'unknown'})`,
-      );
-      break;
-    case 'hook_progress':
-      next.activeHook = {
-        hookName: event.hookName || '',
-        hookEvent: event.hookEvent || '',
-      };
-      break;
-    case 'hook_response':
-      next.activeHook = null;
-      next.recentEvents = pushEvent(
-        prev.recentEvents,
-        'hook',
-        `Hook 结束: ${event.hookName || 'unknown'} (${event.hookOutcome || 'success'})`,
-      );
-      break;
-    case 'todo_update':
-      if (event.todos) {
-        next.todos = event.todos;
-      }
-      break;
     case 'status': {
       next.systemStatus = event.statusText || null;
       if (event.statusText && !isInternalLifecycleStatus(event.statusText)) {
@@ -1575,35 +1382,10 @@ function applyStreamEvent(
       }
       break;
     }
-    case 'permission_denied': {
-      const pd = event.permissionDenied;
-      const tool = pd?.toolName || event.toolName || '';
-      const why =
-        pd?.reason ||
-        pd?.message ||
-        event.summary ||
-        event.detail ||
-        '权限被拒绝';
-      next.recentEvents = pushEvent(
-        prev.recentEvents,
-        'permission',
-        `🚫 ${tool ? `${tool}: ` : ''}${why}`.trim(),
-      );
-      break;
-    }
-    case 'memory_recall':
     case 'compact_boundary':
       next.recentEvents = pushEvent(
         prev.recentEvents,
         'memory',
-        event.summary || traceTitle(event),
-      );
-      break;
-    case 'notification':
-    case 'prompt_suggestion':
-      next.recentEvents = pushEvent(
-        prev.recentEvents,
-        'status',
         event.summary || traceTitle(event),
       );
       break;
@@ -1616,15 +1398,9 @@ function applyStreamEvent(
         );
       }
       break;
-    case 'context_audit':
-      // Operator-only runtime diagnostics; intentionally absent from chat UI.
-      break;
     case 'usage':
       // Token usage is handled at handleStreamEvent level (direct message table update).
       // No streaming state mutation needed.
-      break;
-    case 'init':
-      // Internal signal, no UI handling needed.
       break;
   }
 }
@@ -2495,10 +2271,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // Skip while clearHistory is in-flight
     if (get().clearing[chatJid]) return;
 
-    // Runtime context audits may contain host paths and prompt wiring. They are
-    // useful to operators, but never belong in a user's conversation state.
-    if (event.eventType === 'context_audit') return;
-
     const runtimeJid = agentId ? `${chatJid}#agent:${agentId}` : chatJid;
     if (!shouldApplyRunScopedPayload(get().activeRuns, runtimeJid, runId)) {
       return;
@@ -2739,19 +2511,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
     };
 
-    // ② task_start / Task tool start → 创建/更新虚拟 Agent（SDK Task）
+    // ② Task tool start（ISSUE-03 归一：Pi 的 Task 终态经 tool_use_start 识别）
+    // → 创建/更新虚拟 Agent（SDK Task）
     if (
-      (event.eventType === 'task_start' && event.toolUseId) ||
-      (event.eventType === 'tool_use_start' &&
-        event.toolName === 'Task' &&
-        event.toolUseId)
+      event.eventType === 'tool_use_start' &&
+      event.toolName === 'Task' &&
+      event.toolUseId
     ) {
       ensureSdkTask(
         event.toolUseId!,
         event.taskDescription || event.toolInputSummary,
         event.isTeammate,
       );
-      // 不 return — 让 task_start 同时落入主对话 streaming（显示 Task 工具卡片）
+      // 不 return — 让事件同时落入主对话 streaming（显示 Task 工具卡片）
     }
 
     if (
@@ -2784,72 +2556,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
           },
         };
       });
-    }
-
-    if (
-      event.eventType === 'task_updated' &&
-      (event.toolUseId || event.taskId)
-    ) {
-      const resolvedTaskId = resolveOrBindTaskId(
-        event.toolUseId || event.taskId!,
-      );
-      const patchStatus = event.taskPatch?.status;
-      if (
-        patchStatus === 'completed' ||
-        patchStatus === 'failed' ||
-        patchStatus === 'killed'
-      ) {
-        finalizeSdkTask(
-          resolvedTaskId,
-          patchStatus === 'completed' ? 'completed' : 'error',
-          event.summary || event.taskPatch?.error,
-        );
-      }
-    }
-
-    // ③ task_notification → 标记完成/失败并自动关闭标签页
-    if (event.eventType === 'task_notification' && event.taskId) {
-      const resolvedTaskId = resolveOrBindTaskId(event.taskId);
-      finalizeSdkTask(
-        resolvedTaskId,
-        event.taskStatus === 'completed' ? 'completed' : 'error',
-        event.taskSummary,
-      );
-
-      // Toast + 浏览器通知（仅限后台任务）
-      // stream-processor 为前台 Task 合成的 task_notification 不带 isBackground 标记，
-      // 仅 SDK 原生的后台完成事件携带 isBackground: true。
-      if (
-        event.isBackground &&
-        shouldEmitBackgroundTaskNotice(resolvedTaskId)
-      ) {
-        const taskInfo = get().sdkTasks[resolvedTaskId];
-        const desc = (
-          taskInfo?.description ||
-          event.taskSummary ||
-          '后台任务'
-        ).slice(0, 60);
-        const status = event.taskStatus === 'completed' ? '已完成' : '失败';
-        if (typeof document === 'undefined' || !document.hidden) {
-          showToast(`${desc} ${status}`, event.taskSummary);
-        }
-        notifyIfHidden(`CKQClaw: ${desc} ${status}`, event.taskSummary);
-      }
-
-      set((s) => {
-        const current = s.streaming[chatJid];
-        if (!current || current.interrupted) return s;
-        const prev = resolveStreamingPrev(current, event);
-        const next = { ...prev };
-        applyStreamEvent(event, prev, next, MAX_STREAMING_TEXT);
-        saveStreamingToSession(chatJid, next);
-        return {
-          streaming: { ...s.streaming, [chatJid]: next },
-        };
-      });
-
-      // 不落入主对话 streaming
-      return;
     }
 
     // ④ parentToolUseId 匹配已知 SDK Task → 刷新 stale timer，事件落入主对话 streaming
@@ -3038,17 +2744,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // Skip while clearHistory is in-flight to prevent race re-injection
     if (get().clearing[chatJid]) return;
 
-    const incomingWorkflowRuns = (wsMsg.workflow_runs || []) as NonNullable<
-      Message['workflow_runs']
-    >;
-    const runningWorkflowRuns = incomingWorkflowRuns.filter(
-      (run) => run.status === 'running',
-    );
-    const completedWorkflowRuns = incomingWorkflowRuns.filter(
-      (run) => run.status !== 'running',
-    );
-    const holdsRunningWorkflow = runningWorkflowRuns.length > 0;
-
     const msg: Message = {
       id: wsMsg.id,
       chat_jid: wsMsg.chat_jid || chatJid,
@@ -3059,10 +2754,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       is_from_me: wsMsg.is_from_me ?? false,
       attachments: wsMsg.attachments,
       token_usage: wsMsg.token_usage,
-      // Running runs are rendered by StreamingDisplay so progress events can
-      // keep mutating the same card. Completed runs belong to MessageBubble.
-      workflow_runs:
-        completedWorkflowRuns.length > 0 ? completedWorkflowRuns : undefined,
       turn_id: wsMsg.turn_id ?? null,
       session_id: wsMsg.session_id ?? null,
       source_kind: wsMsg.source_kind ?? null,
@@ -3098,17 +2789,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const nextAgentStreaming = isAgentReply
           ? exactRunActive
             ? s.agentStreaming
-            : holdsRunningWorkflow
-              ? {
-                  ...s.agentStreaming,
-                  [agentId]:
-                    streamingStateFromWorkflowRuns(runningWorkflowRuns),
-                }
-              : (() => {
-                  const n = { ...s.agentStreaming };
-                  delete n[agentId];
-                  return n;
-                })()
+            : (() => {
+                const n = { ...s.agentStreaming };
+                delete n[agentId];
+                return n;
+              })()
           : s.agentStreaming;
 
         // For user messages (non-reply), set agentWaiting=true so subsequent
@@ -3117,7 +2802,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const nextAgentWaiting = isAgentReply
           ? {
               ...s.agentWaiting,
-              [agentId]: exactRunActive || holdsRunningWorkflow,
+              [agentId]: exactRunActive,
             }
           : !msg.is_from_me
             ? { ...s.agentWaiting, [agentId]: true }
@@ -3213,8 +2898,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           msg.source_kind === 'legacy');
 
       if (shouldFinalizeAssistant || isSystemError) {
-        if (shouldFinalizeAssistant && !holdsRunningWorkflow)
-          didFinalizeAssistant = true;
+        if (shouldFinalizeAssistant) didFinalizeAssistant = true;
 
         // Agent 回复或系统错误：立即清除流式状态和等待标志，转移 thinking 缓存
         const exactRunActive = !!s.activeRuns[chatJid];
@@ -3232,9 +2916,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (exactRunActive) {
           // The exact terminal for the previous reply has already started a
           // replacement attempt. Preserve that replacement's stream.
-        } else if (holdsRunningWorkflow) {
-          nextStreaming[chatJid] =
-            streamingStateFromWorkflowRuns(runningWorkflowRuns);
         } else {
           delete nextStreaming[chatJid];
         }
@@ -3249,9 +2930,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const isHidden = typeof document !== 'undefined' && document.hidden;
         const isOtherChat = s.currentGroup !== chatJid;
         const nextUnread =
-          (isHidden || isOtherChat) &&
-          shouldFinalizeAssistant &&
-          !holdsRunningWorkflow
+          (isHidden || isOtherChat) && shouldFinalizeAssistant
             ? {
                 ...s.unreadReplies,
                 [chatJid]: (s.unreadReplies[chatJid] || 0) + 1,
@@ -3262,7 +2941,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           messages: { ...s.messages, [chatJid]: updated },
           waiting: {
             ...s.waiting,
-            [chatJid]: exactRunActive || holdsRunningWorkflow,
+            [chatJid]: exactRunActive,
           },
           streaming: nextStreaming,
           pendingThinking: nextPending,
@@ -4140,10 +3819,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       ).filter(isUserVisibleTimelineEvent),
       traceEvents: (snapshot.traceEvents || []).filter(isUserVisibleTraceEvent),
       taskStates: snapshot.taskStates || {},
-      todos: snapshot.todos,
       systemStatus: snapshot.systemStatus || null,
       isThinking: snapshot.isThinking ?? false,
-      activeHook: snapshot.activeHook ?? null,
       turnId: snapshot.turnId,
     };
 

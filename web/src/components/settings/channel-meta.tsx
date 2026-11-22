@@ -4,7 +4,7 @@ export const CHANNEL_LABEL: Record<string, string> = {
   wechat: '微信',
 };
 
-export const CHANNEL_COLORS: Record<string, string> = {
+const CHANNEL_COLORS: Record<string, string> = {
   feishu: 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300',
   qq: 'bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300',
   wechat:
@@ -30,7 +30,7 @@ const WeChatIcon = () => (
   </svg>
 );
 
-export const CHANNEL_ICON: Record<string, React.FC> = {
+const CHANNEL_ICON: Record<string, React.FC> = {
   feishu: FeishuIcon,
   qq: QQIcon,
   wechat: WeChatIcon,

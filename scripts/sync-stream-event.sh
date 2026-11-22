@@ -35,14 +35,10 @@ for target in \
   sync_file "$SRC_ID" "$target"
 done
 
-# --- Channel prefixes (2 targets: backend + agent-runner; not needed by web) ---
+# --- Channel prefixes (backend only; agent-runner copy was an unused orphan,
+# removed in ISSUE-10) ---
 SRC_CP="$ROOT/shared/channel-prefixes.ts"
-for target in \
-  "$ROOT/src/channel-prefixes.ts" \
-  "$ROOT/container/agent-runner/src/channel-prefixes.ts" \
-; do
-  sync_file "$SRC_CP" "$target"
-done
+sync_file "$SRC_CP" "$ROOT/src/channel-prefixes.ts"
 
 # --- Canonical JSON (2 targets: backend + agent-runner; HMAC-signature red line) ---
 SRC_CJ="$ROOT/shared/canonical-json.ts"

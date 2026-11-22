@@ -18,7 +18,7 @@ export interface SendFileRoots {
   workspace: string;
 }
 
-export type SendFilePathResolution =
+type SendFilePathResolution =
   | { ok: true; path: string }
   | { ok: false; reason: 'outside_roots'; candidate: string };
 

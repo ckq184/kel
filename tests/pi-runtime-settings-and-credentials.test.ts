@@ -271,7 +271,7 @@ describe('ISSUE-04 host wiring source contracts', () => {
     );
   });
 
-  test('agent auto-compact env injection is removed, inherited strip stays (⑤)', () => {
+  test('agent auto-compact env chain is fully retired (⑤ + ISSUE-10 ⑥)', () => {
     const containerRunner = readSource('container-runner.ts');
 
     // 注入彻底移除：不再有 push / hostEnv 赋值 / 本地取值函数
@@ -282,13 +282,16 @@ describe('ISSUE-04 host wiring source contracts', () => {
     expect(containerRunner).not.toMatch(
       /hostEnv\['AUTO_COMPACT_(PERCENTAGE|WINDOW)'\]\s*=/,
     );
-    // 继承值剥离保留：防 custom env / 父进程冒充该键
-    expect(containerRunner).toMatch(/startsWith\('AUTO_COMPACT_WINDOW='\)/);
-    expect(containerRunner).toMatch(/startsWith\('AUTO_COMPACT_PERCENTAGE='\)/);
-    expect(containerRunner).toMatch(/delete hostEnv\['AUTO_COMPACT_WINDOW'\]/);
-    expect(containerRunner).toMatch(
-      /delete hostEnv\['AUTO_COMPACT_PERCENTAGE'\]/,
+    // ISSUE-10 ⑥：CLAUDE_CODE_AUTO_COMPACT_WINDOW 注入也一并下线（Pi 窗口
+    // 走 CKQCLAW_CONTEXT_WINDOW，Bash 内 claude CLI 不再继承窗口控制），
+    // 继承值剥离随之整体消失——runner 侧对 AUTO_COMPACT_* 键再无任何引用。
+    expect(containerRunner).not.toMatch(/AUTO_COMPACT_WINDOW/);
+    expect(containerRunner).not.toMatch(/AUTO_COMPACT_PERCENTAGE/);
+    expect(containerRunner).not.toMatch(
+      /envLines\.push\(`CKQCLAW_AGENT_MCP_POLICY=/,
     );
+    expect(containerRunner).not.toMatch(/CKQCLAW_AGENT_TOOL_POLICY/);
+    expect(containerRunner).not.toMatch(/CKQCLAW_AGENT_DISALLOWED_TOOLS/);
   });
 });
 
@@ -327,8 +330,21 @@ describe('ISSUE-04 web UI source contracts', () => {
     expect(systemSettings).toMatch(
       /历史百分比与固定阈值配置已于 Pi 运行时下线/,
     );
-    expect(profilesPage).toMatch(
-      /历史百分比与\s*固定阈值配置已于 Pi 运行时下线/,
+    // ISSUE-12 波 5 单元 5.8：SDK 自动压缩说明已随能力配置区迁
+    // web/src/components/agents/AgentCapabilitiesSection.tsx（原文搬运），
+    // 锚随体迁、断言语义不变。
+    const capabilitiesSection = fs.readFileSync(
+      path.join(
+        process.cwd(),
+        'web/src/components/agents/AgentCapabilitiesSection.tsx',
+      ),
+      'utf8',
+    );
+    expect(capabilitiesSection).toMatch(
+      // ISSUE-12 波 5 单元 5.8 留痕：prettier 对组件内 JSX 说明文字重排，
+      // 「Pi」与「运行时下线」间断行，该一处字面空格改 \s+（与同句既有
+      // \s* 边界风格一致，断言语义不弱化）。
+      /历史百分比与\s*固定阈值配置已于 Pi\s+运行时下线/,
     );
   });
 

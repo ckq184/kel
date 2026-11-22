@@ -16,7 +16,7 @@
  * Returns `{ allowed: false, reason: 'inactive_owner', status }` when the
  * owner's status is anything else (`disabled` / `deleted` / unknown).
  */
-export type OwnerGateResult =
+type OwnerGateResult =
   | { allowed: true }
   | { allowed: false; reason: 'inactive_owner'; status: string };
 

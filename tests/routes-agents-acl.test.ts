@@ -25,6 +25,7 @@ import {
   test,
   vi,
 } from 'vitest';
+import { asRouteTestUser } from './helpers/route-test-user.js';
 
 const SHARED_TMP =
   process.env.CKQCLAW_TEST_DATA_DIR ??
@@ -90,11 +91,6 @@ function seedTestGroup(): void {
     created_by: OWNER_ID,
     is_home: false,
   } as any);
-}
-
-function asUser(userId: string, role: 'admin' | 'member' = 'member'): void {
-  process.env.CKQCLAW_TEST_USER_ID = userId;
-  process.env.CKQCLAW_TEST_USER_ROLE = role;
 }
 
 beforeAll(() => {
@@ -171,7 +167,7 @@ async function getAgents(): Promise<{ status: number; body: any }> {
 describe('session create ACL (formal /sessions API)', () => {
   test('owner can POST (create) a conversation session', async () => {
     seedTestGroup();
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
 
     const { status, body } = await postSession({ name: 'My conversation' });
     expect(status).toBe(200);
@@ -183,7 +179,7 @@ describe('session create ACL (formal /sessions API)', () => {
 
   test('non-member returns 404 on POST (group hidden)', async () => {
     seedTestGroup();
-    asUser(OUTSIDER_ID);
+    asRouteTestUser(OUTSIDER_ID);
 
     const { status, body } = await postSession({ name: 'Nope' });
     expect(status).toBe(404);
@@ -194,7 +190,7 @@ describe('session create ACL (formal /sessions API)', () => {
 describe('formal sessions API', () => {
   test('owner can POST /sessions (create) a conversation session', async () => {
     seedTestGroup();
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
 
     const { status, body } = await postSession({ name: 'Session API' });
     expect(status).toBe(200);
@@ -205,7 +201,7 @@ describe('formal sessions API', () => {
 
   test('thread-mapped workspaces still allow independent Web sessions', async () => {
     seedTestGroup();
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     db.setRegisteredGroup(GROUP_JID, {
       ...db.getRegisteredGroup(GROUP_JID)!,
       conversation_source: 'native_thread',
@@ -237,7 +233,7 @@ describe('formal sessions API', () => {
     // formal sessions API must keep allowing independent Web sessions next
     // to feishu_thread-sourced native topics.
     seedTestGroup();
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     db.setRegisteredGroup(GROUP_JID, {
       ...db.getRegisteredGroup(GROUP_JID)!,
       conversation_source: 'feishu_thread',
@@ -255,7 +251,7 @@ describe('formal sessions API', () => {
 
   test('DELETE /sessions/:id is blocked by channel_mounts session binding', async () => {
     seedTestGroup();
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
 
     const created = await postSession({ name: 'Bound session' });
     const sessionId = created.body.session.id as string;
@@ -276,7 +272,7 @@ describe('formal sessions API', () => {
 
   test('native-thread sessions have read-only titles and cannot be deleted directly', async () => {
     seedTestGroup();
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     const sessionId = `native-session-${Date.now()}`;
     db.createAgent({
       id: sessionId,
@@ -325,7 +321,7 @@ describe('agents IM-binding ACL (owner-only, mirrors CRUD)', () => {
 
   test('non-member returns 404 on PUT /im-binding (group hidden)', async () => {
     seedTestGroup();
-    asUser(OUTSIDER_ID);
+    asRouteTestUser(OUTSIDER_ID);
     const { status, body } = await req('/im-binding', 'PUT', {
       im_jid: 'feishu:x',
     });
@@ -335,7 +331,7 @@ describe('agents IM-binding ACL (owner-only, mirrors CRUD)', () => {
 
   test('IM candidates expose account identity and keep same-chat bots distinct', async () => {
     seedTestGroup();
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     const suffix = Date.now().toString(36);
     const first = db.createChannelAccount({
       id: `account-a-${suffix}`,
@@ -385,7 +381,7 @@ describe('agents IM-binding ACL (owner-only, mirrors CRUD)', () => {
 
   test('manual discovery registers a bot-visible chat before it sends any message', async () => {
     seedTestGroup();
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     const suffix = Date.now().toString(36);
     const discoveredJid = `feishu:discovered-${suffix}`;
     const syncUserImGroups = vi.fn(async () => {
@@ -427,7 +423,7 @@ describe('agents IM-binding ACL (owner-only, mirrors CRUD)', () => {
 
   test('IM candidates are ordered by current binding, recent discovery, unbound, then bound elsewhere', async () => {
     seedTestGroup();
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     const suffix = Date.now().toString(36);
     const otherWorkspace = `web:other-${suffix}`;
     db.setRegisteredGroup(otherWorkspace, {
@@ -476,7 +472,7 @@ describe('agents IM-binding ACL (owner-only, mirrors CRUD)', () => {
 
   test('live Feishu topic metadata is persisted and reused by cached reads', async () => {
     seedTestGroup();
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     const suffix = Date.now().toString(36);
     const imJid = `feishu:topic-${suffix}`;
     db.setRegisteredGroup(imJid, {
@@ -541,7 +537,7 @@ describe('agents IM-binding ACL (owner-only, mirrors CRUD)', () => {
 
   test('a direct chat can bind to the workspace main session', async () => {
     seedTestGroup();
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     const suffix = Date.now().toString(36);
     const account = db.createChannelAccount({
       id: `qq-workspace-${suffix}`,
@@ -573,7 +569,7 @@ describe('agents IM-binding ACL (owner-only, mirrors CRUD)', () => {
 
   test('workspace binding rejects a direct chat', async () => {
     seedTestGroup();
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     const suffix = Date.now().toString(36);
     const account = db.createChannelAccount({
       id: `qq-direct-workspace-reject-${suffix}`,
@@ -602,7 +598,7 @@ describe('agents IM-binding ACL (owner-only, mirrors CRUD)', () => {
 
   test('session binding rejects a group chat', async () => {
     seedTestGroup();
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     const created = await postSession({ name: 'Direct-only session' });
     const sessionId = created.body.session.id as string;
     const suffix = Date.now().toString(36);
@@ -635,7 +631,7 @@ describe('agents IM-binding ACL (owner-only, mirrors CRUD)', () => {
 
   test('ordinary Feishu mention mode binds as thread_map and returns to one shared context in always mode', async () => {
     seedTestGroup();
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     const suffix = Date.now().toString(36);
     const account = db.createChannelAccount({
       id: `feishu-mention-${suffix}`,
@@ -695,7 +691,7 @@ describe('agents IM-binding ACL (owner-only, mirrors CRUD)', () => {
 
   test('Feishu response audience changes independently from mention activation', async () => {
     seedTestGroup();
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     const suffix = Date.now().toString(36);
     const account = db.createChannelAccount({
       id: `feishu-audience-${suffix}`,
@@ -782,7 +778,7 @@ describe('agents IM-binding ACL (owner-only, mirrors CRUD)', () => {
 
   test('Feishu private chats reject mention activation at the binding API', async () => {
     seedTestGroup();
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     const suffix = Date.now().toString(36);
     const account = db.createChannelAccount({
       id: `feishu-direct-${suffix}`,
@@ -823,7 +819,7 @@ describe('agents IM-binding ACL (owner-only, mirrors CRUD)', () => {
 
   test('a concurrent write during checkThreadCapableBinding is not clobbered by the pre-await snapshot', async () => {
     seedTestGroup();
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     const suffix = Date.now().toString(36);
     const account = db.createChannelAccount({
       id: `qq-toctou-${suffix}`,
@@ -884,7 +880,7 @@ describe('agents IM-binding ACL (owner-only, mirrors CRUD)', () => {
 
   test('a concurrent ownership transfer during checkThreadCapableBinding is rejected, not silently applied', async () => {
     seedTestGroup();
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     const suffix = Date.now().toString(36);
     const account = db.createChannelAccount({
       id: `qq-reauth-${suffix}`,
@@ -943,7 +939,7 @@ describe('agents IM-binding ACL (owner-only, mirrors CRUD)', () => {
 
   test('native thread containers reject a fixed session target', async () => {
     seedTestGroup();
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     const created = await postSession({ name: 'Fixed session' });
     const sessionId = created.body.session.id as string;
     const suffix = Date.now().toString(36);
@@ -986,7 +982,7 @@ describe('agents IM-binding ACL (owner-only, mirrors CRUD)', () => {
     // fixed single session, breaking that thread's session isolation from
     // its siblings.
     seedTestGroup();
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     const created = await postSession({ name: 'Racing session' });
     const sessionId = created.body.session.id as string;
     const suffix = Date.now().toString(36);
@@ -1042,7 +1038,7 @@ describe('agents IM-binding ACL (owner-only, mirrors CRUD)', () => {
 
   test('a session deleted during live metadata lookup cannot receive a stale binding', async () => {
     seedTestGroup();
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     const created = await postSession({ name: 'Soon deleted session' });
     const sessionId = created.body.session.id as string;
     const suffix = Date.now().toString(36);
@@ -1091,7 +1087,7 @@ describe('agents IM-binding ACL (owner-only, mirrors CRUD)', () => {
     // 'main'), where threadCapable decides thread_map vs single_session
     // routing mode rather than an outright rejection.
     seedTestGroup();
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     const suffix = Date.now().toString(36);
     const account = db.createChannelAccount({
       id: `feishu-race-ws-${suffix}`,
@@ -1143,7 +1139,7 @@ describe('agents IM-binding ACL (owner-only, mirrors CRUD)', () => {
 
   test('deleting a session binding restores the account default workspace', async () => {
     seedTestGroup();
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     const created = await postSession({ name: 'Temporary session' });
     const sessionId = created.body.session.id as string;
     const suffix = Date.now().toString(36);
@@ -1188,7 +1184,7 @@ describe('agents IM-binding ACL (owner-only, mirrors CRUD)', () => {
 
   test('unbinding one of multiple chats keeps the agent fallback route on a remaining chat', async () => {
     seedTestGroup();
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     const created = await postSession({ name: 'Multi-channel session' });
     const sessionId = created.body.session.id as string;
     const suffix = Date.now().toString(36);
@@ -1224,7 +1220,7 @@ describe('agents IM-binding ACL (owner-only, mirrors CRUD)', () => {
   });
 
   test('multiple native-context containers can share one workspace', () => {
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const workspaceJid = `web:native-upgrade-${suffix}`;
     const firstJid = `feishu:forum-upgrade-a-${suffix}`;
@@ -1270,7 +1266,7 @@ describe('agents IM-binding ACL (owner-only, mirrors CRUD)', () => {
 
   test('REST restore detaches native navigation only after the last source leaves', async () => {
     seedTestGroup();
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const defaultWorkspaceJid = `web:native-default-${suffix}`;
     db.setRegisteredGroup(defaultWorkspaceJid, {

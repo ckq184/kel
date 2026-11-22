@@ -17,7 +17,7 @@ export type PermissionTemplateKey =
   | 'ops_manager'
   | 'user_admin';
 
-export interface PermissionTemplate {
+interface PermissionTemplate {
   key: PermissionTemplateKey;
   label: string;
   role: 'admin' | 'member';
@@ -37,7 +37,7 @@ export interface InviteCode {
   created_at: string;
 }
 
-export interface AuditLogEntry {
+interface AuditLogEntry {
   id: number;
   event_type: string;
   username: string;
@@ -56,7 +56,7 @@ export interface UserQuery {
   pageSize?: number;
 }
 
-export interface AuditQuery {
+interface AuditQuery {
   event_type?: string;
   username?: string;
   actor_username?: string;

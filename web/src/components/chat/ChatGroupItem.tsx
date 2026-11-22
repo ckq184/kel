@@ -8,7 +8,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '../../stores/auth';
 
-export interface ChatGroupItemProps {
+interface ChatGroupItemProps {
   jid: string;
   name: string;
   folder: string;

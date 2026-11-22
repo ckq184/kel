@@ -13,6 +13,10 @@ import {
   test,
   vi,
 } from 'vitest';
+import {
+  asOwnerProfileRouteUser,
+  createTestUserRow,
+} from './helpers/route-test-user.js';
 
 const root = fs.mkdtempSync(
   path.join(os.tmpdir(), 'routes-ckqclaw-owner-profile-'),
@@ -61,26 +65,6 @@ const ADMIN_ID = 'route-admin';
 let homeJid: string;
 let skipHomeJid: string;
 
-function createUser(id: string, role: 'member' | 'admin' = 'member'): void {
-  const now = new Date().toISOString();
-  db.createUser({
-    id,
-    username: id,
-    password_hash: 'hash',
-    display_name: id,
-    role,
-    status: 'active',
-    created_at: now,
-    updated_at: now,
-    must_change_password: false,
-  });
-}
-
-function asUser(id: string, role: 'member' | 'admin' = 'member'): void {
-  process.env.CKQCLAW_OWNER_PROFILE_ROUTE_USER = id;
-  process.env.CKQCLAW_OWNER_PROFILE_ROUTE_ROLE = role;
-}
-
 function requestHash(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
 }
@@ -128,9 +112,9 @@ async function genericMemoryRequest(
 
 beforeAll(() => {
   db.initDatabase();
-  createUser(OWNER_ID);
-  createUser(OTHER_ID);
-  createUser(ADMIN_ID, 'admin');
+  createTestUserRow(db, OWNER_ID);
+  createTestUserRow(db, OTHER_ID);
+  createTestUserRow(db, ADMIN_ID, 'admin');
   homeJid = db.ensureUserHomeGroup(OWNER_ID, 'member', OWNER_ID);
 
   skipHomeJid = 'web:route-owner-skip-home';
@@ -159,7 +143,7 @@ afterAll(() => {
 
 describe('/api/workspaces/:jid/owner-profile', () => {
   test('owner can get, set, update, clear, and retain completed onboarding', async () => {
-    asUser(OWNER_ID);
+    asOwnerProfileRouteUser(OWNER_ID);
     expect(await ownerProfileRequest(homeJid)).toMatchObject({
       status: 200,
       body: {
@@ -262,7 +246,7 @@ describe('/api/workspaces/:jid/owner-profile', () => {
   });
 
   test('owner can permanently skip first-wake onboarding', async () => {
-    asUser(OWNER_ID);
+    asOwnerProfileRouteUser(OWNER_ID);
     const initial = await ownerProfileRequest(skipHomeJid);
     const revision = initial.body.profile.onboarding.revision;
     const skipped = await ownerProfileRequest(skipHomeJid, 'PATCH', {
@@ -286,7 +270,7 @@ describe('/api/workspaces/:jid/owner-profile', () => {
       [OTHER_ID, 'member'],
       [ADMIN_ID, 'admin'],
     ] as const) {
-      asUser(id, role);
+      asOwnerProfileRouteUser(id, role);
       expect((await ownerProfileRequest(homeJid)).status).toBe(404);
       expect(
         (
@@ -333,7 +317,7 @@ describe('/api/workspaces/:jid/owner-profile', () => {
       is_home: true,
     });
 
-    asUser(OWNER_ID);
+    asOwnerProfileRouteUser(OWNER_ID);
     expect((await ownerProfileRequest('web:route-owner-non-home')).status).toBe(
       404,
     );
@@ -341,7 +325,7 @@ describe('/api/workspaces/:jid/owner-profile', () => {
   });
 
   test('generic Workspace Memory API cannot create, update, or forget the reserved item', async () => {
-    asUser(OWNER_ID);
+    asOwnerProfileRouteUser(OWNER_ID);
     const created = await ownerProfileRequest(skipHomeJid, 'PATCH', {
       action: 'set',
       preferredAddress: '专用称呼',

@@ -1,7 +1,7 @@
 import type { CardStatus } from './types.js';
 
 /** Status-driven header theme. Must use Feishu v2 color enums — never CSS hex. */
-export interface StatusTheme {
+interface StatusTheme {
   template: 'blue' | 'violet' | 'orange' | 'red';
   tagColor: 'blue' | 'violet' | 'orange' | 'red';
   tagText: string;

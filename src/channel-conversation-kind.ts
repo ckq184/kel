@@ -11,7 +11,7 @@
  */
 export type ChannelConversationKind = 'direct' | 'group' | 'unknown';
 
-export interface ChannelConversationMetadata {
+interface ChannelConversationMetadata {
   /** Live provider value (for example Feishu `p2p`, `group`, or `topic`). */
   chat_mode?: string | null;
   /** Durable Feishu chat mode stored on registered_groups. */

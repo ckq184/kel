@@ -1,4 +1,4 @@
-import type { StreamEvent, WorkflowRunSnapshot } from './stream-event.types.js';
+import type { StreamEvent } from './stream-event.types.js';
 
 export interface AdditionalMount {
   hostPath: string; // Absolute canonical path on host
@@ -38,8 +38,8 @@ export type ExecutionMode = 'container' | 'host';
 /** User-visible interaction contract owned by one Workspace↔Agent binding. */
 export type InteractionMode = 'assistant' | 'proactive';
 export type ConversationSource = 'manual' | 'native_thread' | 'feishu_thread';
-export type ConversationNavMode = 'horizontal' | 'vertical_threads';
-export type ImBindingMode = 'single_context' | 'thread_map';
+type ConversationNavMode = 'horizontal' | 'vertical_threads';
+type ImBindingMode = 'single_context' | 'thread_map';
 export type ChannelRoutingMode = 'single_session' | 'thread_map';
 export type AudienceMode = 'everyone' | 'owner_only';
 
@@ -249,7 +249,6 @@ export interface ChannelAccount {
     | 'reconnecting'
     | 'connected'
     | 'error';
-  default_agent_profile_id: string | null;
   default_workspace_jid: string | null;
   last_error: string | null;
   connected_at: string | null;
@@ -259,7 +258,7 @@ export interface ChannelAccount {
 
 export interface ChannelAccountPublic extends Omit<
   ChannelAccount,
-  'secret_ref' | 'default_agent_profile_id'
+  'secret_ref'
 > {
   has_credentials: boolean;
   options?: {
@@ -402,8 +401,6 @@ export interface NewMessage {
   token_usage?: string;
   /** Sanitized provider-native identifiers for this exact inbound turn. */
   channel_context?: ChannelTurnContext;
-  /** Session-derived Claude Code Workflow snapshots for historical replay. */
-  workflow_runs?: WorkflowRunSnapshot[];
   turn_id?: string | null;
   session_id?: string | null;
   source_kind?: MessageSourceKind | null;
@@ -687,10 +684,6 @@ export interface User {
   avatar_emoji: string | null;
   avatar_color: string | null;
   avatar_url: string | null;
-  ai_name: string | null;
-  ai_avatar_emoji: string | null;
-  ai_avatar_color: string | null;
-  ai_avatar_url: string | null;
   /**
    * Per-user default for require_mention on auto-registered IM group chats.
    * When true, newly auto-registered Feishu/QQ/etc groups start with
@@ -718,10 +711,6 @@ export interface UserPublic {
   avatar_emoji: string | null;
   avatar_color: string | null;
   avatar_url: string | null;
-  ai_name: string | null;
-  ai_avatar_emoji: string | null;
-  ai_avatar_color: string | null;
-  ai_avatar_url: string | null;
   default_require_mention: boolean;
   created_at: string;
   last_login_at: string | null;
@@ -843,7 +832,7 @@ export interface ImContextBinding {
   updated_at: string;
 }
 
-export interface ActiveRunSnapshot {
+interface ActiveRunSnapshot {
   chatJid: string;
   runId: string;
   startedAt: string;
@@ -877,14 +866,6 @@ export type WsMessageOut =
       /** true = ⚠️ 运行时警告（投递失败/文件未找到等），前端以系统提示展示；
        * 未标记 = 完整回复冗余广播，内容由 new_message 承载，前端无需消费。 */
       notice?: boolean;
-    }
-  | { type: 'typing'; chatJid: string; isTyping: boolean; agentId?: string }
-  | {
-      type: 'status_update';
-      activeContainers: number;
-      activeHostProcesses: number;
-      activeTotal: number;
-      queueLength: number;
     }
   | {
       type: 'stream_event';
@@ -942,16 +923,6 @@ export type WsMessageOut =
       agentId?: string;
       transition?: FollowUpTransition;
     }
-  | {
-      type: 'task_state';
-      chatJid: string;
-      taskId: string;
-      status: 'running' | 'completed' | 'error';
-      name: string;
-      prompt: string;
-      resultSummary?: string;
-      kind?: AgentKind;
-    }
   | { type: 'terminal_output'; chatJid: string; data: string }
   | { type: 'terminal_started'; chatJid: string }
   | { type: 'terminal_stopped'; chatJid: string; reason?: string }
@@ -989,30 +960,12 @@ export type WsMessageOut =
           id: string;
           timestamp: number;
           text: string;
-          kind:
-            | 'tool'
-            | 'skill'
-            | 'hook'
-            | 'status'
-            | 'task'
-            | 'memory'
-            | 'debug'
-            | 'context'
-            | 'permission';
+          kind: 'tool' | 'skill' | 'status' | 'task' | 'memory' | 'debug';
         }>;
         traceEvents?: Array<{
           id: string;
           timestamp: number;
-          kind:
-            | 'tool'
-            | 'skill'
-            | 'hook'
-            | 'status'
-            | 'task'
-            | 'memory'
-            | 'debug'
-            | 'context'
-            | 'permission';
+          kind: 'tool' | 'skill' | 'status' | 'task' | 'memory' | 'debug';
           scope?: StreamEvent['agentScope'];
           title: string;
           summary?: string;
@@ -1023,11 +976,8 @@ export type WsMessageOut =
           displayLevel?: StreamEvent['displayLevel'];
         }>;
         taskStates?: Record<string, unknown>;
-        contextAudit?: StreamEvent['contextAudit'];
-        todos?: Array<{ id: string; content: string; status: string }>;
         systemStatus: string | null;
         isThinking?: boolean;
-        activeHook?: { hookName: string; hookEvent: string } | null;
         turnId?: string;
       };
     };
@@ -1041,66 +991,3 @@ export type WsMessageIn =
 // --- Streaming event types (canonical source: shared/stream-event.ts) ---
 export type { StreamEventType } from './stream-event.types.js';
 export type { StreamEvent };
-
-// --- Billing types ---
-
-export interface UserBalance {
-  user_id: string;
-  balance_usd: number;
-  total_deposited_usd: number;
-  total_consumed_usd: number;
-  updated_at: string;
-}
-
-export type BalanceTransactionType =
-  | 'deposit'
-  | 'deduction'
-  | 'refund'
-  | 'adjustment'
-  | 'redeem';
-export type BalanceTransactionSource =
-  | 'admin_manual_recharge'
-  | 'admin_manual_deduct'
-  | 'usage_charge'
-  | 'redeem_code'
-  | 'migration_opening'
-  | 'refund'
-  | 'subscription_renewal'
-  | 'system_adjustment';
-export type BalanceReferenceType =
-  | 'message'
-  | 'usage_event'
-  | 'task'
-  | 'subscription'
-  | 'redeem_code'
-  | 'admin_adjust';
-
-export type RedeemCodeType = 'balance' | 'subscription' | 'trial';
-
-export type BillingAuditEventType =
-  | 'plan_created'
-  | 'plan_updated'
-  | 'plan_deleted'
-  | 'subscription_assigned'
-  | 'subscription_cancelled'
-  | 'subscription_expired'
-  | 'balance_adjusted'
-  | 'manual_recharge'
-  | 'manual_deduct'
-  | 'balance_deducted'
-  | 'code_created'
-  | 'code_redeemed'
-  | 'code_deleted'
-  | 'wallet_blocked'
-  | 'wallet_unblocked'
-  | 'quota_exceeded'
-  | 'billing_settings_updated';
-
-export interface DailyUsage {
-  user_id: string;
-  date: string; // YYYY-MM-DD
-  total_input_tokens: number;
-  total_output_tokens: number;
-  total_cost_usd: number;
-  message_count: number;
-}

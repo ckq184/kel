@@ -1,11 +1,11 @@
-export interface ModelTokenUsage {
+interface ModelTokenUsage {
   inputTokens?: number;
   outputTokens?: number;
   reasoningTokens?: number;
   costUSD?: number;
 }
 
-export interface TokenUsagePayload {
+interface TokenUsagePayload {
   inputTokens?: number;
   outputTokens?: number;
   cacheReadInputTokens?: number;
@@ -17,7 +17,7 @@ export interface TokenUsagePayload {
   modelUsage?: Record<string, ModelTokenUsage>;
 }
 
-export interface TokenBreakdown {
+interface TokenBreakdown {
   inputTokens: number;
   outputTokens: number;
   cacheReadInputTokens: number;

@@ -65,7 +65,7 @@ function profileUsesCapability(
   });
 }
 
-export function listCapabilityMutationRuntimeTargets(
+function listCapabilityMutationRuntimeTargets(
   impact: CapabilityMutationImpact,
 ): WorkspaceRuntimeQuiesceTarget[] {
   const ownerIds =

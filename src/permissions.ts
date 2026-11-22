@@ -43,7 +43,7 @@ export const PERMISSION_TEMPLATES: Record<
   },
 };
 
-export const ROLE_DEFAULT_PERMISSIONS: Record<UserRole, Permission[]> = {
+const ROLE_DEFAULT_PERMISSIONS: Record<UserRole, Permission[]> = {
   admin: [...ALL_PERMISSIONS],
   member: [],
 };

@@ -1,13 +1,18 @@
 // Configuration management routes
 
 import { randomBytes, createHash } from 'node:crypto';
+import { zodBadRequest } from '../validation-response.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Hono } from 'hono';
 import { avatarUploadBodyLimit } from '../http-upload-policy.js';
 import { reapAvatarFiles, storeAvatarUpload } from '../avatar-upload.js';
 import type { Variables } from '../web-context.js';
-import { canAccessGroup, canModifyGroup } from '../web-context.js';
+import {
+  canAccessGroup,
+  canModifyGroup,
+  groupAccessDeniedResponse,
+} from '../web-context.js';
 import { getChannelType } from '../im-channel.js';
 import {
   getRegisteredGroup,
@@ -853,10 +858,7 @@ configRoutes.post(
     const body = await c.req.json().catch(() => ({}));
     const validation = UnifiedProviderCreateSchema.safeParse(body);
     if (!validation.success) {
-      return c.json(
-        { error: 'Invalid request body', details: validation.error.format() },
-        400,
-      );
+      return zodBadRequest(c, validation.error, 'body-format');
     }
 
     const actor = (c.get('user') as AuthUser).username;
@@ -888,10 +890,7 @@ configRoutes.patch(
     const body = await c.req.json().catch(() => ({}));
     const validation = UnifiedProviderPatchSchema.safeParse(body);
     if (!validation.success) {
-      return c.json(
-        { error: 'Invalid request body', details: validation.error.format() },
-        400,
-      );
+      return zodBadRequest(c, validation.error, 'body-format');
     }
 
     const actor = (c.get('user') as AuthUser).username;
@@ -1045,10 +1044,7 @@ configRoutes.put(
     const body = await c.req.json().catch(() => ({}));
     const validation = UnifiedProviderSecretsSchema.safeParse(body);
     if (!validation.success) {
-      return c.json(
-        { error: 'Invalid request body', details: validation.error.format() },
-        400,
-      );
+      return zodBadRequest(c, validation.error, 'body-format');
     }
 
     const actor = (c.get('user') as AuthUser).username;
@@ -1326,10 +1322,7 @@ configRoutes.put(
     const body = await c.req.json().catch(() => ({}));
     const validation = BalancingConfigSchema.safeParse(body);
     if (!validation.success) {
-      return c.json(
-        { error: 'Invalid request body', details: validation.error.format() },
-        400,
-      );
+      return zodBadRequest(c, validation.error, 'body-format');
     }
 
     const actor = (c.get('user') as AuthUser).username;
@@ -1588,10 +1581,7 @@ configRoutes.put(
     const body = await c.req.json().catch(() => ({}));
     const validation = RegistrationConfigSchema.safeParse(body);
     if (!validation.success) {
-      return c.json(
-        { error: 'Invalid request body', details: validation.error.format() },
-        400,
-      );
+      return zodBadRequest(c, validation.error, 'body-format');
     }
 
     try {
@@ -1634,10 +1624,7 @@ configRoutes.put(
     const body = await c.req.json().catch(() => ({}));
     const validation = AppearanceConfigSchema.safeParse(body);
     if (!validation.success) {
-      return c.json(
-        { error: 'Invalid request body', details: validation.error.format() },
-        400,
-      );
+      return zodBadRequest(c, validation.error, 'body-format');
     }
 
     try {
@@ -1753,10 +1740,7 @@ configRoutes.put(
     const body = await c.req.json().catch(() => ({}));
     const validation = SystemSettingsSchema.safeParse(body);
     if (!validation.success) {
-      return c.json(
-        { error: 'Invalid request body', details: validation.error.format() },
-        400,
-      );
+      return zodBadRequest(c, validation.error, 'body-format');
     }
 
     try {
@@ -1831,10 +1815,7 @@ configRoutes.put(
     const body = await c.req.json().catch(() => ({}));
     const validation = HostIntegrationSettingsSchema.safeParse(body);
     if (!validation.success) {
-      return c.json(
-        { error: 'Invalid request body', details: validation.error.format() },
-        400,
-      );
+      return zodBadRequest(c, validation.error, 'body-format');
     }
     const requestedDir = validation.data.externalClaudeDir?.trim();
     if (requestedDir) {
@@ -2197,7 +2178,7 @@ configRoutes.put('/user-im/bindings/:imJid', authMiddleware, async (c) => {
   // 非成员用 access 检查隐藏存在性（404），成员但非 owner 拒绝写（403）。
   // IM 路由变更必须由对应工作区所有者执行。
   if (!canAccessGroup(user, { ...imGroup, jid: imJid })) {
-    return c.json({ error: 'IM group not found' }, 404);
+    return groupAccessDeniedResponse(c, 'IM group not found');
   }
   if (!canModifyGroup(user, { ...imGroup, jid: imJid })) {
     return c.json({ error: 'Forbidden' }, 403);
@@ -2222,7 +2203,7 @@ configRoutes.put('/user-im/bindings/:imJid', authMiddleware, async (c) => {
       return c.json({ error: 'IM group not found' }, 404);
     }
     if (!canAccessGroup(user, { ...freshImGroup, jid: imJid })) {
-      return c.json({ error: 'IM group not found' }, 404);
+      return groupAccessDeniedResponse(c, 'IM group not found');
     }
     if (!canModifyGroup(user, { ...freshImGroup, jid: imJid })) {
       return c.json({ error: 'Forbidden' }, 403);
@@ -2315,7 +2296,7 @@ configRoutes.put('/user-im/bindings/:imJid', authMiddleware, async (c) => {
     // Re-run authorization against the fresh row — the handler's top-level
     // checks only proved it against the stale imGroup read before the await.
     if (!canAccessGroup(user, { ...freshImGroup, jid: imJid })) {
-      return c.json({ error: 'IM group not found' }, 404);
+      return groupAccessDeniedResponse(c, 'IM group not found');
     }
     if (!canModifyGroup(user, { ...freshImGroup, jid: imJid })) {
       return c.json({ error: 'Forbidden' }, 403);
@@ -2438,7 +2419,7 @@ configRoutes.put('/user-im/bindings/:imJid', authMiddleware, async (c) => {
       return c.json({ error: 'IM group not found' }, 404);
     }
     if (!canAccessGroup(user, { ...freshImGroup, jid: imJid })) {
-      return c.json({ error: 'IM group not found' }, 404);
+      return groupAccessDeniedResponse(c, 'IM group not found');
     }
     if (!canModifyGroup(user, { ...freshImGroup, jid: imJid })) {
       return c.json({ error: 'Forbidden' }, 403);

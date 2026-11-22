@@ -1,10 +1,10 @@
-export interface NavigationLocationLike {
+interface NavigationLocationLike {
   pathname: string;
   search?: string;
   hash?: string;
 }
 
-export interface UnsavedNavigationGuard {
+interface UnsavedNavigationGuard {
   allowNext: (location: NavigationLocationLike) => number;
   cancelAllowance: (token: number) => void;
   shouldBlock: (

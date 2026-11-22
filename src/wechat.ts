@@ -11,68 +11,19 @@
  * Base URL: https://ilinkai.weixin.qq.com
  * CDN URL:  https://novac2c.cdn.weixin.qq.com/c2c
  */
-import crypto from 'crypto';
-import fs from 'fs';
 import { fetch as undiciFetch, type Dispatcher } from 'undici';
-import { storeChatMetadata, storeMessageDirect, updateChatName } from './db.js';
-import { notifyNewImMessage } from './message-notifier.js';
-import { broadcastNewMessage } from './web.js';
 import { logger } from './logger.js';
-import {
-  saveDownloadedFile,
-  buildInlinedFileContent,
-  MAX_FILE_SIZE,
-} from './im-downloader.js';
-import { detectImageMimeType } from './image-detector.js';
-import { downloadAndDecryptMedia, uploadMediaBuffer } from './wechat-crypto.js';
-import {
-  markdownToPlainText,
-  splitTextChunks,
-  createDedupCache,
-} from './im-utils.js';
+import { createDedupCache } from './im-utils.js';
 import { weChatIlinkHeaders } from './wechat-onboarding.js';
-import {
-  parseChannelPairingCode,
-  resolveAdmittedChannelRoute,
-} from './channel-admission.js';
-import { createWeChatHttpDispatcher } from './wechat-http.js';
+import { createWeChatApiClient, DEFAULT_BASE_URL } from './wechat-api.js';
+import { createWeChatSender } from './wechat-outbound.js';
+import { createWeChatMedia } from './wechat-media.js';
+import { createWeChatInboundProcessor } from './wechat-inbound.js';
+import { createWeChatPoller } from './wechat-poller.js';
 
 // ─── Constants ──────────────────────────────────────────────────
 
-const DEFAULT_BASE_URL = 'https://ilinkai.weixin.qq.com';
-const DEFAULT_CDN_BASE_URL = 'https://novac2c.cdn.weixin.qq.com/c2c';
-
-const MSG_SPLIT_LIMIT = 2000; // WeChat has stricter text limits than other channels
-
-const LONGPOLL_EXTRA_TIMEOUT_MS = 5000;
 const DEFAULT_LONGPOLL_TIMEOUT_MS = 35000;
-
-const RECONNECT_MIN_DELAY_MS = 3000;
-const RECONNECT_MAX_DELAY_MS = 60000;
-const REPEATED_ERROR_LOG_INTERVAL_MS = 5 * 60 * 1000;
-
-const IMAGE_MAX_BASE64_SIZE = 5 * 1024 * 1024; // 5 MB for inline base64
-
-const CHANNEL_VERSION = '1.0.0';
-
-// iLink message types
-// const MESSAGE_TYPE_USER = 1;
-const MESSAGE_TYPE_BOT = 2;
-
-// iLink message item types
-const MESSAGE_ITEM_TYPE_TEXT = 1;
-const MESSAGE_ITEM_TYPE_IMAGE = 2;
-// const MESSAGE_ITEM_TYPE_VOICE = 3;
-const MESSAGE_ITEM_TYPE_FILE = 4;
-// const MESSAGE_ITEM_TYPE_VIDEO = 5;
-
-// iLink message state
-// const MESSAGE_STATE_NEW = 0;
-// const MESSAGE_STATE_GENERATING = 1;
-const MESSAGE_STATE_FINISH = 2;
-
-// errcode for session expired
-const ERRCODE_SESSION_EXPIRED = -14;
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -90,7 +41,7 @@ export interface WeChatConnectionConfig {
   };
 }
 
-export type WeChatConnectionErrorCode =
+type WeChatConnectionErrorCode =
   | 'connect_timeout'
   | 'request_timeout'
   | 'connection_reset'
@@ -165,40 +116,11 @@ export interface WeChatConnection {
   getUpdatesBuf(): string;
 }
 
-export interface WeChatConnectionDeps {
+interface WeChatConnectionDeps {
   fetch?: typeof undiciFetch;
   createDispatcher?: (bypassProxy: boolean) => Dispatcher;
   random?: () => number;
   now?: () => number;
-}
-
-interface WeixinMessage {
-  seq?: number;
-  message_id?: number;
-  from_user_id?: string;
-  to_user_id?: string;
-  client_id?: string;
-  create_time_ms?: number;
-  session_id?: string;
-  message_type?: number;
-  message_state?: number;
-  item_list?: MessageItem[];
-  context_token?: string;
-}
-
-interface MessageItem {
-  type?: number;
-  text_item?: { text?: string };
-  image_item?: { media?: CDNMedia; aeskey?: string; url?: string };
-  voice_item?: { media?: CDNMedia; text?: string };
-  file_item?: { media?: CDNMedia; file_name?: string };
-  video_item?: { media?: CDNMedia };
-  ref_msg?: { message_item?: MessageItem; title?: string };
-}
-
-interface CDNMedia {
-  encrypt_query_param?: string;
-  aes_key?: string;
 }
 
 type WeChatApiEnvelope = {
@@ -265,15 +187,6 @@ export async function parseWeChatApiResponse<T>(
   }
 }
 
-interface GetUpdatesResponse {
-  ret?: number;
-  errcode?: number;
-  errmsg?: string;
-  msgs?: WeixinMessage[];
-  get_updates_buf?: string;
-  longpolling_timeout_ms?: number;
-}
-
 /**
  * Process one long-poll batch before acknowledging its cursor. If processing
  * or persistence fails, the caller keeps the previous cursor so the batch is
@@ -297,60 +210,6 @@ export async function processWeChatUpdateBatch<T>(input: {
 }
 
 // ─── Helpers ────────────────────────────────────────────────────
-
-/**
- * Generate random X-WECHAT-UIN header value.
- * A random uint32 converted to string, then base64-encoded.
- */
-function randomWechatUin(): string {
-  const uint32 = crypto.randomBytes(4).readUInt32BE(0);
-  return Buffer.from(String(uint32), 'utf-8').toString('base64');
-}
-
-/**
- * Extract text content from message item_list.
- * Includes voice-to-text transcription and fallback labels for non-text items.
- */
-function extractTextContent(items: MessageItem[]): string {
-  const parts: string[] = [];
-  for (const item of items) {
-    if (item.type === MESSAGE_ITEM_TYPE_TEXT && item.text_item?.text) {
-      parts.push(item.text_item.text);
-    } else if (item.type === MESSAGE_ITEM_TYPE_IMAGE) {
-      // Image placeholder — actual image is handled separately via CDN download
-      // Only add placeholder if no CDN media to download
-      if (!item.image_item?.media?.encrypt_query_param) {
-        parts.push('(image)');
-      }
-    } else if (item.type === 3 /* VOICE */) {
-      // Voice: prefer speech-to-text transcription
-      if (item.voice_item?.text) {
-        parts.push(item.voice_item.text);
-      } else {
-        parts.push('(voice)');
-      }
-    } else if (item.type === MESSAGE_ITEM_TYPE_FILE) {
-      // Only add placeholder if no CDN media to download
-      // (processFileItem will generate a [文件: ...] prefix for downloadable files)
-      if (!item.file_item?.media?.encrypt_query_param) {
-        parts.push(`(file: ${item.file_item?.file_name ?? 'unknown'})`);
-      }
-    } else if (item.type === 5 /* VIDEO */) {
-      parts.push('(video)');
-    }
-  }
-  return parts.join('\n').trim();
-}
-
-/**
- * Generate a unique dedup key from a WeixinMessage.
- */
-function dedupKey(msg: WeixinMessage): string {
-  if (msg.message_id !== undefined) return `mid:${msg.message_id}`;
-  if (msg.seq !== undefined) return `seq:${msg.seq}`;
-  // Fallback: combination of sender + timestamp + client_id
-  return `fallback:${msg.from_user_id}:${msg.create_time_ms}:${msg.client_id}`;
-}
 
 function errorChain(error: unknown): Array<Record<string, unknown>> {
   const chain: Array<Record<string, unknown>> = [];
@@ -415,27 +274,6 @@ export function classifyWeChatConnectionError(
   return 'unknown';
 }
 
-export function weChatConnectionErrorMessage(
-  code: WeChatConnectionErrorCode,
-): string {
-  switch (code) {
-    case 'connect_timeout':
-      return '连接微信服务超时，CKQClaw 正在自动重试';
-    case 'request_timeout':
-      return '微信长轮询暂时无响应，CKQClaw 正在自动重试';
-    case 'connection_reset':
-      return '微信连接在 TLS 建立前被中断，CKQClaw 正在自动重试';
-    case 'tls_error':
-      return '微信服务 TLS 连接失败，CKQClaw 正在自动重试';
-    case 'api_error':
-      return '微信服务返回异常，CKQClaw 正在自动重试';
-    case 'network_error':
-      return '暂时无法访问微信服务，CKQClaw 正在自动重试';
-    default:
-      return '微信连接暂时异常，CKQClaw 正在自动重试';
-  }
-}
-
 export function jitteredWeChatRetryDelay(
   baseDelayMs: number,
   random: () => number = Math.random,
@@ -458,20 +296,12 @@ export function createWeChatConnection(
   deps: WeChatConnectionDeps = {},
 ): WeChatConnection {
   const baseUrl = config.baseUrl || DEFAULT_BASE_URL;
-  const cdnBaseUrl = config.cdnBaseUrl || DEFAULT_CDN_BASE_URL;
   const bypassProxy = config.bypassProxy !== false;
-  const fetchImpl = deps.fetch ?? undiciFetch;
-  const createDispatcher = deps.createDispatcher ?? createWeChatHttpDispatcher;
-  const random = deps.random ?? Math.random;
-  const now = deps.now ?? Date.now;
   const logContext = {
     accountId: config.logContext?.accountId,
     userId: config.logContext?.userId,
     botId: maskedBotId(config.ilinkBotId),
   };
-
-  // Generate UIN once per connection instance (no need to regenerate per request)
-  const wechatUin = randomWechatUin();
 
   // Polling state
   let currentGetUpdatesBuf = config.getUpdatesBuf || '';
@@ -484,13 +314,10 @@ export function createWeChatConnection(
   let activePollController: AbortController | null = null;
   let cancelSleep: (() => void) | null = null;
   let activeOpts: WeChatConnectOpts | null = null;
-  let connectionState: WeChatConnectionState = { status: 'disconnected' };
   let consecutiveFailures = 0;
   let consecutivePollTimeouts = 0;
   let failureStartedAt = 0;
   let lastConnectedAt: string | undefined;
-  let lastLoggedErrorCode: WeChatConnectionErrorCode | null = null;
-  let lastRepeatedErrorLogAt = 0;
 
   // context_token cache: from_user_id -> latest context_token
   const contextTokenCache = new Map<string, string>();
@@ -508,726 +335,224 @@ export function createWeChatConnection(
 
   // ─── Deduplication ────────────────────────────────────────
 
-  // ─── HTTP Helpers ─────────────────────────────────────────
+  // ─── HTTP/API Client ────────────────────────────────────────
+  // HTTP 客户端与长轮询请求段（ensureDispatcher / publishState / buildHeaders
+  // / baseInfo / apiPost / getUpdates，原 509-599）已抽至 ./wechat-api.ts
+  // （ISSUE-12 单元 2.17 原文搬运）。publishState 为该段自产，经工厂返回面
+  // 同名解构回接；其唯一写点 connectionState 随段内化于 wechat-api，本文件
+  // 留守读点（connect 状态重放 / pollLoop 意外退出的 expired 判定）经返回
+  // 面 getConnectionState() 活读。dispatcher / activePollController /
+  // longpollTimeoutMs / currentGetUpdatesBuf / activeOpts 均有段外消费者
+  // （closeDispatcher / disconnect 复位清理行 / pollLoop 游标与超时回写 /
+  // connect 门面），本体留守本文件状态区，wechat-api 经 get/set 访问器对
+  // 读写（2.14 qq-ws 状态留守同款，复位与清理行因此逐字节不变）。deps
+  // 第二参原样透传——wechat-connection-lifecycle 的 fetch/createDispatcher
+  // 注入链穿透至 apiPost/ensureDispatcher；random/now 的解析与消费 2.21
+  // 起随轮询簇迁往 wechat-poller（经下方 Long-Polling Poller 接线透传，
+  // 注入链收尾）。仅该段消费的 randomWechatUin 与 wechatUin 生成行、
+  // LONGPOLL_EXTRA_TIMEOUT_MS / CHANNEL_VERSION 常数、GetUpdatesResponse
+  // 接口随段迁移；DEFAULT_BASE_URL 随段安家 wechat-api 并导出，本文件顶部
+  // 回接 import（2.12 QQ_MAX_JSON_RESPONSE_BYTES 同款）。
+  // parseWeChatApiResponse 为本文件既有导出（外层门面约束），经同名参数
+  // 注入，apiPost 体内调用点逐字节不变（2.12 validateQQGatewayUrl 同款）。
+  // 同名解构使 connect / disconnect 调用点零改动（pollLoop /
+  // markConnectionHealthy / handlePollFailure 2.21 起随轮询簇迁往
+  // wechat-poller，publishState / getUpdates 经下方 Long-Polling Poller
+  // 接线透传；downloadCdnMediaItem 链 2.19 起随媒体段迁往 wechat-media，
+  // ensureDispatcher 经下方 CDN Media 接线透传；2.18 起 sendMessageApi 的
+  // processMessage 消费面与门面 sendImage / sendFile / sendTyping 委托体
+  // 改经 wechat-outbound 接线，getTypingTicket / sendTypingApi 随段内化，
+  // 见下方 Outbound Sender 接线）。
+  const {
+    ensureDispatcher,
+    publishState,
+    baseInfo,
+    apiPost,
+    getUpdates,
+    getConnectionState,
+  } = createWeChatApiClient(config, deps, {
+    parseWeChatApiResponse,
+    getActiveOpts: () => activeOpts,
+    getDispatcher: () => dispatcher,
+    setDispatcher: (value) => {
+      dispatcher = value;
+    },
+    getActivePollController: () => activePollController,
+    setActivePollController: (value) => {
+      activePollController = value;
+    },
+    getLongpollTimeoutMs: () => longpollTimeoutMs,
+    getCurrentGetUpdatesBuf: () => currentGetUpdatesBuf,
+  });
 
-  function ensureDispatcher(): Dispatcher {
-    dispatcher ??= createDispatcher(bypassProxy);
-    return dispatcher;
-  }
-
-  function publishState(state: WeChatConnectionState): void {
-    connectionState = state;
-    activeOpts?.onConnectionStateChange?.(state);
-  }
-
-  function buildHeaders(): Record<string, string> {
-    return {
-      'Content-Type': 'application/json',
-      AuthorizationType: 'ilink_bot_token',
-      Authorization: `Bearer ${config.botToken}`,
-      'X-WECHAT-UIN': wechatUin,
-      ...weChatIlinkHeaders(),
-    };
-  }
-
-  function baseInfo(): Record<string, string> {
-    return {
-      channel_version: CHANNEL_VERSION,
-      bot_agent: `CKQClaw/${CHANNEL_VERSION}`,
-    };
-  }
-
-  /**
-   * Make an HTTPS POST request to the iLink API using fetch.
-   */
-  async function apiPost<T = any>(
-    endpoint: string,
-    body: Record<string, unknown>,
-    timeoutMs?: number,
-    trackAsPollRequest = false,
-  ): Promise<T> {
-    const bodyStr = JSON.stringify(body);
-    const url = new URL(endpoint, baseUrl);
-    const headers = buildHeaders();
-
-    const controller = new AbortController();
-    if (trackAsPollRequest) activePollController = controller;
-    const timer = timeoutMs
-      ? setTimeout(() => controller.abort(), timeoutMs)
-      : undefined;
-
-    try {
-      const res = await fetchImpl(url.toString(), {
-        method: 'POST',
-        headers: {
-          ...headers,
-          'Content-Length': String(Buffer.byteLength(bodyStr, 'utf-8')),
-        },
-        body: bodyStr,
-        signal: controller.signal,
-        dispatcher: ensureDispatcher(),
-      });
-
-      return await parseWeChatApiResponse<T>(res, endpoint);
-    } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') {
-        throw Object.assign(
-          new Error(`WeChat API ${endpoint} timed out`, { cause: err }),
-          { code: 'WECHAT_REQUEST_TIMEOUT' },
-        );
-      }
-      throw err;
-    } finally {
-      if (timer) clearTimeout(timer);
-      if (trackAsPollRequest && activePollController === controller) {
-        activePollController = null;
-      }
-    }
-  }
-
-  // ─── API Methods ──────────────────────────────────────────
-
-  async function getUpdates(): Promise<GetUpdatesResponse> {
-    const httpTimeout = longpollTimeoutMs + LONGPOLL_EXTRA_TIMEOUT_MS;
-    return apiPost<GetUpdatesResponse>(
-      'ilink/bot/getupdates',
-      {
-        get_updates_buf: currentGetUpdatesBuf,
-        base_info: baseInfo(),
-      },
-      httpTimeout,
-      true,
-    );
-  }
-
-  async function sendMessageApi(
-    toUserId: string,
-    contextToken: string,
-    text: string,
-  ): Promise<void> {
-    const clientId = String(crypto.randomBytes(4).readUInt32BE(0));
-
-    const resp = await apiPost<{
-      ret?: number;
-      errcode?: number;
-      errmsg?: string;
-    }>('ilink/bot/sendmessage', {
-      msg: {
-        to_user_id: toUserId,
-        context_token: contextToken,
-        item_list: [
-          {
-            type: MESSAGE_ITEM_TYPE_TEXT,
-            text_item: { text },
-          },
-        ],
-        message_type: MESSAGE_TYPE_BOT,
-        message_state: MESSAGE_STATE_FINISH,
-        client_id: clientId,
-      },
-      base_info: baseInfo(),
-    });
-
-    assertWeChatApiSuccess(resp, 'sendMessage');
-  }
-
-  async function getTypingTicket(
-    ilinkUserId: string,
-    contextToken: string,
-  ): Promise<string | null> {
-    try {
-      const res = await apiPost<{ typing_ticket?: string }>(
-        'ilink/bot/getconfig',
-        {
-          ilink_user_id: ilinkUserId,
-          context_token: contextToken,
-          base_info: baseInfo(),
-        },
-      );
-      return res.typing_ticket || null;
-    } catch (err) {
-      logger.debug({ err }, 'WeChat getconfig failed');
-      return null;
-    }
-  }
-
-  async function sendTypingApi(
-    ilinkUserId: string,
-    typingTicket: string,
-    status: 1 | 2,
-  ): Promise<void> {
-    try {
-      await apiPost('ilink/bot/sendtyping', {
-        ilink_user_id: ilinkUserId,
-        typing_ticket: typingTicket,
-        status,
-        base_info: baseInfo(),
-      });
-    } catch (err) {
-      logger.debug({ err, status }, 'WeChat sendtyping failed');
-    }
-  }
-
-  // ─── CDN Media Download ────────────────────────────────────
-
-  /**
-   * Download, decrypt, and save a CDN media item (image, file, etc.).
-   * `resolveFileName` receives the decrypted buffer so callers can inspect
-   * content (e.g. MIME-detect for images) before choosing a name.
-   */
-  async function downloadCdnMediaItem(
-    media: CDNMedia | undefined,
-    groupFolder: string | undefined,
-    label: string,
-    resolveFileName: (buffer: Buffer) => string,
-  ): Promise<{ buffer: Buffer; savedPath?: string } | null> {
-    if (!media?.encrypt_query_param || !media?.aes_key) {
-      logger.debug(`WeChat ${label} missing media or aes_key, skipping`);
-      return null;
-    }
-
-    const buffer = await downloadAndDecryptMedia(
-      media.encrypt_query_param,
-      media.aes_key,
-      cdnBaseUrl,
-      ensureDispatcher(),
+  // ─── Outbound Sender ───────────────────────────────────────
+  // 发送 API 段（sendMessageApi / getTypingTicket / sendTypingApi，原
+  // 527-593）与门面 sendMessage / sendImage / sendFile / sendTyping 方法本体
+  // （原 1254-1472）已抽至 ./wechat-outbound.ts（ISSUE-12 单元 2.18 原文
+  // 搬运）：方法壳与签名留本文件、体一行委托（2.16 qq-stream
+  // sendStreamMessage 同款）；getTypingTicket / sendTypingApi 仅 sendTyping
+  // 本体消费，随段内化不进返回面。contextTokenCache 经 contextTokens 参数
+  // 同 Map 实例引用注入——processMessage 的 set 写点与 connect/disconnect
+  // 的 clear 清理行留守本文件，同一实例读写语义不变（搬运体内
+  // contextTokenCache.get 机械更名 contextTokens.get 共 4 处，其余逐字节）。
+  // api 为 2.17 createWeChatApiClient 返回面的结构子集，按实际消费列
+  // apiPost / baseInfo / ensureDispatcher（getConnectionState 发送链不
+  // 消费）；config 为 WeChatConnectionConfig 结构子集，baseUrl / cdnBaseUrl
+  // 派生表达式随迁方内逐字节一致。assertWeChatApiSuccess 为本文件既有导出
+  //（外层门面约束），经同名参数注入（2.17 parseWeChatApiResponse 同款）。
+  // uploadMediaBuffer 直属既有模块 wechat-crypto（W4 消费同模块的
+  // downloadAndDecryptMedia，非 W4 素材），wechat-outbound 直接 import；
+  // markdownToPlainText（processMessage 亦消费）仍直引共享模块；曾因
+  // W4 亦消费而留守的 im-downloader 三名 import 已于 2.19 随媒体段迁往
+  // ./wechat-media.ts（见下方 CDN Media 接线）。常数归属：
+  // MSG_SPLIT_LIMIT / MESSAGE_STATE_FINISH 仅发送链消费随段迁移；
+  // MESSAGE_TYPE_BOT / MESSAGE_ITEM_TYPE_TEXT / IMAGE / FILE 为 W5
+  // extractTextContent / processMessage 共享，随段安家 wechat-outbound 并
+  // 导出、本文件顶部回接 import；DEFAULT_CDN_BASE_URL 同款回接（2.17
+  // DEFAULT_BASE_URL 先例）。同名解构使门面四委托行零改动（processMessage
+  // 五处 sendMessageApi 调用点 2.20 起随入站段迁往 wechat-inbound、经
+  // 下方 Inbound 接线同名透传）。
+  const { sendMessageApi, sendMessage, sendImage, sendFile, sendTyping } =
+    createWeChatSender(
+      { apiPost, baseInfo, ensureDispatcher },
+      contextTokenCache,
+      config,
+      assertWeChatApiSuccess,
     );
 
-    if (!buffer || buffer.length === 0) {
-      logger.warn(`WeChat ${label} download returned empty buffer`);
-      return null;
-    }
+  // ─── CDN Media ─────────────────────────────────────────────
+  // CDN 媒体段（downloadCdnMediaItem / processImageItem / processFileItem，
+  // 原 543-670）已抽至 ./wechat-media.ts（ISSUE-12 单元 2.19 原文搬运，三
+  // 函数体逐字节零替换——原段与迁入方同为工厂体内 2 空格基位，连 dedent
+  // 都不需要）。downloadCdnMediaItem 仅两 process*Item 消费，随段内化不进
+  // 返回面；processImageItem / processFileItem 同名解构回接（W5
+  // processMessage 两调用点 2.20 起随入站段迁往 wechat-inbound、经下方
+  // Inbound 接线同名透传）。api 为 2.17 createWeChatApiClient 返回
+  // 面结构子集，按实际消费列 ensureDispatcher（qq-stream { apiRequest }
+  // 单员子集同款）；config 为 WeChatConnectionConfig 结构子集，cdnBaseUrl
+  // 派生行随段迁往 wechat-media（DEFAULT_CDN_BASE_URL 改经 sibling import
+  // 引自 wechat-outbound，本文件该派生行与该名 import 随本单元删除）。
+  // IMAGE_MAX_BASE64_SIZE 与 im-downloader 三名 / detectImageMimeType /
+  // downloadAndDecryptMedia 五个 import 仅本段消费，整体随迁；
+  // wechat-crypto 的 buildCdnDownloadUrl 为其模块内私有，W4 无本地包装，
+  // URL 构建在 downloadAndDecryptMedia 体内，如实直引。MessageItem /
+  // CDNMedia 为 W5 共享类型，wechat-media 侧逐字节结构镜像（2.17
+  // wechat-api 同款）。im-inbound-file-inline 的微信条目等强改锚
+  // src/wechat-media.ts（断言文本逐字不变，2.9/2.13 体例）。
+  const { processImageItem, processFileItem } = createWeChatMedia(
+    { ensureDispatcher },
+    config,
+  );
 
-    if (buffer.length > MAX_FILE_SIZE) {
-      logger.warn(
-        { size: buffer.length },
-        `WeChat ${label} exceeds max file size, skipping`,
-      );
-      return null;
-    }
+  // ─── Inbound Processor ─────────────────────────────────────
+  // 入站管线 processMessage（原 558-808，约 250 行：bot 自身跳过 + dedup +
+  // 时效过滤、/pair 共享解析、未授权拒绝冷却 + resolveAdmittedChannelRoute
+  // 准入、斜杠指令、媒体循环、store / broadcast / notify / onAgentMessage）
+  // 及其专属模块级素材——extractTextContent / dedupKey 助手、WeixinMessage
+  // / MessageItem / CDNMedia 类型声明（消费面全数随迁，wechat-api /
+  // wechat-media 的既有结构镜像继续互通）、db 三写函数 /
+  // notifyNewImMessage / broadcastNewMessage / markdownToPlainText /
+  // channel-admission 两解析 / crypto(randomUUID) 六组 import——已抽至
+  // ./wechat-inbound.ts（ISSUE-12 单元 2.20 原文搬运；processMessage 体零
+  // 机械替换，仅 opts 形参类型收窄为 WeChatInboundConnectOpts 结构子集，
+  // 2.15 qq-inbound ④同款）。状态留守+引用注入（disconnect / connect 清理
+  // 行逐字节不变，2.15 同款）：dedup / knownJids / contextTokenCache /
+  // rejectTimestamps / REJECT_COOLDOWN_MS——contextTokenCache 与 2.18
+  // contextTokens 注入为同一 Map 实例，写读语义不变。
+  // sendMessageApi（2.18 返回面）/ processImageItem / processFileItem
+  //（2.19 返回面）同名透传；MESSAGE_TYPE_BOT / MESSAGE_ITEM_TYPE_TEXT /
+  // IMAGE / FILE 常数改经 wechat-inbound sibling 引自 wechat-outbound
+  //（本文件回接名随本单元删除）。channel-attachment-routing-order 的微信
+  // 路由顺序契约与 channel-pairing-uniform 的 /pair 接线断言等强改锚
+  // src/wechat-inbound.ts（断言文本逐字不变，2.15 体例）。pollLoop 的
+  // processMessage 调用点 2.21 起随轮询簇迁往 wechat-poller、经下方
+  // Long-Polling Poller 接线同名透传。
+  const { processMessage } = createWeChatInboundProcessor({
+    sendMessageApi,
+    processImageItem,
+    processFileItem,
+    dedup,
+    knownJids,
+    contextTokenCache,
+    rejectTimestamps,
+    REJECT_COOLDOWN_MS,
+  });
 
-    let savedPath: string | undefined;
-    if (groupFolder) {
-      try {
-        const fileName = resolveFileName(buffer);
-        savedPath =
-          (await saveDownloadedFile(groupFolder, 'wechat', fileName, buffer)) ??
-          undefined;
-      } catch (err) {
-        logger.warn({ err }, `Failed to save WeChat ${label} to disk`);
-      }
-    }
-
-    return { buffer, savedPath };
-  }
-
-  async function processImageItem(
-    item: MessageItem,
-    msgIdentifier: string,
-    groupFolder: string | undefined,
-  ): Promise<{
-    attachmentEntry?: { type: string; data: string; mimeType: string };
-    textPrefix?: string;
-  }> {
-    try {
-      const result = await downloadCdnMediaItem(
-        item.image_item?.media,
-        groupFolder,
-        'image',
-        (buffer) => {
-          const mimeType = detectImageMimeType(buffer);
-          const extMap: Record<string, string> = {
-            'image/jpeg': '.jpg',
-            'image/png': '.png',
-            'image/gif': '.gif',
-            'image/webp': '.webp',
-          };
-          return `wechat_img_${msgIdentifier}${extMap[mimeType] ?? '.jpg'}`;
-        },
-      );
-      if (!result) return {};
-
-      const textPrefix = result.savedPath
-        ? `[图片: ${result.savedPath}]`
-        : undefined;
-
-      let attachmentEntry:
-        | { type: string; data: string; mimeType: string }
-        | undefined;
-      if (result.buffer.length <= IMAGE_MAX_BASE64_SIZE) {
-        const mimeType = detectImageMimeType(result.buffer);
-        attachmentEntry = {
-          type: 'image',
-          data: result.buffer.toString('base64'),
-          mimeType,
-        };
-      }
-
-      return { attachmentEntry, textPrefix };
-    } catch (err) {
-      logger.warn({ err }, 'WeChat image download/decrypt failed, skipping');
-      return {};
-    }
-  }
-
-  async function processFileItem(
-    item: MessageItem,
-    groupFolder: string | undefined,
-  ): Promise<string | null> {
-    const fileName = item.file_item?.file_name || 'unknown_file';
-    try {
-      const result = await downloadCdnMediaItem(
-        item.file_item?.media,
-        groupFolder,
-        'file',
-        () => fileName,
-      );
-      if (result?.savedPath) {
-        // 弱模型兜底：抽取成功则内联文件文本，失败回退仅路径标记。
-        const inlined = groupFolder
-          ? await buildInlinedFileContent(groupFolder, result.savedPath)
-          : null;
-        return inlined ?? `[文件: ${result.savedPath}]`;
-      }
-      // CDN media unavailable, fall back to name-only label
-      return `[文件: ${fileName}]`;
-    } catch (err) {
-      logger.warn({ err, fileName }, 'WeChat file download/decrypt failed');
-      return `[文件: ${fileName}]`;
-    }
-  }
-
-  // ─── Message Processing ───────────────────────────────────
-
-  async function processMessage(
-    msg: WeixinMessage,
-    opts: WeChatConnectOpts,
-  ): Promise<void> {
-    try {
-      // Skip bot's own messages
-      if (msg.message_type === MESSAGE_TYPE_BOT) return;
-
-      const fromUserId = msg.from_user_id;
-      if (!fromUserId) return;
-
-      // Dedup
-      const key = dedupKey(msg);
-      if (dedup.isDuplicate(key)) return;
-      dedup.markSeen(key);
-
-      // Skip stale messages — if no timestamp available, skip as well (can't verify freshness)
-      if (opts.ignoreMessagesBefore) {
-        if (
-          !msg.create_time_ms ||
-          msg.create_time_ms < opts.ignoreMessagesBefore
-        )
-          return;
-      }
-
-      const jid =
-        opts.normalizeIncomingJid?.(`wechat:${fromUserId}`) ??
-        `wechat:${fromUserId}`;
-      const senderName = fromUserId.split('@')[0] || 'WeChat用户';
-      const chatName = senderName;
-
-      // Extract text content
-      let content = msg.item_list ? extractTextContent(msg.item_list) : '';
-
-      // Pairing and admission must run before registration, workspace lookup,
-      // file downloads, or message persistence. QR authorization authenticates
-      // the bot account; it does not authorize every person who can message it.
-      // 统一走共享解析（严格语义：拒绝 /pair abc extra 这类多余参数），与 QQ
-      // 及 channel-admission 共享语义保持一致。
-      const pairCode = parseChannelPairingCode(content);
-      if (pairCode !== null && opts.onPairAttempt) {
-        try {
-          const success = await opts.onPairAttempt(jid, chatName, pairCode);
-          if (msg.context_token) {
-            await sendMessageApi(
-              fromUserId,
-              msg.context_token,
-              success
-                ? '配对成功，此微信会话已连接。'
-                : '配对码无效或已过期，请在网页设置中重新生成。',
-            );
-          }
-        } catch (err) {
-          logger.error({ err, jid }, 'WeChat pair attempt failed');
-          if (msg.context_token) {
-            await sendMessageApi(
-              fromUserId,
-              msg.context_token,
-              '配对失败，请稍后重试。',
-            );
-          }
-        }
-        return;
-      }
-
-      if (!(opts.isChatAuthorized?.(jid) ?? false)) {
-        const now = Date.now();
-        const lastReject = rejectTimestamps.get(jid) ?? 0;
-        if (msg.context_token && now - lastReject >= REJECT_COOLDOWN_MS) {
-          rejectTimestamps.set(jid, now);
-          await sendMessageApi(
-            fromUserId,
-            msg.context_token,
-            '此微信会话尚未配对。请在网页设置中生成配对码，然后发送 /pair <配对码>。',
-          );
-        }
-        logger.debug({ jid }, 'Unauthorized WeChat chat, message ignored');
-        return;
-      }
-
-      const resolvedRoute = resolveAdmittedChannelRoute(
-        jid,
-        opts.resolveEffectiveChatJid,
-      );
-      if (!resolvedRoute) {
-        logger.warn(
-          { jid },
-          'WeChat message dropped: binding resolver rejected route',
-        );
-        return;
-      }
-      const { targetJid, routing: agentRouting } = resolvedRoute;
-
-      // Cache a reply token only after authorization, preventing arbitrary
-      // senders from growing the long-lived per-connection cache.
-      if (msg.context_token) {
-        contextTokenCache.set(fromUserId, msg.context_token);
-      }
-
-      // ── Register the authorized base chat ──
-      const nowIso = new Date().toISOString();
-      if (!knownJids.has(jid)) {
-        knownJids.add(jid);
-        storeChatMetadata(jid, nowIso);
-        updateChatName(jid, chatName);
-        opts.onNewChat(jid, chatName);
-      }
-
-      // Handle slash commands
-      const slashMatch = content.match(/^\/(\S+)(?:\s+(.*))?$/i);
-      if (slashMatch && opts.onCommand) {
-        const cmdBody = (
-          slashMatch[1] + (slashMatch[2] ? ' ' + slashMatch[2] : '')
-        ).trim();
-        try {
-          const reply = await opts.onCommand(jid, cmdBody, fromUserId);
-          if (reply) {
-            const ct = contextTokenCache.get(fromUserId);
-            if (ct) {
-              await sendMessageApi(fromUserId, ct, markdownToPlainText(reply));
-            }
-            return;
-          }
-        } catch (err) {
-          logger.error({ jid, err }, 'WeChat slash command failed');
-          const ct = contextTokenCache.get(fromUserId);
-          if (ct) {
-            await sendMessageApi(fromUserId, ct, '命令执行失败，请稍后重试');
-          }
-          return;
-        }
-      }
-
-      // Handle image attachments
-      let attachmentsJson: string | undefined;
-      const groupFolder = opts.resolveGroupFolder?.(jid);
-      if (msg.item_list) {
-        const imageAttachments: {
-          type: string;
-          data: string;
-          mimeType: string;
-        }[] = [];
-        const textPrefixes: string[] = [];
-
-        // Note: textPrefixes order depends on CDN response time, not message item order
-        // Download images and files in parallel (independent CDN requests)
-        const msgId =
-          msg.message_id !== undefined
-            ? String(msg.message_id)
-            : String(msg.seq ?? Date.now());
-
-        const mediaPromises: Promise<void>[] = [];
-
-        for (const item of msg.item_list) {
-          if (item.type === MESSAGE_ITEM_TYPE_IMAGE) {
-            mediaPromises.push(
-              processImageItem(item, msgId.slice(-8), groupFolder).then((r) => {
-                if (r.attachmentEntry) imageAttachments.push(r.attachmentEntry);
-                if (r.textPrefix) textPrefixes.push(r.textPrefix);
-              }),
-            );
-          } else if (item.type === MESSAGE_ITEM_TYPE_FILE) {
-            mediaPromises.push(
-              processFileItem(item, groupFolder).then((label) => {
-                if (label) textPrefixes.push(label);
-              }),
-            );
-          }
-        }
-
-        if (mediaPromises.length > 0) {
-          await Promise.allSettled(mediaPromises);
-        }
-
-        // Merge file/media labels into content independently of images: a
-        // file-only message (no imageAttachments) would otherwise drop its
-        // textPrefixes and hit `if (!content) return` below → silently lost.
-        if (textPrefixes.length > 0) {
-          content = `${textPrefixes.join('\n')}\n${content}`.trim();
-        }
-        if (imageAttachments.length > 0) {
-          attachmentsJson = JSON.stringify(imageAttachments);
-        }
-
-        if (!content && imageAttachments.length > 0) {
-          content = '[图片]';
-        }
-      }
-
-      if (!content) return; // No usable content
-
-      // Route was resolved before registration and media download.
-      const id = crypto.randomUUID();
-      const timestamp = msg.create_time_ms
-        ? new Date(msg.create_time_ms).toISOString()
-        : nowIso;
-      const senderId = `wechat:${fromUserId}`;
-
-      if (targetJid !== jid) storeChatMetadata(targetJid, timestamp);
-      storeMessageDirect(
-        id,
-        targetJid,
-        senderId,
-        senderName,
-        content,
-        timestamp,
-        false,
-        {
-          attachments: attachmentsJson,
-          sourceJid: jid,
-        },
-      );
-
-      broadcastNewMessage(
-        targetJid,
-        {
-          id,
-          chat_jid: targetJid,
-          source_jid: jid,
-          sender: senderId,
-          sender_name: senderName,
-          content,
-          timestamp,
-          attachments: attachmentsJson,
-          is_from_me: false,
-        },
-        agentRouting?.agentId ?? undefined,
-      );
-      notifyNewImMessage();
-
-      if (agentRouting?.agentId) {
-        opts.onAgentMessage?.(jid, agentRouting.agentId);
-        logger.info(
-          { jid, effectiveJid: targetJid, agentId: agentRouting.agentId },
-          'WeChat message routed to agent',
-        );
-      } else {
-        logger.info(
-          { jid, sender: senderName, msgId: msg.message_id ?? msg.seq },
-          'WeChat message stored',
-        );
-      }
-    } catch (err) {
-      logger.error(
-        { err, msgId: msg.message_id },
-        'Error handling WeChat message',
-      );
-    }
-  }
-
-  // ─── Long-Polling Loop ────────────────────────────────────
-
-  function markConnectionHealthy(): void {
-    const recoveredFailures = consecutiveFailures;
-    const downtimeMs = failureStartedAt
-      ? Math.max(0, now() - failureStartedAt)
-      : 0;
-    const wasConnected = connected;
-    connected = true;
-    consecutiveFailures = 0;
-    consecutivePollTimeouts = 0;
-    failureStartedAt = 0;
-    lastLoggedErrorCode = null;
-    lastRepeatedErrorLogAt = 0;
-    if (wasConnected) return;
-    lastConnectedAt = new Date(now()).toISOString();
-    publishState({ status: 'connected', lastConnectedAt });
-    if (!wasConnected && recoveredFailures === 0) {
-      logger.info(logContext, 'WeChat poll connection established');
-    } else if (!wasConnected && recoveredFailures > 0) {
-      logger.info(
-        { ...logContext, recoveredFailures, downtimeMs },
-        'WeChat poll connection recovered',
-      );
-    }
-  }
-
-  async function handlePollFailure(
-    err: unknown,
-    baseDelayMs: number,
-  ): Promise<void> {
-    connected = false;
-    consecutiveFailures += 1;
-    if (!failureStartedAt) failureStartedAt = now();
-    const errorCode = classifyWeChatConnectionError(err);
-    const nextRetryMs = jitteredWeChatRetryDelay(baseDelayMs, random);
-    const userMessage = weChatConnectionErrorMessage(errorCode);
-    publishState({
-      status: 'reconnecting',
-      error: userMessage,
-      errorCode,
-      consecutiveFailures,
-      nextRetryMs,
-      lastConnectedAt,
-    });
-
-    const currentTime = now();
-    const shouldLogDetails =
-      consecutiveFailures === 1 ||
-      errorCode !== lastLoggedErrorCode ||
-      currentTime - lastRepeatedErrorLogAt >= REPEATED_ERROR_LOG_INTERVAL_MS;
-    if (shouldLogDetails) {
-      logger.warn(
-        {
-          ...logContext,
-          err,
-          errorCode,
-          consecutiveFailures,
-          nextRetryMs,
-        },
-        'WeChat poll connection unavailable; retry scheduled',
-      );
-      lastLoggedErrorCode = errorCode;
-      lastRepeatedErrorLogAt = currentTime;
-    } else {
-      logger.debug(
-        { ...logContext, errorCode, consecutiveFailures, nextRetryMs },
-        'WeChat poll retry scheduled',
-      );
-    }
-    await sleep(nextRetryMs);
-  }
-
-  async function pollLoop(): Promise<void> {
-    let reconnectDelay = RECONNECT_MIN_DELAY_MS;
-
-    while (!stopping) {
-      try {
-        const response = await getUpdates();
-        if (stopping) break;
-
-        // Update longpoll timeout from server
-        if (response.longpolling_timeout_ms) {
-          longpollTimeoutMs = response.longpolling_timeout_ms;
-        }
-
-        const responseCode = response.ret ?? response.errcode;
-
-        // Check for session expiry
-        if (responseCode === ERRCODE_SESSION_EXPIRED) {
-          const error = '微信授权已过期，请重新扫码连接';
-          logger.warn(
-            { ...logContext, errorCode: 'session_expired' },
-            'WeChat session expired; polling stopped',
-          );
-          connected = false;
-          publishState({ status: 'expired', error });
-          break;
-        }
-
-        // ret/errcode are absent when the request succeeds — treat as 0.
-        if (responseCode !== undefined && responseCode !== 0) {
-          throw Object.assign(
-            new Error(
-              `WeChat getUpdates error: code=${responseCode}, message=${response.errmsg ?? ''}`,
-            ),
-            { code: 'WECHAT_API_ERROR' },
-          );
-        }
-
-        // Reset backoff on success
-        markConnectionHealthy();
-        reconnectDelay = RECONNECT_MIN_DELAY_MS;
-
-        const opts = activeOpts;
-        if (!opts || stopping) break;
-
-        // Cursor acknowledgement is deliberately last. A crash or processing
-        // failure replays the whole batch from the previous durable cursor.
-        currentGetUpdatesBuf = await processWeChatUpdateBatch({
-          messages: response.msgs,
-          nextCursor: response.get_updates_buf,
-          currentCursor: currentGetUpdatesBuf,
-          processMessage: (msg) => processMessage(msg, opts),
-          persistCursor: opts.onUpdatesBuf,
-        });
-      } catch (err) {
-        if (stopping) break;
-
-        // Once healthy, a client-side long-poll timeout only means the server
-        // kept the request open longer than advertised. It is not an outage.
-        const errorCode = classifyWeChatConnectionError(err);
-        if (connected && errorCode === 'request_timeout') {
-          consecutivePollTimeouts += 1;
-        }
-        if (
-          connected &&
-          errorCode === 'request_timeout' &&
-          consecutivePollTimeouts === 1
-        ) {
-          logger.debug(
-            { ...logContext, errorCode },
-            'WeChat long poll reached client timeout; retrying',
-          );
-          continue;
-        }
-
-        await handlePollFailure(err, reconnectDelay);
-        reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_DELAY_MS);
-      }
-    }
-  }
-
-  function sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => {
-      const finish = () => {
-        if (cancelSleep === cancel) cancelSleep = null;
-        resolve();
-      };
-      const timer = setTimeout(finish, ms);
-      const cancel = () => {
-        clearTimeout(timer);
-        finish();
-      };
-      cancelSleep = cancel;
-    });
-  }
-
-  async function closeDispatcher(): Promise<void> {
-    const activeDispatcher = dispatcher;
-    dispatcher = null;
-    if (!activeDispatcher) return;
-    await activeDispatcher.close().catch((err) => {
-      logger.debug(
-        { ...logContext, err },
-        'Failed to close WeChat HTTP dispatcher cleanly',
-      );
-    });
-  }
+  // ─── Long-Polling Poller ──────────────────────────────────
+  // 轮询簇整簇（markConnectionHealthy / handlePollFailure / pollLoop /
+  // sleep / closeDispatcher，原 506-685）及仅簇内消费的模块级素材——
+  // weChatConnectionErrorMessage 助手、RECONNECT_MIN/MAX_DELAY_MS /
+  // REPEATED_ERROR_LOG_INTERVAL_MS / ERRCODE_SESSION_EXPIRED 四常数、
+  // random / now 解析行——已抽至 ./wechat-poller.ts（ISSUE-12 单元 2.21
+  // 原文搬运，qq-ws 2.14 整簇纪律：互递归与轮询超时控制整簇内聚禁半抽；
+  // 搬运体仅访问器机械替换，`+=` 与构造赋值用局部 const 捕获 + setX 保持
+  // 下游引用逐字节）。状态归属以 connect() / disconnect() 门面复位与清理
+  // 行最小扰动为准则（2.14 状态留守+访问器先例）：stopping / running /
+  // connected / pollPromise / consecutiveFailures / consecutivePollTimeouts
+  // / failureStartedAt / lastConnectedAt / cancelSleep / dispatcher /
+  // longpollTimeoutMs / currentGetUpdatesBuf / activeOpts 均有门面或 2.17
+  // 接线消费点，本体留守本文件状态区——门面全部复位与清理行因此逐字节
+  // 不变（running / pollPromise / activePollController 簇体不消费，零
+  // 接线）；lastLoggedErrorCode / lastRepeatedErrorLogAt 簇内独有，随簇
+  // 内化（2.16 lastIncomingMsgId 先例）。deps 原样透传——
+  // wechat-connection-lifecycle 的 random / now 注入链穿透至
+  // handlePollFailure / markConnectionHealthy（2.17 已透传 fetch /
+  // createDispatcher，头号风险注记本单元收尾）。publishState / getUpdates
+  //（2.17 返回面）/ processMessage（2.20 返回面）/ logContext 同名注入；
+  // classifyWeChatConnectionError / jitteredWeChatRetryDelay /
+  // processWeChatUpdateBatch 为本文件既有导出（外层门面约束），经同名
+  // 参数注入（2.17 parseWeChatApiResponse 同款）；getConnectionState 经
+  // 核对仅 connect 门面消费、簇体零消费不入（2.18 api 子集同判）。同名
+  // 解构使 connect 的 pollPromise = pollLoop() 接线与 disconnect 的
+  // closeDispatcher 调用点零改动。
+  const { pollLoop, closeDispatcher } = createWeChatPoller({
+    deps,
+    logContext,
+    publishState,
+    getUpdates,
+    processMessage,
+    classifyWeChatConnectionError,
+    jitteredWeChatRetryDelay,
+    processWeChatUpdateBatch,
+    getStopping: () => stopping,
+    getConnected: () => connected,
+    setConnected: (value) => {
+      connected = value;
+    },
+    getConsecutiveFailures: () => consecutiveFailures,
+    setConsecutiveFailures: (value) => {
+      consecutiveFailures = value;
+    },
+    getConsecutivePollTimeouts: () => consecutivePollTimeouts,
+    setConsecutivePollTimeouts: (value) => {
+      consecutivePollTimeouts = value;
+    },
+    getFailureStartedAt: () => failureStartedAt,
+    setFailureStartedAt: (value) => {
+      failureStartedAt = value;
+    },
+    getLastConnectedAt: () => lastConnectedAt,
+    setLastConnectedAt: (value) => {
+      lastConnectedAt = value;
+    },
+    getActiveOpts: () => activeOpts,
+    getCurrentGetUpdatesBuf: () => currentGetUpdatesBuf,
+    setCurrentGetUpdatesBuf: (value) => {
+      currentGetUpdatesBuf = value;
+    },
+    getLongpollTimeoutMs: () => longpollTimeoutMs,
+    setLongpollTimeoutMs: (value) => {
+      longpollTimeoutMs = value;
+    },
+    getCancelSleep: () => cancelSleep,
+    setCancelSleep: (value) => {
+      cancelSleep = value;
+    },
+    getDispatcher: () => dispatcher,
+    setDispatcher: (value) => {
+      dispatcher = value;
+    },
+  });
 
   // ─── Connection Interface ─────────────────────────────────
 
@@ -1247,7 +572,7 @@ export function createWeChatConnection(
           'WeChat connect ignored: poller already running',
         );
         opts.onReady?.();
-        opts.onConnectionStateChange?.(connectionState);
+        opts.onConnectionStateChange?.(getConnectionState());
         return;
       }
 
@@ -1286,7 +611,7 @@ export function createWeChatConnection(
       pollPromise = pollLoop()
         .catch((err) => {
           connected = false;
-          if (!stopping && connectionState.status !== 'expired') {
+          if (!stopping && getConnectionState().status !== 'expired') {
             const error = '微信轮询意外退出，请重新连接';
             publishState({ status: 'disconnected', error, lastConnectedAt });
             logger.error(
@@ -1332,31 +657,7 @@ export function createWeChatConnection(
       text: string,
       _localImagePaths?: string[],
     ): Promise<void> {
-      // chatId is the raw WeChat user ID (prefix already stripped by IM manager)
-      const userId = chatId;
-
-      const contextToken = contextTokenCache.get(userId);
-      if (!contextToken) {
-        logger.warn(
-          { chatId },
-          'No context_token available for WeChat user, cannot send message',
-        );
-        throw new Error(`No context_token available for WeChat chat ${chatId}`);
-      }
-
-      try {
-        const plainText = markdownToPlainText(text);
-        const chunks = splitTextChunks(plainText, MSG_SPLIT_LIMIT);
-
-        for (const chunk of chunks) {
-          await sendMessageApi(userId, contextToken, chunk);
-        }
-
-        logger.info({ chatId }, 'WeChat message sent');
-      } catch (err) {
-        logger.error({ err, chatId }, 'Failed to send WeChat message');
-        throw err;
-      }
+      return sendMessage(chatId, text);
     },
 
     async sendImage(
@@ -1366,93 +667,7 @@ export function createWeChatConnection(
       caption?: string,
       fileName?: string,
     ): Promise<void> {
-      const userId = chatId;
-
-      const contextToken = contextTokenCache.get(userId);
-      if (!contextToken) {
-        logger.warn(
-          { chatId },
-          'No context_token for WeChat user, cannot send image',
-        );
-        throw new Error(`No context_token available for WeChat chat ${chatId}`);
-      }
-
-      if (imageBuffer.length > MAX_FILE_SIZE) {
-        throw new Error(
-          `WeChat image size ${imageBuffer.length} exceeds max ${MAX_FILE_SIZE}`,
-        );
-      }
-
-      const extMap: Record<string, string> = {
-        'image/jpeg': '.jpg',
-        'image/png': '.png',
-        'image/gif': '.gif',
-        'image/webp': '.webp',
-      };
-      const ext = extMap[mimeType] ?? '.jpg';
-      const resolvedFileName = fileName ?? `image_${Date.now()}${ext}`;
-
-      try {
-        // Optional caption is sent first as a separate text message — WeChat's
-        // sendmessage API does not accept mixed text+image item_list payloads.
-        if (caption) {
-          const plain = markdownToPlainText(caption);
-          for (const chunk of splitTextChunks(plain, MSG_SPLIT_LIMIT)) {
-            await sendMessageApi(userId, contextToken, chunk);
-          }
-        }
-
-        // Upload to WeChat CDN (getuploadurl → AES-128-ECB encrypt → PUT ciphertext).
-        const upload = await uploadMediaBuffer({
-          buf: imageBuffer,
-          fileName: resolvedFileName,
-          toUserId: userId,
-          baseUrl,
-          token: config.botToken,
-          cdnBaseUrl,
-          mediaType: 1, // MEDIA_IMAGE
-          dispatcher: ensureDispatcher(),
-        });
-
-        const clientId = String(crypto.randomBytes(4).readUInt32BE(0));
-        const resp = await apiPost<{
-          ret?: number;
-          errcode?: number;
-          errmsg?: string;
-        }>('ilink/bot/sendmessage', {
-          msg: {
-            to_user_id: userId,
-            context_token: contextToken,
-            item_list: [
-              {
-                type: MESSAGE_ITEM_TYPE_IMAGE,
-                image_item: {
-                  media: {
-                    encrypt_query_param: upload.downloadEncryptedQueryParam,
-                    aes_key: upload.aeskey,
-                    encrypt_type: 1,
-                  },
-                  mid_size: upload.fileSizeCiphertext,
-                },
-              },
-            ],
-            message_type: MESSAGE_TYPE_BOT,
-            message_state: MESSAGE_STATE_FINISH,
-            client_id: clientId,
-          },
-          base_info: baseInfo(),
-        });
-
-        assertWeChatApiSuccess(resp, 'sendImage');
-
-        logger.info(
-          { chatId, size: imageBuffer.length, fileName: resolvedFileName },
-          'WeChat image sent',
-        );
-      } catch (err) {
-        logger.error({ err, chatId }, 'Failed to send WeChat image');
-        throw err;
-      }
+      return sendImage(chatId, imageBuffer, mimeType, caption, fileName);
     },
 
     async sendFile(
@@ -1460,91 +675,11 @@ export function createWeChatConnection(
       filePath: string,
       fileName: string,
     ): Promise<void> {
-      const userId = chatId;
-
-      const contextToken = contextTokenCache.get(userId);
-      if (!contextToken) {
-        logger.warn(
-          { chatId },
-          'No context_token for WeChat user, cannot send file',
-        );
-        throw new Error(`No context_token available for WeChat chat ${chatId}`);
-      }
-
-      // Single readFile + size check, then pass buffer to uploadMediaBuffer —
-      // avoids stat + readFile double-I/O that uploadMediaFile would incur.
-      const buf = await fs.promises.readFile(filePath);
-      if (buf.length > MAX_FILE_SIZE) {
-        throw new Error(
-          `WeChat file size ${buf.length} exceeds max ${MAX_FILE_SIZE}`,
-        );
-      }
-
-      try {
-        // Upload raw bytes to WeChat CDN as FILE attachment (mediaType=3).
-        const upload = await uploadMediaBuffer({
-          buf,
-          fileName,
-          toUserId: userId,
-          baseUrl,
-          token: config.botToken,
-          cdnBaseUrl,
-          mediaType: 3, // MEDIA_FILE
-          dispatcher: ensureDispatcher(),
-        });
-
-        const clientId = String(crypto.randomBytes(4).readUInt32BE(0));
-        const resp = await apiPost<{
-          ret?: number;
-          errcode?: number;
-          errmsg?: string;
-        }>('ilink/bot/sendmessage', {
-          msg: {
-            to_user_id: userId,
-            context_token: contextToken,
-            item_list: [
-              {
-                type: MESSAGE_ITEM_TYPE_FILE,
-                file_item: {
-                  media: {
-                    encrypt_query_param: upload.downloadEncryptedQueryParam,
-                    aes_key: upload.aeskey,
-                    encrypt_type: 1,
-                  },
-                  file_name: fileName,
-                  // 'len' is the raw (plaintext) file size as a string — per
-                  // nightsailer/wechat-clawbot reference.
-                  len: String(upload.fileSize),
-                },
-              },
-            ],
-            message_type: MESSAGE_TYPE_BOT,
-            message_state: MESSAGE_STATE_FINISH,
-            client_id: clientId,
-          },
-          base_info: baseInfo(),
-        });
-
-        assertWeChatApiSuccess(resp, 'sendFile');
-
-        logger.info({ chatId, size: buf.length, fileName }, 'WeChat file sent');
-      } catch (err) {
-        logger.error({ err, chatId, fileName }, 'Failed to send WeChat file');
-        throw err;
-      }
+      return sendFile(chatId, filePath, fileName);
     },
 
     async sendTyping(chatId: string, isTyping: boolean): Promise<void> {
-      // chatId is the raw WeChat user ID (prefix already stripped by IM manager)
-      const userId = chatId;
-
-      const contextToken = contextTokenCache.get(userId);
-      if (!contextToken) return;
-
-      const ticket = await getTypingTicket(userId, contextToken);
-      if (!ticket) return;
-
-      await sendTypingApi(userId, ticket, isTyping ? 1 : 2);
+      return sendTyping(chatId, isTyping);
     },
 
     isRunning(): boolean {

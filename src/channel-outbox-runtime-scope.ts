@@ -17,10 +17,7 @@ export interface ActiveChannelOutboxScope extends ChannelRouteSnapshot {
   token: string;
 }
 
-export type ActiveChannelOutboxScopeInput = Omit<
-  ActiveChannelOutboxScope,
-  'token'
->;
+type ActiveChannelOutboxScopeInput = Omit<ActiveChannelOutboxScope, 'token'>;
 
 /**
  * Process-local bridge between a running Agent turn and its durable outbox.

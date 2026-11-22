@@ -21,6 +21,10 @@ import {
   unregisterHostRunner,
 } from './host-runner-registry.js';
 import { logger } from './logger.js';
+import {
+  hashRuntimePolicy,
+  recordRunContextSnapshot,
+} from './run-context-snapshot.js';
 import { buildEffectiveMcpManifest } from './effective-mcp-manifest.js';
 import { resolveHostNodeBinary } from './node-resolver.js';
 import {
@@ -56,6 +60,7 @@ import {
 import { releaseCkqclawOwnerIntroductionLease } from './owner-profile-store.js';
 import {
   deleteSession,
+  getAgentProfile,
   getUserById,
   getSessionProviderId,
   setSessionProviderId,
@@ -378,7 +383,6 @@ export interface ContainerInput {
     version: number;
     /** Host-authoritative marker for the built-in CKQClaw AgentProfile. */
     isDefault: boolean;
-    identityHash: string;
     identityPrompt: string;
     /**
      * Host-resolved SDK effort override (ISSUE-04 ③), already narrowed to the
@@ -390,39 +394,12 @@ export interface ContainerInput {
     modelConfigId?: string | null;
     runtimePolicy?: AgentProfileRuntimePolicy;
   };
-  /**
-   * True only for an interactive turn in the built-in CKQClaw Home
-   * Workspace before the owner-preferred-address memory has been established.
-   */
-  ckqclawBootstrapPending?: boolean;
-  /**
-   * Host-authoritative initial Owner Profile projection. Present only for an
-   * actual-owner interactive turn of built-in CKQClaw in Home. The runner
-   * refreshes it over dedicated IPC before every cold/warm model turn.
-   */
-  ckqclawOwnerProfile?: {
-    workspaceJid: string;
-    preferredAddress: string | null;
-    revision: number | null;
-    onboarding: {
-      state: 'pending' | 'claimed' | 'completed' | 'skipped';
-      revision: number;
-      leaseOwner: string | null;
-      leaseToken: number | null;
-      leaseExpiresAt: string | null;
-    };
-  };
   /** Structural capability only; exact owner authorization is re-evaluated by
    * the host for every dedicated IPC request, including warm turns. */
   ckqclawOwnerProfileEnabled?: boolean;
   /** Host-derived capability flag for main-CKQClaw interactive sessions. */
   agentBuilderEnabled?: boolean;
   agentId?: string;
-  agentName?: string;
-  /** Runtime context audit bootstrap; agent-runner enriches it with SDK usage. */
-  contextAudit?: ClaudeContextAudit;
-  /** Canonical effective Skill set for SDK selection and run provenance. */
-  skillManifest?: { hash: string; selectedSkillIds: string[] };
 }
 
 export interface ContainerOutput {
@@ -439,21 +416,19 @@ export interface ContainerOutput {
    * replayed on another healthy provider; true means the pool is exhausted.
    */
   providerFailureTerminal?: boolean;
-  /** Internal agent-runner marker: the failed turn is being retried in-process. */
-  providerFailureRetrying?: boolean;
-  /** Provider failed during a post-turn internal maintenance query. */
-  providerFailureMaintenance?: boolean;
   streamEvent?: StreamEvent;
   /** Durable input-turn correlation emitted by agent-runner. */
   readonly inputTurnId?: string;
   turnId?: string;
   sessionId?: string;
-  sourceKind?: Exclude<MessageSourceKind, 'user_command'>;
-  /** 'truncated'：上游断流截断的 partial（usage 双零指纹，runner 会自动续写） */
-  finalizationReason?: 'completed' | 'interrupted' | 'error' | 'truncated';
-  /** 本 result 发出时仍未 settle 的后台任务数（异步 Agent / backgrounded Bash）。
-   * >0 时主进程把流式卡片保持在「后台任务运行中」而非定稿。 */
-  pendingBgTasks?: number;
+  sourceKind?:
+    | 'sdk_final'
+    | 'sdk_send_message'
+    | 'proactive_sdk_fallback'
+    | 'input_rejection_warning'
+    | 'interrupt_partial'
+    | 'legacy';
+  finalizationReason?: 'completed' | 'interrupted' | 'error';
   inputTurnCompleted?: boolean;
   /** The streaming SDK query has no accepted user turn left to process. */
   queryIdle?: boolean;
@@ -497,7 +472,7 @@ function applyKnownProviderFailureDisposition(
   output.inputTurnCompleted = terminal;
 }
 
-export interface VolumeMount {
+interface VolumeMount {
   hostPath: string;
   containerPath: string;
   readonly: boolean;
@@ -517,7 +492,7 @@ function mkdirForContainer(dirPath: string): void {
   }
 }
 
-export function replaceHostMcpServersEnv(
+function replaceHostMcpServersEnv(
   env: Record<string, string>,
   servers: Record<string, Record<string, unknown>>,
 ): void {
@@ -718,12 +693,6 @@ function buildRuntimeMcpManifest(
   return buildEffectiveMcpManifest(
     resolveRuntimeMcpServers(group, agentProfile),
   );
-}
-
-function getAgentProfileMcpPolicyMode(
-  agentProfile?: RunnerAgentProfile,
-): 'inherit' | 'custom' | 'disabled' {
-  return agentProfile?.runtimePolicy?.mcp.mode ?? 'inherit';
 }
 
 /**
@@ -1268,25 +1237,6 @@ export function buildVolumeMounts(
   );
   const agentEffort = resolveAgentSdkEffort(agentProfile?.runtimePolicy);
   removeProviderEffortEnv(envLines, agentEffort);
-  // Agent policy is authoritative; do not inherit global/custom runtime env.
-  // AUTO_COMPACT_* stays stripped without re-injection: the percentage/window
-  // knobs were retired from the UI (ISSUE-04 ⑤) and Pi owns its compaction
-  // threshold, so no consumer remains for an injected value.
-  for (let index = envLines.length - 1; index >= 0; index -= 1) {
-    if (
-      envLines[index]?.startsWith('AUTO_COMPACT_WINDOW=') ||
-      envLines[index]?.startsWith('AUTO_COMPACT_PERCENTAGE=') ||
-      envLines[index]?.startsWith('CKQCLAW_AGENT_TOOL_POLICY=') ||
-      envLines[index]?.startsWith('CKQCLAW_AGENT_DISALLOWED_TOOLS=') ||
-      envLines[index]?.startsWith('CKQCLAW_AGENT_MCP_POLICY=')
-    ) {
-      envLines.splice(index, 1);
-    }
-  }
-  const mcpPolicyMode = getAgentProfileMcpPolicyMode(agentProfile);
-  if (mcpPolicyMode !== 'inherit') {
-    envLines.push(`CKQCLAW_AGENT_MCP_POLICY=${mcpPolicyMode}`);
-  }
   // Pi runner external MCP config: the same effective server set written to
   // the session settings.json, shipped as env for the in-process MCP
   // extension (pi-mcp.ts). Replace, never merge, so disabled/custom policy
@@ -1432,7 +1382,7 @@ export function buildVolumeMounts(
   return mounts;
 }
 
-export type ContainerHostIdentityMode =
+type ContainerHostIdentityMode =
   | 'direct'
   | 'rootless'
   | 'userns'
@@ -1440,13 +1390,13 @@ export type ContainerHostIdentityMode =
   | 'host-root'
   | 'unknown';
 
-export interface ContainerHostIdentity {
+interface ContainerHostIdentity {
   mode: ContainerHostIdentityMode;
   uid?: number;
   gid?: number;
 }
 
-export interface ContainerHostIdentityProbe {
+interface ContainerHostIdentityProbe {
   platform: NodeJS.Platform;
   uid?: number;
   gid?: number;
@@ -1597,8 +1547,6 @@ export async function runContainerAgent(
   );
   let providerFailureReported = false;
   let providerFailureTerminal: boolean | undefined;
-  let providerFailureMaintenance = false;
-  let healthyInputTurnCompleted = false;
   if (poolResult?.resetSession && input.sessionId) {
     logger.info(
       {
@@ -1705,88 +1653,77 @@ export async function runContainerAgent(
         ...input,
         workspaceMemoryMutationSigningSecret,
         workspaceMemoryRunnerInstanceId,
-        contextAudit: (() => {
-          const skillsPolicy = resolveAgentProfileUserSkillsPolicy(
-            group.created_by,
-            input.agentProfile,
-          );
-          const audit = buildClaudeContextPlan({
-            executionMode: 'container',
-            group,
-            ownerHomeFolder,
-            externalClaudeDir: getEffectiveExternalDir(),
-            projectRoot: process.cwd(),
-            dataDir: DATA_DIR,
-            groupSessionsDir: sessionAgentId
-              ? path.join(
-                  DATA_DIR,
-                  'sessions',
-                  group.folder,
-                  'agents',
-                  sessionAgentId,
-                  '.claude',
-                )
-              : path.join(DATA_DIR, 'sessions', group.folder, '.claude'),
-            includeHostClaudeContext: shouldIncludeHostClaudeContext(
-              input.agentProfile,
-            ),
-            hostSkillPolicy: resolveAgentProfileHostSkillPolicy(
-              input.agentProfile,
-            ),
-            mountUserSkills:
-              shouldMountUserSkills && skillsPolicy.mountUserSkills,
-            userSkillsDirOverride: skillsPolicy.userSkillsDirOverride,
-            managedSkillPolicy: input.agentProfile?.runtimePolicy?.skills,
-          }).audit;
-          const mcpManifest = buildRuntimeMcpManifest(
-            group,
-            input.agentProfile,
-          );
-          audit.mcp = {
-            manifestHash: mcpManifest.hash,
-            serverIds: mcpManifest.serverIds,
-          };
-          return audit;
-        })(),
-        skillManifest: (() => {
-          const skillsPolicy = resolveAgentProfileUserSkillsPolicy(
-            group.created_by,
-            input.agentProfile,
-          );
-          const manifest = buildClaudeContextPlan({
-            executionMode: 'container',
-            group,
-            ownerHomeFolder,
-            externalClaudeDir: getEffectiveExternalDir(),
-            projectRoot: process.cwd(),
-            dataDir: DATA_DIR,
-            groupSessionsDir: sessionAgentId
-              ? path.join(
-                  DATA_DIR,
-                  'sessions',
-                  group.folder,
-                  'agents',
-                  sessionAgentId,
-                  '.claude',
-                )
-              : path.join(DATA_DIR, 'sessions', group.folder, '.claude'),
-            includeHostClaudeContext: shouldIncludeHostClaudeContext(
-              input.agentProfile,
-            ),
-            hostSkillPolicy: resolveAgentProfileHostSkillPolicy(
-              input.agentProfile,
-            ),
-            mountUserSkills:
-              shouldMountUserSkills && skillsPolicy.mountUserSkills,
-            userSkillsDirOverride: skillsPolicy.userSkillsDirOverride,
-            managedSkillPolicy: input.agentProfile?.runtimePolicy?.skills,
-          }).effectiveSkills;
-          return {
-            hash: manifest.hash,
-            selectedSkillIds: manifest.selected.map((skill) => skill.id),
-          };
-        })(),
       };
+      // ISSUE-10（ISSUE-07 拍板⑤）：宿主直记运行上下文审计快照，取代经
+      // stdin 透传给 runner 的死字段。键与 agent-profiles 预览的读取
+      // 对齐（主会话 agentId 缺省落 'main' 键；Agent 会话带 agentId）。
+      {
+        const skillsPolicy = resolveAgentProfileUserSkillsPolicy(
+          group.created_by,
+          input.agentProfile,
+        );
+        const audit = buildClaudeContextPlan({
+          executionMode: 'container',
+          group,
+          ownerHomeFolder,
+          externalClaudeDir: getEffectiveExternalDir(),
+          projectRoot: process.cwd(),
+          dataDir: DATA_DIR,
+          groupSessionsDir: sessionAgentId
+            ? path.join(
+                DATA_DIR,
+                'sessions',
+                group.folder,
+                'agents',
+                sessionAgentId,
+                '.claude',
+              )
+            : path.join(DATA_DIR, 'sessions', group.folder, '.claude'),
+          includeHostClaudeContext: shouldIncludeHostClaudeContext(
+            input.agentProfile,
+          ),
+          hostSkillPolicy: resolveAgentProfileHostSkillPolicy(
+            input.agentProfile,
+          ),
+          mountUserSkills:
+            shouldMountUserSkills && skillsPolicy.mountUserSkills,
+          userSkillsDirOverride: skillsPolicy.userSkillsDirOverride,
+          managedSkillPolicy: input.agentProfile?.runtimePolicy?.skills,
+        }).audit;
+        const mcpManifest = buildRuntimeMcpManifest(group, input.agentProfile);
+        audit.mcp = {
+          manifestHash: mcpManifest.hash,
+          serverIds: mcpManifest.serverIds,
+        };
+        // 质量审查 Major②：classifyRunContextSnapshot 的第一道门是
+        // agentProfile 比对，缺失会让预览恒判 stale_profile——从 DB 档案
+        // 补齐身份/运行时策略哈希，使预览的 'current' 状态可达。
+        const profileRow = input.agentProfile
+          ? getAgentProfile(input.agentProfile.id)
+          : undefined;
+        audit.agentProfile = profileRow
+          ? {
+              id: profileRow.id,
+              version: profileRow.version,
+              identityHash: profileRow.identity_hash,
+              runtimePolicyHash: hashRuntimePolicy(profileRow.runtime_policy),
+            }
+          : undefined;
+        try {
+          recordRunContextSnapshot({
+            chatJid: input.chatJid,
+            agentId: input.agentId,
+            turnId: input.turnId,
+            sessionId: input.sessionId,
+            audit,
+          });
+        } catch (err) {
+          logger.warn(
+            { err, chatJid: input.chatJid, agentId: input.agentId },
+            'Failed to record run context snapshot',
+          );
+        }
+      }
       container.stdin.write(JSON.stringify(dockerInput));
       container.stdin.end();
 
@@ -1828,30 +1765,6 @@ export async function runContainerAgent(
       };
       const handleOutput = onOutput
         ? async (output: ContainerOutput): Promise<void> => {
-            if (
-              !output.providerFailure &&
-              output.inputTurnCompleted !== undefined
-            ) {
-              healthyInputTurnCompleted = output.inputTurnCompleted;
-            }
-            if (output.providerFailureRetrying) {
-              if (output.providerFailure && selectedProfileId) {
-                if (!providerFailureReported) {
-                  providerFailureReported = true;
-                  providerPool.reportFailure(selectedProfileId, true);
-                  logger.warn(
-                    {
-                      group: group.name,
-                      containerName,
-                      providerId: selectedProfileId,
-                    },
-                    'Provider failure detected; agent runner is retrying the failed turn with fallback model',
-                  );
-                }
-              }
-              // This is host-control metadata, never a user-visible output.
-              return;
-            }
             if (output.providerFailure && selectedProfileId) {
               if (!providerFailureReported) {
                 providerFailureReported = true;
@@ -1866,40 +1779,6 @@ export async function runContainerAgent(
                   'Provider failure detected from streamed output, stopping container',
                 );
               }
-            }
-            if (
-              output.providerFailureMaintenance &&
-              healthyInputTurnCompleted
-            ) {
-              providerFailureMaintenance = true;
-              logger.warn(
-                {
-                  group: group.name,
-                  containerName,
-                  providerId: selectedProfileId,
-                },
-                'Provider failed during internal maintenance; quarantining without user projection or replay',
-              );
-              exec(`docker stop ${containerName}`, (err) => {
-                if (err) {
-                  logger.warn(
-                    { group: group.name, containerName, err },
-                    'Failed to stop container after maintenance provider failure',
-                  );
-                  container.kill('SIGTERM');
-                }
-              });
-              return;
-            }
-            if (output.providerFailureMaintenance) {
-              logger.warn(
-                {
-                  group: group.name,
-                  containerName,
-                  providerId: selectedProfileId,
-                },
-                'Maintenance query failed before durable input completion; treating as replayable provider failure',
-              );
             }
             if (output.providerFailure) {
               const terminal = applyProviderFailureDisposition(
@@ -2027,17 +1906,6 @@ export async function runContainerAgent(
       } else if (result.status === 'error' && isApiError(result.error || '')) {
         providerPool.reportFailure(selectedProfileId);
       }
-    }
-    if (providerFailureMaintenance) {
-      return {
-        ...result,
-        status: 'success',
-        result: null,
-        providerFailure: false,
-        providerFailureTerminal: undefined,
-        providerFailureMaintenance: true,
-        inputTurnCompleted: true,
-      };
     }
     if (result.providerFailure) {
       if (providerFailureTerminal === undefined) {
@@ -2407,8 +2275,6 @@ export async function runHostAgent(
     hostPoolResult?.resolved.config ?? getClaudeProviderConfig();
   let hostProviderFailureReported = false;
   let hostProviderFailureTerminal: boolean | undefined;
-  let hostProviderFailureMaintenance = false;
-  let hostHealthyInputTurnCompleted = false;
   if (hostPoolResult?.resetSession && input.sessionId) {
     logger.info(
       {
@@ -2536,19 +2402,6 @@ export async function runHostAgent(
           'Failed to write .credentials.json for host agent',
         );
       }
-    }
-
-    // Agent policy is authoritative; clear inherited legacy process env first.
-    // AUTO_COMPACT_* stays stripped without re-injection: the knobs were
-    // retired from the UI (ISSUE-04 ⑤) and Pi owns its compaction threshold.
-    delete hostEnv['AUTO_COMPACT_WINDOW'];
-    delete hostEnv['AUTO_COMPACT_PERCENTAGE'];
-    const hostMcpPolicyMode = getAgentProfileMcpPolicyMode(input.agentProfile);
-    delete hostEnv['CKQCLAW_AGENT_TOOL_POLICY'];
-    delete hostEnv['CKQCLAW_AGENT_DISALLOWED_TOOLS'];
-    delete hostEnv['CKQCLAW_AGENT_MCP_POLICY'];
-    if (hostMcpPolicyMode !== 'inherit') {
-      hostEnv['CKQCLAW_AGENT_MCP_POLICY'] = hostMcpPolicyMode;
     }
 
     // 路径映射
@@ -2702,14 +2555,36 @@ export async function runHostAgent(
         ...input,
         workspaceMemoryMutationSigningSecret,
         workspaceMemoryRunnerInstanceId,
-        contextAudit: hostClaudeContextPlan.audit,
-        skillManifest: {
-          hash: hostClaudeContextPlan.effectiveSkills.hash,
-          selectedSkillIds: hostClaudeContextPlan.effectiveSkills.selected.map(
-            (skill) => skill.id,
-          ),
-        },
       };
+      // ISSUE-10（ISSUE-07 拍板⑤）：宿主直记运行上下文审计快照，取代经
+      // stdin 透传给 runner 的死字段。键与 agent-profiles 预览对齐。
+      // 质量审查 Major②：与容器路径同款补齐 agentProfile（classify 首道
+      // 比对门），使 agent-profiles 预览的 'current' 状态可达。
+      if (input.agentProfile) {
+        const profileRow = getAgentProfile(input.agentProfile.id);
+        hostClaudeContextPlan.audit.agentProfile = profileRow
+          ? {
+              id: profileRow.id,
+              version: profileRow.version,
+              identityHash: profileRow.identity_hash,
+              runtimePolicyHash: hashRuntimePolicy(profileRow.runtime_policy),
+            }
+          : undefined;
+      }
+      try {
+        recordRunContextSnapshot({
+          chatJid: input.chatJid,
+          agentId: input.agentId,
+          turnId: input.turnId,
+          sessionId: input.sessionId,
+          audit: hostClaudeContextPlan.audit,
+        });
+      } catch (err) {
+        logger.warn(
+          { err, chatJid: input.chatJid, agentId: input.agentId },
+          'Failed to record run context snapshot',
+        );
+      }
       proc.stdin.write(JSON.stringify(hostInput));
       proc.stdin.end();
 
@@ -2746,30 +2621,6 @@ export async function runHostAgent(
       };
       const handleOutput = onOutput
         ? async (output: ContainerOutput): Promise<void> => {
-            if (
-              !output.providerFailure &&
-              output.inputTurnCompleted !== undefined
-            ) {
-              hostHealthyInputTurnCompleted = output.inputTurnCompleted;
-            }
-            if (output.providerFailureRetrying) {
-              if (output.providerFailure && hostSelectedProfileId) {
-                if (!hostProviderFailureReported) {
-                  hostProviderFailureReported = true;
-                  providerPool.reportFailure(hostSelectedProfileId, true);
-                  logger.warn(
-                    {
-                      group: group.name,
-                      processId,
-                      providerId: hostSelectedProfileId,
-                    },
-                    'Provider failure detected; agent runner is retrying the failed turn with fallback model',
-                  );
-                }
-              }
-              // This is host-control metadata, never a user-visible output.
-              return;
-            }
             if (output.providerFailure && hostSelectedProfileId) {
               if (!hostProviderFailureReported) {
                 hostProviderFailureReported = true;
@@ -2784,32 +2635,6 @@ export async function runHostAgent(
                   'Provider failure detected from streamed output, stopping host agent',
                 );
               }
-            }
-            if (
-              output.providerFailureMaintenance &&
-              hostHealthyInputTurnCompleted
-            ) {
-              hostProviderFailureMaintenance = true;
-              logger.warn(
-                {
-                  group: group.name,
-                  processId,
-                  providerId: hostSelectedProfileId,
-                },
-                'Provider failed during internal maintenance; quarantining without user projection or replay',
-              );
-              killProcessTree(proc, 'SIGTERM');
-              return;
-            }
-            if (output.providerFailureMaintenance) {
-              logger.warn(
-                {
-                  group: group.name,
-                  processId,
-                  providerId: hostSelectedProfileId,
-                },
-                'Maintenance query failed before durable input completion; treating as replayable provider failure',
-              );
             }
             if (output.providerFailure) {
               const terminal = applyProviderFailureDisposition(
@@ -2927,17 +2752,6 @@ export async function runHostAgent(
       ) {
         providerPool.reportFailure(hostSelectedProfileId);
       }
-    }
-    if (hostProviderFailureMaintenance) {
-      return {
-        ...hostResult,
-        status: 'success',
-        result: null,
-        providerFailure: false,
-        providerFailureTerminal: undefined,
-        providerFailureMaintenance: true,
-        inputTurnCompleted: true,
-      };
     }
     if (hostResult.providerFailure) {
       if (hostProviderFailureTerminal === undefined) {

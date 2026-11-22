@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { zodBadRequest } from '../validation-response.js';
 import crypto from 'node:crypto';
 import type { Variables } from '../web-context.js';
 import { authMiddleware } from '../middleware/auth.js';
@@ -53,7 +54,7 @@ import {
   type WeChatQrStatusValue,
 } from '../wechat-onboarding.js';
 
-export interface ChannelAccountRouteDeps {
+interface ChannelAccountRouteDeps {
   reloadChannelAccount?: (accountId: string) => Promise<boolean>;
   disconnectChannelAccount?: (accountId: string) => Promise<void>;
   testChannelAccount?: (
@@ -88,14 +89,9 @@ interface PendingWeChatQr {
 
 const pendingWeChatQr = new Map<string, PendingWeChatQr>();
 
-export const PAIRING_CHANNEL_PROVIDERS = new Set<ChannelProvider>([
-  'qq',
-  'wechat',
-]);
+const PAIRING_CHANNEL_PROVIDERS = new Set<ChannelProvider>(['qq', 'wechat']);
 
-export function channelProviderSupportsPairing(
-  provider: ChannelProvider,
-): boolean {
+function channelProviderSupportsPairing(provider: ChannelProvider): boolean {
   return PAIRING_CHANNEL_PROVIDERS.has(provider);
 }
 
@@ -162,11 +158,7 @@ const PROVIDER_NAMES: Record<ChannelProvider, string> = {
 };
 
 function publicAccount(account: ChannelAccount): ChannelAccountPublic {
-  const {
-    secret_ref: _secretRef,
-    default_agent_profile_id: _deprecatedDefaultAgentProfileId,
-    ...metadata
-  } = account;
+  const { secret_ref: _secretRef, ...metadata } = account;
   const secret = loadChannelAccountSecret(account.secret_ref) ?? {};
   const options: ChannelAccountPublic['options'] = {};
   if (account.provider === 'wechat') {
@@ -364,7 +356,7 @@ function legacyCredentialsFor(
 }
 
 /** Lazy, idempotent projection of legacy per-user/provider singleton configs. */
-export function ensureLegacyDefaultChannelAccounts(userId: string): void {
+function ensureLegacyDefaultChannelAccounts(userId: string): void {
   const providers = Object.keys(PROVIDER_NAMES) as ChannelProvider[];
   for (const provider of providers) {
     const legacy = legacyCredentialsFor(userId, provider);
@@ -393,10 +385,7 @@ routes.post('/', authMiddleware, async (c) => {
     await c.req.json().catch(() => ({})),
   );
   if (!parsed.success) {
-    return c.json(
-      { error: 'Invalid request', details: parsed.error.format() },
-      400,
-    );
+    return zodBadRequest(c, parsed.error, 'request-format');
   }
 
   // The web server becomes available before the startup migration finishes.
@@ -490,10 +479,7 @@ routes.patch('/:id', authMiddleware, async (c) => {
     await c.req.json().catch(() => ({})),
   );
   if (!parsed.success) {
-    return c.json(
-      { error: 'Invalid request', details: parsed.error.format() },
-      400,
-    );
+    return zodBadRequest(c, parsed.error, 'request-format');
   }
   const targetError = validateTargets(user, parsed.data);
   if (targetError) return c.json({ error: targetError }, 400);

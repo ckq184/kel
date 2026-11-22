@@ -103,7 +103,7 @@ export function clearAdminHostOnlyCleanupPending(
   }
 }
 
-export function listWorkspaceRuntimeTargetsForFolders(
+function listWorkspaceRuntimeTargetsForFolders(
   folders: Iterable<string>,
 ): WorkspaceRuntimeQuiesceTarget[] {
   const requested = new Set(folders);
@@ -124,7 +124,7 @@ export function listWorkspaceRuntimeTargetsForFolders(
   return Array.from(byFolder.values());
 }
 
-export function getRuntimeJidsForTargets(
+function getRuntimeJidsForTargets(
   deps: WebDeps,
   targets: WorkspaceRuntimeQuiesceTarget[],
 ): string[] {

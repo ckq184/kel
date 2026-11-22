@@ -5,6 +5,7 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 
 import { removeTmpDirRecursive } from './helpers/remove-tmp-dir.js';
+import { createTestUserRow } from './helpers/route-test-user.js';
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-profiles-db-'));
 const tmpStoreDir = path.join(tmpDir, 'db');
@@ -50,24 +51,9 @@ afterAll(() => {
   removeTmpDirRecursive(tmpDir, [closeDatabase]);
 });
 
-function seedUser(id: string, role: 'admin' | 'member' = 'member'): void {
-  const now = new Date().toISOString();
-  createUser({
-    id,
-    username: id,
-    password_hash: 'hash',
-    display_name: id,
-    role,
-    status: 'active',
-    created_at: now,
-    updated_at: now,
-    must_change_password: false,
-  });
-}
-
 describe('AgentProfile DB model', () => {
   test('creates one default AgentProfile for every new user', () => {
-    seedUser('agent-profile-user-a');
+    createTestUserRow({ createUser }, 'agent-profile-user-a');
 
     const profiles = listAgentProfilesForUser('agent-profile-user-a');
 
@@ -94,7 +80,7 @@ describe('AgentProfile DB model', () => {
 
   test('persists admin CKQClaw as managed; global host policy is resolved at runtime', () => {
     const userId = 'agent-profile-admin-context';
-    seedUser(userId, 'admin');
+    createTestUserRow({ createUser }, userId, 'admin');
 
     const original = listAgentProfilesForUser(userId)[0];
     expect(original).toMatchObject({
@@ -115,7 +101,7 @@ describe('AgentProfile DB model', () => {
 
   test('does not rewrite legacy admin context policy during profile reads', () => {
     const userId = 'agent-profile-admin-legacy-context';
-    seedUser(userId, 'admin');
+    createTestUserRow({ createUser }, userId, 'admin');
     const original = listAgentProfilesForUser(userId)[0];
     const legacyPolicy = {
       provider_id: null,
@@ -148,7 +134,7 @@ describe('AgentProfile DB model', () => {
 
   test('renames the legacy built-in Agent without changing custom default names', () => {
     const userId = 'agent-profile-user-legacy-name';
-    seedUser(userId);
+    createTestUserRow({ createUser }, userId);
     const original = listAgentProfilesForUser(userId)[0];
 
     const legacy = updateAgentProfile(original.id, userId, {
@@ -177,7 +163,7 @@ describe('AgentProfile DB model', () => {
 
   test('keeps the current CKQClaw default name stable', () => {
     const userId = 'agent-profile-user-pre-rename';
-    seedUser(userId);
+    createTestUserRow({ createUser }, userId);
     const original = listAgentProfilesForUser(userId)[0];
 
     const legacy = updateAgentProfile(original.id, userId, {
@@ -210,7 +196,7 @@ describe('AgentProfile DB model', () => {
   });
 
   test('maps a workspace to the selected AgentProfile', () => {
-    seedUser('agent-profile-user-b');
+    createTestUserRow({ createUser }, 'agent-profile-user-b');
     const profile = createAgentProfile({
       ownerUserId: 'agent-profile-user-b',
       name: 'Research Agent',
@@ -244,7 +230,7 @@ describe('AgentProfile DB model', () => {
 
   test('permanently binds Home Workspace to the built-in CKQClaw', () => {
     const userId = 'agent-profile-home-owner';
-    seedUser(userId);
+    createTestUserRow({ createUser }, userId);
     const homeJid = ensureUserHomeGroup(userId, 'member', userId);
     const home = getRegisteredGroup(homeJid)!;
     const builtIn = getOrCreateDefaultAgentProfile(userId);
@@ -276,7 +262,7 @@ describe('AgentProfile DB model', () => {
   });
 
   test('updates identity hash and version when name, prompt, or preset mode changes', () => {
-    seedUser('agent-profile-user-c');
+    createTestUserRow({ createUser }, 'agent-profile-user-c');
     const profile = createAgentProfile({
       ownerUserId: 'agent-profile-user-c',
       name: 'Coder',
@@ -334,7 +320,7 @@ describe('AgentProfile DB model', () => {
 
   test('persists and versions Agent model configuration changes', () => {
     const userId = 'agent-profile-model-config';
-    seedUser(userId);
+    createTestUserRow({ createUser }, userId);
     const profile = createAgentProfile({
       ownerUserId: userId,
       name: 'Model-bound Agent',
@@ -361,7 +347,7 @@ describe('AgentProfile DB model', () => {
   });
 
   test('stores avatar overrides without changing runtime identity version', () => {
-    seedUser('agent-profile-avatar-user');
+    createTestUserRow({ createUser }, 'agent-profile-avatar-user');
     const profile = createAgentProfile({
       ownerUserId: 'agent-profile-avatar-user',
       name: 'Designer',
@@ -387,7 +373,7 @@ describe('AgentProfile DB model', () => {
   });
 
   test('versions AgentProfile runtime policy changes', () => {
-    seedUser('agent-profile-user-policy');
+    createTestUserRow({ createUser }, 'agent-profile-user-policy');
     const profile = createAgentProfile({
       ownerUserId: 'agent-profile-user-policy',
       name: 'Policy Agent',
@@ -460,7 +446,7 @@ describe('AgentProfile DB model', () => {
 
   test('records prompt history only when prompt sections or mode change', () => {
     const userId = 'agent-profile-prompt-history-scope';
-    seedUser(userId);
+    createTestUserRow({ createUser }, userId);
     const profile = createAgentProfile({
       ownerUserId: userId,
       name: 'History Scope',
@@ -511,7 +497,7 @@ describe('AgentProfile DB model', () => {
   });
 
   test('deep-merges partial runtime policy patches without reopening siblings', () => {
-    seedUser('agent-profile-user-policy-merge');
+    createTestUserRow({ createUser }, 'agent-profile-user-policy-merge');
     const profile = createAgentProfile({
       ownerUserId: 'agent-profile-user-policy-merge',
       name: 'Strict Policy Agent',
@@ -548,7 +534,7 @@ describe('AgentProfile DB model', () => {
     expect(legacy.skills.host).toBeUndefined();
 
     const userId = 'agent-profile-host-skills-merge';
-    seedUser(userId, 'admin');
+    createTestUserRow({ createUser }, userId, 'admin');
     const profile = createAgentProfile({
       ownerUserId: userId,
       name: 'Host Skill Agent',
@@ -578,7 +564,7 @@ describe('AgentProfile DB model', () => {
 
   test('migrates the legacy system compact threshold without bumping identity metadata', () => {
     const userId = 'agent-profile-auto-compact-migration';
-    seedUser(userId);
+    createTestUserRow({ createUser }, userId);
     const profile = createAgentProfile({
       ownerUserId: userId,
       name: 'Legacy Compact Agent',
@@ -601,7 +587,7 @@ describe('AgentProfile DB model', () => {
 
   test('updates auto compact policy without bumping Agent identity', () => {
     const userId = 'agent-profile-auto-compact-update';
-    seedUser(userId);
+    createTestUserRow({ createUser }, userId);
     const profile = createAgentProfile({
       ownerUserId: userId,
       name: 'Compact Agent',
@@ -626,7 +612,7 @@ describe('AgentProfile DB model', () => {
   });
 
   test('stores AgentProfile identity metadata on sessions', () => {
-    seedUser('agent-profile-user-d');
+    createTestUserRow({ createUser }, 'agent-profile-user-d');
     const profile = createAgentProfile({
       ownerUserId: 'agent-profile-user-d',
       name: 'Planner',
@@ -647,7 +633,7 @@ describe('AgentProfile DB model', () => {
   });
 
   test('does not archive an AgentProfile that still owns workspaces', () => {
-    seedUser('agent-profile-user-e');
+    createTestUserRow({ createUser }, 'agent-profile-user-e');
     const [defaultProfile] = listAgentProfilesForUser('agent-profile-user-e');
     const profile = createAgentProfile({
       ownerUserId: 'agent-profile-user-e',
@@ -666,7 +652,7 @@ describe('AgentProfile DB model', () => {
   });
 
   test('removes stale AgentProfile ownership from channel projections when mapping is deleted', () => {
-    seedUser('agent-profile-user-f');
+    createTestUserRow({ createUser }, 'agent-profile-user-f');
     const profile = createAgentProfile({
       ownerUserId: 'agent-profile-user-f',
       name: 'Channels',

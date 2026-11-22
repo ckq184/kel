@@ -29,7 +29,7 @@ export function generateSessionToken(): string {
 }
 
 /** Sign a session token with HMAC-SHA256. Returns `token.signature`. */
-export function signSessionToken(token: string): string {
+function signSessionToken(token: string): string {
   const sig = crypto
     .createHmac('sha256', WEB_SESSION_SECRET)
     .update(token)
@@ -37,7 +37,7 @@ export function signSessionToken(token: string): string {
   return `${token}.${sig}`;
 }
 
-export interface VerifiedToken {
+interface VerifiedToken {
   token: string;
   /** True when the cookie was a legacy unsigned token, caller should upgrade via Set-Cookie. */
   legacy: boolean;

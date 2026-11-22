@@ -83,14 +83,14 @@ export function splitTextChunks(text: string, limit: number): string[] {
 //   // ... 处理消息 ...
 //   dedup.markSeen(msgId);
 
-export interface DedupCacheOptions {
+interface DedupCacheOptions {
   /** TTL，毫秒。Map preserves insertion order，过期清理从头扫到首个未过期。 */
   ttlMs: number;
   /** 容量上限，超过时驱逐最旧条目。 */
   max: number;
 }
 
-export interface DedupCache {
+interface DedupCache {
   isDuplicate(id: string): boolean;
   markSeen(id: string): void;
   /** 重置 cache（断线重连时丢弃旧状态）。 */

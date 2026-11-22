@@ -36,7 +36,7 @@ export const CKQCLAW_OWNER_INTRODUCTION_FLOW_KEY = 'ckqclaw.owner-introduction';
  * explicitly declined a preferred address. Migration must never use substring
  * matching here: a legitimate address may itself mention one of these words.
  */
-export const LEGACY_OWNER_ADDRESS_SKIP_SENTINELS = Object.freeze([
+const LEGACY_OWNER_ADDRESS_SKIP_SENTINELS = Object.freeze([
   '主人暂不设置称呼',
   '主人不愿提供称呼',
   '暂不设置称呼',
@@ -48,7 +48,7 @@ const LEGACY_OWNER_ADDRESS_SKIP_SENTINEL_SET = new Set<string>(
   LEGACY_OWNER_ADDRESS_SKIP_SENTINELS,
 );
 
-export type CkqclawOwnerIntroductionState =
+type CkqclawOwnerIntroductionState =
   | 'pending'
   | 'claimed'
   | 'completed'

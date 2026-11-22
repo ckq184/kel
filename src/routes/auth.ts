@@ -1,6 +1,7 @@
 // Authentication routes
 
 import fs from 'fs';
+import { zodBadRequest } from '../validation-response.js';
 import { readFile } from 'fs/promises';
 import path from 'path';
 import { Hono } from 'hono';
@@ -89,10 +90,6 @@ export function toUserPublic(u: User): UserPublic {
     avatar_emoji: u.avatar_emoji ?? null,
     avatar_color: u.avatar_color ?? null,
     avatar_url: u.avatar_url ?? null,
-    ai_name: u.ai_name ?? null,
-    ai_avatar_emoji: u.ai_avatar_emoji ?? null,
-    ai_avatar_color: u.ai_avatar_color ?? null,
-    ai_avatar_url: u.ai_avatar_url ?? null,
     default_require_mention: u.default_require_mention,
     created_at: u.created_at,
     last_login_at: u.last_login_at,
@@ -385,10 +382,7 @@ authRoutes.post('/register', async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const validation = RegisterSchema.safeParse(body);
   if (!validation.success) {
-    return c.json(
-      { error: 'Invalid request', details: validation.error.format() },
-      400,
-    );
+    return zodBadRequest(c, validation.error, 'request-format');
   }
 
   // Username 大小写归一化：避免 'admin' / 'Admin' / 'ADMIN' 是三个独立账号
@@ -573,10 +567,7 @@ authRoutes.put('/profile', authMiddleware, async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const validation = ProfileUpdateSchema.safeParse(body);
   if (!validation.success) {
-    return c.json(
-      { error: 'Invalid request', details: validation.error.format() },
-      400,
-    );
+    return zodBadRequest(c, validation.error, 'request-format');
   }
 
   const user = c.get('user') as AuthUser;
@@ -609,18 +600,6 @@ authRoutes.put('/profile', authMiddleware, async (c) => {
   if (validation.data.avatar_url !== undefined) {
     updates.avatar_url = validation.data.avatar_url;
   }
-  if (validation.data.ai_name !== undefined) {
-    updates.ai_name = validation.data.ai_name;
-  }
-  if (validation.data.ai_avatar_emoji !== undefined) {
-    updates.ai_avatar_emoji = validation.data.ai_avatar_emoji;
-  }
-  if (validation.data.ai_avatar_color !== undefined) {
-    updates.ai_avatar_color = validation.data.ai_avatar_color;
-  }
-  if (validation.data.ai_avatar_url !== undefined) {
-    updates.ai_avatar_url = validation.data.ai_avatar_url;
-  }
   if (validation.data.default_require_mention !== undefined) {
     updates.default_require_mention = validation.data.default_require_mention;
   }
@@ -651,10 +630,7 @@ authRoutes.put('/password', authMiddleware, async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const validation = ChangePasswordSchema.safeParse(body);
   if (!validation.success) {
-    return c.json(
-      { error: 'Invalid request', details: validation.error.format() },
-      400,
-    );
+    return zodBadRequest(c, validation.error, 'request-format');
   }
 
   const user = c.get('user') as AuthUser;
@@ -762,52 +738,51 @@ authRoutes.delete('/sessions/:id', authMiddleware, (c) => {
 authRoutes.post('/avatar', authMiddleware, avatarUploadBodyLimit, async (c) => {
   const user = c.get('user') as AuthUser;
 
-  // user vs AI avatar are stored separately; use distinct filename prefixes so
-  // uploading one doesn't delete the other (which left the other field's
-  // DB url dangling → 404).
+  // ISSUE-09: users.ai_avatar_url 已随死列下线——AI 头像走
+  // /api/config/appearance/avatar（appearance.json，独立目录与前缀，不受
+  // 本路由清理影响）。此路由只服务当前登录用户头像；旧 `target=ai` 调用方
+  // 已不存在，显式拒绝未知 target 而不是静默当 user 处理。
   const target = c.req.query('target');
-  const field = target === 'user' ? 'avatar_url' : 'ai_avatar_url';
-  const prefix = target === 'user' ? `${user.id}-user-` : `${user.id}-ai-`;
+  if (target !== undefined && target !== 'user') {
+    return c.json(
+      {
+        error:
+          'Unknown avatar target. Use /api/config/appearance/avatar for the AI avatar.',
+      },
+      400,
+    );
+  }
 
-  // The file the OTHER avatar field currently points at must be preserved when
-  // we reap stale files below — uploading the user avatar must not delete the
-  // AI avatar, and vice-versa.
   const current = getUserById(user.id);
-  const otherUrl =
-    target === 'user' ? current?.ai_avatar_url : current?.avatar_url;
-  const otherFilename = otherUrl
-    ? otherUrl.replace(/^\/api\/auth\/avatars\//, '')
+  const currentFilename = current?.avatar_url
+    ? current.avatar_url.replace(/^\/api\/auth\/avatars\//, '')
     : null;
 
   // Shared validation + write pipeline (ISSUE-11 B9); this route keeps the
-  // user auth, per-user filename prefixes and the cross-target reap policy.
-  const stored = await storeAvatarUpload(c.req, prefix);
+  // user auth and the per-user filename prefix. ISSUE-09 removed the AI
+  // target, so the prefix is always the user's own.
+  const stored = await storeAvatarUpload(c.req, `${user.id}-user-`);
   if (!stored.ok) {
     return c.json({ error: stored.error }, stored.status);
   }
   const avatarUrl = stored.avatarUrl;
 
-  // Reap this user's stale avatar files: same-target leftovers plus legacy
-  // `${user.id}-{hex}` files (uploaded before the user-/ai- split), EXCEPT the
-  // file we just wrote and the one the other avatar field still references.
-  // The other target's files are skipped STRUCTURALLY (by prefix), not just via
-  // otherFilename: a concurrent upload of the other avatar may have already
-  // written its file, and that file's DB url isn't visible here yet (we read
-  // otherFilename before the async body), so a prefix skip is what prevents
-  // reaping a concurrent upload out from under its own dangling url (→ 404).
+  // Reap this user's stale avatar files: same-target leftovers, legacy
+  // `${user.id}-{hex}` files (uploaded before the user- prefix), and legacy
+  // `${user.id}-ai-` files whose DB url column no longer exists — EXCEPT the
+  // file we just wrote and the one the user avatar field still references.
+  // The AI avatar uploaded via /api/config/appearance/avatar lives in a
+  // different directory with a different prefix and is never touched here.
   try {
-    const otherPrefix =
-      target === 'user' ? `${user.id}-ai-` : `${user.id}-user-`;
     reapAvatarFiles({
       prefix: `${user.id}-`,
-      keep: [stored.filename, otherFilename].filter((x): x is string => !!x),
-      skipPrefixes: [otherPrefix],
+      keep: [stored.filename, currentFilename].filter((x): x is string => !!x),
     });
   } catch {
     /* ignore */
   }
 
-  updateUserFields(user.id, { [field]: avatarUrl });
+  updateUserFields(user.id, { avatar_url: avatarUrl });
 
   const updated = getUserById(user.id)!;
   return c.json({ success: true, avatarUrl, user: toUserPublic(updated) });

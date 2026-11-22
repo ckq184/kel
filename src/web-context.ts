@@ -1,5 +1,6 @@
 // Shared state and utilities for web server
 
+import type { Context } from 'hono';
 import { WebSocket } from 'ws';
 import { FollowUpActionResult, RegisteredGroup, UserRole } from './types.js';
 import {
@@ -21,7 +22,7 @@ import {
 import type { ChannelAccount } from './types.js';
 import type { ChannelAccountSecret } from './channel-account-secrets.js';
 
-export interface WsClientInfo {
+interface WsClientInfo {
   sessionId: string;
   userId: string;
   role: UserRole;
@@ -327,6 +328,20 @@ export function canAccessGroup(
     return false;
   }
   return group.created_by === user.id;
+}
+
+/**
+ * ISSUE-12 波 7 单元 7.1：canAccessGroup 404 拒绝响应样板收敛（全仓单点）。
+ * 守卫行（if (!canAccessGroup(...))）在各路由原文保留——ACL 判定可见性与
+ * 注入式测试锚面不变；此处仅收敛 404 响应形状。403（Forbidden/Access
+ * denied）与非 return 形状按立项拍板保持原样：403/404 并存是刻意语义
+ * （资源隐藏 vs 权限拒绝）。
+ */
+export function groupAccessDeniedResponse(
+  c: Context,
+  message: string,
+): Response {
+  return c.json({ error: message }, 404);
 }
 
 /**

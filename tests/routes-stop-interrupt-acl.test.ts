@@ -17,6 +17,7 @@ import {
   test,
   vi,
 } from 'vitest';
+import { asRouteTestUser } from './helpers/route-test-user.js';
 
 const SHARED_TMP =
   process.env.CKQCLAW_TEST_DATA_DIR ??
@@ -89,11 +90,6 @@ function seedTestGroup(): void {
   } as any);
 }
 
-function asUser(userId: string, role: 'admin' | 'member' = 'member'): void {
-  process.env.CKQCLAW_TEST_USER_ID = userId;
-  process.env.CKQCLAW_TEST_USER_ROLE = role;
-}
-
 async function post(
   pathSuffix: string,
 ): Promise<{ status: number; body: any }> {
@@ -133,14 +129,14 @@ for (const route of ['/stop', '/interrupt'] as const) {
   describe(`POST /:jid${route} resource-level ACL`, () => {
     test('owner is allowed (200)', async () => {
       seedTestGroup();
-      asUser(OWNER_ID);
+      asRouteTestUser(OWNER_ID);
       const { status } = await post(route);
       expect(status).toBe(200);
     });
 
     test('non-owner gets 404 (group hidden by canAccessGroup)', async () => {
       seedTestGroup();
-      asUser(OUTSIDER_ID);
+      asRouteTestUser(OUTSIDER_ID);
       const { status, body } = await post(route);
       expect(status).toBe(404);
       expect(body.error).toMatch(/not found/i);

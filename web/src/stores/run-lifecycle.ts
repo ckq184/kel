@@ -1,4 +1,4 @@
-export interface ClientActiveRun {
+interface ClientActiveRun {
   chatJid: string;
   runId: string;
   startedAt: string;
@@ -7,7 +7,7 @@ export interface ClientActiveRun {
 
 export type ClientActiveRuns = Record<string, ClientActiveRun>;
 
-export interface RuntimeQueryStatus {
+interface RuntimeQueryStatus {
   queryInFlight?: boolean;
   queryId?: string | null;
 }

@@ -5,7 +5,7 @@ import { GROUPS_DIR } from './config.js';
 import { logger } from './logger.js';
 import { getSystemSettings } from './runtime-config.js';
 
-export interface ScriptRunResult {
+interface ScriptRunResult {
   stdout: string;
   stderr: string;
   exitCode: number | null;

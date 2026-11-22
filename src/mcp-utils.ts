@@ -47,7 +47,7 @@ export interface ManagedMcpLayers {
   restrictedSystemIds: string[];
 }
 
-export interface ManagedMcpAccessOptions {
+interface ManagedMcpAccessOptions {
   /**
    * Include admin-only system MCPs. Callers must opt in only after checking
    * that the runtime principal is an active administrator.

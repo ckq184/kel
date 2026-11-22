@@ -16,7 +16,7 @@ import { requireDatabase } from './store-helpers.js';
  * 共用同一套租约（lease）领取语义——claim 带租约令牌领取、renew 续租、
  * 终态前必须持有效租约（fencing，防止两个消费者并发处理同一条目）：
  *
- * 1. inbox（入站收件箱）：渠道消息先落库去重 → admitted/queued →
+ * 1. inbox（入站收件箱）：渠道消息先落库去重 → queued →
  *    claimNext 领取处理 → processed / ignored / failed；
  * 2. turn run（回合运行）：一次渠道触发的 Agent 回合，queued → running →
  *    （retry_wait / waiting_user / finalizing）→ completed / failed /
@@ -50,11 +50,10 @@ interface SqliteDatabase {
 
 let database: SqliteDatabase | null = null;
 
-/** 入站消息生命周期：received 原始落库 → admitted 准入 → queued 排队 →
+/** 入站消息生命周期：received 原始落库（默认）→ queued 排队 →
  *  processing 处理中 → 终态 processed / ignored / failed。 */
-export type ChannelInboxStatus =
+type ChannelInboxStatus =
   | 'received'
-  | 'admitted'
   | 'queued'
   | 'processing'
   | 'processed'
@@ -77,9 +76,8 @@ export type ChannelTurnRunStatus =
 export type ChannelOutboxKind = 'text' | 'image' | 'file' | 'card' | 'mutation';
 
 /** 出站投递生命周期：pending → claimed →（uploading → uploaded）→ sending →
- *  delivered；发送结果不明置 uncertain 待对账，终态为 delivered / failed /
- *  cancelled。 */
-export type ChannelOutboxStatus =
+ *  delivered；发送结果不明置 uncertain 待对账，终态为 delivered / failed。 */
+type ChannelOutboxStatus =
   | 'pending'
   | 'claimed'
   | 'retry_wait'
@@ -88,10 +86,9 @@ export type ChannelOutboxStatus =
   | 'sending'
   | 'delivered'
   | 'uncertain'
-  | 'failed'
-  | 'cancelled';
+  | 'failed';
 
-export type StreamingCardStatus =
+type StreamingCardStatus =
   | 'creating'
   | 'streaming'
   | 'recovering'
@@ -108,7 +105,7 @@ export interface ChannelRouteSnapshot {
   threadId?: string | null;
 }
 
-export interface ChannelInboxItem extends ChannelRouteSnapshot {
+interface ChannelInboxItem extends ChannelRouteSnapshot {
   id: string;
   externalMessageId: string;
   status: ChannelInboxStatus;
@@ -131,7 +128,7 @@ export interface ClaimedChannelInboxItem extends ChannelInboxItem {
   leaseExpiresAt: string;
 }
 
-export interface ChannelTurnRun extends ChannelRouteSnapshot {
+interface ChannelTurnRun extends ChannelRouteSnapshot {
   id: string;
   inboxId: string | null;
   idempotencyKey: string;
@@ -183,7 +180,7 @@ export interface ChannelOutboxItem extends ChannelRouteSnapshot {
   deliveredAt: string | null;
 }
 
-export interface ClaimedChannelOutboxItem extends ChannelOutboxItem {
+interface ClaimedChannelOutboxItem extends ChannelOutboxItem {
   status: 'claimed';
   leaseOwner: string;
   leaseExpiresAt: string;
@@ -204,7 +201,7 @@ export interface StreamingCardRecord extends ChannelRouteSnapshot {
   completedAt: string | null;
 }
 
-export interface ChannelCursor {
+interface ChannelCursor {
   provider: string;
   accountId: string;
   scope: string;
@@ -227,11 +224,7 @@ const TURN_TERMINAL: readonly ChannelTurnRunStatus[] = [
   'interrupted',
   'cancelled',
 ];
-const OUTBOX_TERMINAL: readonly ChannelOutboxStatus[] = [
-  'delivered',
-  'failed',
-  'cancelled',
-];
+const OUTBOX_TERMINAL: readonly ChannelOutboxStatus[] = ['delivered', 'failed'];
 const CARD_TERMINAL: readonly StreamingCardStatus[] = [
   'completed',
   'aborted',
@@ -500,7 +493,7 @@ function mapCursor(row: CursorRow): ChannelCursor {
   };
 }
 
-export interface AdvanceChannelCursorInput {
+interface AdvanceChannelCursorInput {
   provider: string;
   accountId: string;
   scope: string;
@@ -685,11 +678,11 @@ function mapInbox(row: InboxRow): ChannelInboxItem {
   };
 }
 
-export interface RecordChannelInboxInput extends ChannelRouteSnapshot {
+interface RecordChannelInboxInput extends ChannelRouteSnapshot {
   externalMessageId: string;
   rawPayload?: unknown;
   normalizedPayload?: unknown;
-  status?: Extract<ChannelInboxStatus, 'received' | 'admitted' | 'queued'>;
+  status?: Extract<ChannelInboxStatus, 'received' | 'queued'>;
   availableAt?: string;
   now?: Date | string;
 }
@@ -751,41 +744,6 @@ export function getChannelInboxItem(id: string): ChannelInboxItem | undefined {
   return row ? mapInbox(row) : undefined;
 }
 
-export function transitionChannelInbox(
-  id: string,
-  expectedStatus: ChannelInboxStatus,
-  nextStatus: ChannelInboxStatus,
-  input: {
-    normalizedPayload?: unknown;
-    error?: string | null;
-    availableAt?: string;
-    now?: Date | string;
-  } = {},
-): boolean {
-  const now = isoNow(input.now);
-  const terminal = INBOX_TERMINAL.includes(nextStatus) ? now : null;
-  const result = requireDatabase(database, 'Channel reliability')
-    .prepare(
-      `UPDATE channel_inbox
-       SET status = ?, normalized_payload = CASE WHEN ? = 1 THEN ? ELSE normalized_payload END,
-           error = ?, available_at = COALESCE(?, available_at),
-           completed_at = ?, updated_at = ?
-       WHERE id = ? AND status = ? AND lease_owner IS NULL`,
-    )
-    .run(
-      nextStatus,
-      input.normalizedPayload === undefined ? 0 : 1,
-      stringifyPayload(input.normalizedPayload),
-      input.error ?? null,
-      input.availableAt ?? null,
-      terminal,
-      now,
-      id,
-      expectedStatus,
-    );
-  return result.changes === 1;
-}
-
 export function claimNextChannelInbox(
   owner: string,
   leaseMs: number,
@@ -830,7 +788,7 @@ function claimChannelInbox(
            AND (
              (
                (
-                 (? IS NOT NULL AND status IN ('received','admitted','queued'))
+                 (? IS NOT NULL AND status IN ('received','queued'))
                  OR (? IS NULL AND status = 'queued')
                )
                AND available_at <= ? AND lease_owner IS NULL
@@ -860,7 +818,7 @@ function claimChannelInbox(
          SET status = 'processing', lease_owner = ?, lease_token = ?,
              lease_expires_at = ?, attempt = attempt + 1, updated_at = ?
          WHERE id = ? AND lease_token = ? AND (
-           (status = ? AND status IN ('received','admitted','queued')
+           (status = ? AND status IN ('received','queued')
              AND available_at <= ? AND lease_owner IS NULL)
            OR (status = 'processing' AND lease_expires_at IS NOT NULL
                AND lease_expires_at <= ?)
@@ -1079,7 +1037,7 @@ function mapTurn(row: TurnRow): ChannelTurnRun {
   };
 }
 
-export interface CreateChannelTurnRunInput extends ChannelRouteSnapshot {
+interface CreateChannelTurnRunInput extends ChannelRouteSnapshot {
   id?: string;
   inboxId?: string | null;
   idempotencyKey: string;
@@ -1167,7 +1125,7 @@ export function getChannelTurnRun(id: string): ChannelTurnRun | undefined {
   return row ? mapTurn(row) : undefined;
 }
 
-export const MANUAL_RECONCILIATION_ERROR_PREFIX = '[manual_reconciliation] ';
+const MANUAL_RECONCILIATION_ERROR_PREFIX = '[manual_reconciliation] ';
 
 export function manualReconciliationError(reason: string): string {
   const normalized = reason.trim();
@@ -1187,7 +1145,7 @@ export function requiresManualReconciliation(
   );
 }
 
-export const DELIVERED_EFFECT_RECONCILIATION_REASON = manualReconciliationError(
+const DELIVERED_EFFECT_RECONCILIATION_REASON = manualReconciliationError(
   'A channel side effect was already delivered before Turn completion; manual reconciliation required',
 );
 
@@ -1606,7 +1564,7 @@ function mapOutbox(row: OutboxRow): ChannelOutboxItem {
   };
 }
 
-export interface EnqueueChannelOutboxInput extends ChannelRouteSnapshot {
+interface EnqueueChannelOutboxInput extends ChannelRouteSnapshot {
   id?: string;
   turnRunId: string;
   ordinal: number;
@@ -2071,7 +2029,7 @@ function mapCard(row: CardRow): StreamingCardRecord {
   };
 }
 
-export interface CreateStreamingCardRecordInput extends ChannelRouteSnapshot {
+interface CreateStreamingCardRecordInput extends ChannelRouteSnapshot {
   id?: string;
   turnRunId: string;
   messageId?: string | null;
@@ -2335,7 +2293,7 @@ export function listAllNonterminalStreamingCards(
   return cards;
 }
 
-export interface ChannelReliabilityNonterminalSnapshot {
+interface ChannelReliabilityNonterminalSnapshot {
   inbox: ChannelInboxItem[];
   turns: ChannelTurnRun[];
   outbox: ChannelOutboxItem[];
@@ -2389,7 +2347,7 @@ export function scanChannelReliabilityNonterminal(
   };
 }
 
-export interface CleanupChannelReliabilityInput {
+interface CleanupChannelReliabilityInput {
   /** Redact large request/output/card bodies while retaining idempotency receipts. */
   payloadsBefore: string;
   /** Delete terminal audit rows; should exceed every provider replay window. */

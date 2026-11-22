@@ -77,6 +77,7 @@ const RESERVED_CLAUDE_ENV_KEYS = new Set([
   'CLAUDE_CODE_OAUTH_TOKEN',
   'ANTHROPIC_BASE_URL',
   'ANTHROPIC_AUTH_TOKEN',
+  'ANTHROPIC_API_KEY',
   'ANTHROPIC_MODEL',
   'CKQCLAW_CLAUDE_ENDPOINT_KIND',
   'CKQCLAW_FALLBACK_MODEL',
@@ -96,7 +97,6 @@ const INHERITED_CLAUDE_PROVIDER_ENV_KEYS = [
   'ANTHROPIC_DEFAULT_OPUS_MODEL',
   'ANTHROPIC_DEFAULT_SONNET_MODEL',
   'ANTHROPIC_DEFAULT_HAIKU_MODEL',
-  'CLAUDE_CODE_AUTO_COMPACT_WINDOW',
   'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC',
   'CLAUDE_CODE_EFFORT_LEVEL',
   'CLAUDE_CODE_NO_FLICKER',
@@ -125,7 +125,6 @@ const THIRD_PARTY_CONFIGURABLE_ENV_KEYS = new Set([
   'ANTHROPIC_DEFAULT_OPUS_MODEL',
   'ANTHROPIC_DEFAULT_SONNET_MODEL',
   'ANTHROPIC_DEFAULT_HAIKU_MODEL',
-  'CLAUDE_CODE_AUTO_COMPACT_WINDOW',
   'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC',
   'CLAUDE_CODE_EFFORT_LEVEL',
   'CLAUDE_CODE_NO_FLICKER',
@@ -149,8 +148,8 @@ function isOneMillionContextModel(model: string): boolean {
 // 保持单一实现（本文件原先自带逐字副本）。
 
 /**
- * 任务AL：宿主侧认定的有效窗口（声明 > [1m] 启发式 > 200k），用于预填
- * CLAUDE_CODE_AUTO_COMPACT_WINDOW 与归一注入 CKQCLAW_CONTEXT_WINDOW。
+ * 任务AL：宿主侧认定的有效窗口（声明 > [1m] 启发式 > 200k），用于归一注入
+ * CKQCLAW_CONTEXT_WINDOW。
  */
 function resolveHostContextWindow(config: ClaudeProviderConfig): number {
   const declared =
@@ -259,10 +258,8 @@ export interface CachedOAuthUsage {
 }
 
 /** 任务AL：provider 级上下文窗口预设档位（合法声明值）。 */
-export const CONTEXT_WINDOW_PRESETS = [
-  128_000, 256_000, 512_000, 1_000_000,
-] as const;
-export type DeclaredContextWindow = (typeof CONTEXT_WINDOW_PRESETS)[number];
+const CONTEXT_WINDOW_PRESETS = [128_000, 256_000, 512_000, 1_000_000] as const;
+type DeclaredContextWindow = (typeof CONTEXT_WINDOW_PRESETS)[number];
 /** `auto` = 现行为（[1m] 启发式 → 1M，否则 200k）。 */
 export type ContextWindowPreset = 'auto' | DeclaredContextWindow;
 
@@ -277,23 +274,7 @@ export interface ClaudeProviderConfig {
   updatedAt: string | null;
 }
 
-export interface ClaudeProviderPublicConfig {
-  anthropicBaseUrl: string;
-  anthropicModel: string;
-  contextWindow?: ContextWindowPreset;
-  updatedAt: string | null;
-  hasAnthropicAuthToken: boolean;
-  hasAnthropicApiKey: boolean;
-  hasClaudeCodeOauthToken: boolean;
-  anthropicAuthTokenMasked: string | null;
-  anthropicApiKeyMasked: string | null;
-  claudeCodeOauthTokenMasked: string | null;
-  hasClaudeOAuthCredentials: boolean;
-  claudeOAuthCredentialsExpiresAt: number | null;
-  claudeOAuthCredentialsAccessTokenMasked: string | null;
-}
-
-export interface ClaudeThirdPartyProfile {
+interface ClaudeThirdPartyProfile {
   id: string;
   name: string;
   anthropicBaseUrl: string;
@@ -303,23 +284,14 @@ export interface ClaudeThirdPartyProfile {
   customEnv: Record<string, string>;
 }
 
-export interface FeishuProviderConfig {
+interface FeishuProviderConfig {
   appId: string;
   appSecret: string;
   enabled?: boolean;
   updatedAt: string | null;
 }
 
-export type FeishuConfigSource = 'runtime' | 'env' | 'none';
-
-export interface FeishuProviderPublicConfig {
-  appId: string;
-  hasAppSecret: boolean;
-  appSecretMasked: string | null;
-  enabled: boolean;
-  updatedAt: string | null;
-  source: FeishuConfigSource;
-}
+type FeishuConfigSource = 'runtime' | 'env' | 'none';
 
 interface SecretPayload {
   anthropicAuthToken: string;
@@ -440,7 +412,7 @@ interface StoredClaudeProviderConfigV5 {
 }
 
 /** 解密后的统一供应商运行时结构 */
-export interface UnifiedProvider {
+interface UnifiedProvider {
   id: string;
   name: string;
   type: 'official' | 'third_party';
@@ -1781,77 +1753,11 @@ export function getFeishuProviderConfigWithSource(): {
   return { config: fromEnv, source: 'none' };
 }
 
-export function getFeishuProviderConfig(): FeishuProviderConfig {
-  return getFeishuProviderConfigWithSource().config;
-}
-
-export function saveFeishuProviderConfig(
-  next: Omit<FeishuProviderConfig, 'updatedAt'>,
-): FeishuProviderConfig {
-  const normalized: FeishuProviderConfig = {
-    appId: normalizeFeishuAppId(next.appId),
-    appSecret: normalizeSecret(next.appSecret, 'appSecret'),
-    enabled: next.enabled,
-    updatedAt: new Date().toISOString(),
-  };
-
-  const payload: StoredFeishuProviderConfigV1 = {
-    version: 1,
-    appId: normalized.appId,
-    enabled: normalized.enabled,
-    updatedAt: normalized.updatedAt || new Date().toISOString(),
-    secret: encryptChannelSecret<FeishuSecretPayload>({
-      appSecret: normalized.appSecret,
-    }),
-  };
-
-  fs.mkdirSync(CLAUDE_CONFIG_DIR, { recursive: true });
-  writeSecretFile(FEISHU_CONFIG_FILE, JSON.stringify(payload, null, 2) + '\n');
-  return normalized;
-}
-
-export function toPublicFeishuProviderConfig(
-  config: FeishuProviderConfig,
-  source: FeishuConfigSource,
-): FeishuProviderPublicConfig {
-  return {
-    appId: config.appId,
-    hasAppSecret: !!config.appSecret,
-    appSecretMasked: maskSecret(config.appSecret),
-    enabled: config.enabled !== false,
-    updatedAt: config.updatedAt,
-    source,
-  };
-}
-
 function maskSecret(value: string): string | null {
   if (!value) return null;
   if (value.length <= 8)
     return `${'*'.repeat(Math.max(value.length - 2, 1))}${value.slice(-2)}`;
   return `${value.slice(0, 3)}${'*'.repeat(Math.max(value.length - 7, 4))}${value.slice(-4)}`;
-}
-
-export function toPublicClaudeProviderConfig(
-  config: ClaudeProviderConfig,
-): ClaudeProviderPublicConfig {
-  return {
-    anthropicBaseUrl: config.anthropicBaseUrl,
-    anthropicModel: config.anthropicModel,
-    contextWindow: config.contextWindow,
-    updatedAt: config.updatedAt,
-    hasAnthropicAuthToken: !!config.anthropicAuthToken,
-    hasAnthropicApiKey: !!config.anthropicApiKey,
-    hasClaudeCodeOauthToken: !!config.claudeCodeOauthToken,
-    anthropicAuthTokenMasked: maskSecret(config.anthropicAuthToken),
-    anthropicApiKeyMasked: maskSecret(config.anthropicApiKey),
-    claudeCodeOauthTokenMasked: maskSecret(config.claudeCodeOauthToken),
-    hasClaudeOAuthCredentials: !!config.claudeOAuthCredentials,
-    claudeOAuthCredentialsExpiresAt:
-      config.claudeOAuthCredentials?.expiresAt ?? null,
-    claudeOAuthCredentialsAccessTokenMasked: config.claudeOAuthCredentials
-      ? maskSecret(config.claudeOAuthCredentials.accessToken)
-      : null,
-  };
 }
 
 export function getClaudeProviderConfig(): ClaudeProviderConfig {
@@ -2002,12 +1908,6 @@ export function buildClaudeEnvLines(
       );
     }
 
-    lines.push(
-      `CLAUDE_CODE_AUTO_COMPACT_WINDOW=${configuredValue(
-        'CLAUDE_CODE_AUTO_COMPACT_WINDOW',
-        String(hostContextWindow),
-      )}`,
-    );
     for (const [key, value] of Object.entries(THIRD_PARTY_RUNTIME_DEFAULTS)) {
       lines.push(`${key}=${configuredValue(key, value)}`);
     }
@@ -2043,9 +1943,7 @@ export function getActiveProfileCustomEnv(): Record<string, string> {
  * Resolve any profileId to a full ClaudeProviderConfig.
  * Used by ProviderPool to build env for a non-active profile.
  */
-export function resolveProfileToConfig(
-  profileId: string,
-): ClaudeProviderConfig {
+function resolveProfileToConfig(profileId: string): ClaudeProviderConfig {
   const state = readStoredState();
   if (!state) return defaultsFromEnv();
 
@@ -2129,26 +2027,11 @@ export function appendClaudeConfigAudit(
  * 审计；调用方需提供 channel ('feishu'|'qq'|...) 和 changedFields
  * （如 ['appSecret','encryptKey']）。同 appendClaudeConfigAudit 一样不抛错。
  */
-export function appendImConfigAudit(
-  actor: string,
-  channel: string,
-  action: string,
-  changedFields: string[],
-  metadata?: Record<string, unknown>,
-): void {
-  appendClaudeConfigAudit(
-    actor,
-    `im_${channel}_${action}`,
-    changedFields,
-    metadata,
-  );
-}
-
 // ─── Per-container environment config ───────────────────────────
 
 const CONTAINER_ENV_DIR = path.join(DATA_DIR, 'config', 'container-env');
 
-export interface ContainerEnvConfig {
+interface ContainerEnvConfig {
   /** Claude provider overrides — empty string means "use global" */
   anthropicBaseUrl?: string;
   anthropicAuthToken?: string;
@@ -2313,7 +2196,7 @@ const REGISTRATION_CONFIG_FILE = path.join(
   'registration.json',
 );
 
-export interface RegistrationConfig {
+interface RegistrationConfig {
   allowRegistration: boolean;
   requireInviteCode: boolean;
   updatedAt: string | null;
@@ -2625,7 +2508,7 @@ export function saveAppearanceConfig(
 
 const USER_IM_CONFIG_DIR = path.join(DATA_DIR, 'config', 'user-im');
 
-export interface UserFeishuConfig {
+interface UserFeishuConfig {
   appId: string;
   appSecret: string;
   enabled?: boolean;
@@ -2634,7 +2517,7 @@ export interface UserFeishuConfig {
   autoIsolateContext?: boolean; // auto-create isolated conversation for each new IM chat
 }
 
-export interface UserQQConfig {
+interface UserQQConfig {
   appId: string;
   appSecret: string;
   enabled?: boolean;
@@ -2786,7 +2669,7 @@ export function saveUserQQConfig(
 
 // ========== WeChat User IM Config ==========
 
-export interface UserWeChatConfig {
+interface UserWeChatConfig {
   botToken: string; // iLink bot_token
   ilinkBotId: string; // bot ID (xxx@im.bot)
   baseUrl?: string; // 默认 https://ilinkai.weixin.qq.com
@@ -2893,12 +2776,6 @@ export interface SystemSettings {
   maxConcurrentContainersPerUser: number | null;
   maxLoginAttempts: number;
   loginLockoutMinutes: number;
-  // Billing
-  billingEnabled: boolean;
-  billingMode: 'wallet_first';
-  billingMinStartBalanceUsd: number;
-  billingCurrency: string;
-  billingCurrencyRate: number;
   // External Claude directory (admin only)
   externalClaudeDir: string;
   // 管理员纯宿主机模式：开启后，所有 active admin 拥有的 Workspace/任务
@@ -2935,11 +2812,6 @@ const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
   maxConcurrentContainersPerUser: null,
   maxLoginAttempts: 5,
   loginLockoutMinutes: 15,
-  billingEnabled: false,
-  billingMode: 'wallet_first',
-  billingMinStartBalanceUsd: 0.01,
-  billingCurrency: 'USD',
-  billingCurrencyRate: 1,
   externalClaudeDir: '',
   adminHostOnlyMode: false,
   mainAgentContextSource: 'host_claude',
@@ -3071,19 +2943,6 @@ function normalizeSystemSettings(
     }
   }
 
-  let billingCurrency = DEFAULT_SYSTEM_SETTINGS.billingCurrency;
-  if (raw.billingCurrency !== undefined) {
-    if (
-      typeof raw.billingCurrency === 'string' &&
-      raw.billingCurrency.trim().length >= 1 &&
-      raw.billingCurrency.trim().length <= 10
-    ) {
-      billingCurrency = raw.billingCurrency.trim();
-    } else {
-      invalidFields.add('billingCurrency');
-    }
-  }
-
   let externalClaudeDir = DEFAULT_SYSTEM_SETTINGS.externalClaudeDir;
   if (raw.externalClaudeDir !== undefined) {
     if (typeof raw.externalClaudeDir !== 'string') {
@@ -3163,26 +3022,6 @@ function normalizeSystemSettings(
       1,
       MAX_LOGIN_LOCKOUT_MINUTES,
     ),
-    billingEnabled: booleanField(
-      'billingEnabled',
-      DEFAULT_SYSTEM_SETTINGS.billingEnabled,
-    ),
-    billingMode: 'wallet_first',
-    billingMinStartBalanceUsd: numberField(
-      'billingMinStartBalanceUsd',
-      DEFAULT_SYSTEM_SETTINGS.billingMinStartBalanceUsd,
-      0,
-      1_000_000,
-      false,
-    ),
-    billingCurrency,
-    billingCurrencyRate: numberField(
-      'billingCurrencyRate',
-      DEFAULT_SYSTEM_SETTINGS.billingCurrencyRate,
-      0.0001,
-      1_000_000,
-      false,
-    ),
     externalClaudeDir,
     adminHostOnlyMode: booleanField(
       'adminHostOnlyMode',
@@ -3232,10 +3071,6 @@ function buildEnvFallbackSettings(): SystemSettings {
         process.env.MAX_CONCURRENT_CONTAINERS_PER_USER || undefined,
       maxLoginAttempts: process.env.MAX_LOGIN_ATTEMPTS,
       loginLockoutMinutes: process.env.LOGIN_LOCKOUT_MINUTES,
-      billingEnabled: process.env.BILLING_ENABLED,
-      billingMinStartBalanceUsd: process.env.BILLING_MIN_START_BALANCE_USD,
-      billingCurrency: process.env.BILLING_CURRENCY,
-      billingCurrencyRate: process.env.BILLING_CURRENCY_RATE,
       externalClaudeDir: process.env.EXTERNAL_CLAUDE_DIR,
       adminHostOnlyMode: process.env.ADMIN_HOST_ONLY_MODE,
       mainAgentContextSource: process.env.MAIN_AGENT_CONTEXT_SOURCE,

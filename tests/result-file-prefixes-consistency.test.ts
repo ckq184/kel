@@ -10,11 +10,40 @@ const repoRoot = path.resolve(
   '..',
 );
 const mainSource = readFileSync(path.join(repoRoot, 'src/index.ts'), 'utf-8');
+// ISSUE-12 波 4 单元 4.2：RESULT_FILE_PREFIXES 数组随 startIpcWatcher 体迁入
+// src/ipc/watcher.ts（原文搬运），前缀提取改读新模块；writeTaskResult 的
+// 字面量/动态调用与 *_task case 标签仍留守 index.ts 的 processTaskIpc，
+// 三处断言读入不变。
+const watcherSource = readFileSync(
+  path.join(repoRoot, 'src/ipc/watcher.ts'),
+  'utf-8',
+);
+// ISSUE-12 波 4 单元 4.10：动态 writeTaskResult(tasksDir, data.type, …)
+// 调用与其 case 标签（agent_profile_* 七 case）随段迁入
+// src/ipc/builder-ops.ts，标签关联扫描改读该模块（标签与调用同体迁移，
+// 关联逻辑不变）。
+const builderOpsSource = readFileSync(
+  path.join(repoRoot, 'src/ipc/builder-ops.ts'),
+  'utf-8',
+);
+// ISSUE-12 波 4 单元 4.6/4.7/4.8/4.9/4.11：字面量 writeTaskResult 调用随
+// 各 case 族迁入五个 ipc 模块，字面量扫描面扩至五模块合计（index.ts 已无
+// 字面量调用），计数与断言语义不变。
+const literalCallSources = [
+  'src/ipc/task-ops.ts',
+  'src/ipc/file-delivery.ts',
+  'src/ipc/memory-owner-ops.ts',
+  'src/ipc/feishu-capability-ops.ts',
+  'src/ipc/skill-registry-ops.ts',
+].map((rel) => readFileSync(path.join(repoRoot, rel), 'utf-8'));
 
 /** 从源码提取 RESULT_FILE_PREFIXES 数组的字面量成员。 */
 function extractResultFilePrefixes(source: string): string[] {
   const match = source.match(/const RESULT_FILE_PREFIXES = \[([^\]]*)\]/);
-  expect(match, 'RESULT_FILE_PREFIXES 数组应存在于 src/index.ts').toBeTruthy();
+  expect(
+    match,
+    'RESULT_FILE_PREFIXES 数组应存在于 src/ipc/watcher.ts',
+  ).toBeTruthy();
   return [...match![1].matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
 }
 
@@ -47,7 +76,7 @@ function extractCaseLabelledDynamicWriteTypes(source: string): string[] {
 }
 
 describe('orphan result file cleanup prefix consistency (ISSUE-05 §1)', () => {
-  const prefixes = extractResultFilePrefixes(mainSource);
+  const prefixes = extractResultFilePrefixes(watcherSource);
 
   test('feishu_capability result files are covered by the cleanup list', () => {
     // 回归锚点：writeTaskResult(tasksDir, 'feishu_capability', …) 生成的
@@ -57,7 +86,9 @@ describe('orphan result file cleanup prefix consistency (ISSUE-05 §1)', () => {
   });
 
   test('every literal writeTaskResult type has its prefix in the list', () => {
-    const literalTypes = extractLiteralWriteTypes(mainSource);
+    const literalTypes = literalCallSources.flatMap((source) =>
+      extractLiteralWriteTypes(source),
+    );
     expect(literalTypes.length).toBeGreaterThan(0);
     const missing = literalTypes.filter(
       (type) => !prefixes.includes(`${type}_result_`),
@@ -66,7 +97,7 @@ describe('orphan result file cleanup prefix consistency (ISSUE-05 §1)', () => {
   });
 
   test('every case label with a dynamic data.type write is in the list', () => {
-    const caseLabels = extractCaseLabelledDynamicWriteTypes(mainSource);
+    const caseLabels = extractCaseLabelledDynamicWriteTypes(builderOpsSource);
     expect(caseLabels.length).toBeGreaterThan(0);
     const missing = [...new Set(caseLabels)].filter(
       (label) => !prefixes.includes(`${label}_result_`),
@@ -75,12 +106,18 @@ describe('orphan result file cleanup prefix consistency (ISSUE-05 §1)', () => {
   });
 
   test('parsedData fallback only writes _task types already covered by the list', () => {
-    // 兜底路径 (src/index.ts ~:10936) 仅对 endsWith('_task') 的请求 type 写
-    // 失败回执。请求 type 的全集是容器侧 IPC 任务协议；此处断言宿主侧 switch
-    // 处理的所有 *_task case 标签都在名单内，保证已知的兜底写入不漏删。
+    // 兜底路径（现 src/ipc/watcher.ts 任务扫描 catch）仅对 endsWith('_task')
+    // 的请求 type 写失败回执。请求 type 的全集是容器侧 IPC 任务协议；此处
+    // 断言宿主侧 switch 处理的所有 *_task case 标签都在名单内，保证已知的
+    // 兜底写入不漏删。ISSUE-12 波 4 单元 4.5：分发 switch 随 processTaskIpc
+    // 壳迁 src/ipc/task-dispatch.ts，标签扫描改读该模块。
+    const dispatchSource = readFileSync(
+      path.join(repoRoot, 'src/ipc/task-dispatch.ts'),
+      'utf-8',
+    );
     const taskCaseLabels = [
       ...new Set(
-        [...mainSource.matchAll(/^\s*case '([a-z_]*task[a-z_]*)':/gm)].map(
+        [...dispatchSource.matchAll(/^\s*case '([a-z_]*task[a-z_]*)':/gm)].map(
           (m) => m[1],
         ),
       ),

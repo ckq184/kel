@@ -2,7 +2,7 @@ import { CHANNEL_PREFIXES } from './channel-prefixes.js';
 
 const ACCOUNT_FRAGMENT = 'account:';
 
-export interface ChannelAddress {
+interface ChannelAddress {
   provider: string;
   externalChatId: string;
   channelAccountId: string | null;

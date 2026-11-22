@@ -17,12 +17,12 @@ export type WeChatQrStatusValue =
   | 'confirmed'
   | 'expired';
 
-export interface WeChatQrStart {
+interface WeChatQrStart {
   qrcode: string;
   qrcodeUrl: string;
 }
 
-export interface WeChatQrStatus {
+interface WeChatQrStatus {
   status: WeChatQrStatusValue;
   botToken?: string;
   ilinkBotId?: string;
@@ -31,14 +31,14 @@ export interface WeChatQrStatus {
   alreadyConnected?: boolean;
 }
 
-export interface WeChatQrStartOptions {
+interface WeChatQrStartOptions {
   /** Existing token for this account only. Never include another user's token. */
   localTokenList?: string[];
   /** Bypass CKQClaw's HTTP(S) proxy for this account. */
   bypassProxy?: boolean;
 }
 
-export interface WeChatQrPollOptions {
+interface WeChatQrPollOptions {
   /** Redirected iLink API base returned by scaned_but_redirect. */
   baseUrl?: string;
   /** Number shown by the WeChat client for second-factor verification. */

@@ -1,5 +1,5 @@
 export type TaskExecutionMode = 'host' | 'container';
-export type TaskExecutionRole = 'admin' | 'member';
+type TaskExecutionRole = 'admin' | 'member';
 
 export function getAllowedTaskExecutionModes(
   role: TaskExecutionRole,

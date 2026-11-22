@@ -37,6 +37,18 @@ const mcpToolsSource = readFileSync(
   'utf-8',
 );
 const indexSource = readFileSync(path.join(repoRoot, 'src/index.ts'), 'utf-8');
+// ISSUE-12 波 4 单元 4.2/4.5：messages 目录条件分支随 startIpcWatcher 体
+// 迁入 src/ipc/watcher.ts、tasks 目录分发 switch 随 processTaskIpc 壳迁入
+// src/ipc/task-dispatch.ts（均原文搬运），扫描面分别扩至两模块；结构锚
+// （switch 恰 1 处）改锚 task-dispatch.ts。
+const watcherSource = readFileSync(
+  path.join(repoRoot, 'src/ipc/watcher.ts'),
+  'utf-8',
+);
+const dispatchSource = readFileSync(
+  path.join(repoRoot, 'src/ipc/task-dispatch.ts'),
+  'utf-8',
+);
 
 /** runner 侧发送方：`type: '<lit>'` 字面量（排除 content 块的 as const 行）∪ callAgentBuilder('<lit>')。 */
 function extractSenders(): Set<string> {
@@ -54,7 +66,7 @@ function extractSenders(): Set<string> {
 /** 宿主侧处理分支：tasks 目录 IPC 的顶层 switch case（4 空格缩进）∪ messages 目录的条件分支。 */
 function extractHandlers(): Set<string> {
   const handlers = new Set<string>();
-  const lines = indexSource.split('\n');
+  const lines = dispatchSource.split('\n');
   const switchLine = lines.findIndex((l) => l.includes('switch (data.type)'));
   for (let i = switchLine; i < lines.length; i++) {
     // 顶层 switch 以 4 空格 case/default 为界；嵌套 operation 分支缩进更深，不属于请求类型。
@@ -63,7 +75,7 @@ function extractHandlers(): Set<string> {
     if (m) handlers.add(m[1]);
   }
   // messages 目录的投递 watcher 用条件分支而非 switch。
-  for (const m of indexSource.matchAll(/data\.type === '([a-z_]+)'/g))
+  for (const m of watcherSource.matchAll(/data\.type === '([a-z_]+)'/g))
     handlers.add(m[1]);
   return handlers;
 }
@@ -75,7 +87,9 @@ describe('IPC type bidirectional contract (ISSUE-13 §B.2)', () => {
 
   test('scanner anchors hold (unique dispatch, plausible set sizes)', () => {
     // 结构锚点：分发 switch 恰好一处、集合规模合理——锚点漂移时先更新扫描器再谈契约。
-    expect([...indexSource.matchAll(/switch \(data\.type\)/g)].length).toBe(1);
+    expect([...dispatchSource.matchAll(/switch \(data\.type\)/g)].length).toBe(
+      1,
+    );
     expect(senders.size).toBeGreaterThanOrEqual(20);
     expect(handlers.size).toBeGreaterThanOrEqual(20);
     expect(senders).toContain('schedule_task');

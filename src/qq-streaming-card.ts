@@ -47,7 +47,7 @@ const MAX_STREAM_CONTENT = 4500; // QQ content_raw conservative upper bound (lea
 // ─── Types ───────────────────────────────────────────────────
 
 /** Callback to send a stream chunk via QQ API */
-export type SendStreamChunkFn = (
+type SendStreamChunkFn = (
   openid: string,
   params: {
     input_mode: string;
@@ -63,7 +63,7 @@ export type SendStreamChunkFn = (
 ) => Promise<{ id?: string }>;
 
 /** Callback to send a plain message (fallback) */
-export type FallbackSendFn = (text: string) => Promise<void>;
+type FallbackSendFn = (text: string) => Promise<void>;
 
 type StreamingState =
   | 'idle'
@@ -299,7 +299,9 @@ export class QQStreamingController {
     if (this.thinkingText.length > QQStreamingController.MAX_THINKING_CHARS) {
       this.thinkingText =
         '...' +
-        this.thinkingText.slice(-(QQStreamingController.MAX_THINKING_CHARS - 3));
+        this.thinkingText.slice(
+          -(QQStreamingController.MAX_THINKING_CHARS - 3),
+        );
     }
     this.thinking = true;
 
@@ -312,16 +314,6 @@ export class QQStreamingController {
   setSystemStatus(status: string | null): void {
     this.systemStatus = status;
     if (this.state === 'streaming') this.scheduleAuxFlush();
-  }
-
-  setHook(_hook: { hookName: string; hookEvent: string } | null): void {
-    // Not meaningful for QQ plain text
-  }
-
-  setTodos(
-    _todos: Array<{ id: string; content: string; status: string }>,
-  ): void {
-    // Too verbose for plain text
   }
 
   pushRecentEvent(text: string): void {
@@ -389,7 +381,9 @@ export class QQStreamingController {
       const truncated =
         this.thinkingText.length > QQStreamingController.MAX_THINKING_CHARS
           ? '...' +
-            this.thinkingText.slice(-(QQStreamingController.MAX_THINKING_CHARS - 3))
+            this.thinkingText.slice(
+              -(QQStreamingController.MAX_THINKING_CHARS - 3),
+            )
           : this.thinkingText;
       parts.push(`${label}\n${truncated}`);
     } else if (this.thinking) {
@@ -503,7 +497,10 @@ export class QQStreamingController {
         await this.doSendChunk(rawText, 1); // GENERATING
         this.lastUpdateTime = Date.now();
       } catch (err: any) {
-        logger.warn({ err: err.message, contentLen: rawText.length }, 'QQ streaming chunk failed');
+        logger.warn(
+          { err: err.message, contentLen: rawText.length },
+          'QQ streaming chunk failed',
+        );
       }
     }
   }
@@ -576,7 +573,10 @@ export class QQStreamingController {
     try {
       await this.fallbackSend(text);
     } catch (err: any) {
-      logger.warn({ err: err.message }, 'QQ streaming fallback send also failed');
+      logger.warn(
+        { err: err.message },
+        'QQ streaming fallback send also failed',
+      );
     }
   }
 

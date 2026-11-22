@@ -20,8 +20,8 @@ import type {
   MountAllowlist,
 } from './types.js';
 
-export const MAX_ADDITIONAL_MOUNTS = 8;
-export const ADDITIONAL_MOUNT_CONTAINER_ROOT = '/workspace/extra';
+const MAX_ADDITIONAL_MOUNTS = 8;
+const ADDITIONAL_MOUNT_CONTAINER_ROOT = '/workspace/extra';
 
 const DEFAULT_BLOCKED_PATTERNS = [
   '.ssh',
@@ -300,7 +300,7 @@ export function isHostMountNavigationPathAllowed(realPath: string): boolean {
     .some((component) => SOCKET_COMPONENT_RE.test(component));
 }
 
-export function normalizeAdditionalMountContainerPath(input: string): string {
+function normalizeAdditionalMountContainerPath(input: string): string {
   if (input !== input.trim()) {
     throw new Error(
       'containerPath must not have leading or trailing whitespace',
@@ -347,7 +347,7 @@ export function normalizeAdditionalMountContainerPath(input: string): string {
   return normalized;
 }
 
-export interface ContainerConfigParseResult {
+interface ContainerConfigParseResult {
   config?: ContainerConfig;
   error?: string;
 }
@@ -447,7 +447,7 @@ export function parseContainerConfig(raw: unknown): ContainerConfigParseResult {
   };
 }
 
-export interface MountValidationResult {
+interface MountValidationResult {
   allowed: boolean;
   reason: string;
   realHostPath?: string;
@@ -570,7 +570,7 @@ export function validateMount(
   };
 }
 
-export interface ValidatedAdditionalMount {
+interface ValidatedAdditionalMount {
   hostPath: string;
   containerPath: string;
   readonly: boolean;

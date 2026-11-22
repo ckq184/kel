@@ -20,11 +20,6 @@ vi.mock('../src/logger.js', () => ({
   logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-vi.mock('../src/runtime-config.js', async (importOriginal) => ({
-  ...((await importOriginal()) as Record<string, unknown>),
-  getSystemSettings: () => ({ billingEnabled: true }),
-}));
-
 vi.mock('../src/middleware/auth.js', () => ({
   authMiddleware: async (c: any, next: any) => {
     c.set('user', {
@@ -58,7 +53,6 @@ function seed(eventId: string, userId: string, model: string): void {
     cacheReadInputTokens: 2,
     cacheCreationInputTokens: 1,
     providerEstimatedCostUSD: 0.2,
-    billedCostUSD: 0.1,
     models: [
       {
         model,
@@ -67,7 +61,6 @@ function seed(eventId: string, userId: string, model: string): void {
         cacheReadInputTokens: 2,
         cacheCreationInputTokens: 1,
         providerEstimatedCostUSD: 0.2,
-        billedCostUSD: 0.1,
       },
     ],
   });
@@ -89,7 +82,6 @@ beforeAll(() => {
     cacheReadInputTokens: 0,
     cacheCreationInputTokens: 0,
     providerEstimatedCostUSD: 0,
-    billedCostUSD: 0,
     models: [
       {
         model: 'main-model',
@@ -98,7 +90,6 @@ beforeAll(() => {
         cacheReadInputTokens: 0,
         cacheCreationInputTokens: 0,
         providerEstimatedCostUSD: 0,
-        billedCostUSD: 0,
       },
     ],
   });
@@ -123,10 +114,8 @@ describe('/api/usage contract and isolation', () => {
     expect(body.summary).toMatchObject({
       runCount: 1,
       modelCallCount: 1,
-      totalMessages: 1,
       totalTokens: 18,
       providerEstimatedCostUSD: 0.2,
-      billedCostUSD: 0.1,
     });
     expect(body.breakdown).toHaveLength(1);
     expect(body.breakdown[0].model).toBe('private-model-a');

@@ -16,7 +16,7 @@ function isNavigatorStandalone(): boolean {
   return Boolean(navWithStandalone.standalone);
 }
 
-export function isStandaloneMode(): boolean {
+function isStandaloneMode(): boolean {
   if (typeof window === 'undefined') return false;
   const displayStandalone =
     window.matchMedia?.('(display-mode: standalone)').matches ?? false;

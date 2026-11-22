@@ -30,11 +30,11 @@ export const DEFAULTED_THIRD_PARTY_ENV_KEYS = new Set(
   buildDefaultProviderEnv('', 'auto').map((row) => row.key),
 );
 
-export interface BuildCustomEnvOptions {
+interface BuildCustomEnvOptions {
   manageThirdPartyDefaults?: boolean;
 }
 
-export interface BuildCustomEnvResult {
+interface BuildCustomEnvResult {
   customEnv: Record<string, string>;
   error: string | null;
 }

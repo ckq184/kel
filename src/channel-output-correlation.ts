@@ -1,4 +1,4 @@
-export interface CorrelatedContainerOutput {
+interface CorrelatedContainerOutput {
   readonly inputTurnId?: string;
   ipcReceipts?: Array<{ deliveryId: string }>;
 }

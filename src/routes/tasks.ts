@@ -1,6 +1,7 @@
 // Task management routes
 
 import { Hono, type Context } from 'hono';
+import { zodBadRequest } from '../validation-response.js';
 import * as crypto from 'node:crypto';
 import { sdkQuery } from '../sdk-query.js';
 import type { Variables } from '../web-context.js';
@@ -35,6 +36,7 @@ import {
   hasHostExecutionPermission,
   canAccessGroup,
   getWebDeps,
+  groupAccessDeniedResponse,
 } from '../web-context.js';
 import {
   computeNextRunForSchedule,
@@ -186,10 +188,7 @@ tasksRoutes.post('/', authMiddleware, async (c) => {
 
   const validation = TaskCreateSchema.safeParse(body);
   if (!validation.success) {
-    return c.json(
-      { error: 'Invalid request body', details: validation.error.format() },
-      400,
-    );
+    return zodBadRequest(c, validation.error, 'body-format');
   }
 
   const {
@@ -224,7 +223,7 @@ tasksRoutes.post('/', authMiddleware, async (c) => {
   }
 
   if (!canAccessGroup({ id: authUser.id, role: authUser.role }, group)) {
-    return c.json({ error: 'Group not found' }, 404);
+    return groupAccessDeniedResponse(c, 'Group not found');
   }
   if (isHostExecutionGroup(group) && !hasHostExecutionPermission(authUser)) {
     return c.json(
@@ -320,10 +319,7 @@ tasksRoutes.post('/purge', authMiddleware, async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const validation = TaskPurgeSchema.safeParse(body);
   if (!validation.success) {
-    return c.json(
-      { error: 'Invalid request body', details: validation.error.format() },
-      400,
-    );
+    return zodBadRequest(c, validation.error, 'body-format');
   }
 
   const authUser = c.get('user') as AuthUser;
@@ -401,7 +397,7 @@ tasksRoutes.patch('/:id', authMiddleware, async (c) => {
       return c.json({ error: 'Task not found' }, 404);
   } else {
     if (!canAccessGroup({ id: authUser.id, role: authUser.role }, group)) {
-      return c.json({ error: 'Task not found' }, 404);
+      return groupAccessDeniedResponse(c, 'Task not found');
     }
     if (isHostExecutionGroup(group) && !hasHostExecutionPermission(authUser)) {
       return c.json(
@@ -436,10 +432,7 @@ tasksRoutes.patch('/:id', authMiddleware, async (c) => {
 
   const validation = TaskPatchSchema.safeParse(patchBody);
   if (!validation.success) {
-    return c.json(
-      { error: 'Invalid request body', details: validation.error.format() },
-      400,
-    );
+    return zodBadRequest(c, validation.error, 'body-format');
   }
 
   if (existing.status === 'parsing') {
@@ -661,7 +654,7 @@ tasksRoutes.delete('/:id', authMiddleware, (c) => {
       return c.json({ error: 'Task not found' }, 404);
   } else {
     if (!canAccessGroup({ id: authUser.id, role: authUser.role }, group)) {
-      return c.json({ error: 'Task not found' }, 404);
+      return groupAccessDeniedResponse(c, 'Task not found');
     }
     if (isHostExecutionGroup(group) && !hasHostExecutionPermission(authUser)) {
       return c.json(
@@ -971,7 +964,7 @@ tasksRoutes.post('/ai', authMiddleware, async (c) => {
     const group = getRegisteredGroup(requestedChatJid);
     if (!group) return c.json({ error: 'Group not found' }, 404);
     if (!canAccessGroup({ id: authUser.id, role: authUser.role }, group)) {
-      return c.json({ error: 'Group not found' }, 404);
+      return groupAccessDeniedResponse(c, 'Group not found');
     }
     if (isHostExecutionGroup(group) && !hasHostExecutionPermission(authUser)) {
       return c.json(

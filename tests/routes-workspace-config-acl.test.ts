@@ -24,6 +24,7 @@ import {
   test,
   vi,
 } from 'vitest';
+import { asRouteTestUser } from './helpers/route-test-user.js';
 
 const SHARED_TMP =
   process.env.CKQCLAW_TEST_DATA_DIR ??
@@ -90,11 +91,6 @@ function seedTestGroup(): void {
     created_by: OWNER_ID,
     is_home: false,
   } as any);
-}
-
-function asUser(userId: string, role: 'admin' | 'member' = 'member'): void {
-  process.env.CKQCLAW_TEST_USER_ID = userId;
-  process.env.CKQCLAW_TEST_USER_ROLE = role;
 }
 
 beforeAll(() => {
@@ -209,7 +205,7 @@ function seedFakeSkill(skillId: string): void {
 describe('workspace-config ACL — MCP servers', () => {
   test('owner can POST a new MCP server', async () => {
     seedTestGroup();
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
 
     const { status, body } = await postMcp({
       id: 'mysrv',
@@ -223,7 +219,7 @@ describe('workspace-config ACL — MCP servers', () => {
 
   test('non-owner returns 404 on POST (group hidden by canAccessGroup)', async () => {
     seedTestGroup();
-    asUser(OUTSIDER_ID);
+    asRouteTestUser(OUTSIDER_ID);
 
     const { status, body } = await postMcp({ id: 'srv5', command: 'echo' });
     expect(status).toBe(404);
@@ -235,7 +231,7 @@ describe('workspace-config ACL — skills', () => {
   test('owner can PATCH (disable) a fake-on-disk skill', async () => {
     seedTestGroup();
     seedFakeSkill('my-skill');
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
 
     const { status, body } = await patchSkill('my-skill', { enabled: false });
     expect(status).toBe(200);
@@ -245,7 +241,7 @@ describe('workspace-config ACL — skills', () => {
   test('non-owner returns 404 on skills DELETE', async () => {
     seedTestGroup();
     seedFakeSkill('my-skill');
-    asUser(OUTSIDER_ID);
+    asRouteTestUser(OUTSIDER_ID);
 
     const { status, body } = await deleteSkill('my-skill');
     expect(status).toBe(404);

@@ -18,7 +18,7 @@ import { logger } from './logger.js';
  * editable AgentProfile field. Bump this version whenever the protected
  * identity contract changes so existing SDK sessions restart under it.
  */
-export const CKQCLAW_PLATFORM_IDENTITY_VERSION = 1;
+const CKQCLAW_PLATFORM_IDENTITY_VERSION = 1;
 
 export function bindCkqclawPlatformIdentityHash(identityHash: string): string {
   return createHash('sha256')

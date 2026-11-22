@@ -14,8 +14,8 @@ import type {
   StuckRecoveryCandidate,
 } from './stuck-runner-recovery.js';
 import type { ChannelTurnContext } from './types.js';
-export type SendMessageResult = 'sent' | 'no_active';
-export interface IpcMessageCursor {
+type SendMessageResult = 'sent' | 'no_active';
+interface IpcMessageCursor {
   timestamp: string;
   id: string;
   /** Immutable provider route that owns this exact original input's side
@@ -44,7 +44,7 @@ export interface IpcPrePublishAdmission {
   /** Undo host-side Turn/Card/Outbox reservations if disk publish fails. */
   rollback?: () => void;
 }
-export interface RunnerMessageRequirements {
+interface RunnerMessageRequirements {
   /**
    * Bot identity whose App credentials must already be present in a Docker
    * runner. An explicit null means the request must run without an injected
@@ -81,7 +81,7 @@ function resolveFeishuCliIdentityRequirement(
   return { specified: false, accountId: null };
 }
 
-export interface MutationPauseToken {
+interface MutationPauseToken {
   readonly id: number;
 }
 
@@ -106,11 +106,7 @@ interface QueuedTask {
   onDropped?: () => void;
 }
 
-export type QueryFinishReason =
-  | 'completed'
-  | 'released'
-  | 'runner_exit'
-  | 'stopped';
+type QueryFinishReason = 'completed' | 'released' | 'runner_exit' | 'stopped';
 
 const MAX_RETRIES = 5;
 const BASE_RETRY_MS = 5000;

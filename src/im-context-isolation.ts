@@ -1,11 +1,11 @@
 import type { RegisteredGroup, SubAgent } from './types.js';
 
-export interface ContextIsolationConfig {
+interface ContextIsolationConfig {
   enabled: boolean;
   sourceKind: 'auto_im';
 }
 
-export interface ContextIsolationConfigDeps {
+interface ContextIsolationConfigDeps {
   getUserFeishuConfig: (
     userId: string,
   ) => { autoIsolateContext?: boolean } | null;
@@ -26,7 +26,7 @@ export function getUserContextIsolationConfig(
   return { enabled: false, sourceKind: 'auto_im' };
 }
 
-export interface ApplyAutoIsolateContextDeps {
+interface ApplyAutoIsolateContextDeps {
   groups: Record<string, RegisteredGroup>;
   channelType: string;
   getChannelType: (jid: string) => string | null;

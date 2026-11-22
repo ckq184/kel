@@ -709,13 +709,11 @@ describe('buildStreamingAgentCard', () => {
     const header = card.header as Record<string, unknown>;
     expect(header.template).toBe('blue');
 
-    // Rich skeleton: STATUS_BANNER + invisible ASK slot + 5 collapsible
+    // Rich skeleton: STATUS_BANNER + invisible ASK slot + 4 collapsible
     // runtime panels + MAIN_CONTENT + BUTTON + FOOTER_NOTE.
     const ids = new Set(collectElementIds(card));
     for (const required of [
       CARD_ELEMENT_IDS.STATUS_BANNER,
-      CARD_ELEMENT_IDS.PROGRESS_PANEL,
-      CARD_ELEMENT_IDS.PROGRESS_CONTENT,
       CARD_ELEMENT_IDS.TASK_PANEL,
       CARD_ELEMENT_IDS.TASK_CONTENT,
       CARD_ELEMENT_IDS.TOOLS_PANEL,
@@ -733,7 +731,7 @@ describe('buildStreamingAgentCard', () => {
   test('rich streaming card keeps ask invisible until a real question exists', () => {
     const card = buildStreamingAgentCard({ initialText: 'x' });
     const serialized = JSON.stringify(card);
-    expect(countTag(card, 'collapsible_panel')).toBe(5);
+    expect(countTag(card, 'collapsible_panel')).toBe(4);
     expect(serialized).not.toContain('等待你的回复');
     expect(serialized).not.toContain('暂无提问');
   });
@@ -823,34 +821,6 @@ describe('buildStatusBannerText', () => {
       detail: '`Read` src/foo.ts',
     });
     expect(text).toContain('Read');
-  });
-});
-
-describe('buildProgressListText', () => {
-  test('renders progress bar + item icons', () => {
-    const text = buildProgressListText([
-      { content: '分析', status: 'completed' },
-      { content: '编写', status: 'in_progress' },
-      { content: '测试', status: 'pending' },
-    ]);
-    expect(text).toMatch(/进度 1\/3/);
-    expect(text).toContain('▓');
-    expect(text).toContain('✅');
-    expect(text).toContain('🔄');
-    expect(text).toContain('⏳');
-  });
-
-  test('empty list → placeholder', () => {
-    expect(buildProgressListText([])).toContain('暂无');
-  });
-
-  test('truncates beyond MAX_VISIBLE', () => {
-    const todos = Array.from({ length: 20 }, (_, i) => ({
-      content: `T${i}`,
-      status: 'pending' as const,
-    }));
-    const text = buildProgressListText(todos);
-    expect(text).toContain('还有');
   });
 });
 
@@ -966,18 +936,6 @@ describe('buildToolsTimelineText with skillName + isNested + param', () => {
   });
 });
 
-describe('buildStatusBannerText hook phase', () => {
-  test('phase=hook renders indigo tag', () => {
-    const text = buildStatusBannerText({
-      phase: 'hook',
-      detail: 'pre-commit-check',
-    });
-    expect(text).toContain('运行 Hook');
-    expect(text).toContain("color='indigo'");
-    expect(text).toContain('pre-commit-check');
-  });
-});
-
 describe('collectAskQuestions', () => {
   test('single-question format', () => {
     const qs = collectAskQuestions({
@@ -1062,9 +1020,9 @@ describe('buildStreamingAgentCard rich skeleton (Phase F)', () => {
     expect(ids.has(CARD_ELEMENT_IDS.TIMELINE_CONTENT)).toBe(true);
   });
 
-  test('rich skeleton has 5 collapsible panels while ask remains hidden', () => {
+  test('rich skeleton has 4 collapsible panels while ask remains hidden', () => {
     const card = buildStreamingAgentCard({ initialText: 'x' });
-    expect(countTag(card, 'collapsible_panel')).toBe(5);
+    expect(countTag(card, 'collapsible_panel')).toBe(4);
   });
 });
 

@@ -16,7 +16,7 @@ export function resolveIpcDeliveryTargetGroup(
   return lookupGroup(channelConversationJid(chatJid));
 }
 
-export interface IpcImRouteInput {
+interface IpcImRouteInput {
   ipcAgentId?: string | null;
   isHome: boolean;
   chatJid: string;

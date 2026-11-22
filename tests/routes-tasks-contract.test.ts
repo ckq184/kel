@@ -13,6 +13,7 @@ import {
 } from 'vitest';
 
 import { removeTmpDirRecursive } from './helpers/remove-tmp-dir.js';
+import { asRouteTestUser } from './helpers/route-test-user.js';
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'routes-tasks-contract-'));
 const tmpStoreDir = path.join(tmpDir, 'db');
@@ -73,11 +74,6 @@ const tasksRoutes = tasksRoutesModule.default;
 const OWNER_ID = 'alice';
 const GROUP_JID = 'web:tasks-contract';
 const GROUP_FOLDER = 'tasks-contract';
-
-function asUser(userId: string, role: 'admin' | 'member' = 'member'): void {
-  process.env.CKQCLAW_TEST_USER_ID = userId;
-  process.env.CKQCLAW_TEST_USER_ROLE = role;
-}
 
 function seedGroup(): void {
   db.setRegisteredGroup(GROUP_JID, {
@@ -221,7 +217,7 @@ afterAll(() => {
 describe('tasks route ownership and cleanup contract', () => {
   test('admin host-only mode rejects explicit Docker task creation', async () => {
     runtimeConfig.saveSystemSettings({ adminHostOnlyMode: true });
-    asUser(OWNER_ID, 'admin');
+    asRouteTestUser(OWNER_ID, 'admin');
     try {
       const response = await tasksRoutes.request('/', {
         method: 'POST',
@@ -258,7 +254,7 @@ describe('tasks route ownership and cleanup contract', () => {
   });
 
   test('create and patch reject cron schedules faster than once per minute', async () => {
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     for (const scheduleValue of ['* * * * * *', '0,30 0 * * * *']) {
       const create = await tasksRoutes.request('/', {
         method: 'POST',
@@ -307,7 +303,7 @@ describe('tasks route ownership and cleanup contract', () => {
   });
 
   test('AI parse rejects a sub-minute cron and respects a concurrent pause', async () => {
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     sdkQueryMock.mockResolvedValueOnce(
       JSON.stringify({
         prompt: 'parsed prompt',
@@ -364,7 +360,7 @@ describe('tasks route ownership and cleanup contract', () => {
   });
 
   test('AI creation enforces both user and model prompt bounds', async () => {
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
 
     let response = await tasksRoutes.request('/ai', {
       method: 'POST',
@@ -421,7 +417,7 @@ describe('tasks route ownership and cleanup contract', () => {
     createTask('route-move-task', OWNER_ID, {
       delivery_route_jid: `${GROUP_JID}#thread:old`,
     });
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
 
     const moved = await patchTask('route-move-task', {
       chat_jid: targetJid,
@@ -441,7 +437,7 @@ describe('tasks route ownership and cleanup contract', () => {
     const marker = path.join(tmpGroupsDir, GROUP_FOLDER, 'keep.txt');
     fs.writeFileSync(marker, 'workspace data');
 
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     const res = await deleteTask('dirty-source-task');
     expect(res.status).toBe(200);
     expect(db.getTaskById('dirty-source-task')).toMatchObject({
@@ -500,7 +496,7 @@ describe('tasks route ownership and cleanup contract', () => {
     ).toBe(true);
     expect(getRunningTaskIds()).toContain('queued-route-task');
 
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     const blocked = await patchTask('queued-route-task', {
       chat_jid: targetJid,
     });
@@ -524,7 +520,7 @@ describe('tasks route ownership and cleanup contract', () => {
 
   test('PATCH rejects a stale revision instead of overwriting a newer edit', async () => {
     createTask('revision-route-task', OWNER_ID);
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     const initial = db.getTaskById('revision-route-task')!;
 
     const missing = await patchTask(
@@ -552,7 +548,7 @@ describe('tasks route ownership and cleanup contract', () => {
 
   test('PATCH rejects final agent/script definitions that cannot execute', async () => {
     createTask('final-agent-definition-task', OWNER_ID);
-    asUser(OWNER_ID, 'admin');
+    asRouteTestUser(OWNER_ID, 'admin');
 
     const missingCommand = await patchTask('final-agent-definition-task', {
       execution_type: 'script',
@@ -593,7 +589,7 @@ describe('tasks route ownership and cleanup contract', () => {
   });
 
   test('script create/run/restore require an administrator host workspace', async () => {
-    asUser(OWNER_ID, 'admin');
+    asRouteTestUser(OWNER_ID, 'admin');
     let response = await tasksRoutes.request('/', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -681,7 +677,7 @@ describe('tasks route ownership and cleanup contract', () => {
       idempotencyKey: 'history-before-delete',
     });
     db.cancelTaskRun(previousRun.run.id, 'test history');
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
 
     expect((await deleteTask('restore-route-task')).status).toBe(200);
     const deleted = db.getTaskById('restore-route-task')!;
@@ -708,7 +704,7 @@ describe('tasks route ownership and cleanup contract', () => {
       idempotencyKey: 'purge-history',
     });
     db.cancelTaskRun(run.run.id, 'finished before recycle-bin cleanup');
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
 
     expect((await deleteTask('purge-route-task-a')).status).toBe(200);
     expect((await deleteTask('purge-route-task-b')).status).toBe(200);
@@ -734,7 +730,7 @@ describe('tasks route ownership and cleanup contract', () => {
     createTask('purge-live-route-task', OWNER_ID);
     createTask('purge-stale-route-task-a', OWNER_ID);
     createTask('purge-stale-route-task-b', OWNER_ID);
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
 
     const liveResponse = await purgeTasks([{ id: 'purge-live-route-task' }]);
     expect(liveResponse).toMatchObject({
@@ -790,7 +786,7 @@ describe('tasks route ownership and cleanup contract', () => {
     expect(deleted.status).toBe('updated');
     if (deleted.status !== 'updated') return;
 
-    asUser(capOwner);
+    asRouteTestUser(capOwner);
     const response = await tasksRoutes.request(
       '/capacity-deleted-task/restore',
       {
@@ -814,7 +810,7 @@ describe('tasks route ownership and cleanup contract', () => {
       schedule_value: future,
       next_run: future,
     });
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     expect((await deleteTask('future-once-restore-task')).status).toBe(200);
     let deleted = db.getTaskById('future-once-restore-task')!;
     let response = await tasksRoutes.request(
@@ -886,7 +882,7 @@ describe('tasks route ownership and cleanup contract', () => {
         success: db.cancelTaskRun(runId),
       }),
     } as any);
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
 
     const stopped = await tasksRoutes.request(
       `/runs/${materialized.run.id}/cancel`,
@@ -914,7 +910,7 @@ describe('tasks route ownership and cleanup contract', () => {
       triggerType: 'manual',
       idempotencyKey: 'runs-route-idem',
     });
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
 
     const response = await tasksRoutes.request('/runs-route-task/runs');
     expect(response.status).toBe(200);
@@ -955,7 +951,7 @@ describe('tasks route ownership and cleanup contract', () => {
         notificationStatus: 'skipped',
       }),
     ).toBe(true);
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
 
     const response = await tasksRoutes.request('/');
     expect(response.status).toBe(200);
@@ -990,7 +986,7 @@ describe('tasks route ownership and cleanup contract', () => {
       result: 'legacy result',
       error: null,
     });
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     const beforeV2 = await tasksRoutes.request('/');
     const beforeV2Task = (await beforeV2.json()).tasks.find(
       (task: any) => task.id === 'history-route-task',
@@ -1073,7 +1069,7 @@ describe('tasks route ownership and cleanup contract', () => {
       error: 'Agent execution aborted',
     });
     expect(db.cancelTaskRun(claimed.id)).toBe(true);
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
 
     const response = await tasksRoutes.request(
       '/cancelled-history-route-task/runs',
@@ -1099,7 +1095,7 @@ describe('tasks route ownership and cleanup contract', () => {
       triggerType: 'manual',
       idempotencyKey: 'cancel-no-scheduler',
     });
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
 
     const list = await tasksRoutes.request('/');
     const listed = (await list.json()).tasks.find(
@@ -1135,7 +1131,7 @@ describe('tasks route ownership and cleanup contract', () => {
     // body idempotency key passes through to the scheduler, and a conflict
     // returns the existing run id.
     createTask('runs-route-task', OWNER_ID);
-    asUser(OWNER_ID);
+    asRouteTestUser(OWNER_ID);
     const trigger = vi
       .fn()
       .mockReturnValueOnce({ success: true, runId: 'run-stable' })

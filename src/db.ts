@@ -68,7 +68,6 @@ import {
   TaskRunTrigger,
   TaskRunLog,
   User,
-  UserBalance,
   UserPublic,
   UserStatus,
   UserRole,
@@ -106,6 +105,29 @@ import {
   reconcileLegacyOwnerProfileMemory,
 } from './owner-profile-store.js';
 import { splitLegacyEmbeddedReferenceContent } from './message-prompt.js';
+import { ensureCoreTables } from './db-schema/core-tables.js';
+import { ensureAuthTables } from './db-schema/auth-tables.js';
+import {
+  ensureAgentProfileTables,
+  migrateAgentProfileColumns,
+} from './db-schema/agent-profile-tables.js';
+import {
+  ensureUsageTables,
+  migrateUsageHistory,
+  migrateUsageEventLedger,
+} from './db-schema/usage-tables.js';
+import { ensureTaskTableColumns } from './db-schema/task-tables.js';
+import {
+  rebuildRegisteredGroupsFolder,
+  migrateLegacySchemaRebuilds,
+} from './db-schema/migrations-legacy-rebuilds.js';
+import {
+  ensureMessageDeliveryColumns,
+  reconcileChannelAccountsAndUsernames,
+  cleanEmbeddedReferenceContent,
+} from './db-schema/migrations-data-reconcile.js';
+import { trimRetiredSchemas } from './db-schema/migrations-channel-trims.js';
+import type { DbMigrationContext } from './db-schema/context.js';
 
 let db: InstanceType<typeof Database>;
 /**
@@ -113,7 +135,7 @@ let db: InstanceType<typeof Database>;
  * restating the number. Hardcoding it meant every schema bump edited a dozen
  * unrelated test files, which is churn that hides real assertion changes.
  */
-export const CURRENT_SCHEMA_VERSION = 76;
+export const CURRENT_SCHEMA_VERSION = 77;
 
 export function isDatabaseInitialized(): boolean {
   return Boolean(db?.open);
@@ -124,7 +146,6 @@ let _stmts: {
   storeMessageSelect: any;
   storeMessageInsert: any;
   insertUsageInsert: any;
-  insertUsageUpsert: any;
   updateTokenUsageById: any;
   updateTokenUsageLatest: any;
   getSessionWithUser: any;
@@ -156,25 +177,9 @@ function stmts() {
         `INSERT INTO usage_records (id, event_id, user_id, group_folder, agent_id, message_id, model,
           input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens,
           reasoning_output_tokens,
-          cost_usd, provider_estimated_cost_usd, billed_cost_usd,
+          provider_estimated_cost_usd,
           duration_ms, num_turns, source, usage_date, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ),
-      insertUsageUpsert: db.prepare(
-        `INSERT INTO usage_daily_summary (user_id, model, date,
-          total_input_tokens, total_output_tokens,
-          total_cache_read_tokens, total_cache_creation_tokens,
-          total_reasoning_tokens, total_cost_usd, request_count, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))
-        ON CONFLICT(user_id, model, date) DO UPDATE SET
-          total_input_tokens = total_input_tokens + excluded.total_input_tokens,
-          total_output_tokens = total_output_tokens + excluded.total_output_tokens,
-          total_cache_read_tokens = total_cache_read_tokens + excluded.total_cache_read_tokens,
-          total_cache_creation_tokens = total_cache_creation_tokens + excluded.total_cache_creation_tokens,
-          total_reasoning_tokens = total_reasoning_tokens + excluded.total_reasoning_tokens,
-          total_cost_usd = total_cost_usd + excluded.total_cost_usd,
-          request_count = request_count + 1,
-          updated_at = datetime('now')`,
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ),
       getSessionWithUser: db.prepare(
         `SELECT s.*, u.username, u.role, u.status, u.display_name, u.permissions, u.must_change_password
@@ -546,260 +551,29 @@ export function initDatabase(): void {
   } catch (err) {
     logger.error({ err }, 'Failed to enable foreign-key enforcement');
   }
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS chats (
-      jid TEXT PRIMARY KEY,
-      name TEXT,
-      last_message_time TEXT
-    );
-    CREATE TABLE IF NOT EXISTS messages (
-      id TEXT,
-      chat_jid TEXT,
-      source_jid TEXT,
-      sender TEXT,
-      sender_name TEXT,
-      content TEXT,
-      timestamp TEXT,
-      is_from_me INTEGER,
-      attachments TEXT,
-      token_usage TEXT,
-      channel_context TEXT,
-      turn_id TEXT,
-      session_id TEXT,
-      sdk_message_uuid TEXT,
-      source_kind TEXT,
-      finalization_reason TEXT,
-      delivery_mode TEXT,
-      delivery_status TEXT,
-      delivery_run_id TEXT,
-      delivery_priority INTEGER NOT NULL DEFAULT 0,
-      delivery_updated_at TEXT,
-      PRIMARY KEY (id, chat_jid),
-      FOREIGN KEY (chat_jid) REFERENCES chats(jid)
-    );
-    CREATE INDEX IF NOT EXISTS idx_timestamp ON messages(timestamp);
-    CREATE INDEX IF NOT EXISTS idx_messages_jid_ts ON messages(chat_jid, timestamp);
+  const ctx: DbMigrationContext = {
+    db,
+    rawSchemaVersionBeforeInit,
+    ensureColumn,
+    assertSchema,
+    tableExists,
+    hasColumn,
+    getRouterStateInternal,
+    migrateAgentProfileEffortPolicy,
+    parseAgentProfileRuntimePolicy,
+    computeAgentProfileIdentityHash,
+    insertAgentProfilePromptVersionSnapshot,
+    backfillAgentProfileDefaultsAndWorkspaceMappings,
+    removeLegacyAgentToolPolicies,
+    reconcileCanonicalRuntimeProjections,
+    parseChannelTurnContext,
+  };
+  ensureCoreTables(ctx);
 
-    CREATE TABLE IF NOT EXISTS scheduled_tasks (
-      id TEXT PRIMARY KEY,
-      group_folder TEXT NOT NULL,
-      chat_jid TEXT NOT NULL,
-      prompt TEXT NOT NULL,
-      schedule_type TEXT NOT NULL,
-      schedule_value TEXT NOT NULL,
-      context_mode TEXT DEFAULT 'isolated',
-      execution_type TEXT DEFAULT 'agent',
-      script_command TEXT,
-      next_run TEXT,
-      last_run TEXT,
-      last_result TEXT,
-      status TEXT DEFAULT 'active',
-      created_at TEXT NOT NULL,
-      created_by TEXT,
-      notify_channels TEXT,
-      running_until TEXT,
-      runner_id TEXT,
-      revision INTEGER NOT NULL DEFAULT 1,
-      updated_at TEXT NOT NULL DEFAULT '',
-      deleted_at TEXT
-    );
-    CREATE INDEX IF NOT EXISTS idx_next_run ON scheduled_tasks(next_run);
-    CREATE INDEX IF NOT EXISTS idx_status ON scheduled_tasks(status);
-
-    CREATE TABLE IF NOT EXISTS task_run_logs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      task_id TEXT NOT NULL,
-      run_at TEXT NOT NULL,
-      duration_ms INTEGER NOT NULL,
-      status TEXT NOT NULL,
-      result TEXT,
-      error TEXT,
-      FOREIGN KEY (task_id) REFERENCES scheduled_tasks(id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_task_run_logs ON task_run_logs(task_id, run_at);
-
-    CREATE TABLE IF NOT EXISTS task_runs (
-      id TEXT PRIMARY KEY,
-      task_id TEXT NOT NULL,
-      occurrence_key TEXT NOT NULL UNIQUE,
-      trigger_type TEXT NOT NULL,
-      idempotency_key TEXT,
-      scheduled_for TEXT NOT NULL,
-      definition_revision INTEGER NOT NULL,
-      definition_snapshot TEXT NOT NULL,
-      status TEXT NOT NULL,
-      attempt INTEGER NOT NULL DEFAULT 0,
-      available_at TEXT NOT NULL,
-      lease_owner TEXT,
-      lease_token INTEGER NOT NULL DEFAULT 0,
-      lease_expires_at TEXT,
-      started_at TEXT,
-      completed_at TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      duration_ms INTEGER NOT NULL DEFAULT 0,
-      result TEXT,
-      error TEXT,
-      notification_status TEXT NOT NULL DEFAULT 'pending',
-      notification_error TEXT,
-      notification_summary TEXT,
-      notification_payload TEXT,
-      notification_attempt INTEGER NOT NULL DEFAULT 0,
-      notification_available_at TEXT,
-      notification_lease_owner TEXT,
-      notification_lease_token INTEGER NOT NULL DEFAULT 0,
-      notification_lease_expires_at TEXT,
-      notification_lease_payload TEXT,
-      notification_generation INTEGER NOT NULL DEFAULT 0,
-      continuation_count INTEGER NOT NULL DEFAULT 0,
-      continuation_reason TEXT,
-      continuation_next_step TEXT,
-      continuation_state TEXT,
-      continuation_child_run_id TEXT,
-      FOREIGN KEY (task_id) REFERENCES scheduled_tasks(id)
-    );
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_task_runs_manual_idempotency
-      ON task_runs(task_id, idempotency_key)
-      WHERE idempotency_key IS NOT NULL;
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_task_runs_one_nonterminal
-      ON task_runs(task_id)
-      WHERE status IN ('queued', 'running', 'retry_wait');
-    CREATE INDEX IF NOT EXISTS idx_task_runs_due
-      ON task_runs(status, available_at, lease_expires_at);
-    CREATE INDEX IF NOT EXISTS idx_task_runs_task_created
-      ON task_runs(task_id, created_at DESC);
-  `);
-
-  // State tables (replacing JSON files)
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS router_state (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS sessions (
-      group_folder TEXT NOT NULL,
-      session_id TEXT NOT NULL,
-      agent_id TEXT NOT NULL DEFAULT '',
-      PRIMARY KEY (group_folder, agent_id)
-    );
-    CREATE TABLE IF NOT EXISTS registered_groups (
-      jid TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      folder TEXT NOT NULL,
-      added_at TEXT NOT NULL,
-      container_config TEXT,
-      created_by TEXT,
-      is_home INTEGER DEFAULT 0
-    );
-    CREATE TABLE IF NOT EXISTS channel_accounts (
-      id TEXT PRIMARY KEY,
-      owner_user_id TEXT NOT NULL,
-      provider TEXT NOT NULL,
-      name TEXT NOT NULL,
-      secret_ref TEXT NOT NULL UNIQUE,
-      enabled INTEGER NOT NULL DEFAULT 1,
-      is_default INTEGER NOT NULL DEFAULT 0,
-      is_legacy_default INTEGER NOT NULL DEFAULT 0,
-      auth_mode TEXT NOT NULL DEFAULT 'credentials',
-      auth_status TEXT NOT NULL DEFAULT 'draft',
-      transport_status TEXT NOT NULL DEFAULT 'disconnected',
-      status TEXT NOT NULL DEFAULT 'disconnected',
-      default_agent_profile_id TEXT,
-      default_workspace_jid TEXT,
-      last_error TEXT,
-      connected_at TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      UNIQUE(owner_user_id, provider, name)
-    );
-    CREATE INDEX IF NOT EXISTS idx_channel_accounts_owner_provider
-      ON channel_accounts(owner_user_id, provider, updated_at DESC);
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_channel_accounts_one_default
-      ON channel_accounts(owner_user_id, provider) WHERE is_default = 1;
-    CREATE TABLE IF NOT EXISTS im_context_bindings (
-      source_jid TEXT NOT NULL,
-      context_type TEXT NOT NULL,
-      context_id TEXT NOT NULL,
-      workspace_jid TEXT NOT NULL,
-      agent_id TEXT NOT NULL,
-      root_message_id TEXT,
-      title TEXT,
-      last_active_at TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      PRIMARY KEY (source_jid, context_type, context_id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_icb_workspace ON im_context_bindings(workspace_jid);
-    CREATE INDEX IF NOT EXISTS idx_icb_agent ON im_context_bindings(agent_id);
-    CREATE TABLE IF NOT EXISTS channel_mounts (
-      channel_jid TEXT PRIMARY KEY,
-      channel_type TEXT NOT NULL,
-      workspace_jid TEXT NOT NULL,
-      session_id TEXT,
-      routing_mode TEXT NOT NULL DEFAULT 'single_session',
-      reply_policy TEXT NOT NULL DEFAULT 'source_only',
-      activation_mode TEXT NOT NULL DEFAULT 'auto',
-      audience_mode TEXT NOT NULL DEFAULT 'everyone',
-      owner_im_id TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_channel_mounts_workspace ON channel_mounts(workspace_jid);
-    CREATE INDEX IF NOT EXISTS idx_channel_mounts_session ON channel_mounts(session_id);
-    CREATE INDEX IF NOT EXISTS idx_channel_mounts_type ON channel_mounts(channel_type);
-    CREATE TABLE IF NOT EXISTS workspaces (
-      jid TEXT PRIMARY KEY,
-      folder TEXT NOT NULL,
-      owner_user_id TEXT,
-      name TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'active',
-      is_home INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_workspaces_folder ON workspaces(folder);
-    CREATE INDEX IF NOT EXISTS idx_workspaces_owner ON workspaces(owner_user_id, status);
-    -- Runtime resume state projected from the legacy sessions table. This is
-    -- deliberately not named sessions: product conversation Sessions live in
-    -- agents, while these rows only track SDK/provider resume metadata.
-    CREATE TABLE IF NOT EXISTS workspace_runtime_sessions (
-      group_folder TEXT NOT NULL,
-      runtime_agent_id TEXT NOT NULL DEFAULT '',
-      workspace_jid TEXT NOT NULL,
-      sdk_session_id TEXT NOT NULL DEFAULT '',
-      provider_id TEXT,
-      agent_profile_id TEXT,
-      agent_profile_version INTEGER,
-      identity_hash TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      PRIMARY KEY (group_folder, runtime_agent_id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_workspace_runtime_sessions_workspace ON workspace_runtime_sessions(workspace_jid);
-    CREATE INDEX IF NOT EXISTS idx_workspace_runtime_sessions_profile ON workspace_runtime_sessions(agent_profile_id);
-    CREATE TABLE IF NOT EXISTS agent_channel_mounts (
-      channel_jid TEXT PRIMARY KEY,
-      agent_profile_id TEXT,
-      owner_user_id TEXT,
-      channel_type TEXT NOT NULL,
-      workspace_jid TEXT NOT NULL,
-      workspace_folder TEXT,
-      session_id TEXT,
-      routing_mode TEXT NOT NULL DEFAULT 'single_session',
-      reply_policy TEXT NOT NULL DEFAULT 'source_only',
-      activation_mode TEXT NOT NULL DEFAULT 'auto',
-      audience_mode TEXT NOT NULL DEFAULT 'everyone',
-      owner_im_id TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_agent_channel_mounts_profile ON agent_channel_mounts(agent_profile_id);
-    CREATE INDEX IF NOT EXISTS idx_agent_channel_mounts_workspace ON agent_channel_mounts(workspace_jid);
-    CREATE INDEX IF NOT EXISTS idx_agent_channel_mounts_session ON agent_channel_mounts(session_id);
-  `);
-
-  // ── 以下进入逐版本迁移区（老库 → v76）──
-  // 每段迁移按 schema_version 门控（只对低于目标版本的库生效），顺序即历史。
+  // ── 以下进入逐版本迁移区（老库 → v77）──
+  // 门控为五种异构风格并存（`?? '0'` 新库视作 v0 执行 / `curVer &&` 新库
+  // 跳过 / `!vXCheck ||` 新库执行 / 结构探测与版本号无关 / 无门控幂等操作
+  // 每次启动重放），顺序即历史，不抽统一注册表——统一会改变全新安装行为。
   // 加列：PRAGMA table_info 判存在后 ALTER TABLE ... ADD COLUMN；
   // 改列结构：`_new` 表重建四步（CREATE _new → INSERT 携带数据 → DROP 旧表 →
   // RENAME 改名）。新增迁移必须追加在末尾并递增 CURRENT_SCHEMA_VERSION。
@@ -811,1389 +585,24 @@ export function initDatabase(): void {
   createWorkspaceMemorySchema(db);
   bindWorkspaceMemoryDatabase(db);
 
-  // Auth tables
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      username TEXT NOT NULL UNIQUE,
-      password_hash TEXT NOT NULL,
-      display_name TEXT NOT NULL DEFAULT '',
-      role TEXT NOT NULL DEFAULT 'member',
-      status TEXT NOT NULL DEFAULT 'active',
-      permissions TEXT NOT NULL DEFAULT '[]',
-      must_change_password INTEGER NOT NULL DEFAULT 0,
-      disable_reason TEXT,
-      notes TEXT,
-      avatar_emoji TEXT,
-      avatar_color TEXT,
-      ai_name TEXT,
-      ai_avatar_emoji TEXT,
-      ai_avatar_color TEXT,
-      ai_avatar_url TEXT,
-      default_require_mention INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      last_login_at TEXT,
-      deleted_at TEXT
-    );
+  ensureAuthTables(ctx);
 
-    CREATE TABLE IF NOT EXISTS invite_codes (
-      code TEXT PRIMARY KEY,
-      created_by TEXT NOT NULL,
-      role TEXT NOT NULL DEFAULT 'member',
-      permission_template TEXT,
-      permissions TEXT NOT NULL DEFAULT '[]',
-      max_uses INTEGER NOT NULL DEFAULT 1,
-      used_count INTEGER NOT NULL DEFAULT 0,
-      expires_at TEXT,
-      created_at TEXT NOT NULL,
-      FOREIGN KEY (created_by) REFERENCES users(id)
-    );
+  ensureAgentProfileTables(ctx);
 
-    CREATE TABLE IF NOT EXISTS user_sessions (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      ip_address TEXT,
-      user_agent TEXT,
-      created_at TEXT NOT NULL,
-      expires_at TEXT NOT NULL,
-      last_active_at TEXT NOT NULL,
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-    );
+  ensureUsageTables(ctx);
 
-    CREATE TABLE IF NOT EXISTS auth_audit_log (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      event_type TEXT NOT NULL,
-      username TEXT NOT NULL,
-      actor_username TEXT,
-      ip_address TEXT,
-      user_agent TEXT,
-      details TEXT,
-      created_at TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_auth_audit_created ON auth_audit_log(created_at);
-    CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id);
-    CREATE INDEX IF NOT EXISTS idx_user_sessions_expires ON user_sessions(expires_at);
-    CREATE INDEX IF NOT EXISTS idx_users_status_role ON users(status, role);
-    CREATE INDEX IF NOT EXISTS idx_users_created_at ON users(created_at);
-    CREATE INDEX IF NOT EXISTS idx_invites_created_at ON invite_codes(created_at);
-  `);
+  ensureTaskTableColumns(ctx);
+  rebuildRegisteredGroupsFolder(ctx);
+  ensureMessageDeliveryColumns(ctx);
+  migrateLegacySchemaRebuilds(ctx);
 
-  // User pinned groups (per-user workspace pinning)
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS user_pinned_groups (
-      user_id TEXT NOT NULL,
-      jid TEXT NOT NULL,
-      pinned_at TEXT NOT NULL,
-      PRIMARY KEY (user_id, jid)
-    );
-  `);
+  migrateUsageHistory(ctx);
 
-  // v65 -> v66: CKQClaw Owner Profile remains a reserved Workspace Memory
-  // item; this table tracks only its one-shot onboarding lifecycle. Duplicate
-  // legacy items must be reconciled before the reserved-key unique index is
-  // installed.
-  createOwnerProfileSchema(db);
-  bindOwnerProfileDatabase(db);
-  if (
-    rawSchemaVersionBeforeInit !== null &&
-    Number(rawSchemaVersionBeforeInit) < 66
-  ) {
-    reconcileLegacyOwnerProfileMemory();
-  } else {
-    // Fresh and already-v66 databases need the structural invariant, but must
-    // not re-run legacy sentinel inference on every normal restart.
-    enforceCkqclawOwnerAddressCanonicalInvariant();
-  }
+  migrateAgentProfileColumns(ctx);
 
-  // Sub-agents table for multi-agent parallel execution
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS agents (
-      id TEXT PRIMARY KEY,
-      group_folder TEXT NOT NULL,
-      chat_jid TEXT NOT NULL,
-      name TEXT NOT NULL,
-      prompt TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'running',
-      created_by TEXT,
-      created_at TEXT NOT NULL,
-      completed_at TEXT,
-      result_summary TEXT,
-      last_im_jid TEXT,
-      spawned_from_jid TEXT,
-      source_kind TEXT,
-      thread_id TEXT,
-      root_message_id TEXT,
-      title_source TEXT,
-      last_active_at TEXT
-    );
-    CREATE INDEX IF NOT EXISTS idx_agents_group ON agents(group_folder);
-    CREATE INDEX IF NOT EXISTS idx_agents_jid ON agents(chat_jid);
-    CREATE INDEX IF NOT EXISTS idx_agents_status ON agents(status);
-  `);
+  reconcileChannelAccountsAndUsernames(ctx);
 
-  // Top-level Agent Profiles: runtime identities/personas that own workspaces.
-  // Do not confuse this with the legacy `agents` table above, which stores
-  // workspace-scoped conversation/task/spawn agents.
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS agent_profiles (
-      id TEXT PRIMARY KEY,
-      owner_user_id TEXT NOT NULL,
-      name TEXT NOT NULL,
-      identity_prompt TEXT NOT NULL DEFAULT '',
-      soul_prompt TEXT NOT NULL DEFAULT '',
-      agents_prompt TEXT NOT NULL DEFAULT '',
-      tools_prompt TEXT NOT NULL DEFAULT '',
-      prompt_mode TEXT NOT NULL DEFAULT 'append',
-      include_claude_preset INTEGER NOT NULL DEFAULT 1,
-      avatar_emoji TEXT,
-      avatar_color TEXT,
-      avatar_url TEXT,
-      model_config_id TEXT,
-      runtime_policy TEXT NOT NULL DEFAULT '{}',
-      identity_hash TEXT NOT NULL DEFAULT '',
-      version INTEGER NOT NULL DEFAULT 1,
-      is_default INTEGER NOT NULL DEFAULT 0,
-      status TEXT NOT NULL DEFAULT 'active',
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_profiles_default
-      ON agent_profiles(owner_user_id)
-      WHERE is_default = 1 AND status = 'active';
-    CREATE INDEX IF NOT EXISTS idx_agent_profiles_owner
-      ON agent_profiles(owner_user_id, status);
-
-    CREATE TABLE IF NOT EXISTS agent_profile_prompt_versions (
-      id TEXT PRIMARY KEY,
-      agent_profile_id TEXT NOT NULL,
-      version INTEGER NOT NULL,
-      name TEXT NOT NULL,
-      identity_prompt TEXT NOT NULL DEFAULT '',
-      soul_prompt TEXT NOT NULL DEFAULT '',
-      agents_prompt TEXT NOT NULL DEFAULT '',
-      tools_prompt TEXT NOT NULL DEFAULT '',
-      prompt_mode TEXT NOT NULL DEFAULT 'append',
-      identity_hash TEXT NOT NULL,
-      change_source TEXT NOT NULL DEFAULT 'update',
-      restored_from_version INTEGER,
-      created_at TEXT NOT NULL,
-      UNIQUE(agent_profile_id, version)
-    );
-    CREATE INDEX IF NOT EXISTS idx_agent_profile_prompt_versions_profile
-      ON agent_profile_prompt_versions(agent_profile_id, version DESC);
-
-    CREATE TABLE IF NOT EXISTS agent_builder_drafts (
-      id TEXT PRIMARY KEY,
-      owner_user_id TEXT NOT NULL,
-      source_group TEXT NOT NULL,
-      source_chat_jid TEXT NOT NULL,
-      target_agent_profile_id TEXT,
-      base_agent_version INTEGER,
-      revision INTEGER NOT NULL DEFAULT 1,
-      state TEXT NOT NULL DEFAULT 'ready',
-      definition_json TEXT NOT NULL,
-      assumptions_json TEXT NOT NULL DEFAULT '[]',
-      prepared_turn_id TEXT,
-      confirmation_phrase TEXT NOT NULL DEFAULT '',
-      published_agent_profile_id TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_agent_builder_drafts_owner
-      ON agent_builder_drafts(owner_user_id, updated_at DESC);
-
-    CREATE TABLE IF NOT EXISTS workspace_agent_profiles (
-      group_folder TEXT PRIMARY KEY,
-      agent_profile_id TEXT NOT NULL,
-      interaction_mode TEXT NOT NULL DEFAULT 'assistant'
-        CHECK (interaction_mode IN ('assistant', 'proactive')),
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_workspace_agent_profiles_profile
-      ON workspace_agent_profiles(agent_profile_id);
-  `);
-
-  // Custom model pricing (task V): admin-managed per-model unit prices.
-  // Prices are USD per million tokens and are resolved by the pure pricing
-  // module before any usage event is recorded; history rows are immutable.
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS custom_model_pricing (
-      id TEXT PRIMARY KEY,
-      kind TEXT NOT NULL DEFAULT 'pattern' CHECK (kind IN ('pattern','fallback')),
-      pattern TEXT NOT NULL DEFAULT '',
-      display_name TEXT NOT NULL DEFAULT '',
-      family TEXT NOT NULL DEFAULT 'custom',
-      input_price_per_mtok REAL NOT NULL DEFAULT 0,
-      output_price_per_mtok REAL NOT NULL DEFAULT 0,
-      cache_read_price_per_mtok REAL NOT NULL DEFAULT 0,
-      cache_creation_price_per_mtok REAL NOT NULL DEFAULT 0,
-      reasoning_price_per_mtok REAL NOT NULL DEFAULT 0,
-      enabled INTEGER NOT NULL DEFAULT 1,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-    -- At most one custom fallback rule; duplicate pattern strings collide.
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_pricing_fallback
-      ON custom_model_pricing (kind) WHERE kind = 'fallback';
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_pricing_pattern
-      ON custom_model_pricing (pattern) WHERE kind = 'pattern';
-  `);
-
-  // Token usage tracking tables
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS usage_records (
-      id TEXT PRIMARY KEY,
-      event_id TEXT,
-      user_id TEXT NOT NULL,
-      group_folder TEXT NOT NULL,
-      agent_id TEXT,
-      message_id TEXT,
-      model TEXT NOT NULL DEFAULT 'unknown',
-      input_tokens INTEGER NOT NULL DEFAULT 0,
-      output_tokens INTEGER NOT NULL DEFAULT 0,
-      cache_read_input_tokens INTEGER NOT NULL DEFAULT 0,
-      cache_creation_input_tokens INTEGER NOT NULL DEFAULT 0,
-      reasoning_output_tokens INTEGER NOT NULL DEFAULT 0,
-      cost_usd REAL NOT NULL DEFAULT 0,
-      provider_estimated_cost_usd REAL NOT NULL DEFAULT 0,
-      billed_cost_usd REAL NOT NULL DEFAULT 0,
-      duration_ms INTEGER DEFAULT 0,
-      num_turns INTEGER DEFAULT 0,
-      source TEXT NOT NULL DEFAULT 'agent',
-      usage_date TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-    CREATE INDEX IF NOT EXISTS idx_usage_user_date ON usage_records(user_id, created_at);
-    CREATE INDEX IF NOT EXISTS idx_usage_group_date ON usage_records(group_folder, created_at);
-    CREATE INDEX IF NOT EXISTS idx_usage_model_date ON usage_records(model, created_at);
-    CREATE TABLE IF NOT EXISTS usage_events (
-      event_id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      group_folder TEXT NOT NULL,
-      agent_id TEXT,
-      message_id TEXT,
-      input_tokens INTEGER NOT NULL DEFAULT 0,
-      output_tokens INTEGER NOT NULL DEFAULT 0,
-      cache_read_input_tokens INTEGER NOT NULL DEFAULT 0,
-      cache_creation_input_tokens INTEGER NOT NULL DEFAULT 0,
-      reasoning_output_tokens INTEGER NOT NULL DEFAULT 0,
-      provider_estimated_cost_usd REAL NOT NULL DEFAULT 0,
-      billed_cost_usd REAL NOT NULL DEFAULT 0,
-      duration_ms INTEGER NOT NULL DEFAULT 0,
-      num_turns INTEGER NOT NULL DEFAULT 0,
-      source TEXT NOT NULL DEFAULT 'agent',
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-    CREATE INDEX IF NOT EXISTS idx_usage_events_user_date
-      ON usage_events(user_id, created_at);
-    CREATE INDEX IF NOT EXISTS idx_usage_events_group_date
-      ON usage_events(group_folder, created_at);
-    CREATE INDEX IF NOT EXISTS idx_usage_events_agent_date
-      ON usage_events(agent_id, created_at);
-
-    CREATE TABLE IF NOT EXISTS usage_daily_summary (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id TEXT NOT NULL,
-      model TEXT NOT NULL,
-      date TEXT NOT NULL,
-      total_input_tokens INTEGER NOT NULL DEFAULT 0,
-      total_output_tokens INTEGER NOT NULL DEFAULT 0,
-      total_cache_read_tokens INTEGER NOT NULL DEFAULT 0,
-      total_cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
-      total_reasoning_tokens INTEGER NOT NULL DEFAULT 0,
-      total_cost_usd REAL NOT NULL DEFAULT 0,
-      request_count INTEGER NOT NULL DEFAULT 0,
-      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-      UNIQUE(user_id, model, date)
-    );
-    CREATE INDEX IF NOT EXISTS idx_daily_user_date ON usage_daily_summary(user_id, date);
-  `);
-
-  // v51 usage event ledger columns. These must be added before creating the
-  // event/model uniqueness index because existing databases already have the
-  // usage_records table.
-  ensureColumn('usage_records', 'event_id', 'TEXT');
-  ensureColumn(
-    'usage_records',
-    'provider_estimated_cost_usd',
-    'REAL NOT NULL DEFAULT 0',
-  );
-  ensureColumn('usage_records', 'billed_cost_usd', 'REAL NOT NULL DEFAULT 0');
-  ensureColumn('usage_records', 'usage_date', 'TEXT');
-  db.exec(`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_usage_event_model
-      ON usage_records(event_id, model) WHERE event_id IS NOT NULL;
-    CREATE INDEX IF NOT EXISTS idx_usage_date ON usage_records(usage_date);
-    CREATE INDEX IF NOT EXISTS idx_usage_user_usage_date
-      ON usage_records(user_id, usage_date);
-  `);
-
-  // Lightweight migrations for existing DBs
-  ensureColumn('users', 'permissions', "TEXT NOT NULL DEFAULT '[]'");
-  ensureColumn('users', 'must_change_password', 'INTEGER NOT NULL DEFAULT 0');
-  ensureColumn('users', 'disable_reason', 'TEXT');
-  ensureColumn('users', 'notes', 'TEXT');
-  ensureColumn('users', 'deleted_at', 'TEXT');
-  ensureColumn('invite_codes', 'permission_template', 'TEXT');
-  ensureColumn('invite_codes', 'permissions', "TEXT NOT NULL DEFAULT '[]'");
-  ensureColumn('users', 'avatar_emoji', 'TEXT');
-  ensureColumn('users', 'avatar_color', 'TEXT');
-  ensureColumn(
-    'registered_groups',
-    'execution_mode',
-    "TEXT DEFAULT 'container'",
-  );
-  ensureColumn('registered_groups', 'custom_cwd', 'TEXT');
-  ensureColumn('registered_groups', 'init_source_path', 'TEXT');
-  ensureColumn('registered_groups', 'init_git_url', 'TEXT');
-  ensureColumn('messages', 'attachments', 'TEXT');
-  ensureColumn('messages', 'source_jid', 'TEXT');
-  ensureColumn('registered_groups', 'created_by', 'TEXT');
-  ensureColumn('registered_groups', 'is_home', 'INTEGER DEFAULT 0');
-  // v56 -> v57: cache provider chat avatars so binding lists do not need an
-  // N+1 provider lookup on every open. Provider sync refreshes this URL.
-  ensureColumn('registered_groups', 'avatar_url', 'TEXT');
-  ensureColumn('users', 'avatar_url', 'TEXT');
-  ensureColumn('users', 'ai_name', 'TEXT');
-  ensureColumn('users', 'ai_avatar_emoji', 'TEXT');
-  ensureColumn('users', 'ai_avatar_color', 'TEXT');
-  ensureColumn('users', 'ai_avatar_url', 'TEXT');
-  ensureColumn(
-    'users',
-    'default_require_mention',
-    'INTEGER NOT NULL DEFAULT 0',
-  );
-  ensureColumn('scheduled_tasks', 'created_by', 'TEXT');
-  ensureColumn('scheduled_tasks', 'execution_type', "TEXT DEFAULT 'agent'");
-  ensureColumn('scheduled_tasks', 'script_command', 'TEXT');
-  ensureColumn('scheduled_tasks', 'notify_channels', 'TEXT');
-  ensureColumn('scheduled_tasks', 'execution_mode', 'TEXT');
-  ensureColumn('scheduled_tasks', 'workspace_jid', 'TEXT');
-  ensureColumn('scheduled_tasks', 'workspace_folder', 'TEXT');
-  ensureColumn('scheduled_tasks', 'running_until', 'TEXT');
-  ensureColumn('scheduled_tasks', 'runner_id', 'TEXT');
-  ensureColumn('scheduled_tasks', 'revision', 'INTEGER NOT NULL DEFAULT 1');
-  ensureColumn('scheduled_tasks', 'updated_at', "TEXT NOT NULL DEFAULT ''");
-  ensureColumn('scheduled_tasks', 'deleted_at', 'TEXT');
-  // v62 -> v63: a task stored only the workspace-level `chat_jid`, so execution
-  // had to re-derive its target and fell back to "any group in this folder,
-  // preferring web:". Capture the concrete delivery route instead — CKQClaw's
-  // JID already encodes provider, external chat, channel account and Feishu
-  // thread/root, so one column carries the whole binding. Existing rows are
-  // backfilled from `chat_jid`, which is exactly the route they used before.
-  ensureColumn('scheduled_tasks', 'delivery_route_jid', 'TEXT');
-  db.prepare(
-    `UPDATE scheduled_tasks
-     SET delivery_route_jid = chat_jid
-     WHERE delivery_route_jid IS NULL AND chat_jid IS NOT NULL`,
-  ).run();
-  ensureColumn('task_runs', 'notification_summary', 'TEXT');
-  ensureColumn('task_runs', 'notification_payload', 'TEXT');
-  ensureColumn(
-    'task_runs',
-    'notification_attempt',
-    'INTEGER NOT NULL DEFAULT 0',
-  );
-  ensureColumn('task_runs', 'notification_available_at', 'TEXT');
-  ensureColumn('task_runs', 'notification_lease_owner', 'TEXT');
-  ensureColumn(
-    'task_runs',
-    'notification_lease_token',
-    'INTEGER NOT NULL DEFAULT 0',
-  );
-  ensureColumn('task_runs', 'notification_lease_expires_at', 'TEXT');
-  ensureColumn('task_runs', 'notification_lease_payload', 'TEXT');
-  ensureColumn(
-    'task_runs',
-    'notification_generation',
-    'INTEGER NOT NULL DEFAULT 0',
-  );
-  // v70 -> v71: long-task continuation chain. A run whose Agent declared
-  // itself unfinished (runner tool task_request_continuation) carries the
-  // declared reason/next step and its chain position; the scheduler sweep
-  // settles continuation_state to continued/needs_human/abandoned exactly
-  // once per request.
-  ensureColumn('task_runs', 'continuation_count', 'INTEGER NOT NULL DEFAULT 0');
-  ensureColumn('task_runs', 'continuation_reason', 'TEXT');
-  ensureColumn('task_runs', 'continuation_next_step', 'TEXT');
-  ensureColumn('task_runs', 'continuation_state', 'TEXT');
-  ensureColumn('task_runs', 'continuation_child_run_id', 'TEXT');
-  // Old rows predate updated_at; created_at is the least-surprising baseline.
-  db.prepare(
-    "UPDATE scheduled_tasks SET updated_at = created_at WHERE updated_at = '' OR updated_at IS NULL",
-  ).run();
-  // Migration: remove UNIQUE constraint from registered_groups.folder
-  // Multiple groups (web:main + feishu chats) share folder='main' by design.
-  // The old UNIQUE constraint caused INSERT OR REPLACE to silently delete
-  // the conflicting row, making web:main and feishu groups mutually exclusive.
-  //
-  // ORDERING CONTRACT (task Z follow-up fix): this rebuild DROPs and
-  // recreates registered_groups, so it must run BEFORE every additive
-  // registered_groups ensureColumn below (selected_skills … sender_allowlist,
-  // channel_account_id) — formerly it sat below them, and
-  // an ancient DB's first boot both wiped those columns and then hard-failed
-  // the assertSchema('registered_groups', …) pin, only converging after a
-  // second boot. Its SELECT depends only on columns guaranteed above:
-  // execution_mode (l.~1277), custom_cwd (l.~1282) and avatar_url (l.~1291).
-  //
-  // VALUE CARRYING (task Z follow-up fix 2): the optional columns below are
-  // carried from the source table when present instead of being reset to
-  // NULL/0 — a middle-era DB (populated created_by / owner_claim_source /
-  // is_home but still carrying the folder UNIQUE index) must not lose its
-  // ownership and home markers through the rebuild. Absent columns keep the
-  // historical NULL/0 defaults.
-  const hasUniqueFolder =
-    (
-      db
-        .prepare(
-          `SELECT COUNT(*) as cnt FROM sqlite_master
-         WHERE type='index' AND tbl_name='registered_groups'
-         AND name='sqlite_autoindex_registered_groups_2'`,
-        )
-        .get() as { cnt: number }
-    ).cnt > 0;
-  if (hasUniqueFolder) {
-    const sourceColumns = new Set(
-      (
-        db.prepare('PRAGMA table_info(registered_groups)').all() as Array<{
-          name: string;
-        }>
-      ).map((column) => column.name),
-    );
-    const carry = (column: string, missing: string): string =>
-      sourceColumns.has(column) ? column : missing;
-    const carrySelect = [
-      'jid',
-      'name',
-      'folder',
-      'added_at',
-      'avatar_url',
-      'container_config',
-      'execution_mode',
-      'custom_cwd',
-      carry('init_source_path', 'NULL'),
-      carry('init_git_url', 'NULL'),
-      carry('created_by', 'NULL'),
-      carry('owner_claim_source', 'NULL'),
-      carry('is_home', '0'),
-    ].join(', ');
-    db.transaction(() => {
-      db.exec(`
-        CREATE TABLE registered_groups_new (
-          jid TEXT PRIMARY KEY,
-          name TEXT NOT NULL,
-          folder TEXT NOT NULL,
-          added_at TEXT NOT NULL,
-          avatar_url TEXT,
-          container_config TEXT,
-          execution_mode TEXT DEFAULT 'container',
-          custom_cwd TEXT,
-          init_source_path TEXT,
-          init_git_url TEXT,
-          created_by TEXT,
-          owner_claim_source TEXT,
-          is_home INTEGER DEFAULT 0
-        );
-        INSERT INTO registered_groups_new SELECT ${carrySelect} FROM registered_groups;
-        DROP TABLE registered_groups;
-        ALTER TABLE registered_groups_new RENAME TO registered_groups;
-      `);
-    })();
-  }
-
-  ensureColumn('registered_groups', 'selected_skills', 'TEXT');
-  ensureColumn('sessions', 'agent_id', "TEXT NOT NULL DEFAULT ''");
-  ensureColumn('agents', 'kind', "TEXT NOT NULL DEFAULT 'task'");
-  ensureColumn('registered_groups', 'target_agent_id', 'TEXT');
-  ensureColumn('registered_groups', 'target_main_jid', 'TEXT');
-  ensureColumn(
-    'registered_groups',
-    'reply_policy',
-    "TEXT DEFAULT 'source_only'",
-  );
-  ensureColumn('registered_groups', 'require_mention', 'INTEGER DEFAULT 0');
-  ensureColumn('registered_groups', 'mcp_mode', "TEXT DEFAULT 'inherit'");
-  ensureColumn('registered_groups', 'selected_mcps', 'TEXT');
-  ensureColumn('registered_groups', 'activation_mode', "TEXT DEFAULT 'auto'");
-  ensureColumn(
-    'registered_groups',
-    'audience_mode',
-    "TEXT NOT NULL DEFAULT 'everyone'",
-  );
-  ensureColumn('registered_groups', 'owner_im_id', 'TEXT');
-  ensureColumn('registered_groups', 'owner_claim_source', 'TEXT');
-  // Existing owner anchors predate provenance and may include credentials that
-  // were transferred between CKQClaw users. Keep them usable for legacy
-  // owner-only commands, but never let an ordinary DM silently turn them into
-  // Agent Builder trust; the user must re-pair or configure the owner in Web.
-  db.prepare(
-    `UPDATE registered_groups
-     SET owner_claim_source = 'explicit'
-     WHERE owner_im_id IS NOT NULL AND owner_im_id <> ''
-       AND (owner_claim_source IS NULL OR owner_claim_source = '')`,
-  ).run();
-  ensureColumn(
-    'registered_groups',
-    'conversation_source',
-    "TEXT DEFAULT 'manual'",
-  );
-  ensureColumn(
-    'registered_groups',
-    'conversation_nav_mode',
-    "TEXT DEFAULT 'horizontal'",
-  );
-  ensureColumn(
-    'registered_groups',
-    'binding_mode',
-    "TEXT DEFAULT 'single_context'",
-  );
-  ensureColumn(
-    'registered_groups',
-    'native_context_type',
-    "TEXT DEFAULT 'none'",
-  );
-  ensureColumn('registered_groups', 'feishu_chat_mode', 'TEXT');
-  ensureColumn('registered_groups', 'feishu_group_message_type', 'TEXT');
-  ensureColumn('registered_groups', 'sender_allowlist', 'TEXT');
-  ensureColumn(
-    'channel_mounts',
-    'audience_mode',
-    "TEXT NOT NULL DEFAULT 'everyone'",
-  );
-  ensureColumn(
-    'agent_channel_mounts',
-    'audience_mode',
-    "TEXT NOT NULL DEFAULT 'everyone'",
-  );
-  // v57 -> v58: split Feishu's composite owner_mentioned setting into two
-  // orthogonal policies. Other providers keep their legacy mode until their
-  // connector implements the same audience gate. This is a one-time semantic
-  // migration: replaying it on every startup would overwrite a later explicit
-  // user choice of audience_mode='everyone' whenever the durable owner anchor
-  // (sender_allowlist) is still present.
-  const audiencePolicySchemaVersion = Number(
-    getRouterStateInternal('schema_version') ?? '0',
-  );
-  if (audiencePolicySchemaVersion < 58) {
-    db.exec(`
-      UPDATE registered_groups
-      SET activation_mode = 'when_mentioned', audience_mode = 'owner_only', require_mention = 1
-      WHERE jid LIKE 'feishu:%' AND activation_mode = 'owner_mentioned';
-      UPDATE registered_groups
-      SET audience_mode = 'owner_only'
-      WHERE jid LIKE 'feishu:%' AND sender_allowlist IS NOT NULL;
-      UPDATE channel_mounts
-      SET activation_mode = 'when_mentioned', audience_mode = 'owner_only'
-      WHERE channel_type = 'feishu' AND activation_mode = 'owner_mentioned';
-      UPDATE agent_channel_mounts
-      SET activation_mode = 'when_mentioned', audience_mode = 'owner_only'
-      WHERE channel_type = 'feishu' AND activation_mode = 'owner_mentioned';
-    `);
-  }
-  // v58 -> v59: persist a sanitized, message-level channel context. Existing
-  // rows intentionally remain NULL and continue to decode as context-less.
-  ensureColumn('messages', 'token_usage', 'TEXT');
-  ensureColumn('messages', 'channel_context', 'TEXT');
-  ensureColumn('messages', 'turn_id', 'TEXT');
-  ensureColumn('messages', 'task_id', 'TEXT');
-  ensureColumn('messages', 'session_id', 'TEXT');
-  ensureColumn('messages', 'sdk_message_uuid', 'TEXT');
-  ensureColumn('messages', 'source_kind', 'TEXT');
-  ensureColumn('messages', 'finalization_reason', 'TEXT');
-  ensureColumn('messages', 'delivery_mode', 'TEXT');
-  ensureColumn('messages', 'delivery_status', 'TEXT');
-  ensureColumn('messages', 'delivery_run_id', 'TEXT');
-  ensureColumn('messages', 'delivery_priority', 'INTEGER NOT NULL DEFAULT 0');
-  ensureColumn('messages', 'delivery_updated_at', 'TEXT');
-  db.exec(`
-    CREATE INDEX IF NOT EXISTS idx_messages_follow_up_queue
-      ON messages(chat_jid, delivery_status, delivery_priority, timestamp, id);
-  `);
-  // A process may have crashed after reserving a queued message for a card
-  // action but before injecting it. Reservations are process-local, so make
-  // those rows claimable again on startup.
-  db.prepare(
-    `UPDATE messages
-     SET delivery_status = 'queued', delivery_updated_at = ?
-     WHERE delivery_status = 'promoting'`,
-  ).run(new Date().toISOString());
-  ensureColumn('agents', 'source_kind', 'TEXT');
-  ensureColumn('agents', 'thread_id', 'TEXT');
-  ensureColumn('agents', 'root_message_id', 'TEXT');
-  ensureColumn('agents', 'title_source', 'TEXT');
-  ensureColumn('agents', 'last_active_at', 'TEXT');
-
-  // Add index on target_agent_id for fast lookup of IM bindings
-  db.exec(
-    'CREATE INDEX IF NOT EXISTS idx_rg_target_agent ON registered_groups(target_agent_id)',
-  );
-  db.exec(
-    'CREATE INDEX IF NOT EXISTS idx_rg_target_main ON registered_groups(target_main_jid)',
-  );
-
-  // v19→v20 migration: add token_usage column to messages
-  ensureColumn('messages', 'token_usage', 'TEXT');
-  assertSchema('messages', [
-    'id',
-    'chat_jid',
-    'source_jid',
-    'sender',
-    'sender_name',
-    'content',
-    'timestamp',
-    'is_from_me',
-    'attachments',
-    'token_usage',
-    'channel_context',
-  ]);
-  assertSchema('scheduled_tasks', [
-    'id',
-    'group_folder',
-    'chat_jid',
-    'prompt',
-    'schedule_type',
-    'schedule_value',
-    'context_mode',
-    'next_run',
-    'last_run',
-    'last_result',
-    'status',
-    'created_at',
-    'created_by',
-    'revision',
-    'updated_at',
-    'deleted_at',
-  ]);
-  assertSchema(
-    'registered_groups',
-    [
-      'jid',
-      'name',
-      'folder',
-      'added_at',
-      'avatar_url',
-      'container_config',
-      'execution_mode',
-      'custom_cwd',
-      'init_source_path',
-      'init_git_url',
-      'created_by',
-      'is_home',
-      'selected_skills',
-      'target_agent_id',
-      'target_main_jid',
-      'reply_policy',
-    ],
-    ['trigger_pattern', 'requires_trigger'],
-  );
-
-  assertSchema('users', [
-    'id',
-    'username',
-    'password_hash',
-    'display_name',
-    'role',
-    'status',
-    'permissions',
-    'must_change_password',
-    'disable_reason',
-    'notes',
-    'avatar_emoji',
-    'avatar_color',
-    'avatar_url',
-    'ai_name',
-    'ai_avatar_emoji',
-    'ai_avatar_color',
-    'ai_avatar_url',
-    'default_require_mention',
-    'created_at',
-    'updated_at',
-    'last_login_at',
-    'deleted_at',
-  ]);
-  assertSchema('user_sessions', [
-    'id',
-    'user_id',
-    'ip_address',
-    'user_agent',
-    'created_at',
-    'expires_at',
-    'last_active_at',
-  ]);
-  assertSchema('invite_codes', [
-    'code',
-    'created_by',
-    'role',
-    'permission_template',
-    'permissions',
-    'max_uses',
-    'used_count',
-    'expires_at',
-    'created_at',
-  ]);
-  assertSchema('auth_audit_log', [
-    'id',
-    'event_type',
-    'username',
-    'actor_username',
-    'ip_address',
-    'user_agent',
-    'details',
-    'created_at',
-  ]);
-
-  // Store schema version after all migrations complete
-  // Migrate existing web groups: assign to first admin
-  db.exec(`
-    UPDATE registered_groups SET created_by = (
-      SELECT id FROM users WHERE role = 'admin' AND status = 'active' ORDER BY created_at ASC LIMIT 1
-    ) WHERE jid LIKE 'web:%' AND folder != 'main' AND created_by IS NULL
-  `);
-
-  // Backfill owner for legacy web:main if missing.
-  db.exec(`
-    UPDATE registered_groups SET created_by = (
-      SELECT id FROM users WHERE role = 'admin' AND status = 'active' ORDER BY created_at ASC LIMIT 1
-    ) WHERE jid = 'web:main' AND created_by IS NULL
-  `);
-
-  // Backfill created_by for feishu/telegram groups by matching sibling groups in the same folder.
-  // Only backfill when the folder has exactly one distinct owner; otherwise
-  // keep NULL to avoid misrouting ambiguous legacy data.
-  db.exec(`
-    UPDATE registered_groups
-    SET created_by = (
-      SELECT MIN(rg2.created_by)
-      FROM registered_groups rg2
-      WHERE rg2.folder = registered_groups.folder
-        AND rg2.created_by IS NOT NULL
-    )
-    WHERE (jid LIKE 'feishu:%' OR jid LIKE 'telegram:%')
-      AND created_by IS NULL
-      AND (
-        SELECT COUNT(DISTINCT rg3.created_by)
-        FROM registered_groups rg3
-        WHERE rg3.folder = registered_groups.folder
-          AND rg3.created_by IS NOT NULL
-      ) = 1
-  `);
-
-  // v13 migration: mark existing web:main group as is_home=1
-  db.exec(`
-    UPDATE registered_groups SET is_home = 1
-    WHERE jid = 'web:main' AND folder = 'main' AND is_home = 0
-  `);
-
-  // v16→v17 migration: rebuild sessions table with composite primary key
-  // Old PK was (group_folder), which cannot store multiple agent sessions per folder.
-  // New PK is (group_folder, COALESCE(agent_id, '')) to support per-agent sessions.
-  const curVer = getRouterStateInternal('schema_version');
-  if (curVer && parseInt(curVer, 10) < 17) {
-    db.transaction(() => {
-      // Check if the old table has single-column PK by inspecting table_info
-      const pkCols = (
-        db.prepare("PRAGMA table_info('sessions')").all() as Array<{
-          name: string;
-          pk: number;
-        }>
-      ).filter((c) => c.pk > 0);
-      // Old schema: single PK column 'group_folder'. New schema: composite PK needs rebuild.
-      if (pkCols.length === 1 && pkCols[0].name === 'group_folder') {
-        db.exec(`
-          CREATE TABLE sessions_new (
-            group_folder TEXT NOT NULL,
-            session_id TEXT NOT NULL,
-            agent_id TEXT NOT NULL DEFAULT '',
-            PRIMARY KEY (group_folder, agent_id)
-          );
-          INSERT OR IGNORE INTO sessions_new (group_folder, session_id, agent_id)
-            SELECT group_folder, session_id, COALESCE(agent_id, '') FROM sessions;
-          DROP TABLE sessions;
-          ALTER TABLE sessions_new RENAME TO sessions;
-        `);
-      }
-    })();
-  }
-
-  // v22: Fix target_main_jid that used folder-based JID (web:${folder})
-  // instead of actual registered group JID (web:${uuid}).
-  // Only affects non-home workspaces where folder != uuid.
-  if (curVer && parseInt(curVer, 10) < 22) {
-    const rows = db
-      .prepare(
-        "SELECT jid, target_main_jid FROM registered_groups WHERE target_main_jid IS NOT NULL AND target_main_jid != ''",
-      )
-      .all() as Array<{ jid: string; target_main_jid: string }>;
-    for (const row of rows) {
-      const targetJid = row.target_main_jid;
-      // Check if target_main_jid is a real registered group JID
-      const exists = db
-        .prepare('SELECT 1 FROM registered_groups WHERE jid = ?')
-        .get(targetJid);
-      if (exists) continue;
-      // Not a valid JID — try to resolve via folder
-      if (!targetJid.startsWith('web:')) continue;
-      const folder = targetJid.slice(4);
-      const candidates = db
-        .prepare(
-          "SELECT jid FROM registered_groups WHERE folder = ? AND jid LIKE 'web:%'",
-        )
-        .all(folder) as Array<{ jid: string }>;
-      if (candidates.length === 1) {
-        db.prepare(
-          'UPDATE registered_groups SET target_main_jid = ? WHERE jid = ?',
-        ).run(candidates[0].jid, row.jid);
-      }
-    }
-  }
-
-  // v27→v28: Token usage tables + history migration
-  const v28Check = getRouterStateInternal('schema_version');
-  if (!v28Check || parseInt(v28Check, 10) < 28) {
-    db.transaction(() => {
-      // Count messages with token_usage for logging
-      const countBefore = (
-        db
-          .prepare(
-            "SELECT COUNT(*) as cnt FROM messages WHERE token_usage IS NOT NULL AND json_extract(token_usage, '$.modelUsage') IS NOT NULL",
-          )
-          .get() as { cnt: number }
-      ).cnt;
-
-      // Migrate from messages.token_usage modelUsage into usage_records
-      db.exec(`
-        INSERT OR IGNORE INTO usage_records (id, user_id, group_folder, message_id, model,
-          input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens,
-          cost_usd, duration_ms, num_turns, source, created_at)
-        SELECT
-          lower(hex(randomblob(16))),
-          COALESCE(rg.created_by, 'system'),
-          COALESCE(rg.folder, m.chat_jid),
-          m.id,
-          COALESCE(jme.key, 'unknown'),
-          COALESCE(json_extract(jme.value, '$.inputTokens'), 0),
-          COALESCE(json_extract(jme.value, '$.outputTokens'), 0),
-          COALESCE(json_extract(jme.value, '$.cacheReadInputTokens'), 0),
-          COALESCE(json_extract(jme.value, '$.cacheCreationInputTokens'), 0),
-          COALESCE(json_extract(jme.value, '$.costUSD'), 0),
-          COALESCE(json_extract(m.token_usage, '$.durationMs'), 0),
-          COALESCE(json_extract(m.token_usage, '$.numTurns'), 0),
-          'agent',
-          m.timestamp
-        FROM messages m
-          JOIN json_each(json_extract(m.token_usage, '$.modelUsage')) jme
-          LEFT JOIN registered_groups rg ON rg.jid = m.chat_jid
-        WHERE m.token_usage IS NOT NULL
-          AND json_extract(m.token_usage, '$.modelUsage') IS NOT NULL
-      `);
-
-      // Migrate messages without modelUsage (legacy) using root-level fields
-      db.exec(`
-        INSERT OR IGNORE INTO usage_records (id, user_id, group_folder, message_id, model,
-          input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens,
-          cost_usd, duration_ms, num_turns, source, created_at)
-        SELECT
-          lower(hex(randomblob(16))),
-          COALESCE(rg.created_by, 'system'),
-          COALESCE(rg.folder, m.chat_jid),
-          m.id,
-          'legacy-unknown',
-          COALESCE(json_extract(m.token_usage, '$.inputTokens'), 0),
-          COALESCE(json_extract(m.token_usage, '$.outputTokens'), 0),
-          COALESCE(json_extract(m.token_usage, '$.cacheReadInputTokens'), 0),
-          COALESCE(json_extract(m.token_usage, '$.cacheCreationInputTokens'), 0),
-          COALESCE(json_extract(m.token_usage, '$.costUSD'), 0),
-          COALESCE(json_extract(m.token_usage, '$.durationMs'), 0),
-          COALESCE(json_extract(m.token_usage, '$.numTurns'), 0),
-          'agent',
-          m.timestamp
-        FROM messages m
-          LEFT JOIN registered_groups rg ON rg.jid = m.chat_jid
-        WHERE m.token_usage IS NOT NULL
-          AND (json_extract(m.token_usage, '$.modelUsage') IS NULL
-               OR json_type(json_extract(m.token_usage, '$.modelUsage')) != 'object')
-      `);
-
-      // Build daily summary from usage_records
-      db.exec(`
-        INSERT OR REPLACE INTO usage_daily_summary (user_id, model, date,
-          total_input_tokens, total_output_tokens,
-          total_cache_read_tokens, total_cache_creation_tokens,
-          total_cost_usd, request_count, updated_at)
-        SELECT
-          user_id, model, date(created_at, 'localtime'),
-          SUM(input_tokens), SUM(output_tokens),
-          SUM(cache_read_input_tokens), SUM(cache_creation_input_tokens),
-          SUM(cost_usd), COUNT(*), datetime('now')
-        FROM usage_records
-        GROUP BY user_id, model, date(created_at, 'localtime')
-      `);
-
-      const countAfter = (
-        db.prepare('SELECT COUNT(*) as cnt FROM usage_records').get() as {
-          cnt: number;
-        }
-      ).cnt;
-      logger.info(
-        { countBefore, countAfter },
-        'Token usage migration v27→v28 completed',
-      );
-    })();
-  }
-
-  // v29 → v30: Add last_im_jid to agents table (#225)
-  if (
-    !db
-      .prepare("PRAGMA table_info('agents')")
-      .all()
-      .some((c: any) => c.name === 'last_im_jid')
-  ) {
-    db.exec('ALTER TABLE agents ADD COLUMN last_im_jid TEXT');
-  }
-
-  // v31 → v32: Add spawned_from_jid to agents table (spawn parallel tasks)
-  if (
-    !db
-      .prepare("PRAGMA table_info('agents')")
-      .all()
-      .some((c: any) => c.name === 'spawned_from_jid')
-  ) {
-    db.exec('ALTER TABLE agents ADD COLUMN spawned_from_jid TEXT');
-  }
-
-  // v36 → v37: Add provider_id to sessions table for sticky provider binding.
-  // Prevents "Invalid signature in thinking block" errors when a Claude session
-  // resumed across container restarts gets routed to a different OAuth account.
-  if (
-    !db
-      .prepare("PRAGMA table_info('sessions')")
-      .all()
-      .some((c: any) => c.name === 'provider_id')
-  ) {
-    db.exec('ALTER TABLE sessions ADD COLUMN provider_id TEXT');
-  }
-
-  // v39 → v40: Track the top-level AgentProfile identity used by each Claude
-  // session. When a profile prompt changes, callers can detect the hash mismatch
-  // and start a fresh SDK session without losing CKQClaw message history.
-  ensureColumn('sessions', 'agent_profile_id', 'TEXT');
-  ensureColumn('sessions', 'identity_hash', 'TEXT');
-  ensureColumn('sessions', 'agent_profile_version', 'INTEGER');
-
-  // v40 → v41: Allow each AgentProfile to opt out of the Claude Code
-  // built-in system prompt preset and use only CKQClaw/Agent prompts.
-  ensureColumn(
-    'agent_profiles',
-    'include_claude_preset',
-    'INTEGER NOT NULL DEFAULT 1',
-  );
-
-  // v43 → v44: AgentProfile runtime policy moves provider/tool/skill/MCP
-  // intent from workspace-level compatibility fields into the top-level Agent.
-  ensureColumn(
-    'agent_profiles',
-    'runtime_policy',
-    "TEXT NOT NULL DEFAULT '{}'",
-  );
-  // v46 → v47: profile-level avatar overrides. Null means inherit the
-  // globally configured main CKQClaw avatar.
-  ensureColumn('agent_profiles', 'avatar_emoji', 'TEXT');
-  ensureColumn('agent_profiles', 'avatar_color', 'TEXT');
-  ensureColumn('agent_profiles', 'avatar_url', 'TEXT');
-  // v67 -> v68: a top-level Agent can pin one complete model/Provider
-  // configuration. Null deliberately means "follow the system default".
-  ensureColumn('agent_profiles', 'model_config_id', 'TEXT');
-  db.exec(`
-    CREATE INDEX IF NOT EXISTS idx_agent_profiles_model_config
-      ON agent_profiles(model_config_id)
-      WHERE model_config_id IS NOT NULL;
-  `);
-  // v68 -> v69: make reasoning effort an explicit Agent runtime policy. The
-  // inherited default preserves every existing Provider/SDK behavior, so this
-  // migration normalizes JSON only and deliberately does not bump Agent
-  // identity/version metadata.
-  if (
-    rawSchemaVersionBeforeInit !== null &&
-    Number(rawSchemaVersionBeforeInit) < 69
-  ) {
-    migrateAgentProfileEffortPolicy();
-  }
-
-  // v47 → v48: split the legacy all-in-one Agent prompt into the four
-  // IDENTITY / SOUL / AGENTS / TOOLS sections. The legacy prompt represented
-  // general operating instructions, so migrate it losslessly into AGENTS.
-  const promptSchemaVersion = Number(
-    getRouterStateInternal('schema_version') ?? '0',
-  );
-  ensureColumn('agent_profiles', 'soul_prompt', "TEXT NOT NULL DEFAULT ''");
-  ensureColumn('agent_profiles', 'agents_prompt', "TEXT NOT NULL DEFAULT ''");
-  ensureColumn('agent_profiles', 'tools_prompt', "TEXT NOT NULL DEFAULT ''");
-  ensureColumn(
-    'agent_profiles',
-    'prompt_mode',
-    "TEXT NOT NULL DEFAULT 'append'",
-  );
-  ensureColumn(
-    'agent_builder_drafts',
-    'confirmation_phrase',
-    "TEXT NOT NULL DEFAULT ''",
-  );
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS agent_profile_prompt_versions (
-      id TEXT PRIMARY KEY,
-      agent_profile_id TEXT NOT NULL,
-      version INTEGER NOT NULL,
-      name TEXT NOT NULL,
-      identity_prompt TEXT NOT NULL DEFAULT '',
-      soul_prompt TEXT NOT NULL DEFAULT '',
-      agents_prompt TEXT NOT NULL DEFAULT '',
-      tools_prompt TEXT NOT NULL DEFAULT '',
-      prompt_mode TEXT NOT NULL DEFAULT 'append',
-      identity_hash TEXT NOT NULL,
-      change_source TEXT NOT NULL DEFAULT 'update',
-      restored_from_version INTEGER,
-      created_at TEXT NOT NULL,
-      UNIQUE(agent_profile_id, version)
-    );
-    CREATE INDEX IF NOT EXISTS idx_agent_profile_prompt_versions_profile
-      ON agent_profile_prompt_versions(agent_profile_id, version DESC);
-  `);
-  if (promptSchemaVersion < 48) {
-    const legacyRows = db
-      .prepare('SELECT * FROM agent_profiles')
-      .all() as Array<Record<string, unknown>>;
-    db.transaction(() => {
-      for (const row of legacyRows) {
-        const legacyPrompt = String(row.identity_prompt ?? '');
-        const includePreset = Number(row.include_claude_preset ?? 1) === 1;
-        const prompts = normalizeAgentProfilePrompts({
-          identity_prompt: '',
-          soul_prompt: String(row.soul_prompt ?? ''),
-          agents_prompt: String(row.agents_prompt ?? '') || legacyPrompt,
-          tools_prompt: String(row.tools_prompt ?? ''),
-          prompt_mode: promptModeFromLegacyPreset(includePreset),
-        });
-        const runtimePolicy = parseAgentProfileRuntimePolicy(
-          row.runtime_policy,
-        );
-        const identityHash = computeAgentProfileIdentityHash(
-          prompts,
-          runtimePolicy,
-          String(row.name ?? ''),
-        );
-        db.prepare(
-          `UPDATE agent_profiles
-           SET identity_prompt = ?, soul_prompt = ?, agents_prompt = ?, tools_prompt = ?,
-               prompt_mode = ?, include_claude_preset = ?, identity_hash = ?
-           WHERE id = ?`,
-        ).run(
-          prompts.identity_prompt,
-          prompts.soul_prompt,
-          prompts.agents_prompt,
-          prompts.tools_prompt,
-          prompts.prompt_mode,
-          includeClaudePresetForMode(prompts.prompt_mode) ? 1 : 0,
-          identityHash,
-          String(row.id),
-        );
-        insertAgentProfilePromptVersionSnapshot({
-          profileId: String(row.id),
-          version: Number(row.version ?? 1),
-          name: String(row.name ?? ''),
-          prompts,
-          identityHash,
-          changeSource: 'migration',
-          createdAt: String(
-            row.updated_at ?? row.created_at ?? new Date().toISOString(),
-          ),
-        });
-      }
-    })();
-  }
-
-  // v48 → v49: first-class channel accounts. Credentials are stored outside
-  // SQLite behind secret_ref; routing projections retain the account ID so
-  // two bots in the same external chat cannot share a JID/mount accidentally.
-  ensureColumn('registered_groups', 'channel_account_id', 'TEXT');
-  // v73 → v74 (task Z): workspace-level per-turn auto-memory recall opt-in.
-  // 0/NULL = off (backward compatible); any non-1 value also reads as off —
-  // unlike container_config this flag must never be able to block a start.
-  // Placed after the unique-folder table rebuild above: that migration drops
-  // and recreates registered_groups, wiping ensureColumns registered before
-  // it on an ancient DB's first boot.
-  ensureColumn('channel_mounts', 'channel_account_id', 'TEXT');
-  ensureColumn('agent_channel_mounts', 'channel_account_id', 'TEXT');
-  ensureColumn(
-    'channel_accounts',
-    'is_legacy_default',
-    'INTEGER NOT NULL DEFAULT 0',
-  );
-  // v49 → v50: model authorization separately from the live transport.
-  // QR protocols may have a socket running while still waiting for a scan;
-  // that must never be published as a connected account.
-  ensureColumn(
-    'channel_accounts',
-    'auth_mode',
-    "TEXT NOT NULL DEFAULT 'credentials'",
-  );
-  ensureColumn(
-    'channel_accounts',
-    'auth_status',
-    "TEXT NOT NULL DEFAULT 'draft'",
-  );
-  ensureColumn(
-    'channel_accounts',
-    'transport_status',
-    "TEXT NOT NULL DEFAULT 'disconnected'",
-  );
-  db.exec(`
-    UPDATE channel_accounts SET auth_mode = CASE
-      WHEN provider IN ('wechat', 'whatsapp') THEN 'qr_session'
-      WHEN provider IN ('telegram', 'discord') THEN 'bot_token'
-      ELSE 'credentials'
-    END
-    WHERE auth_mode IS NULL OR auth_mode = '' OR auth_mode = 'credentials';
-    UPDATE channel_accounts SET auth_status = CASE
-      WHEN status = 'connected' THEN 'authorized'
-      WHEN status = 'error' THEN 'error'
-      ELSE auth_status
-    END;
-    UPDATE channel_accounts SET transport_status = status
-      WHERE transport_status = 'disconnected' AND status != 'disconnected';
-  `);
-  db.exec(`
-    CREATE INDEX IF NOT EXISTS idx_rg_channel_account
-      ON registered_groups(channel_account_id);
-    CREATE INDEX IF NOT EXISTS idx_channel_mounts_account
-      ON channel_mounts(channel_account_id);
-    CREATE INDEX IF NOT EXISTS idx_agent_channel_mounts_account
-      ON agent_channel_mounts(channel_account_id);
-  `);
-
-  // v44 → v45: make the SDK resume-state projection explicit. The former
-  // `workspace_sessions` name looked like a product conversation model even
-  // though it only mirrored `sessions` provider/SDK metadata.
-  if (tableExists('workspace_sessions')) {
-    db.transaction(() => {
-      db.exec(`
-        INSERT OR REPLACE INTO workspace_runtime_sessions (
-          group_folder, runtime_agent_id, workspace_jid, sdk_session_id,
-          provider_id, agent_profile_id, agent_profile_version, identity_hash,
-          created_at, updated_at
-        )
-        SELECT group_folder, session_agent_id, workspace_jid, claude_session_id,
-          provider_id, agent_profile_id, agent_profile_version, identity_hash,
-          created_at, updated_at
-        FROM workspace_sessions
-      `);
-      db.exec('DROP TABLE workspace_sessions');
-      db.exec(`
-        CREATE INDEX IF NOT EXISTS idx_workspace_runtime_sessions_workspace
-          ON workspace_runtime_sessions(workspace_jid);
-        CREATE INDEX IF NOT EXISTS idx_workspace_runtime_sessions_profile
-          ON workspace_runtime_sessions(agent_profile_id);
-      `);
-    })();
-  }
-
-  // v37 → v38: Added users.default_require_mention column (per-user default
-  // for require_mention on auto-registered IM group chats). The actual
-  // ensureColumn migration runs above with the other users.* additions —
-  // its position before assertSchema('users', …) matters because the
-  // schema check would otherwise reject pre-v38 databases on startup.
-
-  // v38 → v39: Lowercase usernames + add COLLATE NOCASE uniqueness.
-  // R1 added `username.toLowerCase()` to login/register/setup/admin-create/
-  // profile-update routes for case-insensitive auth; without this migration
-  // any pre-existing mixed-case username (e.g. 'Admin') is permanently
-  // locked out (login lowercases input → DB lookup misses → 401).
-  // We only run UPDATE; the existing UNIQUE constraint already prevents
-  // future mixed-case inserts because the routes lowercase before INSERT.
-  // Conflicts (e.g. both 'admin' and 'Admin' rows already exist) are rare
-  // because the original UNIQUE was case-sensitive, so they exist only when
-  // the operator manually inserted both. We log the conflict and refuse to
-  // mutate that row, leaving the operator to clean up by hand.
-  {
-    const v = getRouterStateInternal('schema_version');
-    const numV = v ? parseInt(v, 10) : 0;
-    if (numV < 39 || !v) {
-      const mixedCaseRows = db
-        .prepare(
-          // ORDER BY 让多次 dry-run 结果稳定 + 让"早创建的真账号"优先被
-          // lowercase 化，避免后注册的混淆账号顶替原账号。
-          'SELECT id, username FROM users WHERE username != lower(username) ORDER BY created_at ASC, id ASC',
-        )
-        .all() as Array<{ id: string; username: string }>;
-      if (mixedCaseRows.length > 0) {
-        const txn = db.transaction(() => {
-          for (const row of mixedCaseRows) {
-            const lower = row.username.toLowerCase();
-            const conflict = db
-              .prepare('SELECT id FROM users WHERE id != ? AND username = ?')
-              .get(row.id, lower) as { id: string } | undefined;
-            if (conflict) {
-              logger.error(
-                {
-                  userId: row.id,
-                  username: row.username,
-                  conflictUserId: conflict.id,
-                },
-                'Username case-normalization migration: conflict, leaving row as-is',
-              );
-              continue;
-            }
-            db.prepare('UPDATE users SET username = ? WHERE id = ?').run(
-              lower,
-              row.id,
-            );
-          }
-        });
-        txn();
-        logger.info(
-          { rows: mixedCaseRows.length },
-          'Username case-normalization migration v39 completed',
-        );
-      }
-    }
-  }
-
-  // v42 → v43: top-level Agent ownership and canonical workspace/channel
-  // projections. Tables are created with CREATE IF NOT EXISTS above; this
-  // pass backfills sources and removes any projection-only ghosts.
-  // v45 → v46: workspace sharing was removed. Drop the legacy membership
-  // table so stale grants cannot survive an upgrade.
-  // v60 -> v61: interaction behavior belongs to the Workspace↔Agent binding,
-  // not the reusable AgentProfile. This column must exist before the generic
-  // AgentProfile workspace backfill below: that backfill reads existing
-  // bindings through getWorkspaceAgentProfileId(), whose row projection now
-  // includes interaction_mode.
-  ensureColumn(
-    'workspace_agent_profiles',
-    'interaction_mode',
-    "TEXT NOT NULL DEFAULT 'assistant'",
-  );
-
-  // v61 -> v62: "persona" conflated identity with reply delivery. The mode is
-  // now named "proactive": the Agent explicitly decides when to call
-  // send_message, while its identity remains owned by AgentProfile.
-  const replyModeSchemaVersion = Number(
-    getRouterStateInternal('schema_version') ?? '0',
-  );
-  if (replyModeSchemaVersion < 62) {
-    db.transaction(() => {
-      db.exec(`
-        CREATE TABLE workspace_agent_profiles_v62 (
-          group_folder TEXT PRIMARY KEY,
-          agent_profile_id TEXT NOT NULL,
-          interaction_mode TEXT NOT NULL DEFAULT 'assistant'
-            CHECK (interaction_mode IN ('assistant', 'proactive')),
-          created_at TEXT NOT NULL,
-          updated_at TEXT NOT NULL
-        );
-        INSERT INTO workspace_agent_profiles_v62 (
-          group_folder, agent_profile_id, interaction_mode, created_at, updated_at
-        )
-        SELECT
-          group_folder,
-          agent_profile_id,
-          CASE
-            WHEN interaction_mode IN ('persona', 'proactive') THEN 'proactive'
-            ELSE 'assistant'
-          END,
-          created_at,
-          updated_at
-        FROM workspace_agent_profiles;
-        DROP TABLE workspace_agent_profiles;
-        ALTER TABLE workspace_agent_profiles_v62
-          RENAME TO workspace_agent_profiles;
-        CREATE INDEX idx_workspace_agent_profiles_profile
-          ON workspace_agent_profiles(agent_profile_id);
-      `);
-    })();
-  }
-  db.prepare(
-    `UPDATE workspace_agent_profiles
-     SET interaction_mode = 'assistant'
-     WHERE interaction_mode IS NULL
-        OR interaction_mode NOT IN ('assistant', 'proactive')`,
-  ).run();
-
-  db.exec('DROP TABLE IF EXISTS group_members');
-  backfillAgentProfileDefaultsAndWorkspaceMappings();
-  removeLegacyAgentToolPolicies();
-  reconcileCanonicalRuntimeProjections();
-
-  // v50 -> v51: make usage a first-class, idempotent event ledger. Historical
-  // rows predate event IDs, so each row becomes one explicitly marked legacy
-  // event; we do not guess which old model rows belonged to the same run.
-  // v55 -> v56: Kaboo-compatible reasoning is a fifth, independently visible
-  // token class. Historical CKQClaw rows kept Claude thinking folded into
-  // output, so they remain reasoning=0 rather than being guessed retroactively.
-  ensureColumn(
-    'usage_records',
-    'reasoning_output_tokens',
-    'INTEGER NOT NULL DEFAULT 0',
-  );
-  ensureColumn(
-    'usage_events',
-    'reasoning_output_tokens',
-    'INTEGER NOT NULL DEFAULT 0',
-  );
-  ensureColumn(
-    'usage_daily_summary',
-    'total_reasoning_tokens',
-    'INTEGER NOT NULL DEFAULT 0',
-  );
-  const v51Check = getRouterStateInternal('schema_version');
-  if (!v51Check || parseInt(v51Check, 10) < 51) {
-    db.transaction(() => {
-      db.exec(`
-        UPDATE usage_records
-        SET provider_estimated_cost_usd = cost_usd
-        WHERE provider_estimated_cost_usd = 0 AND cost_usd != 0;
-
-        UPDATE usage_records
-        SET usage_date = date(created_at, 'localtime')
-        WHERE usage_date IS NULL OR usage_date = '';
-
-        UPDATE usage_records
-        SET user_id = COALESCE((
-          SELECT rg.created_by FROM registered_groups rg
-          WHERE rg.folder = usage_records.group_folder
-            AND rg.created_by IS NOT NULL
-          LIMIT 1
-        ), user_id)
-        WHERE user_id = 'system';
-
-        UPDATE usage_records
-        SET event_id = 'legacy:' || id
-        WHERE event_id IS NULL OR event_id = '';
-
-        INSERT OR IGNORE INTO usage_events (
-          event_id, user_id, group_folder, agent_id, message_id,
-          input_tokens, output_tokens, cache_read_input_tokens,
-          cache_creation_input_tokens, reasoning_output_tokens,
-          provider_estimated_cost_usd,
-          billed_cost_usd, duration_ms, num_turns, source, created_at
-        )
-        SELECT event_id, user_id, group_folder, agent_id, message_id,
-          input_tokens, output_tokens, cache_read_input_tokens,
-          cache_creation_input_tokens, reasoning_output_tokens,
-          provider_estimated_cost_usd,
-          billed_cost_usd, duration_ms, num_turns, source, created_at
-        FROM usage_records;
-      `);
-    })();
-  }
-  // Idempotent repair for installations that briefly ran an early v51 build
-  // before usage_date was added to the finalized migration.
-  db.exec(`
-    UPDATE usage_records
-    SET usage_date = date(created_at, 'localtime')
-    WHERE usage_date IS NULL OR usage_date = '';
-  `);
+  migrateUsageEventLedger(ctx);
 
   // v59 -> v60: durable, provider-neutral channel inbox / Agent turn /
   // per-artifact outbox / streaming-card state. The store module owns the
@@ -2201,385 +610,13 @@ export function initDatabase(): void {
   createChannelReliabilitySchema(db);
   bindChannelReliabilityDatabase(db);
 
-  // v63 -> v64: early Feishu reply enrichment embedded quoted ancestors in
-  // messages.content, leaking prompt scaffolding into Web history and then
-  // duplicating it again during fresh-session recovery. Clean only rows whose
-  // direct parent is safely present in the same logical conversation; rows
-  // whose quoted context is the sole surviving copy remain untouched.
-  const embeddedReferenceSchemaVersion = Number(
-    getRouterStateInternal('schema_version') ?? '0',
-  );
-  if (embeddedReferenceSchemaVersion < 64) {
-    const candidates = db
-      .prepare(
-        `SELECT id, chat_jid, content, channel_context
-         FROM messages
-         WHERE content LIKE ?`,
-      )
-      .all('[引用消息链（最早到最近）]\n%') as Array<{
-      id: string;
-      chat_jid: string;
-      content: string;
-      channel_context: unknown;
-    }>;
-    const findParent = db.prepare(
-      `SELECT sender_name, content
-       FROM messages
-       WHERE id = ? AND chat_jid = ?
-       LIMIT 1`,
-    );
-    const updateMessage = db.prepare(
-      `UPDATE messages
-       SET content = ?, channel_context = ?
-       WHERE id = ? AND chat_jid = ? AND content = ?`,
-    );
-    let migratedRows = 0;
-    db.transaction(() => {
-      for (const candidate of candidates) {
-        const split = splitLegacyEmbeddedReferenceContent(candidate.content);
-        const context = parseChannelTurnContext(candidate.channel_context);
-        const parentId = context?.message?.parentId;
-        if (!split || !context?.message || !parentId) continue;
-        const parent = findParent.get(parentId, candidate.chat_jid) as
-          | { sender_name: string | null; content: string }
-          | undefined;
-        if (!parent) continue;
+  cleanEmbeddedReferenceContent(ctx);
 
-        const parentText =
-          splitLegacyEmbeddedReferenceContent(String(parent.content))
-            ?.currentContent ?? String(parent.content);
-        const referencedMessages = context.message.referencedMessages?.length
-          ? context.message.referencedMessages
-          : [
-              {
-                id: parentId,
-                ...(parent.sender_name
-                  ? { sender: String(parent.sender_name) }
-                  : {}),
-                text: parentText,
-              },
-            ];
-        const migratedContext: ChannelTurnContext = {
-          ...context,
-          message: {
-            ...context.message,
-            referencedMessages,
-          },
-        };
-        const result = updateMessage.run(
-          split.currentContent,
-          JSON.stringify(migratedContext),
-          candidate.id,
-          candidate.chat_jid,
-          candidate.content,
-        );
-        migratedRows += Number(result.changes ?? 0);
-      }
-    })();
-    if (migratedRows > 0) {
-      logger.info(
-        { migratedRows },
-        'Separated legacy Feishu quoted context from canonical message content',
-      );
-    }
-  }
+  trimRetiredSchemas(ctx);
 
-  // v66 -> v67: drop the legacy pre-v65 memory chunk index. Workspace Memory
-  // v2 (workspace_memory_* tables) replaced it; no code path reads or writes
-  // memory_chunks anymore, yet with its FTS shadow tables it dominated
-  // production database size (65% of the file, zero writes for months).
-  const memoryChunksSchemaVersion = Number(
-    getRouterStateInternal('schema_version') ?? '0',
-  );
-  if (memoryChunksSchemaVersion < 67) {
-    const hadLegacyChunks = tableExists('memory_chunks');
-    db.exec(`
-      DROP TABLE IF EXISTS memory_chunks_fts;
-      DROP TABLE IF EXISTS memory_chunks;
-    `);
-    if (hadLegacyChunks) {
-      logger.info(
-        'Dropped legacy memory_chunks tables superseded by Workspace Memory v2',
-      );
-    }
-  }
-
-  // v71 -> v72: drop the tool-approval gate's audit table. The approval gate
-  // (policy/extension/loop guard) was rolled back with the survey-driven
-  // modules (task U); no code path reads or writes pending_approvals anymore.
-  const pendingApprovalsSchemaVersion = Number(
-    getRouterStateInternal('schema_version') ?? '0',
-  );
-  if (pendingApprovalsSchemaVersion < 72) {
-    const hadPendingApprovals = tableExists('pending_approvals');
-    db.exec('DROP TABLE IF EXISTS pending_approvals;');
-    if (hadPendingApprovals) {
-      logger.info(
-        'Dropped pending_approvals table superseded by the approval-gate rollback',
-      );
-    }
-  }
-
-  // v72 -> v73 (task V): custom_model_pricing only. The table and its partial
-  // unique indexes are created idempotently by the base schema block above
-  // (CREATE TABLE/INDEX IF NOT EXISTS), so this bump carries no data migration
-  // and needs no versioned step; existing usage rows are never repriced.
-
-  // v74 -> v75 (task AJ): retire the Telegram/Discord/WhatsApp IM channels.
-  // User-approved destructive trim (2026-11-12): account rows plus every row
-  // owned by the retired channel JID prefixes (chats/messages, mounts,
-  // bindings, pinned groups, builder drafts, tasks + their runs/logs) are
-  // deleted — the pre-migration backup is the rollback path. Surviving rows
-  // only lose retired references: agent IM pointers are NULLed, task delivery
-  // routes fall back to chat_jid, and notify_channels lists (task column +
-  // run definition snapshots) drop the retired values so the narrowed zod
-  // enum keeps validating stored rows. Workspaces are web:*-keyed and stay.
-  const channelTrimSchemaVersion = Number(
-    getRouterStateInternal('schema_version') ?? '0',
-  );
-  if (channelTrimSchemaVersion < 75) {
-    const retiredPrefixes = ['telegram:', 'discord:', 'whatsapp:'];
-    const retiredLike = retiredPrefixes.map((p) => `${p}%`);
-    const retiredSet = new Set(['telegram', 'discord', 'whatsapp']);
-    const like3 = (col: string) =>
-      retiredLike.map((p) => `${col} LIKE ?`).join(' OR ');
-    const isRetiredJid = (value: unknown): value is string =>
-      typeof value === 'string' &&
-      retiredPrefixes.some((prefix) => value.startsWith(prefix));
-
-    let trimmedTaskNotify = 0;
-    let trimmedTaskRoutes = 0;
-    let trimmedSnapshots = 0;
-
-    const trimRetiredChannels = db.transaction(() => {
-      const deletedCounts: Record<string, number> = {};
-      const deleteBy = (table: string, sql: string, ...params: unknown[]) => {
-        const info = db.prepare(sql).run(...params);
-        if (info.changes > 0) deletedCounts[table] = info.changes;
-      };
-
-      // Children first: FK enforcement is ON and none of these FKs cascade.
-      deleteBy(
-        'messages',
-        `DELETE FROM messages WHERE ${like3('chat_jid')}`,
-        ...retiredLike,
-      );
-      deleteBy(
-        'chats',
-        `DELETE FROM chats WHERE ${like3('jid')}`,
-        ...retiredLike,
-      );
-      const retiredTaskIds = `SELECT id FROM scheduled_tasks WHERE ${like3(
-        'chat_jid',
-      )}`;
-      deleteBy(
-        'task_run_logs',
-        `DELETE FROM task_run_logs WHERE task_id IN (${retiredTaskIds})`,
-        ...retiredLike,
-      );
-      deleteBy(
-        'task_runs',
-        `DELETE FROM task_runs WHERE task_id IN (${retiredTaskIds})`,
-        ...retiredLike,
-      );
-      deleteBy(
-        'scheduled_tasks',
-        `DELETE FROM scheduled_tasks WHERE ${like3('chat_jid')}`,
-        ...retiredLike,
-      );
-      deleteBy(
-        'registered_groups',
-        `DELETE FROM registered_groups WHERE ${like3('jid')}`,
-        ...retiredLike,
-      );
-      deleteBy(
-        'im_context_bindings',
-        `DELETE FROM im_context_bindings WHERE ${like3('source_jid')}`,
-        ...retiredLike,
-      );
-      deleteBy(
-        'channel_mounts',
-        `DELETE FROM channel_mounts WHERE channel_type IN ('telegram', 'discord', 'whatsapp')`,
-      );
-      deleteBy(
-        'agent_channel_mounts',
-        `DELETE FROM agent_channel_mounts WHERE channel_type IN ('telegram', 'discord', 'whatsapp')`,
-      );
-      deleteBy(
-        'user_pinned_groups',
-        `DELETE FROM user_pinned_groups WHERE ${like3('jid')}`,
-        ...retiredLike,
-      );
-      deleteBy(
-        'agent_builder_drafts',
-        `DELETE FROM agent_builder_drafts WHERE ${like3('source_chat_jid')}`,
-        ...retiredLike,
-      );
-      // Agents live on workspace folders, not channels: drop the ones whose
-      // conversation JID was a retired channel, keep the rest and only NULL
-      // their retired IM pointers.
-      deleteBy(
-        'agents',
-        `DELETE FROM agents WHERE ${like3('chat_jid')}`,
-        ...retiredLike,
-      );
-      trimmedTaskRoutes += db
-        .prepare(
-          `UPDATE agents SET last_im_jid = NULL WHERE ${like3('last_im_jid')}`,
-        )
-        .run(...retiredLike).changes;
-      trimmedTaskRoutes += db
-        .prepare(
-          `UPDATE agents SET spawned_from_jid = NULL WHERE ${like3('spawned_from_jid')}`,
-        )
-        .run(...retiredLike).changes;
-      deleteBy(
-        'channel_accounts',
-        `DELETE FROM channel_accounts WHERE provider IN ('telegram', 'discord', 'whatsapp')`,
-      );
-
-      // Delivery routes pointing at retired chats fall back to chat_jid
-      // (same NULL-fallback mapTaskRunRow already applies on read).
-      trimmedTaskRoutes += db
-        .prepare(
-          `UPDATE scheduled_tasks SET delivery_route_jid = NULL WHERE ${like3(
-            'delivery_route_jid',
-          )}`,
-        )
-        .run(...retiredLike).changes;
-
-      // notify_channels trim on surviving tasks (stored as a JSON array).
-      const updateTaskNotify = db.prepare(
-        'UPDATE scheduled_tasks SET notify_channels = ? WHERE id = ?',
-      );
-      for (const row of db
-        .prepare(
-          'SELECT id, notify_channels FROM scheduled_tasks WHERE notify_channels IS NOT NULL',
-        )
-        .all() as Array<{ id: string; notify_channels: string }>) {
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(row.notify_channels);
-        } catch {
-          continue;
-        }
-        if (!Array.isArray(parsed)) continue;
-        const kept = parsed.filter(
-          (channel) => typeof channel === 'string' && !retiredSet.has(channel),
-        );
-        if (kept.length === parsed.length) continue;
-        updateTaskNotify.run(
-          kept.length > 0 ? JSON.stringify(kept) : null,
-          row.id,
-        );
-        trimmedTaskNotify += 1;
-      }
-
-      // Definition snapshots of surviving runs: drop retired notify_channels
-      // values and NULL retired delivery routes so retries/notifications
-      // never resurrect a deleted provider.
-      const updateSnapshot = db.prepare(
-        'UPDATE task_runs SET definition_snapshot = ? WHERE id = ?',
-      );
-      for (const row of db
-        .prepare(
-          'SELECT id, definition_snapshot FROM task_runs WHERE json_valid(definition_snapshot)',
-        )
-        .all() as Array<{ id: string; definition_snapshot: string }>) {
-        let snapshot: Record<string, unknown>;
-        try {
-          snapshot = JSON.parse(row.definition_snapshot) as Record<
-            string,
-            unknown
-          >;
-        } catch {
-          continue;
-        }
-        let changed = false;
-        if (Array.isArray(snapshot.notify_channels)) {
-          const kept = snapshot.notify_channels.filter(
-            (channel) =>
-              typeof channel === 'string' && !retiredSet.has(channel),
-          );
-          if (kept.length !== snapshot.notify_channels.length) {
-            snapshot.notify_channels = kept.length > 0 ? kept : null;
-            changed = true;
-          }
-        }
-        if (isRetiredJid(snapshot.delivery_route_jid)) {
-          snapshot.delivery_route_jid = null;
-          changed = true;
-        }
-        if (!changed) continue;
-        updateSnapshot.run(JSON.stringify(snapshot), row.id);
-        trimmedSnapshots += 1;
-      }
-
-      if (Object.keys(deletedCounts).length > 0 || trimmedTaskNotify > 0) {
-        logger.info(
-          {
-            deletedCounts,
-            trimmedTaskNotify,
-            trimmedTaskRoutes,
-            trimmedSnapshots,
-          },
-          'v75 channel trim: removed retired Telegram/Discord/WhatsApp rows',
-        );
-      }
-    });
-    trimRetiredChannels();
-  }
-
-  // v75→v76 trim: drop the retired billing/redeem/quota clusters (code paths
-  // were removed in the same change; data survives in the pre-migration backup
-  // that the enforcePreMigrationBackup gate writes for v<76 databases) and
-  // drop dead columns left behind by the auto-memory/billing/plugins prunes.
-  const v76Check = getRouterStateInternal('schema_version');
-  if (!v76Check || parseInt(v76Check, 10) < 76) {
-    const dropRetiredTables = db.transaction(() => {
-      // Zero-row dead tables (billing/redeem/quota prune leftovers) plus the
-      // billing compatibility tables with operator-review rows (documented as
-      // deliberately preserved at the time; the whole commercialization
-      // cluster is retired now). Children are dropped before their parents so
-      // FK enforcement never blocks the trim.
-      for (const table of [
-        'redeem_code_usage',
-        'user_subscriptions',
-        'balance_transactions',
-        'user_balances',
-        'billing_plans',
-        'monthly_usage',
-        'daily_usage',
-        'user_quotas',
-        'redeem_codes',
-        'billing_audit_log',
-      ]) {
-        db.exec(`DROP TABLE IF EXISTS ${table}`);
-      }
-
-      // Dead columns (additive-era leftovers; SQLite 3.35+ DROP COLUMN).
-      const dropColumns: Array<[string, string]> = [
-        ['registered_groups', 'auto_memory_recall'],
-        ['users', 'subscription_plan_id'],
-        ['messages', 'cost_usd'],
-      ];
-      for (const [table, column] of dropColumns) {
-        const cols = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{
-          name: string;
-        }>;
-        if (cols.some((c) => c.name === column)) {
-          db.exec(`ALTER TABLE ${table} DROP COLUMN ${column}`);
-        }
-      }
-    });
-    dropRetiredTables();
-    logger.info(
-      'v76 prune trim: retired billing/redeem/quota tables and dead columns dropped',
-    );
-  }
-
-  // 全部迁移完成后回写版本号；下次启动 rawVersion == CURRENT_SCHEMA_VERSION
-  // 即短路跳过迁移区。该值也作为「库版本 ≥ 程序要求」的降级判定依据。
+  // 全部迁移完成后回写版本号；下次启动仅门控段按版本跳过，无门控幂等段
+  // 照常重放（本函数不存在整体短路）。该值也作为「库版本 ≥ 程序要求」的
+  // 降级判定依据。
   db.prepare(
     'INSERT OR REPLACE INTO router_state (key, value) VALUES (?, ?)',
   ).run('schema_version', String(CURRENT_SCHEMA_VERSION));
@@ -2630,7 +667,7 @@ export function updateChatName(chatJid: string, name: string): void {
   ).run(chatJid, name, new Date().toISOString());
 }
 
-export interface ChatInfo {
+interface ChatInfo {
   jid: string;
   name: string;
   last_message_time: string;
@@ -3284,10 +1321,9 @@ export interface UsageModelRecordInput {
   cacheCreationInputTokens: number;
   reasoningTokens?: number;
   providerEstimatedCostUSD: number;
-  billedCostUSD: number;
 }
 
-export interface UsagePricingBucketTotals {
+interface UsagePricingBucketTotals {
   bucketStart: string;
   bucketEnd: string;
   inputTokens: number;
@@ -3299,18 +1335,16 @@ export interface UsagePricingBucketTotals {
 
 export function getRecordedUsageEventCost(
   eventId: string,
-): { providerEstimatedCostUSD: number; billedCostUSD: number } | null {
+): { providerEstimatedCostUSD: number } | null {
   const row = db
     .prepare(
-      `SELECT provider_estimated_cost_usd AS providerEstimatedCostUSD,
-        billed_cost_usd AS billedCostUSD
+      `SELECT provider_estimated_cost_usd AS providerEstimatedCostUSD
        FROM usage_events WHERE event_id = ? LIMIT 1`,
     )
     .get(eventId) as Record<string, number> | undefined;
   return row
     ? {
         providerEstimatedCostUSD: Number(row.providerEstimatedCostUSD) || 0,
-        billedCostUSD: Number(row.billedCostUSD) || 0,
       }
     : null;
 }
@@ -3366,7 +1400,7 @@ export function getUsagePricingBucketTotals(input: {
   };
 }
 
-export interface UsageEventRecordInput {
+interface UsageEventRecordInput {
   eventId: string;
   userId: string;
   groupFolder: string;
@@ -3378,7 +1412,6 @@ export interface UsageEventRecordInput {
   cacheCreationInputTokens: number;
   reasoningTokens?: number;
   providerEstimatedCostUSD: number;
-  billedCostUSD: number;
   durationMs?: number;
   numTurns?: number;
   source?: string;
@@ -3416,7 +1449,6 @@ export function recordUsageEventBatch(input: UsageEventRecordInput): {
           cacheCreationInputTokens: input.cacheCreationInputTokens,
           reasoningTokens: input.reasoningTokens,
           providerEstimatedCostUSD: input.providerEstimatedCostUSD,
-          billedCostUSD: input.billedCostUSD,
         },
       ];
 
@@ -3428,8 +1460,8 @@ export function recordUsageEventBatch(input: UsageEventRecordInput): {
           input_tokens, output_tokens, cache_read_input_tokens,
           cache_creation_input_tokens, reasoning_output_tokens,
           provider_estimated_cost_usd,
-          billed_cost_usd, duration_ms, num_turns, source, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          duration_ms, num_turns, source, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         input.eventId,
@@ -3443,7 +1475,6 @@ export function recordUsageEventBatch(input: UsageEventRecordInput): {
         nonNegative(input.cacheCreationInputTokens),
         nonNegative(input.reasoningTokens),
         nonNegative(input.providerEstimatedCostUSD),
-        nonNegative(input.billedCostUSD),
         nonNegative(input.durationMs ?? 0),
         nonNegative(input.numTurns ?? 0),
         source,
@@ -3455,7 +1486,6 @@ export function recordUsageEventBatch(input: UsageEventRecordInput): {
     for (const modelUsage of models) {
       const model = modelUsage.model.trim() || 'unknown';
       const estimated = nonNegative(modelUsage.providerEstimatedCostUSD);
-      const billed = nonNegative(modelUsage.billedCostUSD);
       stmts().insertUsageInsert.run(
         crypto.randomUUID(),
         input.eventId,
@@ -3470,24 +1500,11 @@ export function recordUsageEventBatch(input: UsageEventRecordInput): {
         nonNegative(modelUsage.cacheCreationInputTokens),
         nonNegative(modelUsage.reasoningTokens),
         estimated,
-        estimated,
-        billed,
         nonNegative(input.durationMs ?? 0),
         nonNegative(input.numTurns ?? 0),
         source,
         localDate,
         createdAt,
-      );
-      stmts().insertUsageUpsert.run(
-        input.userId,
-        model,
-        localDate,
-        nonNegative(modelUsage.inputTokens),
-        nonNegative(modelUsage.outputTokens),
-        nonNegative(modelUsage.cacheReadInputTokens),
-        nonNegative(modelUsage.cacheCreationInputTokens),
-        nonNegative(modelUsage.reasoningTokens),
-        estimated,
       );
     }
 
@@ -3538,7 +1555,6 @@ export interface UsageAttributionItem {
   reasoningTokens: number;
   totalTokens: number;
   providerEstimatedCostUSD: number;
-  billedCostUSD: number;
   runCount: number;
   modelCallCount: number;
 }
@@ -3552,7 +1568,6 @@ export function getUsageAnalytics(filters: UsageQueryFilters): {
     reasoningTokens: number;
     totalTokens: number;
     providerEstimatedCostUSD: number;
-    billedCostUSD: number;
     runCount: number;
     modelCallCount: number;
     activeDays: number;
@@ -3570,8 +1585,6 @@ export function getUsageAnalytics(filters: UsageQueryFilters): {
     cache_creation_tokens: number;
     reasoning_tokens: number;
     provider_estimated_cost_usd: number;
-    cost_usd: number;
-    billed_cost_usd: number;
     run_count: number;
     model_call_count: number;
   }>;
@@ -3583,8 +1596,6 @@ export function getUsageAnalytics(filters: UsageQueryFilters): {
     cache_creation_tokens: number;
     reasoning_tokens: number;
     provider_estimated_cost_usd: number;
-    cost_usd: number;
-    billed_cost_usd: number;
     run_count: number;
     model_call_count: number;
   }>;
@@ -3603,7 +1614,6 @@ export function getUsageAnalytics(filters: UsageQueryFilters): {
     COALESCE(SUM(r.cache_creation_input_tokens), 0) AS cache_creation_tokens,
     COALESCE(SUM(r.reasoning_output_tokens), 0) AS reasoning_tokens,
     COALESCE(SUM(r.provider_estimated_cost_usd), 0) AS provider_cost,
-    COALESCE(SUM(r.billed_cost_usd), 0) AS billed_cost,
     COUNT(DISTINCT r.event_id) AS run_count,
     COUNT(*) AS model_call_count`;
   const summaryRow = db
@@ -3637,8 +1647,6 @@ export function getUsageAnalytics(filters: UsageQueryFilters): {
       cache_creation_tokens: Number(row.cache_creation_tokens) || 0,
       reasoning_tokens: Number(row.reasoning_tokens) || 0,
       provider_estimated_cost_usd: Number(row.provider_cost) || 0,
-      cost_usd: Number(row.provider_cost) || 0,
-      billed_cost_usd: Number(row.billed_cost) || 0,
       run_count: Number(row.run_count) || 0,
       model_call_count: Number(row.model_call_count) || 0,
     }));
@@ -3659,8 +1667,6 @@ export function getUsageAnalytics(filters: UsageQueryFilters): {
       cache_creation_tokens: Number(row.cache_creation_tokens) || 0,
       reasoning_tokens: Number(row.reasoning_tokens) || 0,
       provider_estimated_cost_usd: Number(row.provider_cost) || 0,
-      cost_usd: Number(row.provider_cost) || 0,
-      billed_cost_usd: Number(row.billed_cost) || 0,
       run_count: Number(row.run_count) || 0,
       model_call_count: Number(row.model_call_count) || 0,
     }));
@@ -3711,7 +1717,6 @@ export function getUsageAnalytics(filters: UsageQueryFilters): {
         reasoningTokens: reasoning,
         totalTokens: input + output + cacheRead + cacheCreation + reasoning,
         providerEstimatedCostUSD: Number(row.provider_cost) || 0,
-        billedCostUSD: Number(row.billed_cost) || 0,
         runCount: Number(row.run_count) || 0,
         modelCallCount: Number(row.model_call_count) || 0,
       };
@@ -3737,7 +1742,6 @@ export function getUsageAnalytics(filters: UsageQueryFilters): {
         cacheCreationTokens +
         reasoningTokens,
       providerEstimatedCostUSD: Number(summaryRow.provider_cost) || 0,
-      billedCostUSD: Number(summaryRow.billed_cost) || 0,
       runCount: Number(summaryRow.run_count) || 0,
       modelCallCount: Number(summaryRow.model_call_count) || 0,
       activeDays: Number(summaryRow.active_days) || 0,
@@ -3797,7 +1801,7 @@ export function getUsageRecordsPage(
         r.cache_creation_input_tokens AS cacheCreationTokens,
         r.reasoning_output_tokens AS reasoningTokens,
         r.provider_estimated_cost_usd AS providerEstimatedCostUSD,
-        r.billed_cost_usd AS billedCostUSD, r.duration_ms AS durationMs,
+        r.duration_ms AS durationMs,
         r.num_turns AS numTurns, r.source, r.created_at AS createdAt
        FROM usage_records r WHERE ${where.sql}
        ORDER BY r.created_at DESC, r.id DESC LIMIT ? OFFSET ?`,
@@ -3952,7 +1956,7 @@ export function getDeletedTasks(): ScheduledTask[] {
     .map(mapTaskRow);
 }
 
-export interface WorkspaceTaskRebuildPause {
+interface WorkspaceTaskRebuildPause {
   groupFolder: string;
   tasks: Array<{
     id: string;
@@ -4165,16 +2169,16 @@ export function updateTask(
   ).run(...values);
 }
 
-export type TaskRevisionMutationResult =
+type TaskRevisionMutationResult =
   | { status: 'updated'; task: ScheduledTask }
   | { status: 'conflict'; task: ScheduledTask }
   | { status: 'not_found' };
 
-export type TaskSoftDeleteMutationResult =
+type TaskSoftDeleteMutationResult =
   | TaskRevisionMutationResult
   | { status: 'active_run'; task: ScheduledTask; run: TaskRun };
 
-export type TaskPermanentDeleteMutationResult =
+type TaskPermanentDeleteMutationResult =
   | { status: 'deleted'; task_ids: string[] }
   | { status: 'conflict'; task: ScheduledTask }
   | { status: 'not_deleted'; task: ScheduledTask }
@@ -4671,7 +2675,7 @@ function insertTaskRunRow(
   );
 }
 
-export interface CreateTaskRunInput {
+interface CreateTaskRunInput {
   task: ScheduledTask;
   triggerType: TaskRunTrigger;
   scheduledFor?: string;
@@ -4679,7 +2683,7 @@ export interface CreateTaskRunInput {
   availableAt?: string;
 }
 
-export interface CreateTaskRunResult {
+interface CreateTaskRunResult {
   created: boolean;
   reason?: 'duplicate' | 'active_conflict';
   run: TaskRun;
@@ -4757,7 +2761,7 @@ export function createTaskRun(input: CreateTaskRunInput): CreateTaskRunResult {
   })();
 }
 
-export interface MaterializeTaskOccurrenceInput {
+interface MaterializeTaskOccurrenceInput {
   taskId: string;
   scheduledFor: string;
   nextRun: string | null;
@@ -4868,7 +2872,7 @@ export function getTaskRunsPendingContinuation(): TaskRun[] {
   ).map(mapTaskRunRow);
 }
 
-export interface CreateContinuationTaskRunInput {
+interface CreateContinuationTaskRunInput {
   parentRun: TaskRun;
   task: ScheduledTask;
   reason: string;
@@ -4877,7 +2881,7 @@ export interface CreateContinuationTaskRunInput {
   availableAt: string;
 }
 
-export interface CreateContinuationTaskRunResult {
+interface CreateContinuationTaskRunResult {
   created: boolean;
   reason?: 'duplicate' | 'active_conflict';
   run?: TaskRun;
@@ -5236,7 +3240,7 @@ export function releaseTaskRunForRetry(
   return result.changes === 1;
 }
 
-export interface CompleteTaskRunInput {
+interface CompleteTaskRunInput {
   status: Extract<
     TaskRunStatus,
     'success' | 'failed' | 'cancelled' | 'delivered'
@@ -5476,7 +3480,7 @@ export function completeIsolatedTaskRunWithWorkspaceResultIntent(input: {
   })();
 }
 
-export interface StoreScheduledGroupPromptInput {
+interface StoreScheduledGroupPromptInput {
   runId: string;
   taskId: string;
   leaseOwner: string;
@@ -5673,7 +3677,7 @@ function finalizeDeliveredGroupTaskRunInTransaction(
   return true;
 }
 
-export interface ScheduledGroupWorkspaceFinalization {
+interface ScheduledGroupWorkspaceFinalization {
   runId: string;
   taskId: string;
   status?: 'success' | 'failed' | 'cancelled';
@@ -5681,7 +3685,7 @@ export interface ScheduledGroupWorkspaceFinalization {
   error?: string | null;
 }
 
-export interface StoreScheduledGroupWorkspaceResultInput {
+interface StoreScheduledGroupWorkspaceResultInput {
   messageId: string;
   chatJid: string;
   senderId: string;
@@ -5987,14 +3991,14 @@ export interface TaskRunTextNotificationPayload {
   sendOptions?: { source?: string };
 }
 
-export interface TaskRunImMessageNotificationPayload {
+interface TaskRunImMessageNotificationPayload {
   kind: 'im_message';
   targetJid: string;
   text: string;
   localImagePaths: string[];
 }
 
-export interface TaskRunImImageNotificationPayload {
+interface TaskRunImImageNotificationPayload {
   kind: 'im_image';
   targetJid: string;
   workspaceFolder: string;
@@ -6004,7 +4008,7 @@ export interface TaskRunImImageNotificationPayload {
   fileName?: string;
 }
 
-export interface TaskRunImFileNotificationPayload {
+interface TaskRunImFileNotificationPayload {
   kind: 'im_file';
   targetJid: string;
   workspaceFolder: string;
@@ -7599,7 +5603,7 @@ export function deleteAllSessionsForFolder(groupFolder: string): void {
   })();
 }
 
-export interface SessionAgentIdentity {
+interface SessionAgentIdentity {
   agent_profile_id: string | null;
   agent_profile_version: number | null;
   identity_hash: string | null;
@@ -7795,14 +5799,14 @@ export function mergeAgentProfileRuntimePolicy(
   });
 }
 
-export function serializeAgentProfileRuntimePolicy(
+function serializeAgentProfileRuntimePolicy(
   input?: RuntimePolicyInput | AgentProfileRuntimePolicy | null,
 ): string {
   return JSON.stringify(normalizeAgentProfileRuntimePolicy(input));
 }
 
 /** Persist the v69 inherited effort default into legacy runtime-policy JSON. */
-export function migrateAgentProfileEffortPolicy(): number {
+function migrateAgentProfileEffortPolicy(): number {
   const rows = db
     .prepare('SELECT id, runtime_policy FROM agent_profiles')
     .all() as Array<{ id: string; runtime_policy: unknown }>;
@@ -8947,7 +6951,7 @@ export function getAgentProfileForWorkspace(
   return fallback;
 }
 
-export function backfillAgentProfileDefaultsAndWorkspaceMappings(): void {
+function backfillAgentProfileDefaultsAndWorkspaceMappings(): void {
   // initDatabase invokes this before the web server publishes routes or starts
   // runners, so no process-local profile membership lock is necessary here.
   const tx = db.transaction(() => {
@@ -9113,7 +7117,6 @@ type RegisteredGroupRow = {
   created_by: string | null;
   channel_account_id: string | null;
   is_home: number;
-  selected_skills: string | null;
   target_agent_id: string | null;
   target_main_jid: string | null;
   reply_policy: string | null;
@@ -9122,8 +7125,6 @@ type RegisteredGroupRow = {
   audience_mode: string | null;
   owner_im_id: string | null;
   owner_claim_source: string | null;
-  mcp_mode: string | null;
-  selected_mcps: string | null;
   conversation_source: string | null;
   conversation_nav_mode: string | null;
   binding_mode: string | null;
@@ -9278,7 +7279,7 @@ export interface WorkspaceRecord {
 }
 
 /** SDK/provider resume state. This is not a user-visible product Session. */
-export interface WorkspaceRuntimeSessionRecord {
+interface WorkspaceRuntimeSessionRecord {
   group_folder: string;
   runtime_agent_id: string;
   workspace_jid: string;
@@ -9618,9 +7619,7 @@ export function listAgentChannelMountsByWorkspace(
   return rows.map(parseAgentChannelMountRecord);
 }
 
-export function countAgentChannelMountsForProfile(
-  agentProfileId: string,
-): number {
+function countAgentChannelMountsForProfile(agentProfileId: string): number {
   const row = db
     .prepare(
       'SELECT COUNT(*) as count FROM agent_channel_mounts WHERE agent_profile_id = ?',
@@ -9629,7 +7628,7 @@ export function countAgentChannelMountsForProfile(
   return row.count;
 }
 
-export function syncAllWorkspacesFromRegisteredGroups(): void {
+function syncAllWorkspacesFromRegisteredGroups(): void {
   const rows = db
     .prepare("SELECT * FROM registered_groups WHERE jid LIKE 'web:%'")
     .all() as RegisteredGroupRow[];
@@ -9638,7 +7637,7 @@ export function syncAllWorkspacesFromRegisteredGroups(): void {
   }
 }
 
-export function syncAllWorkspaceRuntimeSessionsFromSessions(): void {
+function syncAllWorkspaceRuntimeSessionsFromSessions(): void {
   const rows = db
     .prepare('SELECT group_folder, agent_id FROM sessions')
     .all() as Array<{ group_folder: string; agent_id: string | null }>;
@@ -9652,7 +7651,7 @@ export function syncAllWorkspaceRuntimeSessionsFromSessions(): void {
  * The whole pass is atomic and removes projection-only ghosts left by crashes
  * or historical non-transactional dual writes.
  */
-export function reconcileCanonicalRuntimeProjections(): void {
+function reconcileCanonicalRuntimeProjections(): void {
   db.transaction(() => {
     const ghostWorkspaces = db
       .prepare(
@@ -9728,7 +7727,6 @@ type ChannelAccountRow = {
   auth_status: string;
   transport_status: string;
   status: string;
-  default_agent_profile_id: string | null;
   default_workspace_jid: string | null;
   last_error: string | null;
   connected_at: string | null;
@@ -9770,7 +7768,6 @@ function parseChannelAccountRow(row: ChannelAccountRow): ChannelAccount {
     auth_status: authStatus,
     transport_status: transportStatus,
     status: transportStatus,
-    default_agent_profile_id: row.default_agent_profile_id,
     default_workspace_jid: row.default_workspace_jid,
     last_error: row.last_error,
     connected_at: row.connected_at,
@@ -9790,7 +7787,6 @@ export function createChannelAccount(input: {
   is_legacy_default?: boolean;
   auth_mode?: ChannelAccount['auth_mode'];
   auth_status?: ChannelAccount['auth_status'];
-  default_agent_profile_id?: string | null;
   default_workspace_jid?: string | null;
 }): ChannelAccount {
   return db.transaction(() => {
@@ -9811,9 +7807,9 @@ export function createChannelAccount(input: {
     db.prepare(
       `INSERT INTO channel_accounts (
         id, owner_user_id, provider, name, secret_ref, enabled, is_default, is_legacy_default,
-        auth_mode, auth_status, transport_status, status, default_agent_profile_id, default_workspace_jid,
+        auth_mode, auth_status, transport_status, status, default_workspace_jid,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'disconnected', 'disconnected', ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'disconnected', 'disconnected', ?, ?, ?)`,
     ).run(
       id,
       input.owner_user_id,
@@ -9825,7 +7821,6 @@ export function createChannelAccount(input: {
       input.is_legacy_default === true ? 1 : 0,
       input.auth_mode ?? 'credentials',
       input.auth_status ?? 'draft',
-      input.default_agent_profile_id ?? null,
       input.default_workspace_jid ?? null,
       now,
       now,
@@ -9905,11 +7900,7 @@ export function updateChannelAccount(
   patch: Partial<
     Pick<
       ChannelAccount,
-      | 'name'
-      | 'enabled'
-      | 'is_default'
-      | 'default_agent_profile_id'
-      | 'default_workspace_jid'
+      'name' | 'enabled' | 'is_default' | 'default_workspace_jid'
     >
   >,
 ): ChannelAccount | undefined {
@@ -9924,16 +7915,13 @@ export function updateChannelAccount(
     }
     db.prepare(
       `UPDATE channel_accounts SET
-        name = ?, enabled = ?, is_default = ?, default_agent_profile_id = ?,
+        name = ?, enabled = ?, is_default = ?,
         default_workspace_jid = ?, updated_at = ?
        WHERE id = ? AND owner_user_id = ?`,
     ).run(
       patch.name?.trim() ?? current.name,
       (patch.enabled ?? current.enabled) ? 1 : 0,
       (patch.is_default ?? current.is_default) ? 1 : 0,
-      patch.default_agent_profile_id === undefined
-        ? current.default_agent_profile_id
-        : patch.default_agent_profile_id,
       patch.default_workspace_jid === undefined
         ? current.default_workspace_jid
         : patch.default_workspace_jid,
@@ -10045,8 +8033,8 @@ export function setRegisteredGroup(jid: string, group: RegisteredGroup): void {
   db.transaction(() => {
     const existing = getRegisteredGroup(jid);
     db.prepare(
-      `INSERT INTO registered_groups (jid, name, folder, added_at, avatar_url, container_config, execution_mode, custom_cwd, init_source_path, init_git_url, created_by, channel_account_id, is_home, selected_skills, target_agent_id, target_main_jid, reply_policy, require_mention, activation_mode, audience_mode, owner_im_id, owner_claim_source, mcp_mode, selected_mcps, conversation_source, conversation_nav_mode, binding_mode, native_context_type, feishu_chat_mode, feishu_group_message_type, sender_allowlist)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO registered_groups (jid, name, folder, added_at, avatar_url, container_config, execution_mode, custom_cwd, init_source_path, init_git_url, created_by, channel_account_id, is_home, target_agent_id, target_main_jid, reply_policy, require_mention, activation_mode, audience_mode, owner_im_id, owner_claim_source, conversation_source, conversation_nav_mode, binding_mode, native_context_type, feishu_chat_mode, feishu_group_message_type, sender_allowlist)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(jid) DO UPDATE SET
          name = excluded.name,
          folder = excluded.folder,
@@ -10060,7 +8048,6 @@ export function setRegisteredGroup(jid: string, group: RegisteredGroup): void {
          created_by = excluded.created_by,
          channel_account_id = excluded.channel_account_id,
          is_home = excluded.is_home,
-         selected_skills = excluded.selected_skills,
          target_agent_id = excluded.target_agent_id,
          target_main_jid = excluded.target_main_jid,
          reply_policy = excluded.reply_policy,
@@ -10069,8 +8056,6 @@ export function setRegisteredGroup(jid: string, group: RegisteredGroup): void {
          audience_mode = excluded.audience_mode,
          owner_im_id = excluded.owner_im_id,
          owner_claim_source = excluded.owner_claim_source,
-         mcp_mode = excluded.mcp_mode,
-         selected_mcps = excluded.selected_mcps,
          conversation_source = excluded.conversation_source,
          conversation_nav_mode = excluded.conversation_nav_mode,
          binding_mode = excluded.binding_mode,
@@ -10094,7 +8079,6 @@ export function setRegisteredGroup(jid: string, group: RegisteredGroup): void {
       group.created_by ?? null,
       group.channel_account_id ?? null,
       group.is_home ? 1 : 0,
-      null, // selected_skills: deprecated, always null (user-level skills apply globally)
       group.target_agent_id ?? null,
       group.target_main_jid ?? null,
       group.reply_policy ?? 'source_only',
@@ -10103,8 +8087,6 @@ export function setRegisteredGroup(jid: string, group: RegisteredGroup): void {
       parseAudienceMode(group.audience_mode),
       group.owner_im_id ?? null,
       group.owner_claim_source ?? null,
-      'inherit', // mcp_mode: deprecated, always inherit (user-level MCP applies globally)
-      null, // selected_mcps: deprecated, always null
       group.conversation_source ?? 'manual',
       group.conversation_nav_mode ?? 'horizontal',
       group.binding_mode ?? 'single_context',
@@ -10284,7 +8266,7 @@ export function hasContainerModeGroups(): boolean {
   return row !== undefined;
 }
 
-export interface AdminHostOnlyMigrationResult {
+interface AdminHostOnlyMigrationResult {
   affectedGroups: Array<{ jid: string; folder: string }>;
   affectedFolders: string[];
   migratedTaskIds: string[];
@@ -10539,7 +8521,7 @@ export function upsertChannelMount(
   })();
 }
 
-export function deleteChannelMount(channelJid: string): void {
+function deleteChannelMount(channelJid: string): void {
   if (!db) return;
   try {
     db.transaction(() => {
@@ -10583,7 +8565,7 @@ export function listChannelMountsBySession(sessionId: string): ChannelMount[] {
   return rows.map(parseChannelMountRow);
 }
 
-export function syncChannelMountFromRegisteredGroup(
+function syncChannelMountFromRegisteredGroup(
   channelJid: string,
   group: RegisteredGroup,
 ): void {
@@ -10599,7 +8581,7 @@ export function syncChannelMountFromRegisteredGroup(
   upsertChannelMount(mount);
 }
 
-export function syncAllChannelMountsFromRegisteredGroups(): void {
+function syncAllChannelMountsFromRegisteredGroups(): void {
   db.prepare('DELETE FROM channel_mounts').run();
   db.prepare('DELETE FROM agent_channel_mounts').run();
   const rows = db
@@ -10715,7 +8697,7 @@ export function listImContextBindingsByAgent(
   return rows.map(mapImContextBindingRow);
 }
 
-export function deleteImContextBindingsByAgent(agentId: string): void {
+function deleteImContextBindingsByAgent(agentId: string): void {
   db.prepare('DELETE FROM im_context_bindings WHERE agent_id = ?').run(agentId);
 }
 
@@ -10810,7 +8792,7 @@ export function deleteChatHistory(chatJid: string): void {
  * The generic Memory lineage and the hidden Home Owner Profile lifecycle are
  * reset atomically, while the workspace identity/configuration remains intact.
  */
-export function resetWorkspaceKnowledgeForRebuild(workspaceJid: string): void {
+function resetWorkspaceKnowledgeForRebuild(workspaceJid: string): void {
   db.transaction(() => {
     const workspace = db
       .prepare('SELECT is_home FROM workspaces WHERE jid = ?')
@@ -10838,7 +8820,7 @@ export function resetWorkspaceKnowledgeForRebuild(workspaceJid: string): void {
   })();
 }
 
-export class WorkspaceRebuildPersistentStateError extends Error {
+class WorkspaceRebuildPersistentStateError extends Error {
   constructor(
     public readonly code: 'workspace_missing' | 'active_task_runs',
     message: string,
@@ -10849,7 +8831,7 @@ export class WorkspaceRebuildPersistentStateError extends Error {
   }
 }
 
-export interface WorkspaceRebuildPersistentStateResult {
+interface WorkspaceRebuildPersistentStateResult {
   deletedAgentIds: string[];
   recycledTaskIds: string[];
 }
@@ -11446,13 +9428,6 @@ function mapUserRow(row: Record<string, unknown>): User {
     avatar_color:
       typeof row.avatar_color === 'string' ? row.avatar_color : null,
     avatar_url: typeof row.avatar_url === 'string' ? row.avatar_url : null,
-    ai_name: typeof row.ai_name === 'string' ? row.ai_name : null,
-    ai_avatar_emoji:
-      typeof row.ai_avatar_emoji === 'string' ? row.ai_avatar_emoji : null,
-    ai_avatar_color:
-      typeof row.ai_avatar_color === 'string' ? row.ai_avatar_color : null,
-    ai_avatar_url:
-      typeof row.ai_avatar_url === 'string' ? row.ai_avatar_url : null,
     default_require_mention: !!row.default_require_mention,
     created_at: String(row.created_at),
     updated_at: String(row.updated_at),
@@ -11476,10 +9451,6 @@ function toUserPublic(user: User, lastActiveAt: string | null): UserPublic {
     avatar_emoji: user.avatar_emoji,
     avatar_color: user.avatar_color,
     avatar_url: user.avatar_url,
-    ai_name: user.ai_name,
-    ai_avatar_emoji: user.ai_avatar_emoji,
-    ai_avatar_color: user.ai_avatar_color,
-    ai_avatar_url: user.ai_avatar_url,
     default_require_mention: user.default_require_mention,
     created_at: user.created_at,
     last_login_at: user.last_login_at,
@@ -11490,7 +9461,7 @@ function toUserPublic(user: User, lastActiveAt: string | null): UserPublic {
 
 // --- Users ---
 
-export interface CreateUserInput {
+interface CreateUserInput {
   id: string;
   username: string;
   password_hash: string;
@@ -11535,7 +9506,7 @@ export function createUser(user: CreateUserInput): void {
   getOrCreateDefaultAgentProfile(user.id);
 }
 
-export type CreateInitialAdminResult =
+type CreateInitialAdminResult =
   | { ok: true }
   | { ok: false; reason: 'already_initialized' | 'username_taken' };
 
@@ -11580,7 +9551,7 @@ export function getUserByUsername(username: string): User | undefined {
   return row ? mapUserRow(row) : undefined;
 }
 
-export interface ListUsersOptions {
+interface ListUsersOptions {
   query?: string;
   role?: UserRole | 'all';
   status?: UserStatus | 'all';
@@ -11588,7 +9559,7 @@ export interface ListUsersOptions {
   pageSize?: number;
 }
 
-export interface ListUsersResult {
+interface ListUsersResult {
   users: UserPublic[];
   total: number;
   page: number;
@@ -11694,7 +9665,7 @@ export function getActiveAdminCount(): number {
   return row.count;
 }
 
-export type UserFieldUpdates = Partial<
+type UserFieldUpdates = Partial<
   Pick<
     User,
     | 'username'
@@ -11710,10 +9681,6 @@ export type UserFieldUpdates = Partial<
     | 'avatar_emoji'
     | 'avatar_color'
     | 'avatar_url'
-    | 'ai_name'
-    | 'ai_avatar_emoji'
-    | 'ai_avatar_color'
-    | 'ai_avatar_url'
     | 'default_require_mention'
     | 'deleted_at'
   >
@@ -11774,22 +9741,6 @@ export function updateUserFields(id: string, updates: UserFieldUpdates): void {
   if (updates.avatar_url !== undefined) {
     fields.push('avatar_url = ?');
     values.push(updates.avatar_url);
-  }
-  if (updates.ai_name !== undefined) {
-    fields.push('ai_name = ?');
-    values.push(updates.ai_name);
-  }
-  if (updates.ai_avatar_emoji !== undefined) {
-    fields.push('ai_avatar_emoji = ?');
-    values.push(updates.ai_avatar_emoji);
-  }
-  if (updates.ai_avatar_color !== undefined) {
-    fields.push('ai_avatar_color = ?');
-    values.push(updates.ai_avatar_color);
-  }
-  if (updates.ai_avatar_url !== undefined) {
-    fields.push('ai_avatar_url = ?');
-    values.push(updates.ai_avatar_url);
   }
   if (updates.default_require_mention !== undefined) {
     fields.push('default_require_mention = ?');
@@ -11978,7 +9929,7 @@ export function getInviteCode(code: string): InviteCode | undefined {
   };
 }
 
-export type RegisterUserWithInviteResult =
+type RegisterUserWithInviteResult =
   | { ok: true; role: UserRole; permissions: Permission[] }
   | {
       ok: false;
@@ -12081,7 +10032,7 @@ export function registerUserWithInvite(input: {
   }
 }
 
-export type RegisterUserWithoutInviteResult =
+type RegisterUserWithoutInviteResult =
   | { ok: true; role: UserRole; permissions: Permission[] }
   | { ok: false; reason: 'username_taken' };
 
@@ -12188,7 +10139,7 @@ export function logAuthEvent(event: {
   );
 }
 
-export interface AuthAuditLogQuery {
+interface AuthAuditLogQuery {
   limit?: number;
   offset?: number;
   event_type?: AuthEventType | 'all';
@@ -12198,7 +10149,7 @@ export interface AuthAuditLogQuery {
   to?: string;
 }
 
-export interface AuthAuditLogPage {
+interface AuthAuditLogPage {
   logs: AuthAuditLog[];
   total: number;
   limit: number;
@@ -12616,18 +10567,6 @@ export function deleteMessage(chatJid: string, messageId: string): boolean {
   return result.changes > 0;
 }
 
-// --- Billing CRUD functions ---
-
-function safeParseJsonArray(val: unknown): string[] {
-  if (typeof val !== 'string') return [];
-  try {
-    const parsed = JSON.parse(val);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
 // --- Custom model pricing CRUD (task V) ---
 
 /**
@@ -12651,7 +10590,7 @@ export interface CustomModelPricing {
   updatedAt: string;
 }
 
-export interface CustomModelPricingInput {
+interface CustomModelPricingInput {
   kind: 'pattern' | 'fallback';
   /** Required for pattern rules (validated at the API layer); '' for fallback. */
   pattern?: string;
@@ -12666,9 +10605,7 @@ export interface CustomModelPricingInput {
 }
 
 /** PATCH payload; kind is immutable once created. */
-export type CustomModelPricingUpdates = Partial<
-  Omit<CustomModelPricingInput, 'kind'>
->;
+type CustomModelPricingUpdates = Partial<Omit<CustomModelPricingInput, 'kind'>>;
 
 function mapCustomPricingRow(row: Record<string, unknown>): CustomModelPricing {
   return {
@@ -12831,21 +10768,6 @@ export function deleteCustomModelPricingRule(id: string): boolean {
 // --- Monthly Usage ---
 
 // --- Redeem Codes ---
-
-// --- Billing Audit Log ---
-
-// --- Billing summary helpers ---
-
-export function getUserGroupCount(userId: string): number {
-  const row = db
-    .prepare(
-      "SELECT COUNT(DISTINCT rg.folder) as cnt FROM registered_groups rg WHERE rg.created_by = ? AND rg.jid LIKE 'web:%'",
-    )
-    .get(userId) as { cnt: number };
-  return row.cnt;
-}
-
-// --- Daily Usage ---
 
 /**
  * Close the database connection.

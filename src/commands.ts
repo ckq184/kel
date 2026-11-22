@@ -16,7 +16,7 @@ import type { NewMessage, MessageCursor } from './types.js';
 
 // ─── Types ──────────────────────────────────────────────────────
 
-export interface CommandDeps {
+interface CommandDeps {
   queue: { stopGroup(jid: string, opts?: { force?: boolean }): Promise<void> };
   sessions: Record<string, string>;
   broadcast: (jid: string, msg: NewMessage & { is_from_me: boolean }) => void;

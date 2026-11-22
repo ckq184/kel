@@ -27,10 +27,6 @@ export interface UserPublic {
   avatar_emoji: string | null;
   avatar_color: string | null;
   avatar_url: string | null;
-  ai_name: string | null;
-  ai_avatar_emoji: string | null;
-  ai_avatar_color: string | null;
-  ai_avatar_url: string | null;
   default_require_mention: boolean;
 }
 
@@ -43,7 +39,7 @@ export interface AppearanceConfig {
   aiAvatarMode: 'brand' | 'emoji';
 }
 
-export interface SetupStatus {
+interface SetupStatus {
   needsSetup: boolean;
   claudeConfigured: boolean;
   feishuConfigured: boolean;
@@ -78,13 +74,9 @@ interface AuthState {
     avatar_emoji?: string | null;
     avatar_color?: string | null;
     avatar_url?: string | null;
-    ai_name?: string | null;
-    ai_avatar_emoji?: string | null;
-    ai_avatar_color?: string | null;
-    ai_avatar_url?: string | null;
     default_require_mention?: boolean;
   }) => Promise<void>;
-  uploadAvatar: (file: File, target?: 'user' | 'ai') => Promise<string>;
+  uploadAvatar: (file: File) => Promise<string>;
   fetchAppearance: () => Promise<void>;
   hasPermission: (permission: Permission) => boolean;
 }
@@ -282,16 +274,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ user: data.user });
   },
 
-  uploadAvatar: async (file: File, target: 'user' | 'ai' = 'ai') => {
+  uploadAvatar: async (file: File) => {
     const formData = new FormData();
     formData.append('avatar', file);
-    const url =
-      target === 'user' ? '/api/auth/avatar?target=user' : '/api/auth/avatar';
     const data = await apiFetch<{
       success: boolean;
       avatarUrl: string;
       user: UserPublic;
-    }>(url, {
+    }>('/api/auth/avatar?target=user', {
       method: 'POST',
       body: formData,
       headers: {},

@@ -1,9 +1,9 @@
-export interface FinalizableChannelCard {
+interface FinalizableChannelCard {
   complete(text: string): Promise<void>;
   abort(reason?: string): Promise<void>;
 }
 
-export interface ChannelCardFinalizationResult {
+interface ChannelCardFinalizationResult {
   acknowledged: boolean;
   error?: unknown;
 }

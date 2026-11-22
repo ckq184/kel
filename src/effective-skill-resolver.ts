@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { scanSkillDirectory } from './skill-utils.js';
 
-export type EffectiveSkillSource =
+type EffectiveSkillSource =
   | 'builtin'
   | 'host'
   | 'project'
@@ -16,12 +16,12 @@ export type ManagedSkillPolicy =
   | { mode: 'disabled'; ids?: string[] }
   | { mode: 'custom'; ids: string[] };
 
-export interface EffectiveSkillLayer {
+interface EffectiveSkillLayer {
   source: EffectiveSkillSource;
   root?: string;
 }
 
-export interface EffectiveSkillCandidate {
+interface EffectiveSkillCandidate {
   id: string;
   source: EffectiveSkillSource;
   path: string;
@@ -32,7 +32,7 @@ export interface EffectiveSkillCandidate {
   excludedReason?: 'disabled' | 'profile_filtered' | 'shadowed';
 }
 
-export interface EffectiveSkillEntry {
+interface EffectiveSkillEntry {
   id: string;
   source: EffectiveSkillSource;
   path: string;
@@ -255,7 +255,7 @@ export function resolveEffectiveSkills(options: {
   };
 }
 
-export interface SkillReconcileResult {
+interface SkillReconcileResult {
   quarantineDir?: string;
   quarantined: string[];
 }

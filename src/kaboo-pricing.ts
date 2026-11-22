@@ -10,7 +10,7 @@
  * - kaboo/backend/biz/service/pricing.go
  */
 
-export interface KabooTokenUsage {
+interface KabooTokenUsage {
   inputTokens: number;
   outputTokens: number;
   cacheReadInputTokens: number;
@@ -39,14 +39,14 @@ export interface CustomPricingRules {
   fallback?: KabooModelPricing;
 }
 
-export interface KabooModelTokenUsage extends Omit<
+interface KabooModelTokenUsage extends Omit<
   KabooTokenUsage,
   'reasoningTokens'
 > {
   reasoningTokens?: number;
 }
 
-export interface KabooPricedModelUsage extends KabooTokenUsage {
+interface KabooPricedModelUsage extends KabooTokenUsage {
   model: string;
   pricing: KabooModelPricing;
   unroundedCostUSD: number;
@@ -54,7 +54,7 @@ export interface KabooPricedModelUsage extends KabooTokenUsage {
   costUSD: number;
 }
 
-export interface KabooPricedUsage {
+interface KabooPricedUsage {
   usage: KabooTokenUsage;
   models: KabooPricedModelUsage[];
   unroundedCostUSD: number;
@@ -99,7 +99,7 @@ const price = (
  * and 000034. Other providers intentionally use Kaboo's Sonnet-class fallback
  * until their tables can be versioned and verified independently.
  */
-export const KABOO_MODEL_PRICING: readonly KabooModelPricing[] = Object.freeze([
+const KABOO_MODEL_PRICING: readonly KabooModelPricing[] = Object.freeze([
   // Anthropic legacy/broad rules. Migration 000030 prices reasoning as output;
   // migration 000034 prices cache writes at 1.25x input.
   price(
@@ -218,7 +218,7 @@ const TOKEN_FIELDS: readonly (keyof KabooTokenUsage)[] = [
 ];
 
 /** Token counts are int64 in Kaboo; JS inputs are clamped to safe integers. */
-export function normalizeKabooTokenCount(value: unknown): number {
+function normalizeKabooTokenCount(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
     return 0;
   }

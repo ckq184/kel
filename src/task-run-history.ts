@@ -6,10 +6,7 @@ import type {
   TaskRunStatus,
 } from './types.js';
 
-export interface LegacyTaskRunHistory extends Omit<
-  TaskRunLog,
-  'id' | 'status'
-> {
+interface LegacyTaskRunHistory extends Omit<TaskRunLog, 'id' | 'status'> {
   id: string;
   trigger_type: 'scheduled';
   scheduled_for: string;
@@ -21,7 +18,7 @@ export interface LegacyTaskRunHistory extends Omit<
   notification_error: null;
 }
 
-export type TaskRunHistoryEntry = TaskRun | LegacyTaskRunHistory;
+type TaskRunHistoryEntry = TaskRun | LegacyTaskRunHistory;
 
 function normalizeLegacyRun(log: TaskRunLog): LegacyTaskRunHistory {
   return {

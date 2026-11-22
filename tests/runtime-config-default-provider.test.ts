@@ -168,7 +168,10 @@ describe('provider context window declaration (任务AL)', () => {
     );
     expect(lines).toContain('CKQCLAW_CONTEXT_WINDOW=512000');
     expect(lines).toContain('ANTHROPIC_MODEL=glm-5.2');
-    expect(lines).toContain('CLAUDE_CODE_AUTO_COMPACT_WINDOW=512000');
+    // ISSUE-10 ⑥：AUTO_COMPACT 窗口注入整体下线，env 行不得再出现该键。
+    expect(
+      lines.some((line) => line.startsWith('CLAUDE_CODE_AUTO_COMPACT_WINDOW=')),
+    ).toBe(false);
 
     // patch 回 auto：不再注入声明 env
     const patched = runtimeConfig.updateProvider(provider.id, {
@@ -183,7 +186,12 @@ describe('provider context window declaration (任务AL)', () => {
     expect(
       autoLines.some((line) => line.startsWith('CKQCLAW_CONTEXT_WINDOW=')),
     ).toBe(false);
-    expect(autoLines).toContain('CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000');
+    // ISSUE-10 ⑥：AUTO_COMPACT 窗口注入整体下线，auto 行不得再出现该键。
+    expect(
+      autoLines.some((line) =>
+        line.startsWith('CLAUDE_CODE_AUTO_COMPACT_WINDOW='),
+      ),
+    ).toBe(false);
   });
 
   test('legacy [1m] provider migrates to stripped model plus 1M declaration', () => {
@@ -206,7 +214,10 @@ describe('provider context window declaration (任务AL)', () => {
     expect(lines).toContain('ANTHROPIC_MODEL=glm-5.2');
     expect(lines).toContain('ANTHROPIC_DEFAULT_OPUS_MODEL=glm-5.2');
     expect(lines).toContain('CKQCLAW_CONTEXT_WINDOW=1000000');
-    expect(lines).toContain('CLAUDE_CODE_AUTO_COMPACT_WINDOW=1000000');
+    // ISSUE-10 ⑥：AUTO_COMPACT 窗口注入整体下线，env 行不得再出现该键。
+    expect(
+      lines.some((line) => line.startsWith('CLAUDE_CODE_AUTO_COMPACT_WINDOW=')),
+    ).toBe(false);
   });
 
   test('schema accepts only the declared preset domain', async () => {

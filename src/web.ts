@@ -17,6 +17,7 @@
  * - startWebServer / shutdownWebServer / createAppForTest（测试用装配镜像）
  */
 import fs from 'node:fs';
+import { zodBadRequest } from './validation-response.js';
 import path from 'node:path';
 import { Hono } from 'hono';
 import { compress } from 'hono/compress';
@@ -124,7 +125,6 @@ import {
   LEGACY_SESSION_COOKIE_NAME_PLAIN,
 } from './config.js';
 import { logger } from './logger.js';
-import { recordRunContextSnapshot } from './run-context-snapshot.js';
 import { RunStreamFence } from './run-stream-fence.js';
 import {
   executeSessionReset,
@@ -242,10 +242,7 @@ app.post('/api/messages', authMiddleware, async (c) => {
 
   const validation = MessageCreateSchema.safeParse(body);
   if (!validation.success) {
-    return c.json(
-      { error: 'Invalid request body', details: validation.error.format() },
-      400,
-    );
+    return zodBadRequest(c, validation.error, 'body-format');
   }
 
   const { chatJid, agentId, content, attachments, followUpBehavior } =
@@ -1240,10 +1237,8 @@ function setupWebSocket(server: any): WebSocketServer {
                 recentEvents: snap.recentEvents,
                 traceEvents: snap.traceEvents,
                 taskStates: snap.taskStates,
-                todos: snap.todos,
                 systemStatus: snap.systemStatus,
                 isThinking: snap.isThinking,
-                activeHook: snap.activeHook,
                 turnId: snap.turnId,
               },
             } satisfies WsMessageOut),
@@ -1788,16 +1783,6 @@ export function broadcastFollowUpUpdate(
   safeBroadcast(msg, isHostGroupJid(baseChatJid), allowedUserIds);
 }
 
-export function broadcastTyping(chatJid: string, isTyping: boolean): void {
-  const jid = normalizeHomeJid(chatJid);
-  const allowedUserIds = getGroupAllowedUserIds(chatJid);
-  safeBroadcast(
-    { type: 'typing', chatJid: jid, isTyping },
-    isHostGroupJid(chatJid),
-    allowedUserIds,
-  );
-}
-
 // ─── Streaming Snapshot Accumulation ─────────────────────────────────
 // Tracks current streaming state per group so WS reconnects can recover.
 
@@ -1815,28 +1800,12 @@ interface StreamingSnapshotEntry {
     id: string;
     timestamp: number;
     text: string;
-    kind:
-      | 'tool'
-      | 'skill'
-      | 'hook'
-      | 'status'
-      | 'task'
-      | 'memory'
-      | 'debug'
-      | 'permission';
+    kind: 'tool' | 'skill' | 'status' | 'task' | 'memory' | 'debug';
   }>;
   traceEvents: Array<{
     id: string;
     timestamp: number;
-    kind:
-      | 'tool'
-      | 'skill'
-      | 'hook'
-      | 'status'
-      | 'task'
-      | 'memory'
-      | 'debug'
-      | 'permission';
+    kind: 'tool' | 'skill' | 'status' | 'task' | 'memory' | 'debug';
     scope?: StreamEvent['agentScope'];
     title: string;
     summary?: string;
@@ -1855,7 +1824,6 @@ interface StreamingSnapshotEntry {
       subagentType?: string;
       taskType?: string;
       workflowName?: string;
-      workflowRun?: StreamEvent['workflowRun'];
       usage?: StreamEvent['sdkTaskUsage'];
       latestSummary?: string;
       lastToolName?: string;
@@ -1866,15 +1834,11 @@ interface StreamingSnapshotEntry {
       updatedAt: number;
     }
   >;
-  todos?: Array<{ id: string; content: string; status: string }>;
   systemStatus: string | null;
   /** Whether the agent is mid-thinking (no text emitted yet) — kept in the
    *  snapshot so a WS reconnect restores the "思考中" indicator instead of a
    *  blank pause. */
   isThinking?: boolean;
-  /** Currently-running hook, if any — restored on reconnect so the hook spinner
-   *  survives the reconnect instead of silently disappearing. */
-  activeHook?: { hookName: string; hookEvent: string } | null;
   turnId?: string;
   /** Exact GroupQueue attempt that owns this projection. */
   runId?: string;
@@ -1910,15 +1874,7 @@ function pushRecentEvent(
     id: string;
     timestamp: number;
     text: string;
-    kind:
-      | 'tool'
-      | 'skill'
-      | 'hook'
-      | 'status'
-      | 'task'
-      | 'memory'
-      | 'debug'
-      | 'permission';
+    kind: 'tool' | 'skill' | 'status' | 'task' | 'memory' | 'debug';
   },
 ): void {
   snap.recentEvents.push(event);
@@ -1935,8 +1891,6 @@ function pushTraceEvent(
     event.eventType === 'text_delta' ||
     event.eventType === 'thinking_delta' ||
     event.eventType === 'usage' ||
-    event.eventType === 'init' ||
-    event.eventType === 'context_audit' ||
     (event.eventType === 'status' &&
       isInternalLifecycleStatus(event.statusText))
   )
@@ -1945,18 +1899,13 @@ function pushTraceEvent(
     ? event.skillName
       ? 'skill'
       : 'tool'
-    : event.eventType.startsWith('hook_')
-      ? 'hook'
-      : event.eventType.startsWith('task_')
-        ? 'task'
-        : event.eventType === 'memory_recall' ||
-            event.eventType === 'compact_boundary'
-          ? 'memory'
-          : event.eventType === 'permission_denied'
-            ? 'permission'
-            : event.eventType === 'raw_sdk_event'
-              ? 'debug'
-              : 'status';
+    : event.eventType.startsWith('task_')
+      ? 'task'
+      : event.eventType === 'compact_boundary'
+        ? 'memory'
+        : event.eventType === 'raw_sdk_event'
+          ? 'debug'
+          : 'status';
   const title =
     event.title ||
     event.summary ||
@@ -2021,7 +1970,6 @@ function updateSnapshotTask(
     subagentType: event.subagentType,
     taskType: event.taskType,
     workflowName: event.workflowName,
-    workflowRun: event.workflowRun,
     usage: event.sdkTaskUsage,
     thinkingTail: '',
     textTail: '',
@@ -2036,20 +1984,6 @@ function updateSnapshotTask(
   if (event.taskType) task.taskType = event.taskType;
   if (event.workflowName) task.workflowName = event.workflowName;
   if (event.sdkTaskUsage) task.usage = event.sdkTaskUsage;
-  if (event.workflowRun) {
-    task.workflowRun = {
-      ...(task.workflowRun ?? {}),
-      ...event.workflowRun,
-      phases:
-        event.workflowRun.phases.length > 0
-          ? event.workflowRun.phases
-          : (task.workflowRun?.phases ?? []),
-      agents:
-        event.workflowRun.agents.length > 0
-          ? event.workflowRun.agents
-          : (task.workflowRun?.agents ?? []),
-    };
-  }
   if (event.eventType === 'text_delta') {
     task.textTail = tailText(
       task.textTail + (event.text || ''),
@@ -2068,34 +2002,6 @@ function updateSnapshotTask(
       task.latestSummary;
     task.lastToolName = event.lastToolName || task.lastToolName;
     task.status = 'running';
-    if (task.workflowRun && event.sdkTaskUsage) {
-      task.workflowRun = {
-        ...task.workflowRun,
-        status: 'running',
-        totalTokens: event.sdkTaskUsage.totalTokens,
-        totalToolCalls: event.sdkTaskUsage.toolUses,
-        durationMs: event.sdkTaskUsage.durationMs,
-      };
-    }
-  } else if (event.eventType === 'task_updated') {
-    const patch = event.taskPatch;
-    if (patch?.status === 'completed') task.status = 'completed';
-    else if (patch?.status === 'failed' || patch?.status === 'killed')
-      task.status = 'error';
-    else if (patch?.is_backgrounded) task.status = 'backgrounded';
-    task.latestSummary =
-      event.summary || patch?.description || patch?.error || task.latestSummary;
-  } else if (event.eventType === 'task_notification') {
-    task.status = event.taskStatus === 'completed' ? 'completed' : 'error';
-    task.latestSummary =
-      event.taskSummary || event.summary || task.latestSummary;
-    if (task.workflowRun) {
-      task.workflowRun = {
-        ...task.workflowRun,
-        status: event.taskStatus === 'completed' ? 'completed' : 'failed',
-        completedAt: task.workflowRun.completedAt ?? Date.now(),
-      };
-    }
   } else if (event.eventType === 'tool_use_start' && event.parentToolUseId) {
     const tool = {
       toolName: event.toolName || 'unknown',
@@ -2124,10 +2030,6 @@ function updateStreamingSnapshot(
   event: StreamEvent,
   runId?: string,
 ): void {
-  // Context audits are operator diagnostics. They must not enter user-facing
-  // WebSocket snapshots, even if this helper is called outside the broadcaster.
-  if (event.eventType === 'context_audit') return;
-
   // turn 干净结束（silent-success）：删除快照而非累积，避免 WS 重连恢复到
   // 「生成中」僵尸快照。前端收到同一 idle 事件后清 waiting/streaming。
   if (event.eventType === 'status' && event.statusText === 'idle') {
@@ -2248,29 +2150,11 @@ function updateStreamingSnapshot(
       }
       break;
 
-    case 'task_start':
-      pushRecentEvent(snap, {
-        id: event.toolUseId || event.taskId || `task-${Date.now()}`,
-        timestamp: Date.now(),
-        text: `Task 启动: ${event.taskDescription || event.toolInputSummary || 'Task'}`,
-        kind: 'task',
-      });
-      break;
-
     case 'task_progress':
       pushRecentEvent(snap, {
         id: `task-progress-${Date.now()}`,
         timestamp: Date.now(),
         text: `${event.lastToolName ? `Task 进度 [${event.lastToolName}]` : 'Task 进度'}: ${event.summary || event.taskDescription || ''}`,
-        kind: 'task',
-      });
-      break;
-
-    case 'task_notification':
-      pushRecentEvent(snap, {
-        id: `task-done-${event.taskId || Date.now()}`,
-        timestamp: Date.now(),
-        text: `Task ${event.taskStatus === 'completed' ? '完成' : '结束'}: ${event.taskSummary || event.summary || ''}`,
         kind: 'task',
       });
       break;
@@ -2287,33 +2171,6 @@ function updateStreamingSnapshot(
       }
       break;
 
-    case 'hook_started':
-      snap.activeHook = {
-        hookName: event.hookName || '',
-        hookEvent: event.hookEvent || '',
-      };
-      if (event.hookName) {
-        pushRecentEvent(snap, {
-          id: `hook-${Date.now()}`,
-          timestamp: Date.now(),
-          text: `${event.hookName} (${event.hookEvent || ''})`,
-          kind: 'hook',
-        });
-      }
-      break;
-
-    case 'hook_progress':
-      snap.activeHook = {
-        hookName: event.hookName || '',
-        hookEvent: event.hookEvent || '',
-      };
-      break;
-
-    case 'hook_response':
-      snap.activeHook = null;
-      break;
-
-    case 'memory_recall':
     case 'compact_boundary':
       pushRecentEvent(snap, {
         id: `${event.eventType}-${Date.now()}`,
@@ -2321,16 +2178,6 @@ function updateStreamingSnapshot(
         text: event.summary || event.title || event.eventType,
         kind: 'memory',
       });
-      break;
-
-    case 'todo_update':
-      if (event.todos) {
-        snap.todos = event.todos.map((t) => ({
-          id: t.id,
-          content: t.content,
-          status: t.status,
-        }));
-      }
       break;
   }
 
@@ -2363,27 +2210,6 @@ export function broadcastStreamEvent(
   event: StreamEvent,
   agentId?: string,
 ): void {
-  // Keep runtime context audits on the server side. Sending them over the
-  // user WebSocket exposes paths, prompt wiring, and framework terminology.
-  if (event.eventType === 'context_audit') {
-    if (event.contextAudit) {
-      recordRunContextSnapshot({
-        chatJid,
-        agentId,
-        turnId: event.turnId,
-        sessionId: event.sessionId,
-        audit: event.contextAudit,
-      });
-    }
-    if (event.contextAudit?.warnings?.length) {
-      logger.warn(
-        { chatJid, warnings: event.contextAudit.warnings },
-        'Agent context audit warning',
-      );
-    }
-    return;
-  }
-
   const jid = normalizeHomeJid(chatJid);
   const allowedUserIds = getGroupAllowedUserIds(chatJid);
   // Agent streams use virtual JID format (jid#agent:agentId) as the exact
@@ -2422,20 +2248,6 @@ export function broadcastStreamEvent(
 
   // Accumulate snapshot for both main and agent streams.
   updateStreamingSnapshot(snapshotJid, event, decision.runId);
-}
-
-export function broadcastGroupCreated(
-  jid: string,
-  folder: string,
-  name: string,
-  userId?: string,
-): void {
-  const allowedUserIds = userId ? new Set([userId]) : undefined;
-  safeBroadcast(
-    { type: 'group_created', jid, folder, name },
-    false,
-    allowedUserIds,
-  );
 }
 
 export function broadcastChannelAccountStatus(
@@ -2645,27 +2457,8 @@ export function broadcastDockerPullComplete(
   safeBroadcast({ type: 'docker_pull_complete', success, error }, true);
 }
 
-function broadcastStatus(): void {
-  if (!deps) return;
-
-  const queueStatus = deps.queue.getStatus();
-  // Broadcast aggregate system metrics only to admin users.
-  // Non-admin users get per-user filtered metrics via REST /api/status.
-  safeBroadcast(
-    {
-      type: 'status_update',
-      activeContainers: queueStatus.activeContainerCount,
-      activeHostProcesses: queueStatus.activeHostProcessCount,
-      activeTotal: queueStatus.activeCount,
-      queueLength: queueStatus.waitingCount,
-    },
-    /* adminOnly */ true,
-  );
-}
-
 // --- Server Startup ---
 
-let statusInterval: ReturnType<typeof setInterval> | null = null;
 let httpServer: ReturnType<typeof serve> | null = null;
 let wss: WebSocketServer | null = null;
 
@@ -2755,10 +2548,6 @@ export function startWebServer(webDeps: WebDeps): void {
   webDeps.queue.setOnRunnerStateChange(broadcastRunnerState);
   webDeps.queue.setOnQueryStart(broadcastRunStarted);
   webDeps.queue.setOnQueryFinish(broadcastRunFinished);
-
-  // Broadcast status every 5 seconds
-  if (statusInterval) clearInterval(statusInterval);
-  statusInterval = setInterval(broadcastStatus, 5000);
 }
 
 // --- Exports ---
@@ -2768,10 +2557,6 @@ export function shutdownTerminals(): void {
 }
 
 export async function shutdownWebServer(): Promise<void> {
-  if (statusInterval) {
-    clearInterval(statusInterval);
-    statusInterval = null;
-  }
   // Close all WebSocket connections
   for (const client of wsClients.keys()) {
     try {

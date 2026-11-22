@@ -24,8 +24,12 @@ const { ActiveChannelOutboxScopeRegistry } =
   await import('../src/channel-outbox-runtime-scope.js');
 
 const repoRoot = process.cwd();
+// ISSUE-15：Windows（core.autocrlf=true）检出为 CRLF，section() 的起止串与
+// '\n' 正则锚点统一按 LF 匹配，读源先归一行尾（LF 环境零变化）。
 const read = (relativePath: string) =>
-  fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
+  fs
+    .readFileSync(path.join(repoRoot, relativePath), 'utf8')
+    .replace(/\r\n/g, '\n');
 
 function section(source: string, start: string, end: string): string {
   const startIndex = source.indexOf(start);
@@ -233,10 +237,21 @@ describe('warm channel outbox scope wiring contract', () => {
   });
 
   test('text and image IPC projection both recover the frozen logical base', () => {
+    // ISSUE-12 波 4 单元 4.3/4.4：text 与 image 两投影分支分别迁入
+    // src/ipc/message-delivery.ts 与 src/ipc/image-delivery.ts，双投影断言
+    // 改为两新模块合计仍为 2；第二断言的 bindChannelOutboxScope 与
+    // resolveIpcOutputRuntimeChatJid 仍留守 index.ts，读入不变。
     const host = read('src/index.ts');
-    expect(
-      host.match(/runtimeChatJid:\s*resolveIpcOutputRuntimeChatJid\(/g),
-    ).toHaveLength(2);
+    const textBranch = read('src/ipc/message-delivery.ts');
+    const imageBranch = read('src/ipc/image-delivery.ts');
+    const textMatches =
+      textBranch.match(/runtimeChatJid:\s*resolveIpcOutputRuntimeChatJid\(/g) ??
+      [];
+    const imageMatches =
+      imageBranch.match(
+        /runtimeChatJid:\s*resolveIpcOutputRuntimeChatJid\(/g,
+      ) ?? [];
+    expect(textMatches.length + imageMatches.length).toBe(2);
     expect(host).toMatch(
       /logicalBaseChatJid:\s*chatJid[\s\S]*?function resolveIpcOutputRuntimeChatJid/,
     );

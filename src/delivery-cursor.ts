@@ -1,6 +1,6 @@
 import type { MessageCursor } from './types.js';
 
-export interface CursorOrderedMessage {
+interface CursorOrderedMessage {
   timestamp: string;
   id: string;
 }
