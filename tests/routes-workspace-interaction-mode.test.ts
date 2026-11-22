@@ -11,6 +11,10 @@ import {
   test,
   vi,
 } from 'vitest';
+import {
+  asInteractionTestUser,
+  createTestUserRow,
+} from './helpers/route-test-user.js';
 
 const root = fs.mkdtempSync(
   path.join(os.tmpdir(), 'routes-workspace-interaction-mode-'),
@@ -72,29 +76,10 @@ const queue = {
   unblockGroupsForRuntimeSafety: vi.fn(),
 };
 
-function createUser(id: string): void {
-  const now = new Date().toISOString();
-  db.createUser({
-    id,
-    username: id,
-    password_hash: 'hash',
-    display_name: id,
-    role: 'member',
-    status: 'active',
-    created_at: now,
-    updated_at: now,
-    must_change_password: false,
-  });
-}
-
-function asUser(id: string): void {
-  process.env.CKQCLAW_INTERACTION_TEST_USER = id;
-}
-
 beforeAll(() => {
   db.initDatabase();
-  createUser(OWNER_ID);
-  createUser(STRANGER_ID);
+  createTestUserRow(db, OWNER_ID);
+  createTestUserRow(db, STRANGER_ID);
   webContext.setWebDeps({
     queue,
     sessions,
@@ -115,7 +100,7 @@ afterAll(() => {
 
 describe('workspace interaction_mode API', () => {
   test('creation persists proactive and groups/workspaces serialize it', async () => {
-    asUser(OWNER_ID);
+    asInteractionTestUser(OWNER_ID);
     const profile = db.getOrCreateDefaultAgentProfile(OWNER_ID);
     const createResponse = await groupRoutes.request('/', {
       method: 'POST',
@@ -158,7 +143,7 @@ describe('workspace interaction_mode API', () => {
   });
 
   test('normalizes the legacy persona API value to proactive', async () => {
-    asUser(OWNER_ID);
+    asInteractionTestUser(OWNER_ID);
     const profile = db.getOrCreateDefaultAgentProfile(OWNER_ID);
     const response = await groupRoutes.request('/', {
       method: 'POST',
@@ -199,7 +184,7 @@ describe('workspace interaction_mode API', () => {
       expect(db.getWorkspaceInteractionMode(folder)).toBe('proactive');
     });
 
-    asUser(OWNER_ID);
+    asInteractionTestUser(OWNER_ID);
     const response = await groupRoutes.request(`/${encodeURIComponent(jid)}`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
@@ -236,7 +221,7 @@ describe('workspace interaction_mode API', () => {
     registeredGroups[jid] = db.getRegisteredGroup(jid);
     db.assignWorkspaceAgentProfile(folder, first.id, 'proactive');
 
-    asUser(STRANGER_ID);
+    asInteractionTestUser(STRANGER_ID);
     const denied = await groupRoutes.request(`/${encodeURIComponent(jid)}`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
@@ -245,7 +230,7 @@ describe('workspace interaction_mode API', () => {
     expect(denied.status).toBe(404);
     expect(db.getWorkspaceInteractionMode(folder)).toBe('proactive');
 
-    asUser(OWNER_ID);
+    asInteractionTestUser(OWNER_ID);
     const switched = await groupRoutes.request(
       `/${encodeURIComponent(jid)}/agent-profile`,
       {

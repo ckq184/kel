@@ -5,6 +5,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
 
 import { removeTmpDirRecursive } from './helpers/remove-tmp-dir.js';
+import { asSystemSettingsTestUser } from './helpers/route-test-user.js';
 
 const tmpDir = fs.mkdtempSync(
   path.join(os.tmpdir(), 'ckqclaw-system-settings-per-user-echo-'),
@@ -84,11 +85,6 @@ const app = web.createAppForTest({
   reconnectUserIMChannels,
 } as any);
 
-function asUser(role: 'admin' | 'member', permissions: string[] = []): void {
-  process.env.CKQCLAW_TEST_ROLE = role;
-  process.env.CKQCLAW_TEST_PERMISSIONS = JSON.stringify(permissions);
-}
-
 beforeAll(() => {
   fs.mkdirSync(path.join(tmpDir, 'db'), { recursive: true });
   fs.mkdirSync(path.join(tmpDir, 'groups'), { recursive: true });
@@ -115,7 +111,7 @@ afterAll(() => {
 
 describe('system settings per-user concurrency echo (ISSUE-07 item 1)', () => {
   test('GET /api/config/system echoes maxConcurrentContainersPerUser', async () => {
-    asUser('member', ['manage_system_config']);
+    asSystemSettingsTestUser('member', ['manage_system_config']);
     const response = await app.request('/api/config/system');
     expect(response.status).toBe(200);
     const body = await response.json();
@@ -124,7 +120,7 @@ describe('system settings per-user concurrency echo (ISSUE-07 item 1)', () => {
   });
 
   test('PUT persists the per-user limit and echoes it back', async () => {
-    asUser('member', ['manage_system_config']);
+    asSystemSettingsTestUser('member', ['manage_system_config']);
     const response = await app.request('/api/config/system', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
@@ -140,7 +136,7 @@ describe('system settings per-user concurrency echo (ISSUE-07 item 1)', () => {
   });
 
   test('PUT without the field keeps the stored per-user limit (merge semantics)', async () => {
-    asUser('member', ['manage_system_config']);
+    asSystemSettingsTestUser('member', ['manage_system_config']);
     // Web 设置 UI 保存其他字段时不会带上该字段；saveSystemSettings 是
     // {...existing, ...partial} 合并语义，不得把它重置回 null。
     const response = await app.request('/api/config/system', {

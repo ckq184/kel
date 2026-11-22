@@ -11,6 +11,7 @@ import {
   test,
   vi,
 } from 'vitest';
+import { asMemoryRouteTestUser } from './helpers/route-test-user.js';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'workspace-memory-routes-'));
 const storeDir = path.join(root, 'store');
@@ -48,11 +49,6 @@ const memoryStore = await import('../src/memory-store.js');
 
 const WORKSPACE_A = 'web:memory-a';
 const WORKSPACE_B = 'web:memory-b';
-
-function asUser(id: string, role: 'member' | 'admin' = 'member'): void {
-  process.env.CKQCLAW_MEMORY_TEST_USER = id;
-  process.env.CKQCLAW_MEMORY_TEST_ROLE = role;
-}
 
 function route(workspaceJid: string, suffix = ''): string {
   return `/workspaces/${encodeURIComponent(workspaceJid)}/items${suffix}`;
@@ -92,7 +88,7 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
-  asUser('alice');
+  asMemoryRouteTestUser('alice');
   for (const jid of [WORKSPACE_A, WORKSPACE_B]) {
     try {
       db.deleteRegisteredGroup(jid);
@@ -241,11 +237,11 @@ describe('Workspace Memory v2 routes', () => {
     const created = await create(WORKSPACE_A, 'private workspace memory');
     const itemId = created.body.item.id;
 
-    asUser('mallory');
+    asMemoryRouteTestUser('mallory');
     expect((await request(route(WORKSPACE_A))).status).toBe(404);
     expect((await create(WORKSPACE_A, 'intrusion')).status).toBe(404);
 
-    asUser('root-admin', 'admin');
+    asMemoryRouteTestUser('root-admin', 'admin');
     expect((await request(route(WORKSPACE_A, `/${itemId}`))).status).toBe(404);
     expect(
       (

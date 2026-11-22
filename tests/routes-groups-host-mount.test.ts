@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
+import { asRouteTestUser } from './helpers/route-test-user.js';
 
 const SHARED_TMP =
   process.env.CKQCLAW_HOST_MOUNT_ROUTE_TEST_DIR ??
@@ -62,16 +63,6 @@ const outsideRoot = path.join(SHARED_TMP, 'outside');
 const webDepsCache: Record<string, unknown> = {};
 const ensureTerminalContainerStarted = vi.fn(() => true);
 
-function asUser(
-  id: string,
-  role: 'admin' | 'member',
-  status: 'active' | 'disabled' = 'active',
-): void {
-  process.env.CKQCLAW_TEST_USER_ID = id;
-  process.env.CKQCLAW_TEST_USER_ROLE = role;
-  process.env.CKQCLAW_TEST_USER_STATUS = status;
-}
-
 function uniqueName(label: string): string {
   return `mount-${label}-${Math.random().toString(36).slice(2, 9)}`;
 }
@@ -121,7 +112,7 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
-  asUser('route-admin', 'admin');
+  asRouteTestUser('route-admin', 'admin', 'active');
   ensureTerminalContainerStarted.mockClear();
 });
 
@@ -132,7 +123,7 @@ describe('POST /api/groups additional_mounts authorization', () => {
       outsideRoot,
       `definitely-missing-${Math.random().toString(36).slice(2)}`,
     );
-    asUser('route-member', 'member');
+    asRouteTestUser('route-member', 'member', 'active');
 
     const { response, body } = await createWorkspace({
       name,
@@ -157,7 +148,7 @@ describe('POST /api/groups additional_mounts authorization', () => {
     const source = path.join(allowedRoot, uniqueName('inactive-source'));
     fs.mkdirSync(source);
     const name = uniqueName('inactive-admin');
-    asUser('inactive-admin', 'admin', 'disabled');
+    asRouteTestUser('inactive-admin', 'admin', 'disabled');
 
     const { response, body } = await createWorkspace({
       name,
