@@ -151,6 +151,40 @@ describe('collectChangedPaths：base→工作树全量采集', () => {
     const changed = collectChangedPaths(repo, base);
     expect(changed.sort()).toEqual(['added.ts', 'keep.ts', 'untracked.ts']);
   });
+
+  // ISSUE-21 C4：锁定 ISSUE-15 的 `-c core.quotepath=false`。仓库显式开启
+  // quotepath 时，git 默认把非 ASCII 路径八进制转义加引号；脚本必须仍返回
+  // 原文路径，否则 allow 里的中文路径永远命中不了。
+  test('非 ASCII（中文）路径按原文采集，不受仓库 quotepath 配置影响', () => {
+    const repo = makeTmpRepo();
+    execFileSync('git', ['config', 'core.quotepath', 'true'], {
+      cwd: repo,
+      stdio: 'ignore',
+    });
+    fs.mkdirSync(path.join(repo, 'docs'));
+    fs.writeFileSync(path.join(repo, 'docs', '审查记录.md'), 'a\n');
+    gitCommit(repo, 'init');
+    const base = execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: repo,
+      encoding: 'utf8',
+    }).trim();
+    fs.writeFileSync(path.join(repo, 'docs', '审查记录.md'), 'b\n'); // 已修改
+    fs.mkdirSync(path.join(repo, '中文目录'));
+    fs.writeFileSync(path.join(repo, '中文目录', '新文件.ts'), 'x\n'); // 未跟踪
+
+    expect(collectChangedPaths(repo, base).sort()).toEqual(
+      ['docs/审查记录.md', '中文目录/新文件.ts'].sort(),
+    );
+    const audit = auditScope(collectChangedPaths(repo, base), [
+      'docs/审查记录.md',
+    ]);
+    expect(audit.inScope.map((item) => item.path)).toEqual([
+      'docs/审查记录.md',
+    ]);
+    expect(audit.outOfScope.map((item) => item.path)).toEqual([
+      '中文目录/新文件.ts',
+    ]);
+  });
 });
 
 // 与 githooks-contract 安装器用例同构：git init + 两次 CLI 子进程，全量
