@@ -5,7 +5,7 @@ import {
   timingSafeEqual,
 } from 'node:crypto';
 
-import { normalizeForCanonicalJson } from './canonical-json.js';
+import { buildWorkspaceMemoryMutationPayload } from './workspace-memory-payload.js';
 
 export interface WorkspaceMemoryCapabilityScope {
   groupFolder: string;
@@ -31,23 +31,6 @@ function scopeKey(scope: WorkspaceMemoryCapabilityScope): string {
     scope.agentId ?? null,
     scope.taskRunId ?? null,
   ]);
-}
-
-function mutationPayload(
-  scope: WorkspaceMemoryCapabilityScope,
-  request: Record<string, unknown>,
-): string {
-  const { mutationSignature: _signature, ...unsignedRequest } = request;
-  return JSON.stringify(
-    normalizeForCanonicalJson({
-      namespace: {
-        groupFolder: scope.groupFolder,
-        agentId: scope.agentId ?? null,
-        taskRunId: scope.taskRunId ?? null,
-      },
-      request: unsignedRequest,
-    }),
-  );
 }
 
 /**
@@ -152,7 +135,7 @@ export function verifyWorkspaceMemoryCapability(
   ) {
     return false;
   }
-  const payload = mutationPayload(scope, request);
+  const payload = buildWorkspaceMemoryMutationPayload(scope, request);
   const candidate = Buffer.from(candidateSignature, 'utf8');
   const expectedText = createHmac('sha256', entry.secret)
     .update(payload, 'utf8')

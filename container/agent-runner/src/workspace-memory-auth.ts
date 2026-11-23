@@ -1,12 +1,11 @@
 import { createHmac } from 'node:crypto';
 
-import { normalizeForCanonicalJson } from './canonical-json.js';
+import {
+  buildWorkspaceMemoryMutationPayload,
+  type WorkspaceMemoryMutationNamespace,
+} from './workspace-memory-payload.js';
 
-export interface WorkspaceMemoryMutationNamespace {
-  groupFolder: string;
-  agentId?: string | null;
-  taskRunId?: string | null;
-}
+export type { WorkspaceMemoryMutationNamespace };
 
 /**
  * Sign the exact mutation request that will be written to IPC. The secret is
@@ -18,18 +17,7 @@ export function signWorkspaceMemoryMutation(
   namespace: WorkspaceMemoryMutationNamespace,
   request: Record<string, unknown>,
 ): string {
-  const { mutationSignature: _signature, ...unsignedRequest } = request;
-  const payload = JSON.stringify(
-    normalizeForCanonicalJson({
-      namespace: {
-        groupFolder: namespace.groupFolder,
-        agentId: namespace.agentId ?? null,
-        taskRunId: namespace.taskRunId ?? null,
-      },
-      request: unsignedRequest,
-    }),
-  );
   return createHmac('sha256', secret)
-    .update(payload, 'utf8')
+    .update(buildWorkspaceMemoryMutationPayload(namespace, request), 'utf8')
     .digest('base64url');
 }
