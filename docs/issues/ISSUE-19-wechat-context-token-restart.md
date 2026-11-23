@@ -66,4 +66,10 @@ ISSUE-14 实机验收第一轮：服务停止时注入“认领后进程死亡�
   - 飞书 `src/feishu.ts:1863` 的 `Feishu client is not connected` 是发送前确定的拒绝，但仍抛普通 `Error`，会落 `uncertain`；飞书、QQ 其余几处 `No message_id in response`、`no file_info in response` 发生在调用之后，结果确实不确定，维持现状正确。
   - iLink 返回非零错误码（例如持久化 token 已失效）仍按普通错误处理，落 `uncertain`：服务端是否已投递无法确认，按拍板不改。token 的实际有效期没有文档，需要实机观察。
   - `src/im-channel.ts` 中微信适配器 `!inner` 时静默返回的分支：经 `imManager` 调用时会被 `isConnected()` 挡住，不可达，不处理。
-- **待用户决定**：实机验收（重启服务后，在没有新入站消息的情况下，确认主动消息能发出）、合入 main、推送。
+- **实机验收（2026-11-23，用户执行与确认）**：在本分支用 `npm run dev:all` 启动，数据沿用 ISSUE-14 验收时复制的 `data/`（已接入微信）。
+  1. 基线：账号 secret 里没有 `contextTokens` 字段（检查脚本只输出字段是否存在、是否绑定当前机器人、用户数和写入时间，不输出 token 值）。
+  2. 用户在微信发一条消息：10:56:30 token 写入 secret，绑定当前机器人，用户数 1。
+  3. 停服务，写入一条已中断 turn 的 `retry_wait` 文本行，再重启（10:56:57）。重启后用户没有再发消息，日志里重启到投递之间没有任何微信入站记录。
+  4. 10:57:16 微信长轮询连上；10:57:28 worker 用持久化 token 发送成功（`WeChat message sent`），outbox 行变 `delivered`（attempt 2，synthetic 回执），日志 `delivered: 1`。**用户确认微信收到补发消息。**
+  - 结论：重启后不需要新的入站消息就能主动发送。ISSUE-14 验收第一轮在同样条件下报 `No context_token` 的问题已解决。
+- **待用户决定**：合入 main、推送。
