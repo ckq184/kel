@@ -2,7 +2,7 @@
 
 | 字段          | 值                                                                                                                                                                                                                             |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 状态          | 进行中                                                                                                                                                                                                                         |
+| 状态          | 已完成                                                                                                                                                                                                                         |
 | 领取人 / 分支 | `claude/distracted-noyce-b82677`                                                                                                                                                                                               |
 | 优先级        | P2                                                                                                                                                                                                                             |
 | 类型          | 缺陷（可观测性与错误处理）                                                                                                                                                                                                     |
@@ -54,4 +54,24 @@
 
 ## 交付记录
 
-（领取后填写）
+- **领取**：分支 `claude/distracted-noyce-b82677`，base `638d0c7`，立项文档 `docs/issue20-container-image-unavailable-plan.md`。
+- **用户拍板（2026-11-23，五项全部按推荐）**：
+  1. 识别范围：只认退出码 125 且 stderr 命中 `Unable to find image` / `pull access denied` / `manifest unknown` / `repository does not exist` / `repository … not found`；挂载、参数错误等其他 125 仍走现有重试。
+  2. 识别后：立即停止，不保留重试。
+  3. 告知：Web 工作区发 `agent_error`，文案只含原因和处理建议（监控页拉取镜像、或切换宿主机模式），不含镜像名和 Docker 原文；同时沿当前 Turn 的 IM 路由回复发送方。
+  4. 启动期预检：存在 Container 工作区且 Docker 可用时，不阻塞地检查一次镜像，缺失只打 warn 日志（含镜像名和处理建议），不自动拉取。
+  5. 错误截断：stderr 超过 400 字符时保留开头和结尾各 200 字符，中间用「…」连接；Container 与 Host 共用同一函数。
+- **提交**：
+  - `4f95eb1` 立项（领取、立项文档、`.gatescope.json`）。
+  - `5a3ebed` T1：新增 `src/container-image-failure.ts`（识别、首尾截断、带 `container_image_unavailable:` 前缀的错误构造、用户文案、启动预检函数）；`agent-output-parser` 默认错误串与 Host `enrichError` 改用首尾截断，Container closeCtx 注入 `buildContainerExitError`。
+  - `d2d115d` T2：`src/index.ts` 主路径在认证失败分支之后、OOM 与静默重试之前新增镜像不可用分支（Web 系统消息、IM 通知、定时任务终态、提交游标、清指示、不重试）；抽出 `resolveSystemNoticeRoute` 供主动尾部中断通知复用；`ensureDockerRunning` 接入启动预检。
+- **测试**：新增 `tests/container-image-failure.test.ts`（识别正反例、截断、错误构造、文案不含镜像名、启动预检三种情况、Container/Host 接线断言）与 `tests/container-image-unavailable-wiring.test.ts`（新分支位置与收尾、IM 通知参数、回归：OOM 计数与自动重置、普通失败静默退避与末轮 `agent_error` 原文、`agent_max_retries`、`MAX_RETRIES = 5` / `BASE_RETRY_MS = 5000`、超时错误串）；`tests/agent-output-parser.test.ts` 补两条（默认错误串保留首尾、注入后带前缀）。均先红后绿。
+- **验证**：`npm run verify` 六步全绿（总耗时约 36s；第 4 步 351 个文件，2878 通过、23 跳过）；`node scripts/check-scope.mjs` 通过（11 个路径全在声明内，未扩宽）。
+- **偏差**：
+  - 新增 `resolveSystemNoticeRoute`，把 `deliverProactiveTailInterruptionNotice` 中原有的路由解析抽出复用，行为不变（有断言锁定），属立项范围内的 `src/index.ts`。
+  - 启动预检直接在 `index.ts` 调用 `docker images`，没有复用 `src/routes/monitor.ts` 的 `getDockerImageId`（该函数未导出且带 30 秒缓存，监控页不在本 issue 改动范围）。
+  - 「index 分支接线」沿用仓库惯例，用源码结构断言锁定，没有对 `processGroupMessages` 做端到端测试。
+- **未做 / 登记**：
+  - Runtime Session（`processAgentConversation`）路径的失败处理没有接入镜像不可用识别（立项非目标）；该路径另有一套重试与收尾逻辑，若同样需要快速失败，可另立 issue。
+  - 镜像发布（GitHub 配置 `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN`）与 CI「Agent runner self-test」失败仍需用户处理。
+  - 实机验收（Container 工作区 + 微信发消息，确认约 2.5 分钟静默重试变为立即告知、IM 收到提示）由用户决定是否执行。

@@ -57,7 +57,7 @@
 | [ISSUE-17](ISSUE-17-stream-event-consumer-only-fields.md)       | StreamEvent 只有消费者的字段：逐字段决定补生产者还是下线   | P3     | 无                  | **是**               | 已完成 |
 | [ISSUE-18](ISSUE-18-pi-custom-provider-headers.md)              | Pi 运行时读取 ANTHROPIC_CUSTOM_HEADERS：自定义供应商请求头 | P1     | 无                  | **是**（已四项拍板） | 已完成 |
 | [ISSUE-19](ISSUE-19-wechat-context-token-restart.md)            | 微信 context_token 重启丢失与“无 token”被误判为 uncertain  | P2     | 无                  | **是**               | 已完成 |
-| [ISSUE-20](ISSUE-20-container-image-unavailable-error.md)       | 容器镜像不可用时快速失败并明确告知用户                     | P2     | 无                  | **是**               | 进行中 |
+| [ISSUE-20](ISSUE-20-container-image-unavailable-error.md)       | 容器镜像不可用时快速失败并明确告知用户                     | P2     | 无                  | **是**               | 已完成 |
 | [ISSUE-21](ISSUE-21-registered-leftovers.md)                    | 各 issue 交付记录中登记的零散遗留：逐项决策与落地          | P2     | 无                  | **是**               | 待领取 |
 | [ISSUE-22](ISSUE-22-subagent-custom-provider-401.md)            | 子代理没有沿用自定义 Provider：Explore 与显式 model 报 401 | P1     | 无                  | **是**               | 待领取 |
 
