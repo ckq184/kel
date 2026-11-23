@@ -47,6 +47,7 @@ import {
   type FeishuCapabilityResult,
 } from './feishu-capability.js';
 import { enrichFeishuInboundContent } from './feishu-rich-content.js';
+import { ChannelPreSendRejection } from './channel-errors.js';
 import {
   updateClaimedChannelInbox,
   type ClaimedChannelInboxItem,
@@ -1860,7 +1861,8 @@ export function createFeishuConnection(
     },
 
     async executeCapability(context, request) {
-      if (!client) throw new Error('Feishu client is not connected');
+      if (!client)
+        throw new ChannelPreSendRejection('Feishu client is not connected');
       return executeFeishuCapability(client, context, request);
     },
 

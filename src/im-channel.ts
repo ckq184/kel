@@ -45,7 +45,9 @@ import {
 import type { QQStreamingController } from './qq-streaming-card.js';
 import { CHANNEL_PREFIXES } from './channel-prefixes.js';
 
-export { ChannelPreSendRejection } from './channel-errors.js';
+import { ChannelPreSendRejection } from './channel-errors.js';
+
+export { ChannelPreSendRejection };
 
 /** Union type for any streaming card controller (Feishu or QQ) */
 export type StreamingSession = StreamingCardController | QQStreamingController;
@@ -393,7 +395,8 @@ export function createFeishuChannel(config: FeishuConnectionConfig): IMChannel {
     },
 
     async executeFeishuCapability(context, request) {
-      if (!inner) throw new Error('Feishu channel is not connected');
+      if (!inner)
+        throw new ChannelPreSendRejection('Feishu channel is not connected');
       return inner.executeCapability(context, request);
     },
 
