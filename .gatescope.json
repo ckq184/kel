@@ -6,6 +6,7 @@
     "docs/issue14-channel-outbox-worker-plan.md",
     "docs/issues/ISSUE-14-channel-outbox-worker.md",
     "docs/issues/README.md",
+    "docs/issues/ISSUE-19-wechat-context-token-restart.md",
     "docs/API.md",
     "src/channel-reliability-store.ts",
     "src/channel-outbox-delivery.ts",

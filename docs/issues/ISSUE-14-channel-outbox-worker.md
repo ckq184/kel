@@ -62,4 +62,8 @@
   2. 改动路径超出 issue 预计：多改了 `src/channel-reliability-recovery.ts`（`afterPass` 挂点）和 `docs/API.md`（原段落描述的正是本缺口，已改为现状）。`.gatescope.json` 的 allow 相应扩宽。
   3. 证据复核发现：生产中重启产生 `retry_wait` 的窗口实际很窄（所有生产调用都是 `single` 模式，“认领”到“标 sending”之间只隔一个微任务），worker 主要是兜底。
 - **范围外登记**：`claimNextChannelTurnRun` 生产零调用，不在本 issue 处理；image/file payload 不含路径和字节，如果以后要重投附件，需要另立 issue 扩展 payload。
-- **待用户决定**：合入 main、推送、实机验收。
+- **实机验收（2026-11-23，用户执行与确认）**：本 worktree 复制 ISSUE-16 的 `data/`（已接入微信），用 `npm --prefix container/agent-runner run build` 加 `npm run dev:all` 启动。
+  - 第一轮（停服务注入“认领后进程死亡”的持久状态再重启，覆盖启动对账路径）：启动对账把 4 个 turn 置为 `interrupted`，翻转 `retry_wait` 4 条、`uncertain` 1 条。worker 首轮（10:03:46）把 file 行转 `failed`（不可重建）、2 小时前的超龄 text 行转 `failed`（超过 60 分钟），围栏 turn 的两行没有进入候选、都没动，均符合预期。text 行首轮因微信长轮询尚未连上被跳过（符合“渠道不可用保留”），10:04:20 被认领并调用发送，但微信报 `No context_token`（token 只在内存、重启后丢失），该行落 `uncertain`：没有重复发送，也没有送达。
+  - 第二轮（服务运行中，用户先在微信发消息刷新当前进程的 token，再写入已中断 turn 加到期 `retry_wait` 文本行）：10:35:56 写入，10:36:03 worker 投递成功，行变 `delivered`（attempt 2，synthetic 回执），日志 `delivered: 1`，**用户确认微信收到补发消息**。
+  - 结论：worker 的认领、重投、转 failed、围栏、渠道不可用保留五项行为都在实机上得到验证；重启后微信补发失败的原因在渠道层，已登记为 [ISSUE-19](ISSUE-19-wechat-context-token-restart.md)。
+- **待用户决定**：合入 main、推送。
