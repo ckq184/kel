@@ -153,6 +153,11 @@ export type RuntimeSessionOptions = {
      * catalog/registration value.
      */
     contextWindow?: number;
+    /**
+     * Extra request headers parsed from `ANTHROPIC_CUSTOM_HEADERS` (ISSUE-18).
+     * Applied to custom endpoint registrations only.
+     */
+    headers?: Record<string, string>;
   };
   /**
    * Product auto-compact toggle (default true). Maps to the runtime-native

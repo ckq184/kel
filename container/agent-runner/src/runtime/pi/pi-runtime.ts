@@ -85,6 +85,8 @@ export class PiRuntimeAdapter implements AgentRuntime {
       // routing, so both must be forwarded explicitly.
       authToken: options.provider?.authToken,
       contextWindow: options.provider?.contextWindow,
+      // ISSUE-18: parsed ANTHROPIC_CUSTOM_HEADERS for custom endpoints.
+      headers: options.provider?.headers,
     });
 
     const eventBus = createEventBus();

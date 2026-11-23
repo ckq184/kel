@@ -8,6 +8,79 @@ export type PiProviderResolution = {
   model: Model<any>;
 };
 
+export type CustomHeaderWarning = { line: number; message: string };
+
+export type ParsedCustomHeaders = {
+  headers: Record<string, string>;
+  warnings: CustomHeaderWarning[];
+};
+
+// RFC 9110 token characters for a header field name.
+const HEADER_NAME_RE = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+// Control characters other than horizontal tab are not valid in a value.
+const HEADER_VALUE_INVALID_RE = /[\u0000-\u0008\u000a-\u001f\u007f]/;
+
+/**
+ * ISSUE-18: parse `ANTHROPIC_CUSTOM_HEADERS` using the Claude Code convention
+ * of one `Name: value` per line. Invalid lines are skipped and reported by
+ * line number only — warnings never echo the value, which may be a secret.
+ * A later line wins over an earlier one with the same (case-insensitive) name.
+ */
+export function parseCustomHeaders(
+  raw: string | undefined,
+): ParsedCustomHeaders {
+  const headers: Record<string, string> = {};
+  const warnings: CustomHeaderWarning[] = [];
+  if (!raw) return { headers, warnings };
+  raw.split(/\r\n|\r|\n/).forEach((text, index) => {
+    const line = index + 1;
+    if (!text.trim()) return;
+    const colon = text.indexOf(':');
+    if (colon < 0) {
+      warnings.push({ line, message: 'missing ":" separator' });
+      return;
+    }
+    const name = text.slice(0, colon).trim();
+    const value = text.slice(colon + 1).trim();
+    if (!name) {
+      warnings.push({ line, message: 'empty header name' });
+      return;
+    }
+    if (!HEADER_NAME_RE.test(name)) {
+      warnings.push({ line, message: 'invalid header name' });
+      return;
+    }
+    if (!value) {
+      warnings.push({ line, message: `empty value for header ${name}` });
+      return;
+    }
+    if (HEADER_VALUE_INVALID_RE.test(value)) {
+      warnings.push({
+        line,
+        message: `control character in value for header ${name}`,
+      });
+      return;
+    }
+    for (const existing of Object.keys(headers)) {
+      if (existing.toLowerCase() === name.toLowerCase()) {
+        Reflect.deleteProperty(headers, existing);
+      }
+    }
+    headers[name] = value;
+  });
+  return { headers, warnings };
+}
+
+/**
+ * Pi resolves header values as config values: a leading `!` runs a shell
+ * command and `$VAR` / `${VAR}` expand environment variables. User-supplied
+ * header values are literals, so escape them (`$` → `$$`, leading `!` → `$!`).
+ */
+export function escapePiConfigLiteral(value: string): string {
+  const escaped = value.replace(/\$/g, '$$$$');
+  return escaped.startsWith('!') ? `$${escaped}` : escaped;
+}
+
 function splitModelRef(value: string): { providerId: string; modelId: string } {
   const slash = value.indexOf('/');
   if (slash <= 0 || slash === value.length - 1) {
@@ -44,6 +117,11 @@ export async function resolvePiProvider(
     apiKey?: string;
     authToken?: string;
     contextWindow?: number;
+    /**
+     * ISSUE-18: extra request headers (parsed `ANTHROPIC_CUSTOM_HEADERS`).
+     * Only custom endpoints receive them; the official branch ignores them.
+     */
+    headers?: Record<string, string>;
   },
 ): Promise<PiProviderResolution> {
   const rawModel = input.model?.trim() || '';
@@ -79,6 +157,18 @@ export async function resolvePiProvider(
       throw new Error('Pi custom provider requires ANTHROPIC_MODEL');
     }
     const registeredKey = input.apiKey?.trim() || input.authToken?.trim();
+    // Model-level headers are merged by ModelRuntime.getAuth however the key
+    // resolves; provider-level headers would only join API-key auth.
+    const headerEntries = Object.entries(input.headers ?? {});
+    const modelHeaders =
+      headerEntries.length > 0
+        ? Object.fromEntries(
+            headerEntries.map(([name, value]) => [
+              name,
+              escapePiConfigLiteral(value),
+            ]),
+          )
+        : undefined;
     modelRuntime.registerProvider(providerId, {
       name: `CKQClaw ${split.providerId} compatible provider`,
       baseUrl: input.baseUrl.trim(),
@@ -94,6 +184,7 @@ export async function resolvePiProvider(
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
           contextWindow: input.contextWindow ?? 200_000,
           maxTokens: 32_000,
+          ...(modelHeaders ? { headers: modelHeaders } : {}),
         },
       ],
     });
