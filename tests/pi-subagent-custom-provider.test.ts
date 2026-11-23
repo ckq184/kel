@@ -1,0 +1,98 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { ModelRegistry, ModelRuntime } from '@earendil-works/pi-coding-agent';
+
+import { resolvePiProvider } from '../container/agent-runner/src/runtime/pi/pi-provider.js';
+// The third-party resolver the Agent tool uses, imported only to lock the
+// resolution outcome; production code never imports pi-subagents internals.
+import { resolveModel } from '../container/agent-runner/node_modules/@tintinweb/pi-subagents/dist/model-resolver.js';
+
+/**
+ * ISSUE-22: subagents spawned under a custom Anthropic-compatible endpoint
+ * must inherit the parent model instead of resolving to Pi's built-in
+ * Anthropic catalog (which the leaked ANTHROPIC_API_KEY env marks available).
+ */
+
+const ENV_KEYS = [
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_AUTH_TOKEN',
+  'ANTHROPIC_OAUTH_TOKEN',
+] as const;
+let savedEnv: Partial<Record<(typeof ENV_KEYS)[number], string | undefined>>;
+
+beforeEach(() => {
+  savedEnv = {};
+  for (const key of ENV_KEYS) {
+    savedEnv[key] = process.env[key];
+    Reflect.deleteProperty(process.env, key);
+  }
+  // Same shape as production: the host leaves the custom endpoint's key in
+  // the runner environment. A fake value — no request is ever sent.
+  process.env.ANTHROPIC_API_KEY = 'test-only-not-a-real-key';
+});
+
+afterEach(() => {
+  for (const key of ENV_KEYS) {
+    if (savedEnv[key] === undefined) Reflect.deleteProperty(process.env, key);
+    else process.env[key] = savedEnv[key];
+  }
+});
+
+async function createModelRuntime(): Promise<ModelRuntime> {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ckqclaw-pi-issue22-'));
+  const authPath = path.join(dir, 'auth.json');
+  const modelsPath = path.join(dir, 'models.json');
+  fs.writeFileSync(authPath, '{}\n');
+  fs.writeFileSync(modelsPath, '{}\n');
+  return ModelRuntime.create({ authPath, modelsPath, refreshOnCreate: false });
+}
+
+const EXPLORE_MODEL = 'anthropic/claude-haiku-4-5';
+
+describe('ISSUE-22 T1 custom endpoint narrows subagent model availability', () => {
+  test('custom endpoint: only the ckqclaw provider is available and Explore cannot resolve to Anthropic', async () => {
+    const runtime = await createModelRuntime();
+    const resolution = await resolvePiProvider(runtime, {
+      model: 'test-model',
+      endpointKind: 'custom',
+      baseUrl: 'https://proxy.invalid',
+      apiKey: 'test-only-not-a-real-key',
+    });
+    // Refresh the availability snapshot the way a live session does.
+    await runtime.getAvailable();
+    const registry = new ModelRegistry(runtime);
+
+    const providers = new Set(registry.getAvailable().map((m) => m.provider));
+    expect([...providers]).toEqual(['ckqclaw-anthropic']);
+
+    // Agent tool: a config model that does not resolve falls back to the parent.
+    const explore = resolveModel(EXPLORE_MODEL, registry);
+    if (typeof explore !== 'string') {
+      // A fuzzy hit is only acceptable when it is the parent model itself.
+      expect(explore.provider).toBe('ckqclaw-anthropic');
+    }
+    const sonnet = resolveModel('sonnet', registry);
+    if (typeof sonnet !== 'string') {
+      expect(sonnet.provider).toBe('ckqclaw-anthropic');
+    }
+    expect(resolution.custom).toBe(true);
+  });
+
+  test('official endpoint keeps the built-in Anthropic catalog available (Explore uses haiku)', async () => {
+    const runtime = await createModelRuntime();
+    const resolution = await resolvePiProvider(runtime, {
+      model: 'claude-sonnet-4-5',
+      endpointKind: 'official',
+    });
+    await runtime.getAvailable();
+    const registry = new ModelRegistry(runtime);
+
+    const explore = resolveModel(EXPLORE_MODEL, registry);
+    expect(typeof explore).not.toBe('string');
+    expect(explore.provider).toBe('anthropic');
+    expect(explore.id).toMatch(/haiku-4-5/);
+    expect(resolution.custom).toBe(false);
+  });
+});
