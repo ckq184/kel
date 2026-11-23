@@ -83,4 +83,5 @@
   - 范围扩宽一处：`.gatescope.json` 的 allow 增加 `src/types.ts`，因为 `agent_reply` 载荷类型的注释还在描述已经停止的完整回复广播（理由已写在 `b6ceae0` 的提交信息里）。
   - `shared/canonical-json.ts` 头注释里“两侧各自构造 payload”的说法，在 C1 之后已不准确。改它要同步三份副本，不在本次声明范围内，所以没改，登记在这里。
   - B3 改变了对外 WS 行为：第三方客户端如果依赖不带 notice 的 `agent_reply`，将收不到完整回复，需要改为监听 `new_message`。
-- **未做**：合入 main、推送和实机验收由用户决定。A3 要等用户推送 main 之后，看新一次 CI 结果才能最终确认。
+- **实机验收通过**（用户 2026-11-23 执行，本分支 `npm --prefix container/agent-runner run build` 加 `npm run dev:all`，全新数据目录）：按验收清单检查 B3（Web 回复与图片正常显示、⚠️ 提示仍可见）、C1（工作区记忆写入、更新、删除成功，无签名校验失败）、A4（微信 `/new` 日志为渠道无关文案并带 `channel`）、A1（飞书能力调用照常成功；未连接路径由单测覆盖）。
+- **未做**：推送由用户决定。A3 要等用户推送 main 之后，看新一次 CI 结果才能最终确认。
