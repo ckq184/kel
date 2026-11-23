@@ -17,3 +17,22 @@ export class ChannelPreSendRejection extends Error {
     this.name = 'ChannelPreSendRejection';
   }
 }
+
+/**
+ * A provider explicitly refused the request and this operation produced no
+ * visible message, so the message is known not to exist on the other side
+ * (ISSUE-23).
+ *
+ * Unlike `ChannelPreSendRejection`, the provider was contacted. Throw this
+ * only for response codes that prove the request was refused — for example
+ * iLink `-14` (bot session expired) — and only when nothing from the same
+ * send (an earlier text chunk, an image caption) has already reached the
+ * user. The outbox state machine fails the row instead of fencing it as
+ * `uncertain`.
+ */
+export class ChannelProviderRejection extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = 'ChannelProviderRejection';
+  }
+}

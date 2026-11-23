@@ -1,15 +1,15 @@
 {
-  "task": "issue22-subagent-custom-provider - 子代理没有沿用自定义Provider（docs/issue22-subagent-custom-provider-plan.md）；用户拍板：(a)自定义端点下子代理一律继承父模型、官方端点保持现状、鉴权失败加中文提示保留原文",
-  "base": "dc5c746",
+  "task": "issue23-wechat-ilink-error-classification - iLink 非零错误码的归类（docs/issue23-wechat-ilink-error-classification-plan.md）；用户拍板：仅 -14 视为确定拒绝、仅首个可见调用失败才算、channel-errors.ts 新增 ChannelProviderRejection、实机验收由用户决定",
+  "base": "b75a034",
   "allow": [
     ".gatescope.json",
-    "docs/issue22-subagent-custom-provider-plan.md",
-    "docs/issues/ISSUE-22-subagent-custom-provider-401.md",
+    "docs/issue23-wechat-ilink-error-classification-plan.md",
+    "docs/issues/ISSUE-23-wechat-ilink-error-classification.md",
     "docs/issues/README.md",
-    "container/agent-runner/src/runtime/pi/pi-provider.ts",
-    "container/agent-runner/src/runtime/pi/pi-subagents.ts",
-    "container/agent-runner/src/runtime/pi/pi-runtime.ts",
-    "container/agent-runner/src/runtime/pi/pi-runner.ts",
+    "src/channel-errors.ts",
+    "src/channel-outbox-delivery.ts",
+    "src/wechat.ts",
+    "src/wechat-outbound.ts",
     "tests/**"
   ]
 }

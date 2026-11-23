@@ -14,7 +14,10 @@ import {
   markChannelOutboxUploading,
   reconcileExpiredChannelOutbox,
 } from './channel-reliability-store.js';
-import { ChannelPreSendRejection } from './channel-errors.js';
+import {
+  ChannelPreSendRejection,
+  ChannelProviderRejection,
+} from './channel-errors.js';
 import { syntheticChannelProviderAck } from './channel-outbox-runtime-scope.js';
 import { logger } from './logger.js';
 
@@ -384,9 +387,12 @@ export async function deliverChannelOutboxItem(
     // to retry/fail without creating duplicate visible output.
     // A channel's pre-send rejection (ISSUE-19) proves the same thing from
     // the other side: no provider call was made, so failing is safe.
+    // A channel's provider rejection (ISSUE-23) means the provider refused
+    // the request before anything from this send became visible.
     const explicitlyRejected =
       error instanceof DefinitiveChannelDeliveryError ||
-      error instanceof ChannelPreSendRejection;
+      error instanceof ChannelPreSendRejection ||
+      error instanceof ChannelProviderRejection;
     const uncertain = current.status === 'sending' && !explicitlyRejected;
     const retryAt =
       error instanceof DefinitiveChannelDeliveryError
