@@ -74,4 +74,10 @@
 - **未做 / 登记**：
   - Runtime Session（`processAgentConversation`）路径的失败处理没有接入镜像不可用识别（立项非目标）；该路径另有一套重试与收尾逻辑，若同样需要快速失败，可另立 issue。
   - 镜像发布（GitHub 配置 `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN`）与 CI「Agent runner self-test」失败仍需用户处理。
-  - 实机验收（Container 工作区 + 微信发消息，确认约 2.5 分钟静默重试变为立即告知、IM 收到提示）由用户决定是否执行。
+- **实机验收（2026-11-23，用户执行，通过）**：本分支 `npm run dev:all`，数据复制自 `intelligent-shamir-6c676c`，Docker 正常运行，本地没有 `ckq184/ckqclaw-agent:latest`；微信账号「测试」的默认工作区改为 Container 模式的「测试」工作区。
+  1. 启动预检：日志打出 warn「Agent container image not found locally …」，带 `image: "ckq184/ckqclaw-agent:latest"`，没有阻塞启动。
+  2. 微信发「你好」：容器以 125 退出，错误串带 `container_image_unavailable:` 前缀，镜像名完整；随即打出「Agent container image unavailable; skipping retry」。之后没有再启动容器，也没有静默重试或 `agent_max_retries` 的记录，从收消息到告知约 5 秒（原来约 2.5 分钟）。
+  3. 告知：Web 工作区新增一条 `agent_error` 系统消息（不含镜像名），没有多存副本；`channel_outbox` 对应行 `delivered`；用户确认微信和 Web 都看到了提示。
+  4. 该工作区已提交的消息进度停在这条消息，不会重放。
+  - 顺带观察：在 Web 上打开 Container 工作区的终端面板时，终端预热也因镜像缺失以 125 失败，只打一条 warn「Terminal warmup run ended with error」，不经过消息的失败处理，不在本 issue 范围内。
+  - 顺带观察：Web 新建微信账号时如果和已有账号重名，接口直接把 SQLite 唯一约束原文以 409 返回（`src/routes/channel-accounts.ts` 只对 QQ App ID 做了重复预检）。用户决定不登记。
