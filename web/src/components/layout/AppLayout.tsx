@@ -85,7 +85,8 @@ export function AppLayout() {
     };
   }, []);
 
-  // 监听 group_created（定时任务工作区创建），刷新侧边栏和任务列表。
+  // 监听 group_created（IM /new 命令、Agent register_group 工具等不经 Web 的
+  // 工作区创建，生产者见 src/web.ts broadcastGroupCreated），刷新侧边栏和任务列表。
   // 侧栏工作区列表读的是 chat store（UnifiedSidebar 读 s.groups），刷新必须
   // 落在同一 store 上；groups store 的双份加载收敛见 ISSUE-11。
   useEffect(() => {
