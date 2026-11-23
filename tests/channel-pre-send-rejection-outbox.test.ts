@@ -25,7 +25,8 @@ vi.mock('../src/logger.js', () => ({
 const db = await import('../src/db.js');
 const store = await import('../src/channel-reliability-store.js');
 const delivery = await import('../src/channel-outbox-delivery.js');
-const { ChannelPreSendRejection } = await import('../src/channel-errors.js');
+const { ChannelPreSendRejection, ChannelProviderRejection } =
+  await import('../src/channel-errors.js');
 
 beforeAll(() => db.initDatabase());
 afterAll(() => {
@@ -81,6 +82,46 @@ describe('pre-send rejection in the outbox state machine', () => {
       delivery: {
         mode: 'single',
         send: async () => ({ providerMessageId: 'msg-1' }),
+      },
+    });
+    expect(sibling.status).toBe('delivered');
+  });
+
+  test('a provider rejection (ISSUE-23) fails the row instead of fencing the turn', async () => {
+    const run = store.createChannelTurnRun({
+      ...route,
+      idempotencyKey: 'provider-rejection:turn',
+    }).run;
+    const rejected = await delivery.deliverChannelOutboxItem({
+      ...route,
+      turnRunId: run.id,
+      ordinal: 0,
+      kind: 'text',
+      payload: { text: 'session expired' },
+      owner: 'test-owner',
+      delivery: {
+        mode: 'single',
+        send: async () => {
+          throw new ChannelProviderRejection('sendMessage failed: ret=-14');
+        },
+      },
+    });
+    expect(rejected).toMatchObject({
+      status: 'failed',
+      error: 'sendMessage failed: ret=-14',
+    });
+    expect(store.getUncertainChannelOutboxForTurn(run.id)).toBeUndefined();
+
+    const sibling = await delivery.deliverChannelOutboxItem({
+      ...route,
+      turnRunId: run.id,
+      ordinal: 1,
+      kind: 'text',
+      payload: { text: 'after re-login' },
+      owner: 'test-owner',
+      delivery: {
+        mode: 'single',
+        send: async () => ({ providerMessageId: 'msg-2' }),
       },
     });
     expect(sibling.status).toBe('delivered');

@@ -49,7 +49,10 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import { type Dispatcher } from 'undici';
-import { ChannelPreSendRejection } from './channel-errors.js';
+import {
+  ChannelPreSendRejection,
+  ChannelProviderRejection,
+} from './channel-errors.js';
 import { logger } from './logger.js';
 import { MAX_FILE_SIZE } from './im-downloader.js';
 import { uploadMediaBuffer } from './wechat-crypto.js';
@@ -119,6 +122,16 @@ interface WeChatSenderConfig {
   botToken: string;
   baseUrl?: string;
   cdnBaseUrl?: string;
+}
+
+/**
+ * ISSUE-23: a provider rejection only proves nothing was delivered when no
+ * earlier call of the same send (text chunk, image caption) became visible.
+ * Once something did, the outcome is partial and must stay ambiguous.
+ */
+function demoteAfterVisibleOutput(err: unknown, visibleSent: boolean): unknown {
+  if (!visibleSent || !(err instanceof ChannelProviderRejection)) return err;
+  return new Error(err.message, { cause: err });
 }
 
 // ─── Factory ─────────────────────────────────────────────────────
@@ -224,18 +237,20 @@ export function createWeChatSender(
       );
     }
 
+    let visibleSent = false;
     try {
       const plainText = markdownToPlainText(text);
       const chunks = splitTextChunks(plainText, MSG_SPLIT_LIMIT);
 
       for (const chunk of chunks) {
         await sendMessageApi(userId, contextToken, chunk);
+        visibleSent = true;
       }
 
       logger.info({ chatId }, 'WeChat message sent');
     } catch (err) {
       logger.error({ err, chatId }, 'Failed to send WeChat message');
-      throw err;
+      throw demoteAfterVisibleOutput(err, visibleSent);
     }
   }
 
@@ -274,6 +289,7 @@ export function createWeChatSender(
     const ext = extMap[mimeType] ?? '.jpg';
     const resolvedFileName = fileName ?? `image_${Date.now()}${ext}`;
 
+    let visibleSent = false;
     try {
       // Optional caption is sent first as a separate text message — WeChat's
       // sendmessage API does not accept mixed text+image item_list payloads.
@@ -281,6 +297,7 @@ export function createWeChatSender(
         const plain = markdownToPlainText(caption);
         for (const chunk of splitTextChunks(plain, MSG_SPLIT_LIMIT)) {
           await sendMessageApi(userId, contextToken, chunk);
+          visibleSent = true;
         }
       }
 
@@ -333,7 +350,7 @@ export function createWeChatSender(
       );
     } catch (err) {
       logger.error({ err, chatId }, 'Failed to send WeChat image');
-      throw err;
+      throw demoteAfterVisibleOutput(err, visibleSent);
     }
   }
 

@@ -20,6 +20,7 @@ import { createWeChatSender } from './wechat-outbound.js';
 import { createWeChatMedia } from './wechat-media.js';
 import { createWeChatInboundProcessor } from './wechat-inbound.js';
 import { createWeChatPoller } from './wechat-poller.js';
+import { ChannelProviderRejection } from './channel-errors.js';
 
 // ─── Constants ──────────────────────────────────────────────────
 
@@ -142,6 +143,9 @@ type WeChatApiEnvelope = {
   base_resp?: { ret?: unknown; errcode?: unknown; errmsg?: unknown };
 };
 
+/** iLink errcode for an expired bot session (also handled by the poller). */
+const ILINK_SESSION_EXPIRED = -14;
+
 function nonZeroApiCode(value: unknown): boolean {
   if (value === undefined || value === null || value === '') return false;
   const numeric = typeof value === 'number' ? value : Number(value);
@@ -162,7 +166,8 @@ export function assertWeChatApiSuccess(
     ['base_resp.ret', response.base_resp?.ret],
     ['base_resp.errcode', response.base_resp?.errcode],
   ];
-  const failure = codes.find(([, value]) => nonZeroApiCode(value));
+  const failures = codes.filter(([, value]) => nonZeroApiCode(value));
+  const failure = failures[0];
   if (!failure) return;
   const message =
     response.errmsg ??
@@ -170,9 +175,13 @@ export function assertWeChatApiSuccess(
     response.message ??
     response.base_resp?.errmsg ??
     '';
-  throw new Error(
-    `${operation} failed: ${failure[0]}=${String(failure[1])}${message ? ` message=${String(message)}` : ''}`,
-  );
+  const text = `${operation} failed: ${failure[0]}=${String(failure[1])}${message ? ` message=${String(message)}` : ''}`;
+  // ISSUE-23: -14 (bot session expired) proves iLink refused the request.
+  // Mixed codes are ambiguous and stay ordinary errors.
+  if (failures.every(([, value]) => Number(value) === ILINK_SESSION_EXPIRED)) {
+    throw new ChannelProviderRejection(text);
+  }
+  throw new Error(text);
 }
 
 export async function parseWeChatApiResponse<T>(
