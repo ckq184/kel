@@ -2,8 +2,8 @@
 
 | 字段          | 值                                                                                                                                                                                                       |
 | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 状态          | 待领取                                                                                                                                                                                                   |
-| 领取人 / 分支 | —                                                                                                                                                                                                        |
+| 状态          | 已完成                                                                                                                                                                                                   |
+| 领取人 / 分支 | `claude/issue-19-wechat-context-token`                                                                                                                                                                   |
 | 优先级        | P2                                                                                                                                                                                                       |
 | 类型          | 缺陷（渠道可靠性）                                                                                                                                                                                       |
 | 依赖          | 无（ISSUE-14 的 outbox 重投 worker 让问题二在重启后必现）                                                                                                                                                |
@@ -43,4 +43,33 @@ ISSUE-14 实机验收第一轮：服务停止时注入“认领后进程死亡�
 
 ## 交付记录
 
-（领取后填写）
+- **分支**：`claude/issue-19-wechat-context-token`，base `5322ef2`；方案见 `docs/issue19-wechat-context-token-plan.md`。
+- **用户拍板（2026-11-23，全部按推荐）**：
+  - token 持久化：存进渠道账号加密 secret，按微信用户 ID 存最新 token 和写入时间，与 `ilinkBotId` 绑定，换号即作废。
+  - 无 token 归类：转 `failed`，不封 turn，不重试。
+  - 映射位置：渠道层通用错误类 `ChannelPreSendRejection`，outbox 状态机把它当确定拒绝。
+  - 范围：只改微信的发送前检查（缺 token、图片或文件超过大小上限），其余同类路径盘点登记。
+- **提交**：
+  - `6bb9758` 立项（状态进行中、README 索引、plan、`.gatescope.json`）；
+  - `e557514` T1：`ChannelPreSendRejection` + outbox 归类 + 微信出站改抛，新增 `tests/wechat-pre-send-rejection.test.ts`、`tests/channel-pre-send-rejection-outbox.test.ts`；
+  - `3900658` T2：`src/wechat-context-tokens.ts` + 连接层回灌与回调 + 适配器、manager、index 接线，新增 `tests/wechat-context-tokens.test.ts`、`tests/wechat-context-token-wiring.test.ts`；
+  - 本交付落档提交。
+- **验收对照**：
+  - 缺 token 时出站行不进入 `uncertain`：发送前抛 `ChannelPreSendRejection`，outbox 行落 `failed`，同 turn 后续行照常投递；调用 iLink 之后的普通异常仍落 `uncertain`。均有测试。
+  - 重启后的主动发送：新连接在没有收到任何入站消息时，用持久化的 token 发送成功（连接层测试）；换 `ilinkBotId` 后旧 token 不回灌；secret 写入读最新值合并，和游标写入互不覆盖；token 值不进日志（源码断言）。
+  - 门禁：`npm run verify` 六步全绿（2834 过 23 跳 0 败，26.2s）；`node scripts/check-scope.mjs` 17 个路径全在声明范围内。
+- **偏差**：
+  1. 错误类没有直接定义在 `src/im-channel.ts`，而是放在新的零依赖模块 `src/channel-errors.ts`，再由 `im-channel.ts` 重新导出。原因：`im-channel.ts` 依赖链很重（会拉起配置和各渠道模块），outbox 模块直接 import 它有循环依赖风险。`.gatescope.json` 的 allow 相应扩宽。
+  2. 旧版 `/api/config/user-im` 热重载路径（`src/index.ts` 中 `saveUserWeChatConfig` 那一支）没有接 token 持久化：按 CLAUDE.md，它只用于兼容，新功能统一走 `channel-accounts`。
+  3. T2 第一次提交时 pre-commit 格式检查没过，但命令用 `;` 串联，提交照样执行了；随即格式化并 amend 成 `3900658`，门禁通过。之后的提交命令改用 `&&` 串联。
+- **范围外登记**：
+  - 飞书 `src/feishu.ts:1863` 的 `Feishu client is not connected` 是发送前确定的拒绝，但仍抛普通 `Error`，会落 `uncertain`；飞书、QQ 其余几处 `No message_id in response`、`no file_info in response` 发生在调用之后，结果确实不确定，维持现状正确。
+  - iLink 返回非零错误码（例如持久化 token 已失效）仍按普通错误处理，落 `uncertain`：服务端是否已投递无法确认，按拍板不改。token 的实际有效期没有文档，需要实机观察。
+  - `src/im-channel.ts` 中微信适配器 `!inner` 时静默返回的分支：经 `imManager` 调用时会被 `isConnected()` 挡住，不可达，不处理。
+- **实机验收（2026-11-23，用户执行与确认）**：在本分支用 `npm run dev:all` 启动，数据沿用 ISSUE-14 验收时复制的 `data/`（已接入微信）。
+  1. 基线：账号 secret 里没有 `contextTokens` 字段（检查脚本只输出字段是否存在、是否绑定当前机器人、用户数和写入时间，不输出 token 值）。
+  2. 用户在微信发一条消息：10:56:30 token 写入 secret，绑定当前机器人，用户数 1。
+  3. 停服务，写入一条已中断 turn 的 `retry_wait` 文本行，再重启（10:56:57）。重启后用户没有再发消息，日志里重启到投递之间没有任何微信入站记录。
+  4. 10:57:16 微信长轮询连上；10:57:28 worker 用持久化 token 发送成功（`WeChat message sent`），outbox 行变 `delivered`（attempt 2，synthetic 回执），日志 `delivered: 1`。**用户确认微信收到补发消息。**
+  - 结论：重启后不需要新的入站消息就能主动发送。ISSUE-14 验收第一轮在同样条件下报 `No context_token` 的问题已解决。
+- **待用户决定**：合入 main、推送。

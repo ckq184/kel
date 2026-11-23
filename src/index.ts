@@ -438,6 +438,10 @@ import type {
 import { isFeishuCapabilityMutation } from './feishu-capability.js';
 import { deliverFeishuCapabilityMutation } from './feishu-capability-outbox.js';
 import {
+  parseWeChatContextTokens,
+  serializeWeChatContextTokens,
+} from './wechat-context-tokens.js';
+import {
   discardPreparedAgentDraft,
   getAgentCapabilityCatalogForBuilder,
   getAgentBuilderDraftForBuilder,
@@ -13385,6 +13389,10 @@ async function reloadChannelAccountById(accountId: string): Promise<boolean> {
           baseUrl: secret.baseUrl,
           cdnBaseUrl: secret.cdnBaseUrl,
           getUpdatesBuf: secret.getUpdatesBuf,
+          contextTokens: parseWeChatContextTokens(
+            secret.contextTokens,
+            secret.ilinkBotId,
+          ),
           bypassProxy,
         },
         onNewChat,
@@ -13446,6 +13454,27 @@ async function reloadChannelAccountById(accountId: string): Promise<boolean> {
                 nextRetryMs: state.nextRetryMs,
               });
             }
+          },
+          // ISSUE-19: keep the latest reply token per user in the encrypted
+          // account secret so proactive sends survive a restart. Read the
+          // latest secret first, the same way onUpdatesBuf does, so neither
+          // writer clobbers the other. Token values are never logged.
+          onContextToken: (userId, token) => {
+            const latestSecret =
+              loadChannelAccountSecret(account.secret_ref) ?? secret;
+            const botId = latestSecret.ilinkBotId || secret.ilinkBotId || '';
+            if (!botId) return;
+            const next = serializeWeChatContextTokens(
+              botId,
+              latestSecret.contextTokens,
+              { userId, token },
+            );
+            secret.contextTokens = next;
+            if (next === latestSecret.contextTokens) return;
+            saveChannelAccountSecret(account.secret_ref, {
+              ...latestSecret,
+              contextTokens: next,
+            });
           },
           onUpdatesBuf: (cursor: string) => {
             if (!cursor || secret.getUpdatesBuf === cursor) return;

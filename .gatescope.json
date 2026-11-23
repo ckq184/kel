@@ -1,16 +1,19 @@
 {
-  "task": "issue14-channel-outbox-worker - Channel Outbox后台worker（docs/issue14-channel-outbox-worker-plan.md）；用户拍板：只重投text（其余kind转failed+warn）、只认领终态turn的行、并入15s恢复循环、payload异常转failed+warn且created_at超1小时转failed",
-  "base": "38da090",
+  "task": "issue19-wechat-context-token - 微信context_token重启丢失与无token误判uncertain（docs/issue19-wechat-context-token-plan.md）；用户拍板：token存渠道账号加密secret并绑定ilinkBotId、无token转failed、通用错误类ChannelPreSendRejection、只改微信发送前检查其余登记",
+  "base": "5322ef2",
   "allow": [
     ".gatescope.json",
-    "docs/issue14-channel-outbox-worker-plan.md",
-    "docs/issues/ISSUE-14-channel-outbox-worker.md",
-    "docs/issues/README.md",
+    "docs/issue19-wechat-context-token-plan.md",
     "docs/issues/ISSUE-19-wechat-context-token-restart.md",
-    "docs/API.md",
-    "src/channel-reliability-store.ts",
+    "docs/issues/README.md",
+    "src/channel-errors.ts",
+    "src/im-channel.ts",
     "src/channel-outbox-delivery.ts",
-    "src/channel-reliability-recovery.ts",
+    "src/wechat.ts",
+    "src/wechat-inbound.ts",
+    "src/wechat-outbound.ts",
+    "src/wechat-context-tokens.ts",
+    "src/im-manager.ts",
     "src/index.ts",
     "tests/**"
   ]

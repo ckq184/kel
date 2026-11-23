@@ -72,6 +72,8 @@ export interface WeChatConnectConfig {
   baseUrl?: string;
   cdnBaseUrl?: string;
   getUpdatesBuf?: string;
+  /** Reply tokens restored from the account secret (ISSUE-19). */
+  contextTokens?: Record<string, string>;
   bypassProxy?: boolean;
   enabled?: boolean;
 }
@@ -1195,6 +1197,7 @@ export class IMConnectionManager {
       ) => Promise<boolean>;
       onConnectionStateChange?: (state: WeChatConnectionState) => void;
       onUpdatesBuf?: (cursor: string) => void | Promise<void>;
+      onContextToken?: (userId: string, token: string) => void;
     },
   ): Promise<boolean> {
     if (!config.botToken || !config.ilinkBotId) {
@@ -1209,6 +1212,7 @@ export class IMConnectionManager {
         baseUrl: config.baseUrl,
         cdnBaseUrl: config.cdnBaseUrl,
         getUpdatesBuf: config.getUpdatesBuf,
+        contextTokens: config.contextTokens,
         bypassProxy: config.bypassProxy,
         logContext: {
           userId,
@@ -1216,6 +1220,7 @@ export class IMConnectionManager {
         },
       },
       options?.onUpdatesBuf,
+      options?.onContextToken,
     );
 
     return this.connectChannel(

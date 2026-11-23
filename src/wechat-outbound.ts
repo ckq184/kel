@@ -49,6 +49,7 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import { type Dispatcher } from 'undici';
+import { ChannelPreSendRejection } from './channel-errors.js';
 import { logger } from './logger.js';
 import { MAX_FILE_SIZE } from './im-downloader.js';
 import { uploadMediaBuffer } from './wechat-crypto.js';
@@ -218,7 +219,9 @@ export function createWeChatSender(
         { chatId },
         'No context_token available for WeChat user, cannot send message',
       );
-      throw new Error(`No context_token available for WeChat chat ${chatId}`);
+      throw new ChannelPreSendRejection(
+        `No context_token available for WeChat chat ${chatId}`,
+      );
     }
 
     try {
@@ -251,11 +254,13 @@ export function createWeChatSender(
         { chatId },
         'No context_token for WeChat user, cannot send image',
       );
-      throw new Error(`No context_token available for WeChat chat ${chatId}`);
+      throw new ChannelPreSendRejection(
+        `No context_token available for WeChat chat ${chatId}`,
+      );
     }
 
     if (imageBuffer.length > MAX_FILE_SIZE) {
-      throw new Error(
+      throw new ChannelPreSendRejection(
         `WeChat image size ${imageBuffer.length} exceeds max ${MAX_FILE_SIZE}`,
       );
     }
@@ -345,14 +350,16 @@ export function createWeChatSender(
         { chatId },
         'No context_token for WeChat user, cannot send file',
       );
-      throw new Error(`No context_token available for WeChat chat ${chatId}`);
+      throw new ChannelPreSendRejection(
+        `No context_token available for WeChat chat ${chatId}`,
+      );
     }
 
     // Single readFile + size check, then pass buffer to uploadMediaBuffer —
     // avoids stat + readFile double-I/O that uploadMediaFile would incur.
     const buf = await fs.promises.readFile(filePath);
     if (buf.length > MAX_FILE_SIZE) {
-      throw new Error(
+      throw new ChannelPreSendRejection(
         `WeChat file size ${buf.length} exceeds max ${MAX_FILE_SIZE}`,
       );
     }

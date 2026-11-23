@@ -33,6 +33,11 @@ export interface WeChatConnectionConfig {
   baseUrl?: string;
   cdnBaseUrl?: string;
   getUpdatesBuf?: string;
+  /**
+   * Reply tokens restored from the account secret (ISSUE-19), seeded into the
+   * cache on every connect so proactive sends work before the next inbound.
+   */
+  contextTokens?: Record<string, string>;
   /** Bypass CKQClaw's HTTP(S) proxy. System TUN/VPN routing still applies. */
   bypassProxy?: boolean;
   logContext?: {
@@ -90,6 +95,8 @@ export interface WeChatConnectOpts {
   onConnectionStateChange?: (state: WeChatConnectionState) => void;
   /** Persist a fully processed getUpdates cursor before the next poll. */
   onUpdatesBuf?: (cursor: string) => void | Promise<void>;
+  /** Persist a changed per-user reply token (ISSUE-19). */
+  onContextToken?: (userId: string, token: string) => void;
 }
 
 export interface WeChatConnection {
@@ -595,6 +602,11 @@ export function createWeChatConnection(
       failureStartedAt = 0;
       dedup.clear();
       contextTokenCache.clear();
+      for (const [userId, token] of Object.entries(
+        config.contextTokens ?? {},
+      )) {
+        contextTokenCache.set(userId, token);
+      }
       knownJids.clear();
 
       logger.info(

@@ -37,6 +37,7 @@ import { notifyNewImMessage } from './message-notifier.js';
 import { broadcastNewMessage } from './web.js';
 import { logger } from './logger.js';
 import { markdownToPlainText } from './im-utils.js';
+import { rememberWeChatContextToken } from './wechat-context-tokens.js';
 import {
   parseChannelPairingCode,
   resolveAdmittedChannelRoute,
@@ -105,6 +106,8 @@ interface WeChatInboundConnectOpts {
   ) => Promise<string | null>;
   resolveGroupFolder?: (jid: string) => string | undefined;
   onAgentMessage?: (baseChatJid: string, agentId: string) => void;
+  /** Persist a changed reply token (ISSUE-19). */
+  onContextToken?: (userId: string, token: string) => void;
 }
 
 /**
@@ -302,7 +305,12 @@ export function createWeChatInboundProcessor(deps: WeChatInboundDeps) {
       // Cache a reply token only after authorization, preventing arbitrary
       // senders from growing the long-lived per-connection cache.
       if (msg.context_token) {
-        contextTokenCache.set(fromUserId, msg.context_token);
+        rememberWeChatContextToken(
+          contextTokenCache,
+          fromUserId,
+          msg.context_token,
+          opts.onContextToken,
+        );
       }
 
       // ── Register the authorized base chat ──
