@@ -1,25 +1,20 @@
 /**
- * ISSUE-07 项3 复现测试：描述当前真实行为，不是缺陷修复的验收。
+ * 重启后 retry_wait 行的两条重投路径（ISSUE-07 项3 复现测试，ISSUE-14 改写）。
  *
- * 现状（2026-11 调查，ISSUE-07 批次F）：进程重启后，启动路径只调用
- * reconcileChannelOutboxDeliveries()（src/index.ts 启动序列，仅做状态翻
- * 转不做投递）。pre-send 阶段（claimed/uploading/uploaded）且租约过期的
- * channel_outbox 行被翻转为 retry_wait 后，没有任何后台 outbox worker 认
- * 领它们：claimNextChannelOutbox / claimNextChannelTurnRun 生产零调用，
- * 唯一的生产投递入口 deliverChannelOutboxItem 由入站消息驱动的 turn 调
- * 用（src/index.ts 与 src/feishu-capability-outbox.ts 两处 turn 驱动调用）。
+ * 进程重启后，启动路径调用 reconcileChannelOutboxDeliveries()：pre-send 阶段
+ * （claimed/uploading/uploaded）且租约过期的 channel_outbox 行翻转为
+ * retry_wait（仅翻转、不投递）。之后由谁重投取决于所属 turn 的状态：
  *
- * 因此本文件锁定两条现状断言：
- * 1. reconcileExpiredChannelOutbox 翻转后，再次 reconcile 幂等、行停留在
- *    retry_wait、物理发送闭包从未被调用——即重启后 retry_wait 滞留，不会
- *    自动重投；
- * 2. 正向对照：只有当同一 idempotencyKey 的 turn 重新进入
- *    deliverChannelOutboxItem（新入站消息重驱 / 游标重放模拟），行才能被
- *    按 ID 认领并重投——佐证"重投依赖 turn 重跑"的注释结论。
+ * 1. turn 已终态（重启后由恢复循环置 interrupted 等）——再没有人能重驱，
+ *    由后台 worker runChannelOutboxRetryPass（挂在 15s 恢复循环的 afterPass
+ *    阶段）认领：text 按 payload 重建重投；image/file/card/mutation 无法安全
+ *    重建，转 failed。turn 仍活跃时 worker 零动作。
+ * 2. turn 仍活跃——由同一 idempotencyKey 的 turn 重新进入
+ *    deliverChannelOutboxItem（新入站消息重驱 / 游标重放）按 ID 认领重投；
+ *    这条路径保留为 worker 之外的对照。
  *
- * retry_wait 的自动重投 worker 已另立
- * docs/issues/ISSUE-14-channel-outbox-worker.md；uncertain 行仍须人工
- * resolve，不归 worker。
+ * uncertain 行仍须人工 resolve，两条路径都不碰（worker 侧见
+ * tests/channel-outbox-worker.test.ts）。
  */
 
 import fs from 'node:fs';
@@ -71,12 +66,8 @@ function createRun(name: string, now: string) {
   }).run;
 }
 
-function sleep(ms: number) {
-  return new Promise<void>((resolve) => setTimeout(resolve, ms));
-}
-
-describe('channel outbox restart: retry_wait rows are stranded (current behavior)', () => {
-  test('reconcile flips expired pre-send leases to retry_wait and nothing re-delivers them', async () => {
+describe('channel outbox restart: retry_wait rows after reconcile', () => {
+  test('reconcile flips expired pre-send leases to retry_wait and the worker takes them once the turn is terminal', async () => {
     let now = '2026-11-20T08:00:00.000Z';
     let sends = 0;
     let uploads = 0;
@@ -165,12 +156,26 @@ describe('channel outbox restart: retry_wait rows are stranded (current behavior
       attempt: 1,
     });
 
-    // ── 现状断言：翻转后没有任何自动认领/投递路径 ──
     // (a) 再次 reconcile 幂等：不重复翻转、不投递。
     now = '2026-11-20T08:00:05.000Z';
     expect(store.reconcileExpiredChannelOutbox(now)).toEqual({
       retryable: 0,
       uncertain: 0,
+    });
+
+    // (b) turn 仍活跃：worker 零动作，行留给 turn 自己重驱。
+    const sendText = vi.fn(async () => {});
+    const workerDeps = {
+      owner: 'ckqclaw-outbox-worker:restart-test',
+      sendText,
+      isChannelAvailable: () => true,
+      now: () => now,
+    };
+    expect(await delivery.runChannelOutboxRetryPass(workerDeps)).toEqual({
+      delivered: 0,
+      failed: 0,
+      uncertain: 0,
+      skipped: 0,
     });
     expect(store.getChannelOutboxItem(rowA.id)).toMatchObject({
       status: 'retry_wait',
@@ -178,29 +183,35 @@ describe('channel outbox restart: retry_wait rows are stranded (current behavior
       leaseOwner: null,
     });
 
-    // (b) 真实时间流逝（相当于空转多个 worker 轮询周期）：行仍滞留
-    //     retry_wait，租约无人持有，物理投递闭包从未被任何后台路径调用。
-    //     生产代码里不存在这样的后台路径——claimNextChannelOutbox 生产
-    //     零调用，deliverChannelOutboxItem 只被 turn 驱动调用。
-    await sleep(50);
-    const strandedA = store.getChannelOutboxItem(rowA.id)!;
-    const strandedB = store.getChannelOutboxItem(rowB.id)!;
-    expect(strandedA).toMatchObject({
-      status: 'retry_wait',
-      leaseOwner: null,
-      attempt: 1,
+    // (c) 恢复循环把 turn 置为终态后，一轮 worker 即收口两行：text 重投，
+    //     file 的 payload 无法重建物理发送，转 failed。旧的投递闭包从未运行。
+    store.interruptChannelTurnRunById(runA.id, 'process restarted', now);
+    store.interruptChannelTurnRunById(runB.id, 'process restarted', now);
+    expect(await delivery.runChannelOutboxRetryPass(workerDeps)).toEqual({
+      delivered: 1,
+      failed: 1,
+      uncertain: 0,
+      skipped: 0,
     });
-    expect(strandedB).toMatchObject({
-      status: 'retry_wait',
+    expect(sendText).toHaveBeenCalledTimes(1);
+    expect(sendText).toHaveBeenCalledWith(
+      route.sourceJid,
+      'claimed 后进程死亡',
+      {},
+    );
+    expect(store.getChannelOutboxItem(rowA.id)).toMatchObject({
+      status: 'delivered',
+      attempt: 2,
       leaseOwner: null,
-      attempt: 1,
     });
-    expect(strandedA.availableAt).toBe(rowA.availableAt);
+    const failedB = store.getChannelOutboxItem(rowB.id)!;
+    expect(failedB.status).toBe('failed');
+    expect(failedB.error).toContain('file rows cannot be rebuilt');
     expect(sends).toBe(0);
     expect(uploads).toBe(0);
   });
 
-  test('a retry_wait row is re-delivered only when the same idempotencyKey re-enters deliverChannelOutboxItem', async () => {
+  test('while the turn is live, the row is re-delivered when the same idempotencyKey re-enters deliverChannelOutboxItem', async () => {
     let now = '2026-11-20T08:10:00.000Z';
     let sends = 0;
     const run = createRun('turn-redrive', now);
@@ -247,10 +258,24 @@ describe('channel outbox restart: retry_wait rows are stranded (current behavior
       .outbox.find((item) => item.turnRunId === run.id)!;
     expect(flipped.status).toBe('retry_wait');
 
-    // 正向对照：同一 idempotencyKey 的 turn 再次进入
-    // deliverChannelOutboxItem（模拟新入站消息重驱 / 游标重放），行被按
-    // ID 认领并完成物理重投——这就是当前唯一的 retry_wait 重投路径。
+    // turn 仍活跃时 worker 不碰这一行（card 即使到了 worker 手里也只会转
+    // failed，这里证明它根本没被认领）。
     now = '2026-11-20T08:10:30.000Z';
+    const sendText = vi.fn(async () => {});
+    await delivery.runChannelOutboxRetryPass({
+      owner: 'ckqclaw-outbox-worker:restart-test',
+      sendText,
+      isChannelAvailable: () => true,
+      now: () => now,
+    });
+    expect(store.getChannelOutboxItem(flipped.id)).toMatchObject({
+      status: 'retry_wait',
+      attempt: 1,
+    });
+
+    // 对照路径：同一 idempotencyKey 的 turn 再次进入
+    // deliverChannelOutboxItem（模拟新入站消息重驱 / 游标重放），行被按
+    // ID 认领并完成物理重投。
     const redriven = await delivery.deliverChannelOutboxItem(input);
     expect(redriven).toMatchObject({
       itemId: flipped.id,
