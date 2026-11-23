@@ -12079,8 +12079,13 @@ function createAutoImConversationAgent(input: {
   );
 
   logger.info(
-    { sourceJid: input.sourceJid, agentId, userId: input.userId },
-    'Auto-created isolated conversation agent for Feishu IM chat',
+    {
+      sourceJid: input.sourceJid,
+      channel: getChannelType(input.sourceJid),
+      agentId,
+      userId: input.userId,
+    },
+    'Auto-created isolated conversation agent for IM chat',
   );
   return {
     agentId,
