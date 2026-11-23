@@ -6,6 +6,7 @@
     "docs/issue17-stream-event-consumer-only-fields-plan.md",
     "docs/issues/ISSUE-17-stream-event-consumer-only-fields.md",
     "docs/issues/README.md",
+    "docs/issues/ISSUE-22-subagent-custom-provider-401.md",
     "shared/stream-event.ts",
     "src/stream-event.types.ts",
     "web/src/stream-event.types.ts",

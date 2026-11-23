@@ -67,5 +67,11 @@ ISSUE-16 D5 对 `shared/stream-event.ts` 的 `StreamEvent` 每个字段做了生
   1. 预计改动路径外实际还改了 `src/feishu-streaming-card.ts`、`src/feishu-cards/sections.ts`、`web/src/components/chat/StreamingDisplay.tsx`（飞书卡片内部状态与 Web 任务卡的消费分支），均已在立项声明内。
   2. `src/turn-output-coordinator.ts` 未改动（`messageUuid` 保留）。
   3. `ToolActivityCard.tsx` 原先未按 prettier 格式化，本次修改后整文件格式化，diff 行数因此偏大，逻辑改动仅三处。
-- **范围外登记**：无新增。
-- **实机验收**：未执行，由用户决定（影响面：飞书卡片任务行显示子代理类型、工具行不再缩进；Web 任务卡显示子代理类型）。
+- **范围外登记**：实机验收发现子代理没有沿用自定义 Provider（Explore 写死 `anthropic/claude-haiku-4-5`、显式 `model: "sonnet"` 均落到 Anthropic 官方通道报 401），新建 ISSUE-22。
+- **实机验收（用户执行，2026-11-23，通过）**：本分支 worktree 以 `npm run dev:all` 启动（全新数据目录，Host 工作区，自定义 Provider），在飞书话题中发送“用一个子代理帮我调研一下当前目录有哪些文件，并汇总”。
+  - 第 2 项（飞书任务行）：生成中卡片的“🤖 子 Agent / Task”面板显示两条任务行“失败 换模型通道调研目录 general-purpose”“失败 子代理调研当前目录 Explore”，子代理类型以灰字展示，无“[工具名]”——subagentType 生产者生效、lastToolName 下线生效。
+  - 第 3 项（飞书工具时间轴）：4 行（bash / Task / bash / Task）全部顶格、无缩进——isNested 下线生效。
+  - 第 6 项（用量）：`usage_records` 与 `usage_events` 各 1 条（输入 20805、输出 3047 token），未翻倍、未缺失——usage 分片暂存下线后直接入账。
+  - 定稿卡片只保留“思考过程”与“工具调用 N”汇总面板，任务行与工具时间轴只在生成中可见，属既有设计。
+  - **未实测**：Web 侧第 1 项（任务卡子代理类型）、第 4 项（工具卡本地计时）、第 5 项（任务卡完成态与刷新恢复），由 `tests/pi-subagent-tool-contract.test.ts` 与防回潮契约覆盖。
+  - 子代理“成功完成”路径未覆盖：子代理请求全部返回 `401 invalid x-api-key`（与本 issue 无关），已新建 ISSUE-22 登记；失败路径的任务行展示已验证。
