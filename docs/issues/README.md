@@ -56,7 +56,7 @@
 | [ISSUE-16](ISSUE-16-r2-closeout-leftovers.md)                   | R2 收尾遗留：group_created 掉线逻辑、待决策项与零散清理    | P2     | 无                  | **是**               | 已完成 |
 | [ISSUE-17](ISSUE-17-stream-event-consumer-only-fields.md)       | StreamEvent 只有消费者的字段：逐字段决定补生产者还是下线   | P3     | 无                  | **是**               | 待领取 |
 | [ISSUE-18](ISSUE-18-pi-custom-provider-headers.md)              | Pi 运行时读取 ANTHROPIC_CUSTOM_HEADERS：自定义供应商请求头 | P1     | 无                  | **是**（已四项拍板） | 已完成 |
-| [ISSUE-19](ISSUE-19-wechat-context-token-restart.md)            | 微信 context_token 重启丢失与“无 token”被误判为 uncertain  | P2     | 无                  | **是**               | 进行中 |
+| [ISSUE-19](ISSUE-19-wechat-context-token-restart.md)            | 微信 context_token 重启丢失与“无 token”被误判为 uncertain  | P2     | 无                  | **是**               | 已完成 |
 
 状态取值：待领取、进行中、待用户决策、已完成、已取消。
 
