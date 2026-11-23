@@ -564,7 +564,12 @@ export function createQQChannel(config: QQConnectionConfig): IMChannel {
 export function createWeChatChannel(
   config: WeChatConnectionConfig,
   onUpdatesBuf?: (cursor: string) => void | Promise<void>,
+  onContextToken?: (userId: string, token: string) => void,
 ): IMChannel {
+  // A reconnect builds a fresh connection from this same config, so keep the
+  // tokens learned while connected and seed the next connection with them.
+  const contextTokens: Record<string, string> = { ...config.contextTokens };
+  const connectionConfig: WeChatConnectionConfig = { ...config, contextTokens };
   let inner: WeChatConnection | null = null;
   const typingLeases = new Map<string, Set<string>>();
   const typingExpiry = new TypingLeaseExpiry((chatId, leaseId) => {
@@ -583,7 +588,7 @@ export function createWeChatChannel(
     channelType: 'wechat',
 
     async connect(opts: IMChannelConnectOpts): Promise<boolean> {
-      inner ??= createWeChatConnection(config);
+      inner ??= createWeChatConnection(connectionConfig);
       try {
         await inner.connect({
           onReady: opts.onReady,
@@ -598,6 +603,10 @@ export function createWeChatChannel(
           onPairAttempt: opts.onPairAttempt,
           onConnectionStateChange: opts.onWeChatConnectionStateChange,
           onUpdatesBuf,
+          onContextToken: (userId, token) => {
+            contextTokens[userId] = token;
+            onContextToken?.(userId, token);
+          },
         });
         // A healthy getUpdates response may take one long-poll interval. The
         // manager must retain the running connector while transport health is
