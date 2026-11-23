@@ -59,7 +59,9 @@
 
 - 新增 `tests/pi-custom-provider-headers.test.ts`，共 12 例：解析 5 例、转义 1 例、`resolvePiProvider` 4 例（用真实 `ModelRuntime.getAuth` 验证头生效且 `$HOME`、`!echo` 按字面量发送；没有 key 也能注册上头；不传或传空对象时注册结构不变；官方分支不注册、不带头）、生产接线源码契约 2 例。先跑确认红（10 败），实现后转绿。
 - `npm run verify` 六步全绿（342 文件，2795 过 23 跳 0 败）；`node scripts/check-scope.mjs` 9 个路径全在声明范围内，没有扩宽。
-- **未用真实端点实测**：会产生费用并涉及凭据，由用户决定是否做。配置方式：在供应商「自定义环境变量」里加一行 `ANTHROPIC_CUSTOM_HEADERS=<头名>: <固定值>`，然后在 Host 模式下发一条消息。
+- **真实端点实机验收通过**（用户 2026-11-23 执行，Host 模式，本分支 worktree `npm run dev:all`）：在供应商「自定义环境变量」中添加变量名 `ANTHROPIC_CUSTOM_HEADERS`、值为 `<头名>:<固定值>` 的一行，Web 发送消息后，agent 于 10:30:37 正常回复，无请求头告警，也无缺少会话头的 400。过程中的两处配置问题均记录在下方，均与本次代码无关。凭据、Endpoint、模型名均未写入本文档。
+  - 首次填写的值没有冒号，runner 按设计输出 `ANTHROPIC_CUSTOM_HEADERS line 1 skipped: missing ":" separator` 并跳过该行（告警不含值），说明非法行告警链路实机可用。
+  - Base URL 末尾带了 `/v1`，返回 `404 status code (no body)`。Pi 使用的 Anthropic SDK 会自己拼接 `/v1/messages`，所以 Base URL 不能带 `/v1`（与 Claude Code 的 `ANTHROPIC_BASE_URL` 约定一致）。去掉 `/v1` 后正常。
 
 ### 与 issue 描述的偏差和登记项
 
