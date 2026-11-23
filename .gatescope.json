@@ -1,20 +1,9 @@
 {
-  "task": "issue19-wechat-context-token - 微信context_token重启丢失与无token误判uncertain（docs/issue19-wechat-context-token-plan.md）；用户拍板：token存渠道账号加密secret并绑定ilinkBotId、无token转failed、通用错误类ChannelPreSendRejection、只改微信发送前检查其余登记",
-  "base": "5322ef2",
+  "task": "issue20-register - 登记ISSUE-20容器镜像不可用时快速失败并明确告知用户（仅新建issue文件与README索引行，不改代码）；用户拍板立issue改进报错",
+  "base": "89b4fcf",
   "allow": [
     ".gatescope.json",
-    "docs/issue19-wechat-context-token-plan.md",
-    "docs/issues/ISSUE-19-wechat-context-token-restart.md",
-    "docs/issues/README.md",
-    "src/channel-errors.ts",
-    "src/im-channel.ts",
-    "src/channel-outbox-delivery.ts",
-    "src/wechat.ts",
-    "src/wechat-inbound.ts",
-    "src/wechat-outbound.ts",
-    "src/wechat-context-tokens.ts",
-    "src/im-manager.ts",
-    "src/index.ts",
-    "tests/**"
+    "docs/issues/ISSUE-20-container-image-unavailable-error.md",
+    "docs/issues/README.md"
   ]
 }
