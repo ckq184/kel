@@ -238,13 +238,19 @@ function toStreamEvent(
     case 'subagent': {
       // ISSUE-03: the pi-subagents broadcast carries the description the card
       // uses for its task title; lift it from `details` onto the event.
+      // ISSUE-17: its `type` is the subagent type the card task row and the
+      // Web task lane render.
       const details =
         event.details && typeof event.details === 'object'
-          ? (event.details as { description?: unknown })
+          ? (event.details as { description?: unknown; type?: unknown })
           : undefined;
       const taskDescription =
         typeof details?.description === 'string' && details.description
           ? details.description
+          : undefined;
+      const subagentType =
+        typeof details?.type === 'string' && details.type
+          ? details.type
           : undefined;
       return {
         eventType: 'task_progress',
@@ -253,6 +259,7 @@ function toStreamEvent(
         taskId: event.agentId,
         taskStatus: event.lifecycle,
         ...(taskDescription ? { taskDescription } : {}),
+        ...(subagentType ? { subagentType } : {}),
         taskSummary: event.result || event.error,
         sessionId: event.sessionId,
       };

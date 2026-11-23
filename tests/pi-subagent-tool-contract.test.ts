@@ -330,6 +330,13 @@ describe('Pi subagent lifecycle → task_progress mapping', () => {
       '调研任务',
     ]);
     expect(progress[2].taskSummary).toBe('调研结论摘要');
+    // ISSUE-17: the broadcast `type` is the subagent type the card task row
+    // and the Web task lane render; the minimal 'started' broadcast has none.
+    expect(progress.map((event) => event.subagentType)).toEqual([
+      'worker',
+      undefined,
+      'worker',
+    ]);
   });
 
   test('failed broadcasts map taskStatus=failed and taskSummary=error', async () => {
