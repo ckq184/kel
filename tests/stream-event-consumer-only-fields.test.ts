@@ -61,3 +61,24 @@ describe('ISSUE-17 T2：isSynthetic 与 usage 分片下线', () => {
     expectAbsent(['src/index.ts'], ids);
   });
 });
+
+describe('ISSUE-17 T3：isNested 与 elapsedSeconds 连消费分支下线', () => {
+  test('信封不再声明 isNested / elapsedSeconds', () => {
+    const envelope = streamEventInterface();
+    expect(envelope).not.toMatch(/\bisNested\b/);
+    expect(envelope).not.toMatch(/\belapsedSeconds\b/);
+  });
+
+  test('feeder、飞书卡片、Web store 与 ToolActivityCard 不再消费', () => {
+    expectAbsent(
+      [
+        'src/stream-card-feeder.ts',
+        'src/feishu-streaming-card.ts',
+        'src/feishu-cards/sections.ts',
+        'web/src/stores/chat.ts',
+        'web/src/components/chat/ToolActivityCard.tsx',
+      ],
+      ['isNested', 'elapsedSeconds'],
+    );
+  });
+});

@@ -358,8 +358,6 @@ export interface StreamEvent {
   toolUseId?: string;
   /** 父工具调用 ID（嵌套工具调用时指向外层；缺省即顶层调用）。 */
   parentToolUseId?: string | null;
-  /** 是否为嵌套（子代理内部）调用。 */
-  isNested?: boolean;
   /** 触发的技能名称。 */
   skillName?: string;
   /** 工具入参摘要。 */
@@ -371,8 +369,6 @@ export interface StreamEvent {
   /** Tool execution ended in error (carried on `tool_use_end`): cards/Web
    *  render the failure lane instead of a success ✅ (ISSUE-03). */
   isError?: boolean;
-  /** 已耗时（秒）。 */
-  elapsedSeconds?: number;
   /** 状态行文本。 */
   statusText?: string;
   /** SDK 任务描述。 */

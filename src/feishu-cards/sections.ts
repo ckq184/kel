@@ -389,8 +389,6 @@ export interface ToolCallView {
   summary?: string;
   /** When the tool invocation is wrapping a Skill, display this instead of name. */
   skillName?: string;
-  /** Sub-agent tool calls get visual indentation. */
-  isNested?: boolean;
 }
 
 /** Map a tool name + summary to a labeled parameter (mirrors Web parseToolParam). */
@@ -417,7 +415,7 @@ export function parseToolParam(
   }
 }
 
-/** Tool timeline with status tags, elapsed time, labeled params, skill + nested hints. */
+/** Tool timeline with status tags, elapsed time, labeled params and skill hints. */
 export function buildToolsTimelineText(
   tools: ToolCallView[],
   opts: { maxVisible?: number } = {},
@@ -443,8 +441,7 @@ export function buildToolsTimelineText(
     const paramLine = param
       ? `\n  <font color='grey'>${param.label}: ${truncate(param.value, 90)}</font>`
       : '';
-    const indent = t.isNested ? '    ' : '';
-    return `${indent}<text_tag color='${tagColor}'>${tagText}</text_tag> \`${displayName}\`${elapsed}${paramLine}`;
+    return `<text_tag color='${tagColor}'>${tagText}</text_tag> \`${displayName}\`${elapsed}${paramLine}`;
   });
   const hidden = tools.length - picked.length;
   const more =

@@ -191,9 +191,7 @@ export interface StreamingState {
     toolName: string;
     toolUseId: string;
     startTime: number;
-    elapsedSeconds?: number;
     parentToolUseId?: string | null;
-    isNested?: boolean;
     skillName?: string;
     toolInputSummary?: string;
     toolInput?: Record<string, unknown>;
@@ -1157,7 +1155,6 @@ function updateTaskRuntime(
       toolUseId: event.toolUseId || '',
       startTime: Date.now(),
       parentToolUseId: event.parentToolUseId,
-      isNested: event.isNested,
       skillName: event.skillName,
       toolInputSummary: event.toolInputSummary,
       toolInput: event.toolInput,
@@ -1188,7 +1185,6 @@ function updateTaskRuntime(
       t.toolUseId === event.toolUseId
         ? {
             ...t,
-            elapsedSeconds: event.elapsedSeconds,
             toolInputSummary: event.toolInputSummary || t.toolInputSummary,
           }
         : t,
@@ -1251,7 +1247,6 @@ function applyStreamEvent(
         toolUseId,
         startTime: Date.now(),
         parentToolUseId: event.parentToolUseId,
-        isNested: event.isNested,
         skillName: event.skillName,
         toolInputSummary: event.toolInputSummary,
       };
@@ -1320,7 +1315,6 @@ function applyStreamEvent(
           t.toolUseId === event.toolUseId
             ? {
                 ...t,
-                elapsedSeconds: event.elapsedSeconds,
                 ...(event.skillName ? { skillName: event.skillName } : {}),
                 ...(event.toolInput ? { toolInput: event.toolInput } : {}),
                 ...(event.toolInputSummary
@@ -1346,8 +1340,6 @@ function applyStreamEvent(
             toolUseId: event.toolUseId || '',
             startTime: Date.now(),
             parentToolUseId: event.parentToolUseId,
-            isNested: event.isNested,
-            elapsedSeconds: event.elapsedSeconds,
             ...(event.toolInputSummary
               ? { toolInputSummary: event.toolInputSummary }
               : {}),

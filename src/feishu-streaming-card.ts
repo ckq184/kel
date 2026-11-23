@@ -431,8 +431,6 @@ interface ToolCallState {
   toolInputSummary?: string;
   /** When wrapping a Skill, the concrete skill name for display. */
   skillName?: string;
-  /** True for tool calls spawned inside a Task sub-agent. */
-  isNested?: boolean;
   /** Raw tool input, needed for AskUserQuestion structured rendering. */
   toolInput?: Record<string, unknown>;
 }
@@ -450,7 +448,6 @@ interface TaskRunState {
 /** Extra metadata a caller can attach to a running tool call. */
 interface ToolCallMeta {
   skillName?: string;
-  isNested?: boolean;
   toolInput?: Record<string, unknown>;
 }
 
@@ -2106,7 +2103,6 @@ export class StreamingCardController {
     const tc = this.toolCalls.get(toolId);
     if (!tc) return;
     if (meta.skillName !== undefined) tc.skillName = meta.skillName;
-    if (meta.isNested !== undefined) tc.isNested = meta.isNested;
     if (meta.toolInput !== undefined) tc.toolInput = meta.toolInput;
     this.stateVersion++;
     if (this.state === 'streaming') {
@@ -2846,7 +2842,6 @@ export class StreamingCardController {
         durationMs: now - tc.startTime,
         summary: tc.toolInputSummary,
         skillName: tc.skillName,
-        isNested: tc.isNested,
       }));
     const toolsContent = buildToolsTimelineText(toolViews);
 
