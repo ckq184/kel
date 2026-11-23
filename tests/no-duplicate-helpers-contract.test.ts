@@ -438,10 +438,13 @@ describe('each converged helper family has exactly one implementation', () => {
       'src/model-suffix.ts',
     ]);
 
-    // 消费方改 import 本地副本，不再自带实现。
+    // 消费方改 import 本地副本，不再自带实现。ISSUE-21 C1：签名载荷收进
+    // shared/workspace-memory-payload.ts，canonical-json 的消费方随之变为它的
+    // 两份同步副本；宿主与 runner 改为导入载荷副本（见
+    // tests/workspace-memory-payload.test.ts）。
     for (const consumer of [
-      'src/workspace-memory-capability.ts',
-      'container/agent-runner/src/workspace-memory-auth.ts',
+      'src/workspace-memory-payload.ts',
+      'container/agent-runner/src/workspace-memory-payload.ts',
     ]) {
       expect(read(consumer), consumer).not.toMatch(
         /function\s+normalizeForCanonicalJson/,

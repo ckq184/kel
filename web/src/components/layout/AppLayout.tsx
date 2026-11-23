@@ -136,7 +136,7 @@ export function AppLayout() {
   }, []);
 
   // 全局监听 agent_reply 的 ⚠️ 警告（notice=true：图片/文件投递失败等）。
-  // 未标记的完整回复广播由 new_message 承载，前端不在此消费。
+  // 后端只以 notice 形式发送该事件（ISSUE-21 B3）；回复内容由 new_message 承载。
   useEffect(() => {
     const unsub = wsManager.on('agent_reply', (data: any) => {
       if (

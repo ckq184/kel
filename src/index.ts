@@ -585,7 +585,6 @@ import {
 import { normalizeImageAttachment } from './message-attachments.js';
 import {
   startWebServer,
-  broadcastToWebClients,
   broadcastNewMessage,
   broadcastStreamEvent,
   broadcastAgentStatus,
@@ -8486,13 +8485,8 @@ async function sendMessageWithOutcome(
     );
     webProjected = true;
     logger.info({ jid, length: text.length, sendToIM }, 'Message sent');
-    // Skip agent_reply broadcast for scheduled tasks to avoid clearing
-    // streaming state of a concurrently running main agent.
-    // Safe because scheduled tasks never trigger typing indicators, so there's
-    // no typing state to clear. The message is still delivered via new_message.
-    if (!options.source) {
-      broadcastToWebClients(jid, text);
-    }
+    // The reply reaches Web clients through new_message above; agent_reply is
+    // reserved for notice warnings (ISSUE-21 B3).
     return { messageId: persistedMsgId, targetDelivered, webProjected };
   } catch (err) {
     logger.error({ jid, err }, 'Failed to send message');
@@ -12177,8 +12171,13 @@ function createAutoImConversationAgent(input: {
   );
 
   logger.info(
-    { sourceJid: input.sourceJid, agentId, userId: input.userId },
-    'Auto-created isolated conversation agent for Feishu IM chat',
+    {
+      sourceJid: input.sourceJid,
+      channel: getChannelType(input.sourceJid),
+      agentId,
+      userId: input.userId,
+    },
+    'Auto-created isolated conversation agent for IM chat',
   );
   return {
     agentId,

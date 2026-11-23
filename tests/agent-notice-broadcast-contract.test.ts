@@ -49,11 +49,13 @@ describe('agent_reply notice broadcast contract', () => {
     expect(fn).toContain('notice');
   });
 
-  test('every warning broadcast carries notice:true; only full-output broadcasts stay unmarked', () => {
+  test('every broadcast carries notice:true; full replies are not re-broadcast', () => {
     // ISSUE-12 波 4 单元 4.4/4.7：send_image 与 send_file 分支的
     // broadcastToWebClients 调用随段迁入 src/ipc/image-delivery.ts 与
-    // src/ipc/file-delivery.ts（原文搬运），扫描面扩至三文件合计，
-    // 计数与断言语义不变。
+    // src/ipc/file-delivery.ts（原文搬运），扫描面扩至三文件合计。
+    // ISSUE-21 B3：原有 2 处完整输出冗余广播（文本回复 jid,text 与图片
+    // displayText）已停止，回复内容只经 new_message 承载；agent_reply 只剩
+    // 6 处 ⚠️ 警告。
     const index = read('src/index.ts');
     const imageBranch = read('src/ipc/image-delivery.ts');
     const fileBranch = read('src/ipc/file-delivery.ts');
@@ -62,19 +64,8 @@ describe('agent_reply notice broadcast contract', () => {
       ...extractCallArgs(imageBranch, 'broadcastToWebClients'),
       ...extractCallArgs(fileBranch, 'broadcastToWebClients'),
     ];
-    // 6 处 ⚠️ 警告 + 2 处完整输出冗余广播（文本回复 jid,text 与图片
-    // displayText，均同步经 new_message 承载，前端无需消费 agent_reply）
-    expect(calls.length).toBe(8);
-
-    const fullOutputs = calls.filter(
-      (args) =>
-        args.trim() === 'jid, text' ||
-        args.trim() === 'imgChatJid, displayText',
-    );
-    expect(fullOutputs.length).toBe(2);
-
+    expect(calls.length).toBe(6);
     for (const args of calls) {
-      if (fullOutputs.includes(args)) continue;
       expect(args).toContain('notice: true');
     }
   });

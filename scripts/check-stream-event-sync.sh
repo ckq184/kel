@@ -39,6 +39,21 @@ check_sync "$ROOT/shared/image-detector.ts" \
 check_sync "$ROOT/shared/channel-prefixes.ts" \
   "$ROOT/src/channel-prefixes.ts"
 
+# Canonical JSON (HMAC-signature red line)
+check_sync "$ROOT/shared/canonical-json.ts" \
+  "$ROOT/src/canonical-json.ts" \
+  "$ROOT/container/agent-runner/src/canonical-json.ts"
+
+# Model suffix
+check_sync "$ROOT/shared/model-suffix.ts" \
+  "$ROOT/src/model-suffix.ts" \
+  "$ROOT/container/agent-runner/src/model-suffix.ts"
+
+# Workspace Memory signing payload (HMAC-signature red line, ISSUE-21 C1)
+check_sync "$ROOT/shared/workspace-memory-payload.ts" \
+  "$ROOT/src/workspace-memory-payload.ts" \
+  "$ROOT/container/agent-runner/src/workspace-memory-payload.ts"
+
 if [ "$FAIL" -eq 0 ]; then
   echo "All shared type copies are in sync."
 else

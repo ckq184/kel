@@ -351,7 +351,6 @@ export async function processIpcSendImage(
         source_kind: 'sdk_send_message',
         finalization_reason: null,
       });
-      broadcastToWebClients(imgChatJid, displayText);
 
       // Scheduled-task image routing uses the same direct target /
       // notify-channel fan-out contract as text and file outputs.

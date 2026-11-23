@@ -48,6 +48,7 @@ import {
   scopeChannelJid,
 } from './channel-address.js';
 import { ChannelRouteRejectedError } from './channel-admission.js';
+import { ChannelPreSendRejection } from './channel-errors.js';
 
 interface UserIMConnection {
   userId: string;
@@ -801,7 +802,11 @@ export class IMConnectionManager {
     }
     const channel = this.findChannelForJid(jid, 'feishu');
     if (!channel?.executeFeishuCapability) {
-      throw new Error(`No connected Feishu Bot is available for ${jid}`);
+      // No Feishu call has been made yet: a pre-send rejection lets the
+      // mutation outbox fail the row instead of fencing it as uncertain.
+      throw new ChannelPreSendRejection(
+        `No connected Feishu Bot is available for ${jid}`,
+      );
     }
     return channel.executeFeishuCapability(context, request);
   }

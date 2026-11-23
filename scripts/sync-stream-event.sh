@@ -57,3 +57,13 @@ for target in \
 ; do
   sync_file "$SRC_MS" "$target"
 done
+
+# --- Workspace Memory signing payload (2 targets: backend + agent-runner;
+# HMAC-signature red line, ISSUE-21 C1) ---
+SRC_WMP="$ROOT/shared/workspace-memory-payload.ts"
+for target in \
+  "$ROOT/src/workspace-memory-payload.ts" \
+  "$ROOT/container/agent-runner/src/workspace-memory-payload.ts" \
+; do
+  sync_file "$SRC_WMP" "$target"
+done

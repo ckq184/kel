@@ -866,6 +866,13 @@ function getTaskLeaseMs(): number {
   );
 }
 
+/**
+ * Legacy definition-level lease. Every production entry point (isolated,
+ * script and group runs) passes a durable `task_runs` claim, so this is only
+ * reachable through `enqueueIsolatedScheduledTask`, which only tests call.
+ * Retirement, including the `running_until`/`runner_id` columns, is tracked
+ * as ISSUE-25.
+ */
 function claimScheduledRun(taskId: string, label: string): boolean {
   const claimed = claimTaskForRun(
     taskId,
@@ -917,6 +924,11 @@ async function runTask(
   }
 }
 
+/**
+ * Non-durable isolated enqueue. No production caller: the V2 scheduler always
+ * enqueues with a durable claim. Kept for the contract tests until ISSUE-25
+ * retires the legacy lease cluster.
+ */
 export function enqueueIsolatedScheduledTask(
   task: ScheduledTask,
   deps: SchedulerDependencies,
