@@ -16,6 +16,10 @@ import { randomUUID } from 'node:crypto';
 
 import { CONTAINER_IMAGE, DATA_DIR, GROUPS_DIR, TIMEZONE } from './config.js';
 import {
+  buildContainerExitError,
+  summarizeStderr,
+} from './container-image-failure.js';
+import {
   getServerBootId,
   registerHostRunner,
   unregisterHostRunner,
@@ -1856,6 +1860,9 @@ export async function runContainerAgent(
               .map((m) => `${m.containerPath}${m.readonly ? ' (ro)' : ''}`)
               .join('\n'),
           ],
+          // ISSUE-20：镜像不存在 / 拉取被拒（退出码 125）打上分类前缀，
+          // 主路径据此跳过重试并告知用户；stderr 截取保留首尾。
+          enrichError: buildContainerExitError,
           extraVerboseLines: [
             `=== Container Args ===`,
             containerArgs.join(' '),
@@ -2708,7 +2715,7 @@ export async function runHostAgent(
               : null;
             return {
               result: userFacingError,
-              error: `Host agent exited with ${exitLabel}: ${stderrContent.slice(-200)}`,
+              error: `Host agent exited with ${exitLabel}: ${summarizeStderr(stderrContent)}`,
             };
           },
         };

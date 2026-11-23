@@ -116,6 +116,11 @@ import {
   PROVIDER_FAILURE_USER_NOTICE,
 } from './provider-failure.js';
 import {
+  CONTAINER_IMAGE_UNAVAILABLE_ERROR_PREFIX,
+  CONTAINER_IMAGE_UNAVAILABLE_USER_NOTICE,
+  warnIfContainerImageMissing,
+} from './container-image-failure.js';
+import {
   closeDatabase,
   createTask,
   deleteExpiredSessions,
@@ -2437,6 +2442,26 @@ async function deliverIndependentChannelSystemNotice(input: {
   }
 }
 
+/** Native route for a turn-scoped system notice: exact turn scope first, then the reply JID. */
+function resolveSystemNoticeRoute(
+  scope: ActiveChannelOutboxScope | undefined,
+  targetJid: string | null | undefined,
+) {
+  const scopeRoute = scope?.chatId
+    ? {
+        provider: scope.provider,
+        accountId: scope.accountId,
+        sourceJid: scope.sourceJid,
+        chatId: scope.chatId,
+        rootId: scope.rootId,
+        threadId: scope.threadId,
+      }
+    : null;
+  return (
+    scopeRoute ?? (targetJid ? resolveDurableChannelRoute(targetJid) : null)
+  );
+}
+
 async function deliverProactiveTailInterruptionNotice(input: {
   logicalChatJid: string;
   scopeKey: string;
@@ -2445,19 +2470,7 @@ async function deliverProactiveTailInterruptionNotice(input: {
   targetJid?: string | null;
   scope?: ActiveChannelOutboxScope;
 }): Promise<boolean> {
-  const scopeRoute = input.scope?.chatId
-    ? {
-        provider: input.scope.provider,
-        accountId: input.scope.accountId,
-        sourceJid: input.scope.sourceJid,
-        chatId: input.scope.chatId,
-        rootId: input.scope.rootId,
-        threadId: input.scope.threadId,
-      }
-    : null;
-  const route =
-    scopeRoute ??
-    (input.targetJid ? resolveDurableChannelRoute(input.targetJid) : null);
+  const route = resolveSystemNoticeRoute(input.scope, input.targetJid);
   if (input.targetJid && route) {
     const delivered = await deliverIndependentChannelSystemNotice({
       logicalChatJid: input.logicalChatJid,
@@ -2484,6 +2497,37 @@ async function deliverProactiveTailInterruptionNotice(input: {
     PROACTIVE_TAIL_INTERRUPTION_NOTICE,
   );
   return true;
+}
+
+/**
+ * ISSUE-20：容器镜像不可用时，把同一份用户文案回复给 IM 发送方（拍板 3b）。
+ * Web 工作区已由调用方发 agent_error 系统消息，这里不再存 Web 副本。
+ * Web-only 会话（无 IM 路由）直接跳过。
+ */
+async function deliverContainerImageUnavailableNotice(input: {
+  logicalChatJid: string;
+  scopeKey: string;
+  inputTurnId: string;
+  targetJid?: string | null;
+  scope?: ActiveChannelOutboxScope;
+}): Promise<boolean> {
+  const route = resolveSystemNoticeRoute(input.scope, input.targetJid);
+  if (!input.targetJid || !route) return false;
+  return deliverIndependentChannelSystemNotice({
+    logicalChatJid: input.logicalChatJid,
+    scopeKey: input.scopeKey,
+    targetJid: input.targetJid,
+    originalInputTurnId: input.inputTurnId,
+    originalRunId:
+      input.scope?.turnRunId ?? `container-image:${input.inputTurnId}`,
+    noticeKey: 'container-image-unavailable',
+    text: CONTAINER_IMAGE_UNAVAILABLE_USER_NOTICE,
+    sender: '__system__',
+    senderName: 'system',
+    presentation: 'native',
+    storeMessage: false,
+    route,
+  });
 }
 
 /**
@@ -7767,6 +7811,45 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       return true;
     }
 
+    // 容器镜像不存在 / 拉取被拒（ISSUE-20）：确定性失败，6 轮指数退避注定
+    // 全部失败且用户全程零反馈。跳过重试，向 Web 工作区和 IM 发送方告知原因
+    // 与处理建议；镜像名和 Docker 原文只进服务端日志（拍板 3a）。
+    if (errorDetail.startsWith(CONTAINER_IMAGE_UNAVAILABLE_ERROR_PREFIX)) {
+      logger.warn(
+        { group: group.name, chatJid, error: errorDetail },
+        'Agent container image unavailable; skipping retry',
+      );
+      sendSystemMessage(
+        chatJid,
+        'agent_error',
+        CONTAINER_IMAGE_UNAVAILABLE_USER_NOTICE,
+      );
+      const imageNoticeScope = channelOutboxScopesByInput.get(
+        ipcReplyTurnTracker.inputTurnId,
+      );
+      try {
+        await deliverContainerImageUnavailableNotice({
+          logicalChatJid: chatJid,
+          scopeKey: channelTurnScope(effectiveGroup.folder),
+          inputTurnId: ipcReplyTurnTracker.inputTurnId,
+          targetJid: imageNoticeScope?.sourceJid ?? replySourceImJid,
+          scope: imageNoticeScope,
+        });
+      } catch (err) {
+        logger.warn(
+          { group: group.name, chatJid, err },
+          'Failed to deliver container image notice to IM',
+        );
+      }
+      await projectCurrentScheduledGroupTerminal(
+        'failed',
+        CONTAINER_IMAGE_UNAVAILABLE_USER_NOTICE,
+      );
+      commitCursor();
+      await clearProcessingIndicatorForInput(ipcReplyTurnTracker.inputTurnId);
+      return true;
+    }
+
     // ── OOM auto-recovery: detect consecutive exit code 137 (OOM) ──
     // Only match `code 137` (Docker cgroup OOM killer), not `signal SIGKILL`
     // which is ambiguous for host processes (could be user stop, process tree
@@ -11760,6 +11843,21 @@ async function ensureDockerRunning(): Promise<void> {
     return;
   }
   logger.debug('Docker daemon is running');
+
+  // ISSUE-20 启动期预检：镜像缺失只告警，不阻塞启动、不自动拉取。
+  // 不 await：查询异常已在函数内吞掉并视为缺失，不会产生未处理的 rejection。
+  void warnIfContainerImageMissing({
+    image: CONTAINER_IMAGE,
+    getImageId: async () => {
+      const { stdout } = await execFileAsync(
+        'docker',
+        ['images', CONTAINER_IMAGE, '--format', '{{.ID}}'],
+        { timeout: 10000 },
+      );
+      return String(stdout).trim() || null;
+    },
+    warn: (obj, msg) => logger.warn(obj, msg),
+  });
 
   // Kill orphaned host agent-runner processes from previous runs
   try {

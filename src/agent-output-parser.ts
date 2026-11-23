@@ -8,6 +8,7 @@ import type { Readable } from 'stream';
 
 import { getSystemSettings } from './runtime-config.js';
 import { logger } from './logger.js';
+import { summarizeStderr } from './container-image-failure.js';
 import type { ContainerOutput } from './container-runner.js';
 
 // Sentinel markers for robust output parsing (must match agent-runner)
@@ -604,7 +605,7 @@ export function handleNonZeroExit(
     ? ctx.enrichError(stderr, exitLabel)
     : {
         result: null as string | null,
-        error: `${ctx.label} exited with ${exitLabel}: ${stderr.slice(-200)}`,
+        error: `${ctx.label} exited with ${exitLabel}: ${summarizeStderr(stderr)}`,
       };
 
   logger.error(

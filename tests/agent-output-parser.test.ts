@@ -477,3 +477,69 @@ describe('attachStdoutHandler — framed output parsing (marker collision)', () 
     expect(out[1].newSessionId).toBe('sid-xyz');
   });
 });
+
+describe('handleNonZeroExit — 退出错误串（ISSUE-20）', () => {
+  async function runExit(
+    stderr: string,
+    code: number,
+    enrichError?: (
+      s: string,
+      exitLabel: string,
+    ) => {
+      result: string | null;
+      error: string;
+    },
+  ): Promise<ContainerOutput> {
+    const stderrState = createStderrState();
+    stderrState.stderr = stderr;
+    const resolved: ContainerOutput[] = [];
+    handleNonZeroExit(
+      {
+        groupName: 'exit-test',
+        label: 'Container',
+        filePrefix: 'container',
+        identifier: 'container-id',
+        logsDir: '/tmp',
+        input: { prompt: 'prompt', isMain: true },
+        stdoutState: createStdoutParserState(),
+        stderrState,
+        onOutput: async () => {},
+        resolvePromise: (output) => resolved.push(output),
+        startTime: Date.now(),
+        timeoutMs: 1_000,
+        enrichError,
+      },
+      code,
+      null,
+      10,
+      '/tmp/exit-test.log',
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(resolved).toHaveLength(1);
+    return resolved[0];
+  }
+
+  test('默认错误串超长时保留首尾（旧实现 slice(-200) 会丢掉开头）', async () => {
+    const stderr = `HEAD-${'x'.repeat(1000)}-TAIL`;
+    const out = await runExit(stderr, 1);
+    expect(out.status).toBe('error');
+    expect(out.error).toContain('Container exited with code 1: HEAD-');
+    expect(out.error).toContain('…');
+    expect(out.error!.endsWith('-TAIL')).toBe(true);
+  });
+
+  test('注入 buildContainerExitError 后，125 镜像拉取失败带分类前缀', async () => {
+    const {
+      buildContainerExitError,
+      CONTAINER_IMAGE_UNAVAILABLE_ERROR_PREFIX,
+    } = await import('../src/container-image-failure.js');
+    const out = await runExit(
+      "Unable to find image 'a/b:latest' locally\npull access denied for a/b",
+      125,
+      buildContainerExitError,
+    );
+    expect(
+      out.error!.startsWith(CONTAINER_IMAGE_UNAVAILABLE_ERROR_PREFIX),
+    ).toBe(true);
+  });
+});
