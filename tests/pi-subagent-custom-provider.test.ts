@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { ModelRegistry, ModelRuntime } from '@earendil-works/pi-coding-agent';
 
 import { resolvePiProvider } from '../container/agent-runner/src/runtime/pi/pi-provider.js';
+import { createSubagentInheritModelExtension } from '../container/agent-runner/src/runtime/pi/pi-subagents.js';
 // The third-party resolver the Agent tool uses, imported only to lock the
 // resolution outcome; production code never imports pi-subagents internals.
 import { resolveModel } from '../container/agent-runner/node_modules/@tintinweb/pi-subagents/dist/model-resolver.js';
@@ -94,5 +95,82 @@ describe('ISSUE-22 T1 custom endpoint narrows subagent model availability', () =
     expect(explore.provider).toBe('anthropic');
     expect(explore.id).toMatch(/haiku-4-5/);
     expect(resolution.custom).toBe(false);
+  });
+});
+
+type ToolCallHandler = (event: {
+  type: 'tool_call';
+  toolCallId: string;
+  toolName: string;
+  input: Record<string, unknown>;
+}) => unknown;
+
+async function loadToolCallHandlers(): Promise<ToolCallHandler[]> {
+  const handlers: ToolCallHandler[] = [];
+  const fakePi = {
+    on(event: string, handler: ToolCallHandler) {
+      if (event === 'tool_call') handlers.push(handler);
+      return () => {};
+    },
+  };
+  await createSubagentInheritModelExtension()(fakePi as never);
+  return handlers;
+}
+
+describe('ISSUE-22 T2 explicit Agent model is dropped under a custom endpoint', () => {
+  test('removes model from Agent calls and keeps every other argument', async () => {
+    const handlers = await loadToolCallHandlers();
+    expect(handlers).toHaveLength(1);
+    const input: Record<string, unknown> = {
+      subagent_type: 'general-purpose',
+      prompt: 'p',
+      description: 'd',
+      model: 'sonnet',
+      run_in_background: true,
+    };
+    const result = await handlers[0]({
+      type: 'tool_call',
+      toolCallId: 't1',
+      toolName: 'Agent',
+      input,
+    });
+    expect(result).toBeUndefined();
+    expect(input).toEqual({
+      subagent_type: 'general-purpose',
+      prompt: 'p',
+      description: 'd',
+      run_in_background: true,
+    });
+  });
+
+  test('leaves other tools untouched', async () => {
+    const [handler] = await loadToolCallHandlers();
+    const input = { command: 'ls', model: 'keep-me' };
+    await handler({
+      type: 'tool_call',
+      toolCallId: 't2',
+      toolName: 'bash',
+      input,
+    });
+    expect(input).toEqual({ command: 'ls', model: 'keep-me' });
+  });
+
+  test('pi-runtime loads the extension only for custom endpoints', () => {
+    const source = fs.readFileSync(
+      path.resolve(
+        __dirname,
+        '../container/agent-runner/src/runtime/pi/pi-runtime.ts',
+      ),
+      'utf-8',
+    );
+    expect(source).toMatch(
+      /modelResolution\.custom\s*\?\s*\[createSubagentInheritModelExtension\(\)\]/,
+    );
+    // Both loader constructions (with and without the subagent extension)
+    // share the same factory list.
+    const factoryUses = source.match(
+      /extensionFactories: extensionFactories\(\)/g,
+    );
+    expect(factoryUses).toHaveLength(2);
   });
 });

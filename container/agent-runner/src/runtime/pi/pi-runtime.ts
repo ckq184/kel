@@ -18,6 +18,7 @@ import type {
 import { resolvePiProvider } from './pi-provider.js';
 import { createCkqclawMcpExtension } from './pi-mcp.js';
 import { PiRuntimeSession } from './pi-session.js';
+import { createSubagentInheritModelExtension } from './pi-subagents.js';
 
 const require = createRequire(import.meta.url);
 
@@ -95,6 +96,14 @@ export class PiRuntimeAdapter implements AgentRuntime {
     if (subagentsExtension && !extensionPaths.includes(subagentsExtension)) {
       extensionPaths.push(subagentsExtension);
     }
+    // ISSUE-22: custom endpoints pin every subagent to the parent model.
+    // A builder, not a shared array: each loader gets fresh factory closures.
+    const extensionFactories = () => [
+      createCkqclawMcpExtension(),
+      ...(modelResolution.custom
+        ? [createSubagentInheritModelExtension()]
+        : []),
+    ];
     let resourceLoader = new DefaultResourceLoader({
       cwd: options.cwd,
       agentDir,
@@ -106,7 +115,7 @@ export class PiRuntimeAdapter implements AgentRuntime {
       // External MCP servers from the host-injected env config. SDK sessions
       // do not load built-in extensions, so the MCP extension must be added
       // explicitly.
-      extensionFactories: [createCkqclawMcpExtension()],
+      extensionFactories: extensionFactories(),
     });
     try {
       await resourceLoader.reload({ resolveProjectTrust: async () => true });
@@ -129,7 +138,7 @@ export class PiRuntimeAdapter implements AgentRuntime {
         systemPrompt: options.systemPrompt,
         additionalSkillPaths: options.skillPaths,
         additionalExtensionPaths: withoutSubagents,
-        extensionFactories: [createCkqclawMcpExtension()],
+        extensionFactories: extensionFactories(),
       });
       await resourceLoader.reload({ resolveProjectTrust: async () => true });
     }
