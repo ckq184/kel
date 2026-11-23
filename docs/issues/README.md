@@ -53,7 +53,7 @@
 | [ISSUE-13](ISSUE-13-docs-drift-and-regression-contracts.md)     | 文档漂移修正与防回归契约测试                             | P3     | 04（仅文档部分）    | 否                   | 已完成 |
 | [ISSUE-14](ISSUE-14-channel-outbox-worker.md)                   | Channel Outbox 后台 worker：重启后 retry_wait 自动重投   | P2     | 无                  | **是**               | 待领取 |
 | [ISSUE-15](ISSUE-15-windows-test-compat.md)                     | Windows 测试兼容性：CRLF 源码锚点与路径分隔符归一        | P1     | 无                  | 否                   | 已完成 |
-| [ISSUE-16](ISSUE-16-r2-closeout-leftovers.md)                   | R2 收尾遗留：group_created 掉线逻辑、待决策项与零散清理  | P2     | 无                  | **是**               | 进行中 |
+| [ISSUE-16](ISSUE-16-r2-closeout-leftovers.md)                   | R2 收尾遗留：group_created 掉线逻辑、待决策项与零散清理  | P2     | 无                  | **是**               | 已完成 |
 | [ISSUE-17](ISSUE-17-stream-event-consumer-only-fields.md)       | StreamEvent 只有消费者的字段：逐字段决定补生产者还是下线 | P3     | 无                  | **是**               | 待领取 |
 
 状态取值：待领取、进行中、待用户决策、已完成、已取消。
