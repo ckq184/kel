@@ -1,9 +1,9 @@
 {
-  "task": "issue20-register - 登记ISSUE-20容器镜像不可用时快速失败并明确告知用户（仅新建issue文件与README索引行，不改代码）；用户拍板立issue改进报错",
-  "base": "89b4fcf",
+  "task": "issue21-register - 登记ISSUE-21汇总各issue交付记录中未立项的零散遗留（仅新建issue文件与README索引行，不改代码）；用户拍板把未立项的遗留汇总成ISSUE-21",
+  "base": "ec7a6c9",
   "allow": [
     ".gatescope.json",
-    "docs/issues/ISSUE-20-container-image-unavailable-error.md",
+    "docs/issues/ISSUE-21-registered-leftovers.md",
     "docs/issues/README.md"
   ]
 }
