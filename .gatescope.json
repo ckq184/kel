@@ -6,6 +6,7 @@
     "docs/issue19-wechat-context-token-plan.md",
     "docs/issues/ISSUE-19-wechat-context-token-restart.md",
     "docs/issues/README.md",
+    "src/channel-errors.ts",
     "src/im-channel.ts",
     "src/channel-outbox-delivery.ts",
     "src/wechat.ts",

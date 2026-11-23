@@ -45,6 +45,8 @@ import {
 import type { QQStreamingController } from './qq-streaming-card.js';
 import { CHANNEL_PREFIXES } from './channel-prefixes.js';
 
+export { ChannelPreSendRejection } from './channel-errors.js';
+
 /** Union type for any streaming card controller (Feishu or QQ) */
 export type StreamingSession = StreamingCardController | QQStreamingController;
 
