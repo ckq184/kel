@@ -128,4 +128,5 @@ ISSUE-13 的三个契约测试覆盖了 StreamEvent、IPC 类型和 HTTP 路由�
   5. D4 级联删除的模块级常量/变量为 6 个（方案文档写作 5 个，以实际为准）。
   6. D5 扫描发现的只有消费者字段（9 个 + `usage.batchIndex/batchCount`）与只有生产者的 `isSynthetic` 未在本 issue 处理，登记为 ISSUE-17。
 - **范围外登记**：`src/task-scheduler.ts` 的 `enqueueIsolatedScheduledTask` 在 `src/` 无调用方、`claimScheduledRun` 在现行 V2 路径（总带 `durableRun`）下实际不生效，定义级租约 `claimTaskForRun` 是否整体退役可另行评估；本 issue 未改动。
-- **待用户实机验收**：在已绑定的 IM 中执行 `/new <名称>`，确认已打开的 Web 侧边栏自动出现新工作区（需真实渠道，本会话未执行）。
+- **实机验收（用户执行，2026-11-23，通过）**：本分支 worktree 以 `npm run dev:all` 启动（全新数据目录；因 `ckq184/ckqclaw-agent:latest` 镜像不可拉取，跳过 `make dev` 的镜像拉取步骤），接入微信渠道账号后，停在 Web `/chat` 页面，在微信中发送 `/new 验收测试`。后端日志 `09:39:12` 记录 `Group registered`（`web:06505ce4-…`、folder `flow-mwsll1kh-5c8g`），确认经 `registerGroup` 统一出口；用户反馈侧边栏“出现验收测试”。
+  - 验收旁注（与本 issue 无关，仅登记）：① 新工作区为 Container 模式，后续消息因上述镜像不可拉取而以退出码 125 失败并进入有界退避重试；② `/new` 路径日志文案 `Auto-created isolated conversation agent for Feishu IM chat` 在微信渠道下措辞不准（历史文案）。
