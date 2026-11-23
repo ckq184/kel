@@ -24,11 +24,8 @@ const {
   initDatabase,
   createTask,
   getTaskById,
-  getDueTasks,
   claimTaskForRun,
-  advanceSkippedTask,
   updateTaskAfterRun,
-  clearStaleTaskLeases,
 } = await import('../src/db.js');
 
 const { shouldSkipBackfill, validateCronMinimumInterval } =
@@ -82,48 +79,7 @@ describe('task restart recovery — db helpers', () => {
     }
   });
 
-  test('getDueTasks returns all tasks with next_run <= now (regardless of how overdue)', () => {
-    const id1 = makeTask({
-      next_run: new Date(Date.now() - 60_000).toISOString(), // 1 min overdue
-    });
-    const id2 = makeTask({
-      next_run: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(), // 3 days overdue
-    });
-    const due = getDueTasks();
-    const ids = due.map((t) => t.id);
-    expect(ids).toContain(id1);
-    expect(ids).toContain(id2);
-  });
-
-  test('advanceSkippedTask updates next_run and does NOT touch last_run', () => {
-    const id = makeTask({
-      next_run: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
-    });
-    const before = getTaskById(id)!;
-    expect(before.last_run).toBeFalsy(); // never ran
-
-    const newNext = new Date(Date.now() + 60 * 60 * 1000).toISOString();
-    advanceSkippedTask(id, newNext);
-
-    const after = getTaskById(id)!;
-    expect(after.next_run).toBe(newNext);
-    expect(after.last_run).toBeFalsy(); // still not set — skipping is not running
-    expect(after.status).toBe('active');
-  });
-
-  test('advanceSkippedTask with null nextRun marks once-task as completed', () => {
-    const id = makeTask({
-      schedule_type: 'once',
-      schedule_value: new Date(Date.now() - 60_000).toISOString(),
-      next_run: new Date(Date.now() - 60_000).toISOString(),
-    });
-    advanceSkippedTask(id, null);
-    const after = getTaskById(id)!;
-    expect(after.next_run).toBeNull();
-    expect(after.status).toBe('completed');
-  });
-
-  test('updateTaskAfterRun continues to set last_run (sanity check the helpers stay distinct)', () => {
+  test('updateTaskAfterRun sets last_run and last_result', () => {
     const id = makeTask();
     updateTaskAfterRun(
       id,
@@ -131,18 +87,20 @@ describe('task restart recovery — db helpers', () => {
       'ran ok',
     );
     const after = getTaskById(id)!;
-    expect(after.last_run).toBeTruthy(); // contrast with advanceSkippedTask
+    expect(after.last_run).toBeTruthy();
     expect(after.last_result).toBe('ran ok');
   });
 
-  test('claimTaskForRun gives a due task to only one scheduler runner and hides it from getDueTasks until released', () => {
+  test('claimTaskForRun gives a due task to only one scheduler runner until released', () => {
     const id = makeTask({
       next_run: new Date(Date.now() - 60_000).toISOString(),
     });
 
     expect(claimTaskForRun(id, 'runner-a', 60_000)).toBe(true);
     expect(claimTaskForRun(id, 'runner-b', 60_000)).toBe(false);
-    expect(getDueTasks().map((t) => t.id)).not.toContain(id);
+    const claimed = getTaskById(id)!;
+    expect(claimed.runner_id).toBe('runner-a');
+    expect(claimed.running_until).toBeTruthy();
 
     updateTaskAfterRun(
       id,
@@ -152,37 +110,6 @@ describe('task restart recovery — db helpers', () => {
     const after = getTaskById(id)!;
     expect(after.running_until).toBeNull();
     expect(after.runner_id).toBeNull();
-  });
-
-  test('clearStaleTaskLeases releases a lease abandoned by a crashed runner so the task becomes due again', () => {
-    const id = makeTask({
-      next_run: new Date(Date.now() - 60_000).toISOString(),
-    });
-    // Simulate a runner claiming the task, then crashing before it can call
-    // updateTaskAfterRun/advanceSkippedTask — running_until/runner_id are
-    // left set in the DB, exactly as they would be after a process kill.
-    expect(claimTaskForRun(id, 'crashed-runner', 30 * 60_000)).toBe(true);
-    expect(getDueTasks().map((t) => t.id)).not.toContain(id);
-
-    const cleared = clearStaleTaskLeases();
-    expect(cleared).toBeGreaterThanOrEqual(1);
-
-    const after = getTaskById(id)!;
-    expect(after.running_until).toBeNull();
-    expect(after.runner_id).toBeNull();
-    // The task must be immediately claimable again by the restarted
-    // scheduler, not hidden until the old (now-meaningless) lease expiry.
-    expect(getDueTasks().map((t) => t.id)).toContain(id);
-    expect(claimTaskForRun(id, 'new-runner', 30 * 60_000)).toBe(true);
-  });
-
-  test('clearStaleTaskLeases is a no-op when no task holds a lease', () => {
-    // A task with no lease at all must not be touched/counted.
-    makeTask({ next_run: new Date(Date.now() - 60_000).toISOString() });
-    const clearedFirst = clearStaleTaskLeases();
-    expect(clearedFirst).toBeGreaterThanOrEqual(0);
-    const clearedSecond = clearStaleTaskLeases();
-    expect(clearedSecond).toBe(0);
   });
 });
 

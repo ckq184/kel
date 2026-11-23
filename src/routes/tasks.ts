@@ -569,8 +569,8 @@ tasksRoutes.patch('/:id', authMiddleware, async (c) => {
   // cron-parser into the frontend), OR when resuming a task whose next_run was
   // cleared. A recurring task that couldn't compute a next run is paused with
   // next_run=NULL; the UI resume sends only {status:'active'}, so without this
-  // it would flip to active-but-never-scheduled (getDueTasks requires next_run
-  // IS NOT NULL). If the schedule is genuinely corrupt the recompute throws and
+  // it would flip to active-but-never-scheduled (getDueTaskDefinitionsV2
+  // requires next_run IS NOT NULL). If the schedule is genuinely corrupt the recompute throws and
   // returns 400, telling the owner to fix schedule_value before resuming.
   const scheduleChanged =
     patchData.schedule_type !== undefined ||
@@ -586,7 +586,7 @@ tasksRoutes.patch('/:id', authMiddleware, async (c) => {
   // A completed once-task can't be "resumed": its schedule is a past one-shot
   // timestamp. Re-activating it would either re-fire the one-shot action or
   // (with the once guard above suppressing recompute) strand it active-but-never
-  // -scheduled (getDueTasks needs next_run IS NOT NULL). Reject unless the caller
+  // -scheduled (getDueTaskDefinitionsV2 needs next_run IS NOT NULL). Reject unless the caller
   // also changes the schedule, which makes it a deliberate fresh run.
   if (
     patchData.status === 'active' &&
