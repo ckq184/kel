@@ -880,7 +880,7 @@ export class GroupQueue {
     // process-wide slot count here lets warm, idle sessions block unrelated
     // Feishu topics for up to IDLE_TIMEOUT.
     //
-    // Container mode keeps its explicit resource/billing limits because each
+    // Container mode keeps its explicit resource limits because each
     // turn consumes a managed Docker allocation. Host processes are governed
     // by the operating system instead of an application-level capacity pool.
     if (this.isHostMode(groupJid)) return true;
@@ -889,7 +889,8 @@ export class GroupQueue {
       this.activeContainerCount < getSystemSettings().maxConcurrentContainers;
     if (!systemCapacity) return false;
 
-    // User-level concurrent container limit (billing)
+    // User-level concurrent container limit (restored by ISSUE-07 item 1;
+    // billing was retired in ISSUE-09, this is not a billing gate).
     if (this.userConcurrentLimitFn) {
       const result = this.userConcurrentLimitFn(groupJid);
       if (!result.allowed) return false;

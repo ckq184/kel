@@ -55,20 +55,6 @@ export interface UsageWindow {
   timezone: string;
 }
 
-interface UsageScope {
-  userId: string | null;
-  model: string | null;
-  agentId: string | null;
-  groupFolder: string | null;
-  source: string | null;
-}
-
-interface DataRange {
-  from: string;
-  to: string;
-  activeDays: number;
-}
-
 interface UsageUser {
   id: string;
   username: string;
@@ -147,12 +133,10 @@ interface RawUsageBreakdown {
 interface RawUsageResponse {
   window?: UsageWindow;
   generatedAt?: string;
-  scope?: Partial<UsageScope>;
   summary?: RawUsageSummary;
   breakdown?: RawUsageBreakdown[];
   daily?: RawUsageBreakdown[];
   days?: number;
-  dataRange?: DataRange | null;
   attributions?: Partial<Record<keyof UsageAttributions, unknown[]>>;
 }
 
@@ -162,8 +146,6 @@ interface NormalizedUsageResponse {
   daily: UsageDailyBucket[];
   window: UsageWindow;
   generatedAt: string;
-  scope: UsageScope;
-  dataRange: DataRange;
   attributions: UsageAttributions;
 }
 
@@ -384,13 +366,6 @@ export function normalizeUsageResponse(
     raw.summary || {},
     hasExplicitWindow,
   );
-  const scope: UsageScope = {
-    userId: raw.scope?.userId ?? query.userId,
-    model: raw.scope?.model ?? query.model,
-    agentId: raw.scope?.agentId ?? query.agentId,
-    groupFolder: raw.scope?.groupFolder ?? query.groupFolder,
-    source: raw.scope?.source ?? query.source,
-  };
 
   return {
     summary,
@@ -398,12 +373,6 @@ export function normalizeUsageResponse(
     daily,
     window,
     generatedAt: raw.generatedAt || now.toISOString(),
-    scope,
-    dataRange: {
-      from: window.from,
-      to: window.to,
-      activeDays: summary.activeDays,
-    },
     attributions: normalizeAttributions(raw.attributions),
   };
 }
@@ -443,8 +412,6 @@ interface UsageState {
   breakdown: UsageBreakdown[];
   daily: UsageDailyBucket[];
   window: UsageWindow | null;
-  scope: UsageScope | null;
-  dataRange: DataRange | null;
   generatedAt: string | null;
   attributions: UsageAttributions;
   days: number;
@@ -479,8 +446,6 @@ function stateValues(ownerUserId: string | null) {
     breakdown: [] as UsageBreakdown[],
     daily: [] as UsageDailyBucket[],
     window: null as UsageWindow | null,
-    scope: null as UsageScope | null,
-    dataRange: null as DataRange | null,
     generatedAt: null as string | null,
     attributions: normalizeAttributions(),
     days: DEFAULT_QUERY.days,
@@ -557,8 +522,6 @@ export const useUsageStore = create<UsageState>((set, get) => ({
       breakdown: [],
       daily: [],
       window: null,
-      scope: null,
-      dataRange: null,
       generatedAt: null,
       attributions: normalizeAttributions(),
       days: query.days,
@@ -577,8 +540,6 @@ export const useUsageStore = create<UsageState>((set, get) => ({
         breakdown: normalized.breakdown,
         daily: normalized.daily,
         window: normalized.window,
-        scope: normalized.scope,
-        dataRange: normalized.dataRange,
         generatedAt: normalized.generatedAt,
         attributions: normalized.attributions,
         loading: false,
@@ -628,8 +589,6 @@ export const useUsageStore = create<UsageState>((set, get) => ({
         breakdown: [],
         daily: [],
         window: null,
-        scope: null,
-        dataRange: null,
         generatedAt: null,
         attributions: normalizeAttributions(),
       });

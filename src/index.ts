@@ -582,6 +582,7 @@ import {
   broadcastAgentRemoved,
   broadcastTitleGenerating,
   broadcastChannelAccountStatus,
+  broadcastGroupCreated,
   shutdownTerminals,
   shutdownWebServer,
   getActiveStreamingTexts,
@@ -4474,6 +4475,10 @@ function registerGroup(jid: string, group: RegisteredGroup): void {
   // Create group folder
   const groupDir = path.join(GROUPS_DIR, group.folder);
   fs.mkdirSync(path.join(groupDir, 'logs'), { recursive: true });
+
+  // ISSUE-16 A(a)：非 Web 创建路径（IM /new、Agent register_group）通知所有者
+  // 的 Web 客户端刷新侧边栏；Web POST 创建路径不经此函数。
+  broadcastGroupCreated(jid, group.folder, group.name, group.created_by);
 
   logger.info(
     { jid, name: group.name, folder: group.folder },

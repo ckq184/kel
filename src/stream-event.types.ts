@@ -389,29 +389,16 @@ export interface StreamEvent {
   taskType?: string;
   /** Claude Code Workflow meta.name (only present for workflow tasks). */
   workflowName?: string;
-  /** SDK 任务字段的增量更新（状态/描述/结束时间/累计暂停时长/错误/后台标记）。 */
-  taskPatch?: {
-    status?: string;
-    description?: string;
-    end_time?: number;
-    total_paused_ms?: number;
-    error?: string;
-    is_backgrounded?: boolean;
-  };
   /** 子代理类型标识。 */
   subagentType?: string;
   /** 最近一次工具调用的名称（任务进度类事件携带）。 */
   lastToolName?: string;
-  /** 保留字段：当前仓库内无产生方与消费方（2026-11-19 全仓 grep 取证）。 */
-  outputFile?: string;
   /** SDK 任务的累计用量（token / 工具调用次数 / 时长）。 */
   sdkTaskUsage?: {
     totalTokens: number;
     toolUses: number;
     durationMs: number;
   };
-  /** 是否后台任务。 */
-  isBackground?: boolean;
   /** 是否协作型（teammate）SDK 任务——前端据此跳过普通后台任务的 stale 计时等处理。 */
   isTeammate?: boolean;
   /** 工具完整入参。 */

@@ -47,7 +47,6 @@ interface AgentProfilesState {
   >;
   loading: boolean;
   profilesError: string | null;
-  error: string | null;
   loadProfiles: () => Promise<void>;
   refreshProfile: (id: string) => Promise<AgentProfile>;
   loadProfileGovernance: (id: string) => Promise<AgentProfileGovernance>;
@@ -109,7 +108,6 @@ export const useAgentProfilesStore = create<AgentProfilesState>((set, get) => ({
   promptVersionsByProfile: {},
   loading: false,
   profilesError: null,
-  error: null,
 
   loadProfiles: async () => {
     set({ loading: true });
@@ -129,14 +127,12 @@ export const useAgentProfilesStore = create<AgentProfilesState>((set, get) => ({
         defaultModelConfigId: data.default_model_config_id ?? null,
         loading: false,
         profilesError: null,
-        error: null,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       set({
         loading: false,
         profilesError: message,
-        error: message,
       });
     }
   },
@@ -161,7 +157,6 @@ export const useAgentProfilesStore = create<AgentProfilesState>((set, get) => ({
           ? { ...state.governanceByProfile[id], profile }
           : undefined,
       },
-      error: null,
     }));
     return profile;
   },
@@ -211,7 +206,6 @@ export const useAgentProfilesStore = create<AgentProfilesState>((set, get) => ({
             }
           : undefined,
       },
-      error: null,
     }));
   },
 
@@ -246,54 +240,36 @@ export const useAgentProfilesStore = create<AgentProfilesState>((set, get) => ({
   },
 
   generateProfileDraft: async (description) => {
-    try {
-      const res = await api.post<{ draft: AgentProfileDraft }>(
-        '/api/agent-profiles/generate',
-        { description },
-        60_000,
-      );
-      set({ error: null });
-      return res.draft;
-    } catch (err) {
-      set({ error: err instanceof Error ? err.message : String(err) });
-      throw err;
-    }
+    const res = await api.post<{ draft: AgentProfileDraft }>(
+      '/api/agent-profiles/generate',
+      { description },
+      60_000,
+    );
+    return res.draft;
   },
 
   refineProfilePrompt: async (id, data) => {
-    try {
-      const res = await api.post<{ refinement: AgentPromptRefinement }>(
-        `/api/agent-profiles/${encodeURIComponent(id)}/refine-prompt`,
-        data,
-        60_000,
-      );
-      set({ error: null });
-      return res.refinement;
-    } catch (err) {
-      set({ error: err instanceof Error ? err.message : String(err) });
-      throw err;
-    }
+    const res = await api.post<{ refinement: AgentPromptRefinement }>(
+      `/api/agent-profiles/${encodeURIComponent(id)}/refine-prompt`,
+      data,
+      60_000,
+    );
+    return res.refinement;
   },
 
   createProfile: async (data) => {
-    try {
-      const res = await api.post<{ profile: AgentProfile }>(
-        '/api/agent-profiles',
-        { ...data, prompt_schema_version: 2 },
-      );
-      set((state) => ({
-        profiles: [
-          res.profile,
-          ...state.profiles.filter((p) => p.id !== res.profile.id),
-        ].sort((a, b) => Number(b.is_default) - Number(a.is_default)),
-        error: null,
-      }));
-      await get().loadProfiles();
-      return res.profile;
-    } catch (err) {
-      set({ error: err instanceof Error ? err.message : String(err) });
-      throw err;
-    }
+    const res = await api.post<{ profile: AgentProfile }>(
+      '/api/agent-profiles',
+      { ...data, prompt_schema_version: 2 },
+    );
+    set((state) => ({
+      profiles: [
+        res.profile,
+        ...state.profiles.filter((p) => p.id !== res.profile.id),
+      ].sort((a, b) => Number(b.is_default) - Number(a.is_default)),
+    }));
+    await get().loadProfiles();
+    return res.profile;
   },
 
   updateProfile: async (id, data) => {
@@ -315,7 +291,6 @@ export const useAgentProfilesStore = create<AgentProfilesState>((set, get) => ({
               }
             : undefined,
         },
-        error: null,
       }));
       // The profile PATCH is already committed at this point. A secondary
       // navigation-list refresh must not turn a successful capability save
@@ -351,14 +326,9 @@ export const useAgentProfilesStore = create<AgentProfilesState>((set, get) => ({
                 }
               : undefined,
           },
-          error:
-            err && typeof err === 'object' && 'message' in err
-              ? String(err.message)
-              : '配置已保存，但运行时清理失败',
         }));
         throw err;
       }
-      set({ error: err instanceof Error ? err.message : String(err) });
       throw err;
     }
   },
@@ -391,65 +361,51 @@ export const useAgentProfilesStore = create<AgentProfilesState>((set, get) => ({
   },
 
   deleteProfile: async (id) => {
-    try {
-      await api.delete(`/api/agent-profiles/${encodeURIComponent(id)}`);
-      set((state) => ({
-        profiles: state.profiles.filter((p) => p.id !== id),
-        governanceByProfile: Object.fromEntries(
-          Object.entries(state.governanceByProfile).filter(
-            ([key]) => key !== id,
-          ),
+    await api.delete(`/api/agent-profiles/${encodeURIComponent(id)}`);
+    set((state) => ({
+      profiles: state.profiles.filter((p) => p.id !== id),
+      governanceByProfile: Object.fromEntries(
+        Object.entries(state.governanceByProfile).filter(([key]) => key !== id),
+      ),
+      governanceErrors: Object.fromEntries(
+        Object.entries(state.governanceErrors).filter(([key]) => key !== id),
+      ),
+      promptVersionsByProfile: Object.fromEntries(
+        Object.entries(state.promptVersionsByProfile).filter(
+          ([key]) => key !== id,
         ),
-        governanceErrors: Object.fromEntries(
-          Object.entries(state.governanceErrors).filter(([key]) => key !== id),
-        ),
-        promptVersionsByProfile: Object.fromEntries(
-          Object.entries(state.promptVersionsByProfile).filter(
-            ([key]) => key !== id,
-          ),
-        ),
-        error: null,
-      }));
-    } catch (err) {
-      set({ error: err instanceof Error ? err.message : String(err) });
-      throw err;
-    }
+      ),
+    }));
   },
 
   setWorkspaceAgentProfile: async (jid, profileId) => {
-    try {
-      const res = await api.patch<{
-        success: boolean;
-        agent_profile_id: string;
-        agent_profile_name: string;
-        agent_profile_version: number;
-      }>(`/api/groups/${encodeURIComponent(jid)}/agent-profile`, {
-        ...buildWorkspaceAgentProfilePatch(profileId),
-      });
-      const patchGroup = (group?: GroupInfo): GroupInfo | undefined =>
-        group
-          ? {
-              ...group,
-              agent_profile_id: res.agent_profile_id,
-              agent_profile_name: res.agent_profile_name,
-              agent_profile_version: res.agent_profile_version,
-            }
-          : group;
+    const res = await api.patch<{
+      success: boolean;
+      agent_profile_id: string;
+      agent_profile_name: string;
+      agent_profile_version: number;
+    }>(`/api/groups/${encodeURIComponent(jid)}/agent-profile`, {
+      ...buildWorkspaceAgentProfilePatch(profileId),
+    });
+    const patchGroup = (group?: GroupInfo): GroupInfo | undefined =>
+      group
+        ? {
+            ...group,
+            agent_profile_id: res.agent_profile_id,
+            agent_profile_name: res.agent_profile_name,
+            agent_profile_version: res.agent_profile_version,
+          }
+        : group;
 
-      useChatStore.setState((state) => {
-        const patched = patchGroup(state.groups[jid]);
-        if (!patched) return state;
-        return { groups: { ...state.groups, [jid]: patched } };
-      });
-      useGroupsStore.setState((state) => {
-        const patched = patchGroup(state.groups[jid]);
-        if (!patched) return state;
-        return { groups: { ...state.groups, [jid]: patched } };
-      });
-      set({ error: null });
-    } catch (err) {
-      set({ error: err instanceof Error ? err.message : String(err) });
-      throw err;
-    }
+    useChatStore.setState((state) => {
+      const patched = patchGroup(state.groups[jid]);
+      if (!patched) return state;
+      return { groups: { ...state.groups, [jid]: patched } };
+    });
+    useGroupsStore.setState((state) => {
+      const patched = patchGroup(state.groups[jid]);
+      if (!patched) return state;
+      return { groups: { ...state.groups, [jid]: patched } };
+    });
   },
 }));

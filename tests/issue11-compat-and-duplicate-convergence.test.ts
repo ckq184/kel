@@ -207,7 +207,6 @@ vi.mock('../web/src/stores/auth', () => ({
 vi.mock('../web/src/utils/toast', () => ({
   showToast: vi.fn(),
   notifyIfHidden: vi.fn(),
-  shouldEmitBackgroundTaskNotice: vi.fn(() => false),
   showNotificationPromptToast: vi.fn(),
 }));
 vi.mock('../web/src/utils/messageSnapshotCache', () => ({

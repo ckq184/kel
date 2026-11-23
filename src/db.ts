@@ -2408,24 +2408,6 @@ export function deleteTask(id: string): void {
   db.prepare('DELETE FROM scheduled_tasks WHERE id = ?').run(id);
 }
 
-export function getDueTasks(): ScheduledTask[] {
-  const now = new Date().toISOString();
-  return db
-    .prepare(
-      `
-	    SELECT * FROM scheduled_tasks
-	    WHERE status = 'active'
-	      AND deleted_at IS NULL
-	      AND next_run IS NOT NULL
-	      AND next_run <= ?
-	      AND (running_until IS NULL OR running_until <= ?)
-	    ORDER BY next_run
-	  `,
-    )
-    .all(now, now)
-    .map(mapTaskRow);
-}
-
 /** V2 ignores the legacy definition-level lease; ownership lives on task_runs. */
 export function getDueTaskDefinitionsV2(limit = 100): ScheduledTask[] {
   const now = new Date().toISOString();
@@ -2438,28 +2420,6 @@ export function getDueTaskDefinitionsV2(limit = 100): ScheduledTask[] {
     )
     .all(now, limit)
     .map(mapTaskRow);
-}
-
-// Clear every task's run lease (running_until/runner_id) unconditionally.
-// Must be called once at scheduler process startup, before the first
-// getDueTasks() poll: a lease held in the DB can only have been acquired by
-// a runner process that no longer exists (this process just started, and
-// its own in-memory runningTaskIds is freshly cleared too), so any lease
-// still on disk is stale by definition — leaving it in place would hide a
-// crash-interrupted task from getDueTasks() until the lease's absolute
-// expiry, and if that expiry lands past the backfill grace window the
-// interrupted run is silently skipped forever instead of retried.
-export function clearStaleTaskLeases(): number {
-  const result = db
-    .prepare(
-      `
-    UPDATE scheduled_tasks
-    SET running_until = NULL, runner_id = NULL
-    WHERE running_until IS NOT NULL OR runner_id IS NOT NULL
-  `,
-    )
-    .run();
-  return result.changes;
 }
 
 export function claimTaskForRun(
@@ -2500,20 +2460,6 @@ export function updateTaskAfterRun(
     WHERE id = ?
   `,
   ).run(nextRun, now, lastResult, nextRun, id);
-}
-
-// Advance next_run for a task we deliberately did NOT execute (e.g. overdue
-// beyond the backfill grace window). Does not touch last_run, so the task
-// detail view continues to reflect the last *actual* run.
-export function advanceSkippedTask(id: string, nextRun: string | null): void {
-  db.prepare(
-    `
-    UPDATE scheduled_tasks
-	    SET next_run = ?, status = CASE WHEN ? IS NULL THEN 'completed' ELSE status END,
-	        running_until = NULL, runner_id = NULL
-    WHERE id = ?
-  `,
-  ).run(nextRun, nextRun, id);
 }
 
 // Pause a recurring task that just ran but whose schedule produces no next_run

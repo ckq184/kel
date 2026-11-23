@@ -68,6 +68,8 @@ const app = web.createAppForTest({
 
 const TOKEN_WITHOUT_BASE_URL_ERROR =
   '第三方供应商使用 Auth Token 时必须配置 Base URL';
+const NEITHER_BASE_URL_NOR_TOKEN_ERROR =
+  '第三方供应商需要提供 Base URL 或 Auth Token';
 
 function storedProvider(providerId: string) {
   return runtimeConfig.getProviders().find((p) => p.id === providerId);
@@ -262,6 +264,65 @@ describe('provider write routes enforce the third_party base URL rule', () => {
     expect(response.status).toBe(200);
     expect(storedProvider(provider.id)?.anthropicBaseUrl).toBe(
       'https://relay.example.test',
+    );
+  });
+
+  // ISSUE-16 C1（用户拍板补校验）：PATCH/secrets 不得把 third_party 写成
+  // 「Base URL 与 Auth Token 双空」，与 create 口「至少填一项」一致。
+  test('PATCH clearing baseUrl on a token-less third_party provider is rejected (no double-empty)', async () => {
+    const provider = runtimeConfig.createProvider({
+      name: 'tp-baseurl-only',
+      type: 'third_party',
+      anthropicBaseUrl: 'https://gateway.example.test',
+    });
+
+    const response = await patchProvider(provider.id, {
+      anthropicBaseUrl: '   ',
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      error: NEITHER_BASE_URL_NOR_TOKEN_ERROR,
+    });
+    expect(storedProvider(provider.id)?.anthropicBaseUrl).toBe(
+      'https://gateway.example.test',
+    );
+  });
+
+  test('PATCH on a legacy double-empty third_party provider still edits other fields', async () => {
+    const provider = runtimeConfig.createProvider({
+      name: 'tp-legacy-double-empty',
+      type: 'third_party',
+    });
+
+    const response = await patchProvider(provider.id, {
+      anthropicModel: 'claude-sonnet-4-6',
+    });
+
+    expect(response.status).toBe(200);
+    expect(storedProvider(provider.id)?.anthropicModel).toBe(
+      'claude-sonnet-4-6',
+    );
+  });
+
+  test('secrets clearing the only credential of a baseUrl-less third_party provider is rejected', async () => {
+    // 规则上线前的存量数据：third_party 只有 token、没有 Base URL。
+    const provider = runtimeConfig.createProvider({
+      name: 'tp-legacy-token-only',
+      type: 'third_party',
+      anthropicAuthToken: 'legacy-token',
+    });
+
+    const response = await putProviderSecrets(provider.id, {
+      clearAnthropicAuthToken: true,
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      error: NEITHER_BASE_URL_NOR_TOKEN_ERROR,
+    });
+    expect(storedProvider(provider.id)?.anthropicAuthToken).toBe(
+      'legacy-token',
     );
   });
 

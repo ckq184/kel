@@ -2250,6 +2250,27 @@ export function broadcastStreamEvent(
   updateStreamingSnapshot(snapshotJid, event, decision.runId);
 }
 
+/**
+ * ISSUE-16 A(a)：`group_created` 的唯一生产者。不经 Web 的工作区创建路径
+ * （IM `/new` 命令、Agent `register_group` 工具）经 src/index.ts 的
+ * registerGroup 统一出口调用，前端 AppLayout 收到后刷新侧边栏与任务列表。
+ * 只投递给工作区所有者；无所有者（启动期默认组）不广播，避免向其他用户
+ * 泄露工作区名称。
+ */
+export function broadcastGroupCreated(
+  jid: string,
+  folder: string,
+  name: string,
+  ownerUserId: string | null | undefined,
+): void {
+  if (!ownerUserId) return;
+  safeBroadcast(
+    { type: 'group_created', jid, folder, name },
+    false,
+    new Set([ownerUserId]),
+  );
+}
+
 export function broadcastChannelAccountStatus(
   userId: string,
   accountId: string,
