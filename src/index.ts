@@ -274,6 +274,7 @@ import {
 import {
   deliverChannelOutboxItem,
   reconcileChannelOutboxDeliveries,
+  runChannelOutboxRetryPass,
 } from './channel-outbox-delivery.js';
 import {
   semanticChannelOutboxIdentity,
@@ -14882,8 +14883,29 @@ async function main(): Promise<void> {
       'Channel outbox recovered retryable pre-send work',
     );
   }
-  channelReliabilityRecoveryLoop =
-    startChannelReliabilityRecoveryLoop(imManager);
+  // ISSUE-14: once a turn is terminal nobody can re-drive its `retry_wait`
+  // rows, so the recovery loop re-delivers them (text only) right after each
+  // reconciliation pass; the first pass runs immediately after this reconcile.
+  const outboxRetryOwner = `ckqclaw-outbox-worker:${process.pid}`;
+  channelReliabilityRecoveryLoop = startChannelReliabilityRecoveryLoop(
+    imManager,
+    {
+      runImmediately: true,
+      afterPass: () =>
+        runChannelOutboxRetryPass({
+          owner: outboxRetryOwner,
+          // Mirror the live text path: no options object unless native.
+          sendText: (jid, text, options) =>
+            imManager.sendMessage(
+              jid,
+              text,
+              [],
+              options.presentation ? options : undefined,
+            ),
+          isChannelAvailable: (jid) => imManager.isChannelAvailableForJid(jid),
+        }),
+    },
+  );
   unsubscribeChannelReadyRecovery = imManager.onChannelReady(() => {
     void channelReliabilityRecoveryLoop?.trigger();
   });

@@ -1,15 +1,17 @@
 {
-  "task": "issue18-pi-custom-provider-headers - Pi运行时读取ANTHROPIC_CUSTOM_HEADERS（docs/issue18-pi-custom-provider-headers-plan.md）；用户拍板：每行Name: value非法行跳过告警、只透传自定义端点、不加Web表单、会话头固定值",
+  "task": "issue14-channel-outbox-worker - Channel Outbox后台worker（docs/issue14-channel-outbox-worker-plan.md）；用户拍板：只重投text（其余kind转failed+warn）、只认领终态turn的行、并入15s恢复循环、payload异常转failed+warn且created_at超1小时转failed",
   "base": "38da090",
   "allow": [
     ".gatescope.json",
-    "docs/issue18-pi-custom-provider-headers-plan.md",
-    "docs/issues/ISSUE-18-*.md",
+    "docs/issue14-channel-outbox-worker-plan.md",
+    "docs/issues/ISSUE-14-channel-outbox-worker.md",
     "docs/issues/README.md",
-    "container/agent-runner/src/runtime/pi/pi-provider.ts",
-    "container/agent-runner/src/runtime/pi/pi-runtime.ts",
-    "container/agent-runner/src/runtime/types.ts",
-    "container/agent-runner/src/pi-index.ts",
+    "docs/issues/ISSUE-19-wechat-context-token-restart.md",
+    "docs/API.md",
+    "src/channel-reliability-store.ts",
+    "src/channel-outbox-delivery.ts",
+    "src/channel-reliability-recovery.ts",
+    "src/index.ts",
     "tests/**"
   ]
 }

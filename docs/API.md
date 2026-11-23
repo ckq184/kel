@@ -551,11 +551,12 @@ Agent 镜像只由 `main` 分支的 GitHub Actions 构建并发布。该接口�
 `delivered`（需要 `providerMessageId`）或 `failed`；revision 过期返回 409，
 调用方必须重新读取后再决定，不能盲目重试。列表不返回 payload。
 
-另需注意现状：服务重启后处于 `retry_wait` 的 outbox 记录不会被自动重投。启动时只把
-投递租约已过期的 pre-send 行翻转为 `retry_wait`，重投依赖对应 Turn 被新入站消息
-重驱（同一幂等键再次进入投递流程），否则一直滞留，与 `uncertain` 一样需等待 Turn
-重跑或人工处理（自动重投 worker 登记于
-[ISSUE-14](issues/ISSUE-14-channel-outbox-worker.md)）。
+服务重启时，投递租约已过期的 pre-send outbox 行会被翻转为 `retry_wait`。Turn 仍活跃时，
+由同一幂等键再次进入投递流程的 Turn 重投；Turn 已终态后，由挂在 15 秒恢复循环上的后台
+worker 收口：文本按入队时的 payload 重建后重投，图片、文件、卡片和飞书 mutation 无法
+安全重建，转为 `failed`；payload 校验失败或创建超过 1 小时的行同样转为 `failed`，渠道
+暂不可用时保留到下一轮。worker 不处理 `uncertain` 行，也不处理被 `uncertain` 围栏的
+Turn（见 [ISSUE-14](issues/ISSUE-14-channel-outbox-worker.md)）。
 
 问题报告：
 

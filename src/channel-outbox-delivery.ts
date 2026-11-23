@@ -8,11 +8,14 @@ import {
   failChannelOutbox,
   getChannelOutboxItem,
   getUncertainChannelOutboxForTurn,
+  listRetryableChannelOutboxForTerminalTurns,
   markChannelOutboxSending,
   markChannelOutboxUploaded,
   markChannelOutboxUploading,
   reconcileExpiredChannelOutbox,
 } from './channel-reliability-store.js';
+import { syntheticChannelProviderAck } from './channel-outbox-runtime-scope.js';
+import { logger } from './logger.js';
 
 interface ChannelDeliveryReceipt {
   providerMessageId: string;
@@ -396,17 +399,227 @@ export async function deliverChannelOutboxItem(
 /**
  * Run once at startup after transports connect. This pass only flips expired
  * delivery leases to `retry_wait` (pre-send) or `uncertain` — it never
- * delivers anything, and there is no background outbox worker that claims the
- * `retry_wait` rows afterwards. A `retry_wait` row is physically re-delivered
- * only when a turn re-enters `deliverChannelOutboxItem` with the same
- * idempotencyKey (new inbound re-drive or cursor replay); until then it stays
- * stranded, and `uncertain` always waits for a manual resolve. Automatic
- * retry of stranded rows is tracked in
- * docs/issues/ISSUE-14-channel-outbox-worker.md.
+ * delivers anything itself. A `retry_wait` row is physically re-delivered
+ * either when its live turn re-enters `deliverChannelOutboxItem` with the same
+ * idempotencyKey, or — once the turn is terminal — by
+ * `runChannelOutboxRetryPass` on the recovery loop. `uncertain` always waits
+ * for a manual resolve.
  */
 export function reconcileChannelOutboxDeliveries(now?: Date | string): {
   retryable: number;
   uncertain: number;
 } {
   return reconcileExpiredChannelOutbox(now);
+}
+
+/** Rows older than this are failed instead of delivered late (ISSUE-14). */
+export const CHANNEL_OUTBOX_RETRY_MAX_AGE_MS = 60 * 60 * 1_000;
+
+export interface ChannelOutboxRetryWorkerDeps {
+  /** Stable lease owner for this process's worker. */
+  owner: string;
+  sendText(
+    jid: string,
+    text: string,
+    options: { presentation?: 'native' },
+  ): Promise<void>;
+  isChannelAvailable(jid: string): boolean;
+  maxAgeMs?: number;
+  limit?: number;
+  leaseMs?: number;
+  now?: () => Date | string;
+}
+
+export interface ChannelOutboxRetryPassResult {
+  delivered: number;
+  failed: number;
+  uncertain: number;
+  /** Left in `retry_wait` for a later pass (channel unavailable, busy). */
+  skipped: number;
+}
+
+type RebuiltTextPayload = { text: string; presentation?: 'native' };
+
+/**
+ * The text payload is the enqueue-time JSON snapshot written by
+ * `buildInteractionTextOutboxPayload`. There is no runtime schema on the
+ * column, so an old row may not match current code: anything not provably
+ * re-sendable is rejected rather than guessed.
+ */
+function rebuildTextPayload(payload: unknown): RebuiltTextPayload | string {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return 'text payload is not an object';
+  }
+  const record = payload as Record<string, unknown>;
+  if (typeof record.text !== 'string' || !record.text.trim()) {
+    return 'text payload has no non-empty text';
+  }
+  if (record.presentation !== undefined && record.presentation !== 'native') {
+    return `text payload has unsupported presentation ${JSON.stringify(record.presentation)}`;
+  }
+  return record.presentation === 'native'
+    ? { text: record.text, presentation: 'native' }
+    : { text: record.text };
+}
+
+/** Fail a stranded row without sending, through the normal lease CAS. */
+function failStrandedRow(
+  item: ChannelOutboxItem,
+  owner: string,
+  reason: string,
+  now: Date | string,
+): boolean {
+  const claim = claimChannelOutboxById(item.id, owner, 60_000, now);
+  if (!claim) return false;
+  const failed = failChannelOutbox(claim, {
+    error: `Outbox retry worker gave up: ${reason}`,
+    now,
+  });
+  if (failed) {
+    logger.warn(
+      {
+        outboxItemId: item.id,
+        turnRunId: item.turnRunId,
+        kind: item.kind,
+        sourceJid: item.sourceJid,
+        reason,
+      },
+      'Channel outbox retry worker marked a stranded row failed',
+    );
+  }
+  return failed;
+}
+
+/**
+ * One pass of the background outbox worker (ISSUE-14).
+ *
+ * It only takes `retry_wait` rows whose turn is terminal — nobody else can
+ * re-drive them — and never touches `uncertain` rows or any row of a turn
+ * fenced by one. Only `text` can be rebuilt from its persisted payload;
+ * image/file payloads carry no bytes or path and mutations need the in-memory
+ * turn context, so those rows are failed with a warning instead of guessed.
+ * Re-delivery goes through `deliverChannelOutboxItem`, keeping the
+ * idempotency key, lease CAS and `sending` → `uncertain` fencing intact.
+ */
+export async function runChannelOutboxRetryPass(
+  deps: ChannelOutboxRetryWorkerDeps,
+): Promise<ChannelOutboxRetryPassResult> {
+  const result: ChannelOutboxRetryPassResult = {
+    delivered: 0,
+    failed: 0,
+    uncertain: 0,
+    skipped: 0,
+  };
+  const clock = (): Date | string => deps.now?.() ?? new Date();
+  const maxAgeMs = deps.maxAgeMs ?? CHANNEL_OUTBOX_RETRY_MAX_AGE_MS;
+  const candidates = listRetryableChannelOutboxForTerminalTurns(
+    clock(),
+    deps.limit ?? 50,
+  );
+  for (const item of candidates) {
+    const now = clock();
+    const ageMs = new Date(now).getTime() - new Date(item.createdAt).getTime();
+    let rejection: string | null = null;
+    let rebuilt: RebuiltTextPayload | null = null;
+    if (ageMs > maxAgeMs) {
+      rejection = `row is older than ${Math.round(maxAgeMs / 60_000)} minutes`;
+    } else if (item.kind !== 'text') {
+      rejection = `${item.kind} rows cannot be rebuilt from the persisted payload`;
+    } else {
+      const parsed = rebuildTextPayload(item.payload);
+      if (typeof parsed === 'string') rejection = parsed;
+      else rebuilt = parsed;
+    }
+    if (rejection !== null) {
+      if (failStrandedRow(item, deps.owner, rejection, now)) result.failed++;
+      else result.skipped++;
+      continue;
+    }
+    let available: boolean;
+    try {
+      available = deps.isChannelAvailable(item.sourceJid);
+    } catch (error) {
+      logger.warn(
+        { err: error, outboxItemId: item.id, sourceJid: item.sourceJid },
+        'Channel outbox retry worker could not probe channel availability',
+      );
+      available = false;
+    }
+    if (!available) {
+      result.skipped++;
+      continue;
+    }
+    const text = rebuilt!;
+    let outcome: ChannelOutboxDeliveryResult;
+    try {
+      outcome = await deliverOneStrandedText(item, text, deps);
+    } catch (error) {
+      // Post-claim errors are persisted by the state machine itself; anything
+      // thrown here happened before a claim (e.g. the stored payload no longer
+      // matches its hash), so the row is still unclaimed and safe to fail.
+      if (
+        failStrandedRow(
+          item,
+          deps.owner,
+          `payload could not re-enter delivery: ${errorMessage(error)}`,
+          clock(),
+        )
+      ) {
+        result.failed++;
+      } else {
+        result.skipped++;
+      }
+      continue;
+    }
+    if (outcome.status === 'delivered' && !outcome.reused) result.delivered++;
+    else if (outcome.status === 'uncertain') result.uncertain++;
+    else if (outcome.status === 'failed') result.failed++;
+    else result.skipped++;
+  }
+  const acted = result.delivered + result.failed + result.uncertain;
+  logger[acted > 0 ? 'info' : 'debug'](
+    { ...result, candidates: candidates.length },
+    'Channel outbox retry pass completed',
+  );
+  return result;
+}
+
+function deliverOneStrandedText(
+  item: ChannelOutboxItem,
+  text: RebuiltTextPayload,
+  deps: ChannelOutboxRetryWorkerDeps,
+): Promise<ChannelOutboxDeliveryResult> {
+  return deliverChannelOutboxItem({
+    provider: item.provider,
+    accountId: item.accountId,
+    sourceJid: item.sourceJid,
+    chatId: item.chatId,
+    rootId: item.rootId,
+    threadId: item.threadId,
+    turnRunId: item.turnRunId,
+    ordinal: item.ordinal,
+    kind: item.kind,
+    payload: item.payload,
+    idempotencyKey: item.idempotencyKey,
+    owner: deps.owner,
+    leaseMs: deps.leaseMs,
+    now: deps.now,
+    delivery: {
+      mode: 'single',
+      send: async ({ item: claimed }) => {
+        await deps.sendText(
+          item.sourceJid,
+          text.text,
+          text.presentation ? { presentation: text.presentation } : {},
+        );
+        return {
+          providerMessageId: syntheticChannelProviderAck({
+            turnRunId: item.turnRunId,
+            ordinal: item.ordinal,
+            payloadHash: claimed.payloadHash,
+          }),
+        };
+      },
+    },
+  });
 }

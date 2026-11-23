@@ -220,10 +220,19 @@ export async function reconcileChannelReliabilityOnStartup(
  * Re-run reconciliation while the service is live. This closes cards whose
  * exact Bot became ready after startup and reaps execution leases without
  * requiring another process restart. Overlapping ticks are coalesced.
+ *
+ * `afterPass` runs in the same coalesced tick right after reconciliation, so
+ * a turn this pass just interrupted is already terminal when it runs (the
+ * ISSUE-14 outbox retry worker relies on that). Its failure is logged and
+ * never affects reconciliation or the next tick.
  */
 export function startChannelReliabilityRecoveryLoop(
   reconciler: StreamingCardReconciler,
-  options: { intervalMs?: number; runImmediately?: boolean } = {},
+  options: {
+    intervalMs?: number;
+    runImmediately?: boolean;
+    afterPass?: () => Promise<unknown>;
+  } = {},
 ): { trigger(): Promise<void>; stop(): void } {
   const intervalMs = Math.max(1_000, options.intervalMs ?? 15_000);
   const bootBacklogCutoff = new Date(Date.now() - 1).toISOString();
@@ -242,6 +251,14 @@ export function startChannelReliabilityRecoveryLoop(
           { err: error },
           'Live channel reliability reconciliation pass failed',
         );
+      })
+      .then(async () => {
+        if (!options.afterPass || stopped) return;
+        try {
+          await options.afterPass();
+        } catch (error) {
+          logger.error({ err: error }, 'Channel outbox retry pass failed');
+        }
       })
       .finally(() => {
         active = null;
