@@ -1704,6 +1704,39 @@ export function listUncertainChannelOutbox(limit = 100): ChannelOutboxItem[] {
   return rows.map(mapOutbox);
 }
 
+/**
+ * Due `retry_wait` rows nobody can re-drive any more (ISSUE-14 worker input).
+ *
+ * Only rows whose turn is terminal qualify: a live turn still owns its rows
+ * (for example a rate-limited Feishu mutation the model will retry), so the
+ * worker must not race it. Turns fenced by an uncertain sibling are excluded
+ * entirely — no row of such a turn may be sent until an operator resolves it.
+ */
+export function listRetryableChannelOutboxForTerminalTurns(
+  nowInput?: Date | string,
+  limit = 50,
+): ChannelOutboxItem[] {
+  const now = isoNow(nowInput);
+  const bounded = Math.min(Math.max(Math.trunc(limit) || 0, 1), 500);
+  const terminal = TURN_TERMINAL.map(() => '?').join(',');
+  const rows = requireDatabase(database, 'Channel reliability')
+    .prepare(
+      `SELECT o.* FROM channel_outbox o
+       JOIN turn_runs t ON t.id = o.turn_run_id
+       WHERE o.status = 'retry_wait' AND o.available_at <= ?
+         AND o.lease_owner IS NULL
+         AND t.status IN (${terminal})
+         AND NOT EXISTS (
+           SELECT 1 FROM channel_outbox u
+           WHERE u.turn_run_id = o.turn_run_id AND u.status = 'uncertain'
+         )
+       ORDER BY o.available_at, o.turn_run_id, o.ordinal, o.created_at
+       LIMIT ?`,
+    )
+    .all(now, ...TURN_TERMINAL, bounded) as OutboxRow[];
+  return rows.map(mapOutbox);
+}
+
 export function claimNextChannelOutbox(
   owner: string,
   leaseMs: number,
