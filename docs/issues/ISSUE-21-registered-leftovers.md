@@ -2,7 +2,7 @@
 
 | 字段          | 值                                                                                                                                             |
 | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| 状态          | 进行中                                                                                                                                         |
+| 状态          | 已完成                                                                                                                                         |
 | 领取人 / 分支 | `claude/elated-bun-500e1e`                                                                                                                     |
 | 优先级        | P2（A 组）/ P3（B、C 组）                                                                                                                      |
 | 类型          | 汇总：缺陷、掉线逻辑决策、测试与收敛欠账                                                                                                       |
@@ -56,4 +56,31 @@
 
 ## 交付记录
 
-（领取后填写）
+- **分支**：`claude/elated-bun-500e1e`，base `638d0c7`。立项方案见 `docs/issue21-registered-leftovers-plan.md`。
+- **复核**：15 项证据都还成立（行号已漂移，按语义重新定位），没有需要剔除的项。A3 在本地复现；A1 实际有 3 处；B1 另发现同类函数 `claimNextChannelOutbox`。
+- **逐项结论**（用户 2026-11-23 分 A、B、C 三轮拍板，全部按推荐方案）：
+
+| 项  | 结论               | 落地                                                                                                                                                                                                                                                      | 提交      |
+| --- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| A1  | 做                 | `src/im-manager.ts`、`src/im-channel.ts`、`src/feishu.ts` 中飞书能力链路上 3 处“未连接”改抛 `ChannelPreSendRejection`，outbox 行落 `failed`；`tests/feishu-pre-send-rejection.test.ts` 4 条用例，先红后绿                                                 | `7d73060` |
+| A2  | 拆成 ISSUE-23      | 需实机观察 iLink 错误码，本 issue 不改代码                                                                                                                                                                                                                | `88d14c2` |
+| A3  | 做                 | 原因：`scripts/self-test-agent-runner.ts` 导入的两个函数已随 ISSUE-10（`c812578`）删除。删除该脚本、`self-test:agent-runner` 命令和 CI 中的对应步骤；`npm run self-test` 保留为构建加全量测试；契约测试保证 npm 脚本不指向缺失文件，CI 只调用已定义的脚本 | `9781b91` |
+| A4  | 做                 | 日志文案改为 `for IM chat`，并加 `channel` 字段                                                                                                                                                                                                           | `9781b91` |
+| A5  | 拆成 ISSUE-24      | 涉及表单、schema 和存储格式                                                                                                                                                                                                                               | `88d14c2` |
+| B1  | 做（保留并加注释） | `claimNextChannelTurnRun`、`claimNextChannelOutbox` 都有专门测试，属于意图信号，保留；注释写明它们是测试入口，生产按 ID 认领                                                                                                                              | `b6ceae0` |
+| B2  | 拆成 ISSUE-25      | 旧租约簇整体退役涉及 DB 列迁移；本 issue 只在 `claimScheduledRun`、`enqueueIsolatedScheduledTask` 上加注释，指向 ISSUE-25                                                                                                                                 | `b6ceae0` |
+| B3  | 做                 | 删除 2 处完整回复广播（`src/index.ts`、`src/ipc/image-delivery.ts`），保留 notice 警告；`docs/API.md`、`src/types.ts` 和前端注释同步；`tests/agent-notice-broadcast-contract.test.ts` 原先锁定 2 处完整广播，按拍板改为 6 处全部带 notice                 | `b6ceae0` |
+| C1  | 做                 | 新增 `shared/workspace-memory-payload.ts`，经 `make sync-types` 同步到宿主和 runner，两侧删除内联构造；端到端签名用例（runner 签名、宿主校验、篡改和重放都被拒）作为重构前后的行为锚点                                                                    | `5b480d7` |
+| C2  | 不做               | 这种一行表达式本身清楚；全仓约 94 处替换改动面大，容易与并行分支冲突，收益低                                                                                                                                                                              | —         |
+| C3  | 做                 | 同步检查脚本补上 canonical-json、model-suffix 和新增的载荷组；契约测试要求 `shared/` 下每个文件都被同步脚本、检查脚本和 Makefile `_check-sync` 覆盖                                                                                                       | `5b480d7` |
+| C4  | 做                 | 补中文路径用例（仓库显式开启 quotepath）；变异验证：去掉 `-c core.quotepath=false` 后该用例转红                                                                                                                                                           | `fc5ce20` |
+| C5  | 做                 | 新增 `tests/routes-auth-avatar.test.ts`：未知 target 返回 400，且不写文件、不改用户；未登录返回 401。变异验证：去掉 target 校验后 3 条用例全部转红                                                                                                        | `fc5ce20` |
+| C6  | 不做               | 按 CLAUDE.md，Legacy `/api/config/user-im` 只做兼容，新功能走 `/api/channel-accounts`                                                                                                                                                                     | —         |
+| C7  | 不做               | 附件转 `failed` 的行为可以接受，有需求时再开 issue                                                                                                                                                                                                        | —         |
+
+- **验证**：`npm run verify` 6/6 步全绿，总耗时 36.1s，第 4 步 353 个文件、2865 条通过、23 条跳过；`node scripts/check-scope.mjs` 通过，36 个路径都在声明范围内。
+- **偏差**：
+  - 范围扩宽一处：`.gatescope.json` 的 allow 增加 `src/types.ts`，因为 `agent_reply` 载荷类型的注释还在描述已经停止的完整回复广播（理由已写在 `b6ceae0` 的提交信息里）。
+  - `shared/canonical-json.ts` 头注释里“两侧各自构造 payload”的说法，在 C1 之后已不准确。改它要同步三份副本，不在本次声明范围内，所以没改，登记在这里。
+  - B3 改变了对外 WS 行为：第三方客户端如果依赖不带 notice 的 `agent_reply`，将收不到完整回复，需要改为监听 `new_message`。
+- **未做**：合入 main、推送和实机验收由用户决定。A3 要等用户推送 main 之后，看新一次 CI 结果才能最终确认。
