@@ -8,8 +8,27 @@
  * （created/started/completed/failed/steered/compacted）转成 RuntimeEvent。
  */
 import crypto from 'node:crypto';
-import type { EventBus } from '@earendil-works/pi-coding-agent';
+import type {
+  EventBus,
+  ExtensionFactory,
+} from '@earendil-works/pi-coding-agent';
 import type { RuntimeEventListener } from '../types.js';
+
+/**
+ * ISSUE-22: under a custom endpoint every subagent inherits the parent model.
+ * An explicit `model` on the Agent tool call would otherwise resolve against
+ * Pi's built-in catalog (or fail as "model not found"), so it is dropped
+ * before pi-subagents reads the arguments. Pi lets `tool_call` handlers
+ * rewrite arguments by mutating `event.input` in place.
+ */
+export function createSubagentInheritModelExtension(): ExtensionFactory {
+  return (pi) => {
+    pi.on('tool_call', (event) => {
+      if (event.toolName !== 'Agent') return;
+      Reflect.deleteProperty(event.input as Record<string, unknown>, 'model');
+    });
+  };
+}
 
 export type SubAgentSpec = {
   type: string;

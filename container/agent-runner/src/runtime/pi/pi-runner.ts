@@ -260,13 +260,34 @@ function toStreamEvent(
         taskStatus: event.lifecycle,
         ...(taskDescription ? { taskDescription } : {}),
         ...(subagentType ? { subagentType } : {}),
-        taskSummary: event.result || event.error,
+        taskSummary:
+          event.result ||
+          (event.lifecycle === 'failed' && event.error
+            ? describeSubagentFailure(event.error)
+            : event.error),
         sessionId: event.sessionId,
       };
     }
     case 'result':
       return undefined;
   }
+}
+
+const SUBAGENT_AUTH_STATUS_RE = /^\s*(?:Error:\s*)?(401|403)\b/;
+const SUBAGENT_AUTH_BODY_RE =
+  /"type"\s*:\s*"(?:authentication_error|permission_error)"|invalid x-api-key/i;
+const SUBAGENT_RAW_ERROR_LOG_LIMIT = 300;
+
+/**
+ * ISSUE-22: a subagent auth failure surfaces on the card task row as the raw
+ * provider JSON. Replace it with a short hint; other errors pass through.
+ * The raw text is logged by the caller and still reaches the main Agent
+ * through the Agent tool result.
+ */
+export function describeSubagentFailure(error: string): string {
+  const status = SUBAGENT_AUTH_STATUS_RE.exec(error)?.[1];
+  if (!status && !SUBAGENT_AUTH_BODY_RE.test(error)) return error;
+  return `子代理鉴权失败${status ? `（${status}）` : ''}：请检查 Provider 凭据与端点配置`;
 }
 
 function emitRuntimeEvent(
@@ -277,6 +298,18 @@ function emitRuntimeEvent(
   if (event.type === 'result') {
     resultState.result = event.result;
     return;
+  }
+  if (
+    event.type === 'subagent' &&
+    event.lifecycle === 'failed' &&
+    !event.result &&
+    event.error &&
+    describeSubagentFailure(event.error) !== event.error
+  ) {
+    // Provider error bodies carry no credentials; cap the length anyway.
+    options.log(
+      `Pi subagent ${event.agentId ?? 'unknown'} auth failure: ${event.error.slice(0, SUBAGENT_RAW_ERROR_LOG_LIMIT)}`,
+    );
   }
   const streamEvent = toStreamEvent(event, options.containerInput);
   if (streamEvent) {

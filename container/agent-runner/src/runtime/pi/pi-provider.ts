@@ -6,6 +6,8 @@ export type PiProviderResolution = {
   providerId: string;
   modelId: string;
   model: Model<any>;
+  /** True when the model is served by a registered custom endpoint. */
+  custom: boolean;
 };
 
 export type CustomHeaderWarning = { line: number; message: string };
@@ -81,6 +83,24 @@ export function escapePiConfigLiteral(value: string): string {
   return escaped.startsWith('!') ? `$${escaped}` : escaped;
 }
 
+/**
+ * ISSUE-22: under a custom endpoint the runner environment still carries the
+ * endpoint's key in ANTHROPIC_API_KEY, so Pi's env discovery marks the
+ * built-in `anthropic` provider available. pi-subagents resolves agent-type
+ * models (Explore pins `anthropic/claude-haiku-4-5`) only among available
+ * models and falls back to the parent model otherwise. Narrowing this
+ * runtime's availability snapshot to the custom provider keeps subagents —
+ * which share the parent's ModelRuntime — on the custom endpoint.
+ */
+export function restrictAvailableModelsToProvider(
+  modelRuntime: ModelRuntime,
+  providerId: string,
+): void {
+  const readSnapshot = modelRuntime.getAvailableSnapshot.bind(modelRuntime);
+  modelRuntime.getAvailableSnapshot = () =>
+    readSnapshot().filter((model) => model.provider === providerId);
+}
+
 function splitModelRef(value: string): { providerId: string; modelId: string } {
   const slash = value.indexOf('/');
   if (slash <= 0 || slash === value.length - 1) {
@@ -143,6 +163,7 @@ export async function resolvePiProvider(
       providerId: defaultModel.provider,
       modelId: defaultModel.id,
       model: withContextWindow(defaultModel),
+      custom: false,
     };
   }
   const split = splitModelRef(rawModel || 'claude-sonnet');
@@ -188,6 +209,7 @@ export async function resolvePiProvider(
         },
       ],
     });
+    restrictAvailableModelsToProvider(modelRuntime, providerId);
   } else if (input.apiKey?.trim() && providerId === 'anthropic') {
     await modelRuntime.setRuntimeApiKey('anthropic', input.apiKey.trim());
   }
@@ -208,5 +230,6 @@ export async function resolvePiProvider(
     providerId,
     modelId: split.modelId,
     model: withContextWindow(model),
+    custom,
   };
 }
