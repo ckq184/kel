@@ -68,7 +68,6 @@ describe('Agent profile frontend write contract', () => {
       promptVersionsByProfile: {},
       loading: false,
       profilesError: null,
-      error: null,
     });
   });
 
