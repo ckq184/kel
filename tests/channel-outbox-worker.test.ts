@@ -36,6 +36,7 @@ const db = await import('../src/db.js');
 const store = await import('../src/channel-reliability-store.js');
 const delivery = await import('../src/channel-outbox-delivery.js');
 const runtimeScope = await import('../src/channel-outbox-runtime-scope.js');
+const { default: Database } = await import('better-sqlite3');
 
 beforeAll(() => db.initDatabase());
 afterAll(() => {
@@ -470,5 +471,72 @@ describe('channel outbox retry worker', () => {
     const again = makeDeps(addMs(at, 30_000));
     await delivery.runChannelOutboxRetryPass(again.deps);
     expect(again.sendText).not.toHaveBeenCalled();
+  });
+  test('an error for one row neither aborts the pass nor strands the rest', async () => {
+    const at = '2026-11-23T10:00:00.000Z';
+    // Row 1: its stored hash no longer matches the payload (an old row written
+    // by different serialization) — re-entering the state machine throws an
+    // idempotency conflict before any claim.
+    const broken = await strandRow({
+      name: 'hash-drift',
+      chat: 'chat-hash-drift',
+      kind: 'text',
+      payload: { text: '哈希漂移' },
+      at,
+    });
+    const raw = new Database(path.join(storeDir, 'messages.db'));
+    raw
+      .prepare('UPDATE channel_outbox SET payload_hash = ? WHERE id = ?')
+      .run('0'.repeat(64), broken.row.id);
+    raw.close();
+    // Row 2: the availability probe itself throws.
+    const probeFails = await strandRow({
+      name: 'probe-throws',
+      chat: 'chat-probe-throws',
+      kind: 'text',
+      payload: { text: '探测异常' },
+      at,
+    });
+    // Row 3: healthy.
+    const healthy = await strandRow({
+      name: 'healthy-after-errors',
+      chat: 'chat-healthy',
+      kind: 'text',
+      payload: { text: '正常行' },
+      at,
+    });
+    for (const item of [broken, probeFails, healthy]) {
+      store.interruptChannelTurnRunById(item.turnRunId, 'restart', at);
+    }
+    const { deps, sendText, isChannelAvailable } = makeDeps(addMs(at, 5_000));
+    isChannelAvailable.mockImplementation((jid: string) => {
+      if (jid === probeFails.route.sourceJid) throw new Error('probe down');
+      return true;
+    });
+    const result = await delivery.runChannelOutboxRetryPass(deps);
+    expect(result).toEqual({
+      delivered: 1,
+      failed: 1,
+      uncertain: 0,
+      skipped: 1,
+    });
+    expect(sendText).toHaveBeenCalledTimes(1);
+    expect(sendText).toHaveBeenCalledWith(
+      healthy.route.sourceJid,
+      '正常行',
+      {},
+    );
+    const brokenAfter = store.getChannelOutboxItem(broken.row.id)!;
+    expect(brokenAfter.status).toBe('failed');
+    expect(brokenAfter.error).toMatch(/payload/i);
+    expect(store.getChannelOutboxItem(probeFails.row.id)).toMatchObject({
+      status: 'retry_wait',
+      attempt: 1,
+    });
+    // Clean up: once the probe recovers the row is delivered.
+    await delivery.runChannelOutboxRetryPass(makeDeps(addMs(at, 20_000)).deps);
+    expect(store.getChannelOutboxItem(probeFails.row.id)?.status).toBe(
+      'delivered',
+    );
   });
 });

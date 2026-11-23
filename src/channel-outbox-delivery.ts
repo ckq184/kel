@@ -535,44 +535,42 @@ export async function runChannelOutboxRetryPass(
       else result.skipped++;
       continue;
     }
-    if (!deps.isChannelAvailable(item.sourceJid)) {
+    let available: boolean;
+    try {
+      available = deps.isChannelAvailable(item.sourceJid);
+    } catch (error) {
+      logger.warn(
+        { err: error, outboxItemId: item.id, sourceJid: item.sourceJid },
+        'Channel outbox retry worker could not probe channel availability',
+      );
+      available = false;
+    }
+    if (!available) {
       result.skipped++;
       continue;
     }
     const text = rebuilt!;
-    const outcome = await deliverChannelOutboxItem({
-      provider: item.provider,
-      accountId: item.accountId,
-      sourceJid: item.sourceJid,
-      chatId: item.chatId,
-      rootId: item.rootId,
-      threadId: item.threadId,
-      turnRunId: item.turnRunId,
-      ordinal: item.ordinal,
-      kind: item.kind,
-      payload: item.payload,
-      idempotencyKey: item.idempotencyKey,
-      owner: deps.owner,
-      leaseMs: deps.leaseMs,
-      now: deps.now,
-      delivery: {
-        mode: 'single',
-        send: async ({ item: claimed }) => {
-          await deps.sendText(
-            item.sourceJid,
-            text.text,
-            text.presentation ? { presentation: text.presentation } : {},
-          );
-          return {
-            providerMessageId: syntheticChannelProviderAck({
-              turnRunId: item.turnRunId,
-              ordinal: item.ordinal,
-              payloadHash: claimed.payloadHash,
-            }),
-          };
-        },
-      },
-    });
+    let outcome: ChannelOutboxDeliveryResult;
+    try {
+      outcome = await deliverOneStrandedText(item, text, deps);
+    } catch (error) {
+      // Post-claim errors are persisted by the state machine itself; anything
+      // thrown here happened before a claim (e.g. the stored payload no longer
+      // matches its hash), so the row is still unclaimed and safe to fail.
+      if (
+        failStrandedRow(
+          item,
+          deps.owner,
+          `payload could not re-enter delivery: ${errorMessage(error)}`,
+          clock(),
+        )
+      ) {
+        result.failed++;
+      } else {
+        result.skipped++;
+      }
+      continue;
+    }
     if (outcome.status === 'delivered' && !outcome.reused) result.delivered++;
     else if (outcome.status === 'uncertain') result.uncertain++;
     else if (outcome.status === 'failed') result.failed++;
@@ -584,4 +582,44 @@ export async function runChannelOutboxRetryPass(
     'Channel outbox retry pass completed',
   );
   return result;
+}
+
+function deliverOneStrandedText(
+  item: ChannelOutboxItem,
+  text: RebuiltTextPayload,
+  deps: ChannelOutboxRetryWorkerDeps,
+): Promise<ChannelOutboxDeliveryResult> {
+  return deliverChannelOutboxItem({
+    provider: item.provider,
+    accountId: item.accountId,
+    sourceJid: item.sourceJid,
+    chatId: item.chatId,
+    rootId: item.rootId,
+    threadId: item.threadId,
+    turnRunId: item.turnRunId,
+    ordinal: item.ordinal,
+    kind: item.kind,
+    payload: item.payload,
+    idempotencyKey: item.idempotencyKey,
+    owner: deps.owner,
+    leaseMs: deps.leaseMs,
+    now: deps.now,
+    delivery: {
+      mode: 'single',
+      send: async ({ item: claimed }) => {
+        await deps.sendText(
+          item.sourceJid,
+          text.text,
+          text.presentation ? { presentation: text.presentation } : {},
+        );
+        return {
+          providerMessageId: syntheticChannelProviderAck({
+            turnRunId: item.turnRunId,
+            ordinal: item.ordinal,
+            payloadHash: claimed.payloadHash,
+          }),
+        };
+      },
+    },
+  });
 }
