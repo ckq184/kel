@@ -35,6 +35,11 @@
  * future out-of-band aux channel (e.g. a secondary message or sidebar card)
  * can be wired in without reconstructing the tracking logic. `scheduleAuxFlush`
  * is deliberately a no-op; see the comment at its definition.
+ *
+ * Decision record: ISSUE-08 skipped deleting the zero-reference members
+ * (`lastAuxFlushTime`, `AUX_FLUSH_INTERVAL`, `buildAuxPrefix`) as an intent
+ * signal; ISSUE-16 C3 (user decision, 2026-11-23) confirmed keeping them
+ * dormant. Do not delete them as dead code without a new user decision.
  */
 
 import { logger } from './logger.js';
