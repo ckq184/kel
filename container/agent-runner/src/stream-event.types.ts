@@ -379,22 +379,8 @@ export interface StreamEvent {
   taskStatus?: string;
   /** 任务结果摘要。 */
   taskSummary?: string;
-  /** SDK task discriminant, e.g. `local_workflow` or `subagent`. */
-  taskType?: string;
-  /** Claude Code Workflow meta.name (only present for workflow tasks). */
-  workflowName?: string;
   /** 子代理类型标识。 */
   subagentType?: string;
-  /** 最近一次工具调用的名称（任务进度类事件携带）。 */
-  lastToolName?: string;
-  /** SDK 任务的累计用量（token / 工具调用次数 / 时长）。 */
-  sdkTaskUsage?: {
-    totalTokens: number;
-    toolUses: number;
-    durationMs: number;
-  };
-  /** 是否协作型（teammate）SDK 任务——前端据此跳过普通后台任务的 stale 计时等处理。 */
-  isTeammate?: boolean;
   /** 工具完整入参。 */
   toolInput?: Record<string, unknown>;
   /** Token usage data emitted at query completion */

@@ -132,7 +132,6 @@ export function feedStreamEventToCard(
           ...(se.taskDescription ? { title: se.taskDescription } : {}),
           status: terminalStatus,
           subagentType: se.subagentType,
-          lastToolName: se.lastToolName,
           summary: se.summary || se.taskSummary,
         });
         if (terminalStatus === 'running') {

@@ -294,11 +294,6 @@ function SdkTaskRuntimeBlock({
         <div className="border-t border-border px-3 py-2 space-y-2">
           {task.latestSummary && (
             <div className="text-[13px] text-foreground/75 whitespace-pre-wrap break-words">
-              {task.lastToolName && (
-                <span className="text-muted-foreground">
-                  [{task.lastToolName}]{' '}
-                </span>
-              )}
               {task.latestSummary}
             </div>
           )}

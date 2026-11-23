@@ -82,3 +82,39 @@ describe('ISSUE-17 T3：isNested 与 elapsedSeconds 连消费分支下线', () =
     );
   });
 });
+
+describe('ISSUE-17 T4：taskType / workflowName / sdkTaskUsage / lastToolName / isTeammate 下线', () => {
+  const ids = [
+    'taskType',
+    'workflowName',
+    'sdkTaskUsage',
+    'lastToolName',
+    'isTeammate',
+  ];
+
+  test('信封不再声明这五个任务字段', () => {
+    const envelope = streamEventInterface();
+    for (const id of ids) {
+      expect(envelope, id).not.toMatch(new RegExp(`\\b${id}\\b`));
+    }
+  });
+
+  test('快照、feeder、飞书卡片、Web store 与 StreamingDisplay 不再消费', () => {
+    expectAbsent(
+      [
+        'src/web.ts',
+        'src/stream-card-feeder.ts',
+        'src/feishu-streaming-card.ts',
+        'web/src/stores/chat.ts',
+        'web/src/components/chat/StreamingDisplay.tsx',
+      ],
+      ids,
+    );
+  });
+
+  test('快照与 Web 任务状态不再保存任务用量 usage', () => {
+    for (const file of ['src/web.ts', 'web/src/stores/chat.ts']) {
+      expect(read(file), file).not.toMatch(/usage\?: StreamEvent\['/);
+    }
+  });
+});

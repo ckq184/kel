@@ -440,7 +440,6 @@ interface TaskRunState {
   title: string;
   status: 'running' | 'completed' | 'error' | 'backgrounded';
   subagentType?: string;
-  lastToolName?: string;
   summary?: string;
   updatedAt: number;
 }
@@ -579,11 +578,10 @@ function buildAuxiliaryElements(aux: AuxiliaryState): {
       const type = task.subagentType
         ? ` <font color='grey'>${task.subagentType}</font>`
         : '';
-      const last = task.lastToolName ? ` [${task.lastToolName}]` : '';
       const summary = task.summary
         ? `\n  <font color='grey'>${task.summary.slice(0, 160)}</font>`
         : '';
-      return `${icon} **${task.title.slice(0, 80)}**${type}${last}${summary}`;
+      return `${icon} **${task.title.slice(0, 80)}**${type}${summary}`;
     });
     before.push({
       tag: 'markdown',
@@ -2187,7 +2185,6 @@ export class StreamingCardController {
       title: patch.title || existing?.title || 'Task',
       status: patch.status || existing?.status || 'running',
       subagentType: patch.subagentType ?? existing?.subagentType,
-      lastToolName: patch.lastToolName ?? existing?.lastToolName,
       summary: patch.summary ?? existing?.summary,
       updatedAt: Date.now(),
     };
@@ -2822,13 +2819,10 @@ export class StreamingCardController {
               const type = task.subagentType
                 ? ` <font color='grey'>${task.subagentType}</font>`
                 : '';
-              const last = task.lastToolName
-                ? ` <font color='grey'>[${task.lastToolName}]</font>`
-                : '';
               const summary = task.summary
                 ? `\n  <font color='grey'>${task.summary.slice(0, 180)}</font>`
                 : '';
-              return `<text_tag color='${tagColor}'>${tagText}</text_tag> **${task.title.slice(0, 80)}**${type}${last}${summary}`;
+              return `<text_tag color='${tagColor}'>${tagText}</text_tag> **${task.title.slice(0, 80)}**${type}${summary}`;
             })
             .join('\n')
         : "<font color='grey'>暂无子任务</font>";
