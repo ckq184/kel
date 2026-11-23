@@ -49,11 +49,12 @@
 | [ISSUE-09](ISSUE-09-dead-code-batch2-billing-and-db.md)         | 死代码批 2：billing 残留与 DB 死表死列迁移               | P2     | 07（仅 3 个列）     | 部分                 | 已完成 |
 | [ISSUE-10](ISSUE-10-dead-code-batch3-legacy-consumers.md)       | 死代码批 3：Claude SDK 遗留消费端与无人消费的链路        | P2     | 02、03、04          | 部分                 | 已完成 |
 | [ISSUE-11](ISSUE-11-compat-and-duplicate-convergence.md)        | 兼容层下线与重复实现收敛                                 | P3     | 06                  | **是**               | 已完成 |
-| [ISSUE-12](ISSUE-12-structural-refactor.md)                     | 结构重构：镜像函数收敛与巨型函数拆分                     | P3     | 02、03、05、08、10  | **是**（已三项拍板） | 进行中 |
+| [ISSUE-12](ISSUE-12-structural-refactor.md)                     | 结构重构：镜像函数收敛与巨型函数拆分                     | P3     | 02、03、05、08、10  | **是**（已三项拍板） | 已完成 |
 | [ISSUE-13](ISSUE-13-docs-drift-and-regression-contracts.md)     | 文档漂移修正与防回归契约测试                             | P3     | 04（仅文档部分）    | 否                   | 已完成 |
 | [ISSUE-14](ISSUE-14-channel-outbox-worker.md)                   | Channel Outbox 后台 worker：重启后 retry_wait 自动重投   | P2     | 无                  | **是**               | 待领取 |
 | [ISSUE-15](ISSUE-15-windows-test-compat.md)                     | Windows 测试兼容性：CRLF 源码锚点与路径分隔符归一        | P1     | 无                  | 否                   | 已完成 |
 | [ISSUE-16](ISSUE-16-r2-closeout-leftovers.md)                   | R2 收尾遗留：group_created 掉线逻辑、待决策项与零散清理  | P2     | 无                  | **是**               | 进行中 |
+| [ISSUE-17](ISSUE-17-stream-event-consumer-only-fields.md)       | StreamEvent 只有消费者的字段：逐字段决定补生产者还是下线 | P3     | 无                  | **是**               | 待领取 |
 
 状态取值：待领取、进行中、待用户决策、已完成、已取消。
 
