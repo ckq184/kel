@@ -55,7 +55,7 @@
 | [ISSUE-15](ISSUE-15-windows-test-compat.md)                     | Windows 测试兼容性：CRLF 源码锚点与路径分隔符归一          | P1     | 无                  | 否                   | 已完成 |
 | [ISSUE-16](ISSUE-16-r2-closeout-leftovers.md)                   | R2 收尾遗留：group_created 掉线逻辑、待决策项与零散清理    | P2     | 无                  | **是**               | 已完成 |
 | [ISSUE-17](ISSUE-17-stream-event-consumer-only-fields.md)       | StreamEvent 只有消费者的字段：逐字段决定补生产者还是下线   | P3     | 无                  | **是**               | 待领取 |
-| [ISSUE-18](ISSUE-18-pi-custom-provider-headers.md)              | Pi 运行时读取 ANTHROPIC_CUSTOM_HEADERS：自定义供应商请求头 | P1     | 无                  | **是**（已四项拍板） | 进行中 |
+| [ISSUE-18](ISSUE-18-pi-custom-provider-headers.md)              | Pi 运行时读取 ANTHROPIC_CUSTOM_HEADERS：自定义供应商请求头 | P1     | 无                  | **是**（已四项拍板） | 已完成 |
 
 状态取值：待领取、进行中、待用户决策、已完成、已取消。
 
