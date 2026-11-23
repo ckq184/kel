@@ -2,12 +2,6 @@
 
 const MAX_TOASTS = 5;
 let container: HTMLDivElement | null = null;
-const BACKGROUND_TASK_NOTICE_TTL_MS = 15_000;
-const OWNER_KEY = 'ckqclaw:bg-task-notice-owner';
-const OWNER_STALE_MS = 120_000;
-const TAB_ID = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-let ownerTrackingBound = false;
-let lastBackgroundTaskNotice: { taskId: string; at: number } | null = null;
 
 function getContainer(): HTMLDivElement {
   if (container && document.body.contains(container)) return container;
@@ -100,64 +94,6 @@ export function notifyIfHidden(title: string, body?: string): void {
   }
 }
 
-function claimOwnershipIfVisible(): boolean {
-  if (typeof window === 'undefined' || typeof document === 'undefined')
-    return true;
-  if (document.visibilityState !== 'visible') return false;
-  if (typeof document.hasFocus === 'function' && !document.hasFocus())
-    return false;
-  try {
-    window.localStorage.setItem(
-      OWNER_KEY,
-      JSON.stringify({ tabId: TAB_ID, at: Date.now() }),
-    );
-  } catch {
-    // Fall back to single-tab behavior if storage becomes unavailable mid-session.
-  }
-  return true;
-}
-
-function bindOwnerTracking(): void {
-  if (
-    ownerTrackingBound ||
-    typeof window === 'undefined' ||
-    typeof document === 'undefined'
-  )
-    return;
-  ownerTrackingBound = true;
-
-  claimOwnershipIfVisible();
-  window.addEventListener('focus', claimOwnershipIfVisible);
-  document.addEventListener('visibilitychange', claimOwnershipIfVisible);
-}
-
-function isNoticeOwner(): boolean {
-  if (typeof window === 'undefined' || typeof document === 'undefined')
-    return true;
-  bindOwnerTracking();
-
-  let raw: string | null = null;
-  try {
-    raw = window.localStorage.getItem(OWNER_KEY);
-  } catch {
-    return true;
-  }
-  if (!raw) return claimOwnershipIfVisible();
-
-  try {
-    const parsed = JSON.parse(raw) as { tabId?: unknown; at?: unknown };
-    const ownerTabId = typeof parsed.tabId === 'string' ? parsed.tabId : '';
-    const ownerAt = typeof parsed.at === 'number' ? parsed.at : 0;
-    if (!ownerTabId) return claimOwnershipIfVisible();
-    if (Date.now() - ownerAt > OWNER_STALE_MS) {
-      return claimOwnershipIfVisible();
-    }
-    return ownerTabId === TAB_ID;
-  } catch {
-    return claimOwnershipIfVisible();
-  }
-}
-
 /** One-time prompt to request desktop notification permission. */
 let notificationPromptShown = false;
 
@@ -188,20 +124,4 @@ export function showNotificationPromptToast(): void {
   el.appendChild(btn);
 
   setTimeout(dismiss, 12000);
-}
-
-export function shouldEmitBackgroundTaskNotice(taskId: string): boolean {
-  const now = Date.now();
-  if (
-    lastBackgroundTaskNotice &&
-    lastBackgroundTaskNotice.taskId === taskId &&
-    now - lastBackgroundTaskNotice.at < BACKGROUND_TASK_NOTICE_TTL_MS
-  ) {
-    return false;
-  }
-
-  if (!isNoticeOwner()) return false;
-
-  lastBackgroundTaskNotice = { taskId, at: now };
-  return true;
 }
