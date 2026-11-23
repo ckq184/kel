@@ -37,6 +37,7 @@ import { resolveAgentThinkingLevel } from './pi-settings.js';
 import { resolveClaudeProviderRuntime } from './provider-runtime.js';
 import { resolveAgentRuntimeKind } from './runtime-config.js';
 import { adaptClaudeMcpToolsToPi } from './runtime/pi/pi-tools.js';
+import { parseCustomHeaders } from './runtime/pi/pi-provider.js';
 import { PiRuntimeAdapter } from './runtime/pi/pi-runtime.js';
 import { runPiQueryAttempt } from './runtime/pi/pi-runner.js';
 import { stampStreamEventIdentity } from './stream-stamp.js';
@@ -332,6 +333,16 @@ async function runTurn(
     namespace: 'mcp__ckqclaw',
   });
   const provider = resolveClaudeProviderRuntime(process.env);
+  // ISSUE-18: Claude Code-style `Name: value` lines. Invalid lines are skipped
+  // with a warning that names the line only, never the (possibly secret) value.
+  const customHeaders = parseCustomHeaders(
+    process.env.ANTHROPIC_CUSTOM_HEADERS,
+  );
+  for (const warning of customHeaders.warnings) {
+    logWarn(
+      `ANTHROPIC_CUSTOM_HEADERS line ${warning.line} skipped: ${warning.message}`,
+    );
+  }
   const runtime = new PiRuntimeAdapter();
   activeInputTurnId =
     latestIpcDeliveryId(initialMessages) || input.turnId || generateTurnId();
@@ -364,6 +375,8 @@ async function runTurn(
           provider.model,
           provider.declaredContextWindow,
         ),
+        // ISSUE-18: only custom endpoint registrations consume these.
+        headers: customHeaders.headers,
       },
       // ISSUE-04 ③: effort → thinkingLevel. Agent-level wins, the provider
       // env is the fallback, undefined defers to Pi's own default.
