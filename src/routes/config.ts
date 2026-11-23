@@ -917,6 +917,18 @@ configRoutes.patch(
         ) {
           throw new Error('第三方供应商使用 Auth Token 时必须配置 Base URL');
         }
+        // ISSUE-16 C1（用户拍板补校验）：无 token 的 third_party 不得被 PATCH
+        // 清空 Base URL 而进入「Base URL 与 Auth Token 双空」——create 口的
+        // 「至少填一项」规则。只拦进入双空的写入；存量双空脏数据编辑其他
+        // 字段不受影响。
+        if (
+          previous.type === 'third_party' &&
+          !previous.anthropicAuthToken.trim() &&
+          !!previous.anthropicBaseUrl.trim() &&
+          !mergedBaseUrl.trim()
+        ) {
+          throw new Error('第三方供应商需要提供 Base URL 或 Auth Token');
+        }
         const changedFields = Object.keys(validation.data).map(
           (k) => `${k}:updated`,
         );
@@ -1068,6 +1080,23 @@ configRoutes.put(
           !previous.anthropicBaseUrl.trim()
         ) {
           throw new Error('第三方供应商使用 Auth Token 时必须配置 Base URL');
+        }
+        // ISSUE-16 C1（用户拍板补校验）：secrets 口清空 token 不得让无 Base
+        // URL 的 third_party 进入「双空」（create 口「至少填一项」规则）；
+        // 只拦进入双空的写入，存量双空数据不受影响。
+        const mergedAuthToken =
+          validation.data.anthropicAuthToken !== undefined
+            ? incomingAuthToken
+            : validation.data.clearAnthropicAuthToken
+              ? ''
+              : previous.anthropicAuthToken.trim();
+        if (
+          previous.type === 'third_party' &&
+          !previous.anthropicBaseUrl.trim() &&
+          !!previous.anthropicAuthToken.trim() &&
+          !mergedAuthToken
+        ) {
+          throw new Error('第三方供应商需要提供 Base URL 或 Auth Token');
         }
         const changedFields: string[] = [];
         if (validation.data.anthropicAuthToken !== undefined)
