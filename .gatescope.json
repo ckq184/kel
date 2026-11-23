@@ -1,9 +1,24 @@
 {
-  "task": "issue21-register - 登记ISSUE-21汇总各issue交付记录中未立项的零散遗留（仅新建issue文件与README索引行，不改代码）；用户拍板把未立项的遗留汇总成ISSUE-21",
-  "base": "ec7a6c9",
+  "task": "issue17-stream-event-consumer-only-fields - StreamEvent只有消费者的字段逐字段落地（docs/issue17-stream-event-consumer-only-fields-plan.md）；用户拍板：messageUuid保留登记、subagentType补生产者、usage分片/isNested/elapsedSeconds/sdkTaskUsage/taskType/workflowName/lastToolName/isTeammate连消费分支下线、isSynthetic删除",
+  "base": "023cae9",
   "allow": [
     ".gatescope.json",
-    "docs/issues/ISSUE-21-registered-leftovers.md",
-    "docs/issues/README.md"
+    "docs/issue17-stream-event-consumer-only-fields-plan.md",
+    "docs/issues/ISSUE-17-stream-event-consumer-only-fields.md",
+    "docs/issues/README.md",
+    "shared/stream-event.ts",
+    "src/stream-event.types.ts",
+    "web/src/stream-event.types.ts",
+    "container/agent-runner/src/stream-event.types.ts",
+    "container/agent-runner/src/runtime/pi/pi-runner.ts",
+    "src/index.ts",
+    "src/web.ts",
+    "src/stream-card-feeder.ts",
+    "src/feishu-streaming-card.ts",
+    "src/feishu-cards/sections.ts",
+    "web/src/stores/chat.ts",
+    "web/src/components/chat/ToolActivityCard.tsx",
+    "web/src/components/chat/StreamingDisplay.tsx",
+    "tests/**"
   ]
 }
