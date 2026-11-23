@@ -340,8 +340,6 @@ export interface StreamEvent {
   sessionId?: string;
   /** SDK message uuid if known. */
   messageUuid?: string;
-  /** Reserved — whether this event was synthesized locally rather than emitted directly by SDK semantics. */
-  isSynthetic?: boolean;
   /** UI priority: primary is surfaced inline, detail in trace panels, debug in developer trace. */
   displayLevel?: StreamDisplayLevel;
   /** 文本载荷（流式增量或通知正文）。 */
@@ -407,10 +405,6 @@ export interface StreamEvent {
   usage?: {
     /** Stable logical run ID used to make usage analytics idempotent. */
     eventId?: string;
-    /** Position inside one result's per-message ledger batch (0-based). */
-    batchIndex?: number;
-    /** 本批分片的分母（与 batchIndex 配合表达 N/M 中的 M）。 */
-    batchCount?: number;
     /** 输入 token 数。 */
     inputTokens: number;
     /** 输出 token 数。 */

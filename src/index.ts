@@ -975,55 +975,6 @@ const activeImReplyRoutes = new Map<string, string | null>();
 // 外迁至 ./host-state.ts（防 ipc/* 正向 import 成环）；此处经同名 import
 // 引用，全部调用点不变。
 
-// ── usage 账本批合并工具 ──
-// Ledger 分片事件（ISSUE-10 前的挂起合并语义已随截断链下线）按批累计合并，
-// 供迟到 usage 补丁与批内汇总使用（与 StreamEvent['usage'] 同形）。
-type HeldUsageTotals = NonNullable<StreamEvent['usage']>;
-function mergeHeldUsage(
-  base: HeldUsageTotals | null,
-  next: HeldUsageTotals,
-): HeldUsageTotals {
-  if (!base)
-    return {
-      ...next,
-      modelUsage: next.modelUsage ? { ...next.modelUsage } : undefined,
-    };
-  const mergedModel: NonNullable<HeldUsageTotals['modelUsage']> = {
-    ...(base.modelUsage || {}),
-  };
-  for (const [model, mu] of Object.entries(next.modelUsage || {})) {
-    const prev = mergedModel[model];
-    mergedModel[model] = prev
-      ? {
-          inputTokens: (prev.inputTokens || 0) + (mu.inputTokens || 0),
-          outputTokens: (prev.outputTokens || 0) + (mu.outputTokens || 0),
-          cacheReadInputTokens:
-            (prev.cacheReadInputTokens || 0) + (mu.cacheReadInputTokens || 0),
-          cacheCreationInputTokens:
-            (prev.cacheCreationInputTokens || 0) +
-            (mu.cacheCreationInputTokens || 0),
-          reasoningTokens:
-            (prev.reasoningTokens || 0) + (mu.reasoningTokens || 0),
-          costUSD: (prev.costUSD || 0) + (mu.costUSD || 0),
-        }
-      : { ...mu };
-  }
-  return {
-    inputTokens: (base.inputTokens || 0) + (next.inputTokens || 0),
-    outputTokens: (base.outputTokens || 0) + (next.outputTokens || 0),
-    cacheReadInputTokens:
-      (base.cacheReadInputTokens || 0) + (next.cacheReadInputTokens || 0),
-    cacheCreationInputTokens:
-      (base.cacheCreationInputTokens || 0) +
-      (next.cacheCreationInputTokens || 0),
-    reasoningTokens: (base.reasoningTokens || 0) + (next.reasoningTokens || 0),
-    costUSD: (base.costUSD || 0) + (next.costUSD || 0),
-    durationMs: (base.durationMs || 0) + (next.durationMs || 0),
-    numTurns: (base.numTurns || 0) + (next.numTurns || 0),
-    modelUsage: Object.keys(mergedModel).length > 0 ? mergedModel : undefined,
-  };
-}
-
 // Sub-Agent 路径的新消息注入 admission hook（key: virtualChatJid）。主路径复用
 // activeRouteUpdaters（用户消息注入时必经），Sub-Agent 注入点不走 route updater，
 // 由 web.ts / 消息循环在注入成功回调里显式触发。
@@ -5447,9 +5398,6 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   // 之后才执行（waitForOutputChain 30s 兜底只放行不取消）；此时绝不能再重建
   // 流式卡片——重建出的卡片永远无人 complete，成为僵尸「生成中」卡。
   let runEnded = false;
-  // The runner emits one replay-safe ledger event per Anthropic message ID.
-  // Buffer those siblings and expose one cumulative usage summary to UI/card.
-  let pendingLedgerUsageBatch: HeldUsageTotals | null = null;
   // 定稿后等待最终 usage 事件合并补丁的卡片控制器。usage 事件在 result 之后
   // 到达，而主路径定稿即轮转 session——不留引用的话 usage note 永远打在新空卡
   // 上（no-op）。每条 result 开始时清空，避免打到过期卡。
@@ -5516,7 +5464,6 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
           agentScope: 'system',
           statusText: text.slice(0, 160),
           summary: text.slice(0, 500),
-          isSynthetic: true,
           displayLevel: 'primary',
           turnId: inputTurnId,
           sessionId: activeSessionId,
@@ -6115,21 +6062,6 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
                   'Failed to normalize usage cost before stream delivery',
                 );
               }
-              const ledgerUsage = result.streamEvent.usage;
-              pendingLedgerUsageBatch = mergeHeldUsage(
-                pendingLedgerUsageBatch,
-                ledgerUsage,
-              );
-              const batchIndex = Math.max(0, ledgerUsage.batchIndex || 0);
-              const batchCount = Math.max(1, ledgerUsage.batchCount || 1);
-              if (batchIndex < batchCount - 1) return;
-              result.streamEvent.usage = {
-                ...pendingLedgerUsageBatch,
-                eventId: ledgerUsage.eventId,
-                batchIndex,
-                batchCount,
-              };
-              pendingLedgerUsageBatch = null;
             }
             const streamInputTurnId = result.inputTurnId ?? lastProcessed.id;
             // Proactive SDK text is private model-loop state. Do not even feed
@@ -9479,7 +9411,6 @@ async function processAgentConversation(
   // the container drained mid-query so the finally block finalizes the card as
   // "reconnecting" instead of leaving a zombie 生成中 card.
   let agentClosed = false;
-  let pendingAgentLedgerUsageBatch: HeldUsageTotals | null = null;
   // 定稿后等待最终 usage 事件做合并补丁（Sub 路径 session 不轮换，引用即当前卡）
   let heldAgentUsagePatchPending = false;
   if (agentStreamingSession && streamingSessionJid) {
@@ -9544,7 +9475,6 @@ async function processAgentConversation(
             agentScope: 'system',
             statusText: text.slice(0, 160),
             summary: text.slice(0, 500),
-            isSynthetic: true,
             displayLevel: 'primary',
             turnId: inputTurnId,
             sessionId: currentAgentSessionId,
@@ -10050,21 +9980,6 @@ async function processAgentConversation(
             'Failed to normalize agent usage cost before stream delivery',
           );
         }
-        const ledgerUsage = output.streamEvent.usage;
-        pendingAgentLedgerUsageBatch = mergeHeldUsage(
-          pendingAgentLedgerUsageBatch,
-          ledgerUsage,
-        );
-        const batchIndex = Math.max(0, ledgerUsage.batchIndex || 0);
-        const batchCount = Math.max(1, ledgerUsage.batchCount || 1);
-        if (batchIndex < batchCount - 1) return;
-        output.streamEvent.usage = {
-          ...pendingAgentLedgerUsageBatch,
-          eventId: ledgerUsage.eventId,
-          batchIndex,
-          batchCount,
-        };
-        pendingAgentLedgerUsageBatch = null;
       }
       const agentStreamInputTurnId = output.inputTurnId ?? lastProcessed.id;
       // Native-message mode has no framework-owned Assistant answer lane.
