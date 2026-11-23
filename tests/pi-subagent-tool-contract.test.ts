@@ -330,6 +330,13 @@ describe('Pi subagent lifecycle → task_progress mapping', () => {
       '调研任务',
     ]);
     expect(progress[2].taskSummary).toBe('调研结论摘要');
+    // ISSUE-17: the broadcast `type` is the subagent type the card task row
+    // and the Web task lane render; the minimal 'started' broadcast has none.
+    expect(progress.map((event) => event.subagentType)).toEqual([
+      'worker',
+      undefined,
+      'worker',
+    ]);
   });
 
   test('failed broadcasts map taskStatus=failed and taskSummary=error', async () => {
@@ -772,6 +779,40 @@ describe('Web chat store subagent contract', () => {
       { taskStates?: Record<string, { status?: string }> } | undefined
     >;
     expect(streaming[jid]?.taskStates?.['sa-7']?.status).toBe('completed');
+  });
+
+  test('ISSUE-17: the task lane keeps subagentType and labels progress without a tool name', () => {
+    useChatStore.setState({
+      streaming: { [jid]: emptyStreaming() },
+    });
+    useChatStore.getState().handleStreamEvent(
+      jid,
+      {
+        eventType: 'task_progress',
+        taskId: 'sa-9',
+        taskStatus: 'started',
+        taskDescription: '调研任务',
+        subagentType: 'worker',
+      },
+      undefined,
+      runId,
+    );
+    const streaming = useChatStore.getState().streaming as Record<
+      string,
+      | {
+          taskStates?: Record<string, Record<string, unknown>>;
+          recentEvents?: Array<{ text?: string }>;
+        }
+      | undefined
+    >;
+    const task = streaming[jid]?.taskStates?.['sa-9'];
+    expect(task).toMatchObject({ subagentType: 'worker', status: 'running' });
+    for (const retired of ['usage', 'taskType', 'workflowName']) {
+      expect(task).not.toHaveProperty(retired);
+    }
+    expect(streaming[jid]?.recentEvents?.at(-1)?.text).toBe(
+      'Task 进度: 调研任务',
+    );
   });
 });
 

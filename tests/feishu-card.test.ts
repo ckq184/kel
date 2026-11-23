@@ -905,7 +905,7 @@ describe('parseToolParam (aligned with web parseToolParam)', () => {
   });
 });
 
-describe('buildToolsTimelineText with skillName + isNested + param', () => {
+describe('buildToolsTimelineText with skillName + param', () => {
   test('Skill tool renders skillName instead of "Skill"', () => {
     const text = buildToolsTimelineText([
       {
@@ -919,11 +919,11 @@ describe('buildToolsTimelineText with skillName + isNested + param', () => {
     expect(text).not.toContain('`Skill`');
   });
 
-  test('nested tool is indented', () => {
+  test('tool lines are never indented (ISSUE-17: isNested retired)', () => {
     const text = buildToolsTimelineText([
-      { name: 'Read', status: 'running', durationMs: 100, isNested: true },
+      { name: 'Read', status: 'running', durationMs: 100 },
     ]);
-    expect(text.startsWith('    ')).toBe(true);
+    expect(text.startsWith('<text_tag')).toBe(true);
   });
 
   test('Bash gets cmd label, Grep gets pattern label', () => {

@@ -431,8 +431,6 @@ interface ToolCallState {
   toolInputSummary?: string;
   /** When wrapping a Skill, the concrete skill name for display. */
   skillName?: string;
-  /** True for tool calls spawned inside a Task sub-agent. */
-  isNested?: boolean;
   /** Raw tool input, needed for AskUserQuestion structured rendering. */
   toolInput?: Record<string, unknown>;
 }
@@ -442,7 +440,6 @@ interface TaskRunState {
   title: string;
   status: 'running' | 'completed' | 'error' | 'backgrounded';
   subagentType?: string;
-  lastToolName?: string;
   summary?: string;
   updatedAt: number;
 }
@@ -450,7 +447,6 @@ interface TaskRunState {
 /** Extra metadata a caller can attach to a running tool call. */
 interface ToolCallMeta {
   skillName?: string;
-  isNested?: boolean;
   toolInput?: Record<string, unknown>;
 }
 
@@ -582,11 +578,10 @@ function buildAuxiliaryElements(aux: AuxiliaryState): {
       const type = task.subagentType
         ? ` <font color='grey'>${task.subagentType}</font>`
         : '';
-      const last = task.lastToolName ? ` [${task.lastToolName}]` : '';
       const summary = task.summary
         ? `\n  <font color='grey'>${task.summary.slice(0, 160)}</font>`
         : '';
-      return `${icon} **${task.title.slice(0, 80)}**${type}${last}${summary}`;
+      return `${icon} **${task.title.slice(0, 80)}**${type}${summary}`;
     });
     before.push({
       tag: 'markdown',
@@ -2106,7 +2101,6 @@ export class StreamingCardController {
     const tc = this.toolCalls.get(toolId);
     if (!tc) return;
     if (meta.skillName !== undefined) tc.skillName = meta.skillName;
-    if (meta.isNested !== undefined) tc.isNested = meta.isNested;
     if (meta.toolInput !== undefined) tc.toolInput = meta.toolInput;
     this.stateVersion++;
     if (this.state === 'streaming') {
@@ -2191,7 +2185,6 @@ export class StreamingCardController {
       title: patch.title || existing?.title || 'Task',
       status: patch.status || existing?.status || 'running',
       subagentType: patch.subagentType ?? existing?.subagentType,
-      lastToolName: patch.lastToolName ?? existing?.lastToolName,
       summary: patch.summary ?? existing?.summary,
       updatedAt: Date.now(),
     };
@@ -2826,13 +2819,10 @@ export class StreamingCardController {
               const type = task.subagentType
                 ? ` <font color='grey'>${task.subagentType}</font>`
                 : '';
-              const last = task.lastToolName
-                ? ` <font color='grey'>[${task.lastToolName}]</font>`
-                : '';
               const summary = task.summary
                 ? `\n  <font color='grey'>${task.summary.slice(0, 180)}</font>`
                 : '';
-              return `<text_tag color='${tagColor}'>${tagText}</text_tag> **${task.title.slice(0, 80)}**${type}${last}${summary}`;
+              return `<text_tag color='${tagColor}'>${tagText}</text_tag> **${task.title.slice(0, 80)}**${type}${summary}`;
             })
             .join('\n')
         : "<font color='grey'>暂无子任务</font>";
@@ -2846,7 +2836,6 @@ export class StreamingCardController {
         durationMs: now - tc.startTime,
         summary: tc.toolInputSummary,
         skillName: tc.skillName,
-        isNested: tc.isNested,
       }));
     const toolsContent = buildToolsTimelineText(toolViews);
 

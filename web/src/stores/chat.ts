@@ -134,11 +134,7 @@ export interface StreamingTaskRuntimeState {
   title: string;
   status: 'running' | 'completed' | 'error' | 'backgrounded';
   subagentType?: string;
-  taskType?: string;
-  workflowName?: string;
-  usage?: StreamEvent['sdkTaskUsage'];
   latestSummary?: string;
-  lastToolName?: string;
   thinkingTail: string;
   textTail: string;
   activeTools: StreamingState['activeTools'];
@@ -191,9 +187,7 @@ export interface StreamingState {
     toolName: string;
     toolUseId: string;
     startTime: number;
-    elapsedSeconds?: number;
     parentToolUseId?: string | null;
-    isNested?: boolean;
     skillName?: string;
     toolInputSummary?: string;
     toolInput?: Record<string, unknown>;
@@ -331,7 +325,6 @@ interface ChatState {
       description: string;
       status: 'running' | 'completed' | 'error';
       summary?: string;
-      isTeammate?: boolean;
       startedAt?: number; // 任务创建时间戳（ms），用于 UI 计时器
     }
   >;
@@ -596,7 +589,7 @@ const MAX_TRACE_EVENTS = 200;
 const MAX_TASK_TAIL = 4000;
 const SDK_TASK_AUTO_CLOSE_MS = 3000;
 const SDK_TASK_TOOL_END_FALLBACK_CLOSE_MS = 1200;
-const SDK_TASK_STALE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes stale timeout for non-teammate tasks
+const SDK_TASK_STALE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes stale timeout for SDK tasks
 const sdkTaskCleanupTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const sdkTaskStaleTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -931,7 +924,7 @@ function clearSdkTaskStaleTimer(taskId: string): void {
 }
 
 /**
- * Reset the stale timer for a non-teammate SDK task.
+ * Reset the stale timer for an SDK task.
  * If no events are received within SDK_TASK_STALE_TIMEOUT_MS, auto-finalize it.
  */
 function resetSdkTaskStaleTimer(
@@ -945,7 +938,7 @@ function resetSdkTaskStaleTimer(
     sdkTaskStaleTimers.delete(taskId);
     const state = get();
     const task = state.sdkTasks[taskId];
-    if (task && task.status === 'running' && !task.isTeammate) {
+    if (task && task.status === 'running') {
       // Auto-finalize stale task
       set((s) => {
         const existingTask = s.sdkTasks[taskId];
@@ -1100,9 +1093,6 @@ function ensureTaskRuntime(
         'Task',
       status: 'running',
       subagentType: event.subagentType,
-      taskType: event.taskType,
-      workflowName: event.workflowName,
-      usage: event.sdkTaskUsage,
       thinkingTail: '',
       textTail: '',
       activeTools: [],
@@ -1125,9 +1115,6 @@ function updateTaskRuntime(
   if (event.taskDescription && (!task.title || task.title === 'Task'))
     task.title = event.taskDescription;
   if (event.subagentType) task.subagentType = event.subagentType;
-  if (event.taskType) task.taskType = event.taskType;
-  if (event.workflowName) task.workflowName = event.workflowName;
-  if (event.sdkTaskUsage) task.usage = event.sdkTaskUsage;
 
   if (event.eventType === 'text_delta') {
     task.textTail = tail(task.textTail + (event.text || ''), MAX_TASK_TAIL);
@@ -1150,14 +1137,12 @@ function updateTaskRuntime(
       event.taskSummary ||
       event.taskDescription ||
       task.latestSummary;
-    task.lastToolName = event.lastToolName || task.lastToolName;
   } else if (event.eventType === 'tool_use_start' && event.parentToolUseId) {
     const tool = {
       toolName: event.toolName || 'unknown',
       toolUseId: event.toolUseId || '',
       startTime: Date.now(),
       parentToolUseId: event.parentToolUseId,
-      isNested: event.isNested,
       skillName: event.skillName,
       toolInputSummary: event.toolInputSummary,
       toolInput: event.toolInput,
@@ -1188,7 +1173,6 @@ function updateTaskRuntime(
       t.toolUseId === event.toolUseId
         ? {
             ...t,
-            elapsedSeconds: event.elapsedSeconds,
             toolInputSummary: event.toolInputSummary || t.toolInputSummary,
           }
         : t,
@@ -1251,7 +1235,6 @@ function applyStreamEvent(
         toolUseId,
         startTime: Date.now(),
         parentToolUseId: event.parentToolUseId,
-        isNested: event.isNested,
         skillName: event.skillName,
         toolInputSummary: event.toolInputSummary,
       };
@@ -1320,7 +1303,6 @@ function applyStreamEvent(
           t.toolUseId === event.toolUseId
             ? {
                 ...t,
-                elapsedSeconds: event.elapsedSeconds,
                 ...(event.skillName ? { skillName: event.skillName } : {}),
                 ...(event.toolInput ? { toolInput: event.toolInput } : {}),
                 ...(event.toolInputSummary
@@ -1346,8 +1328,6 @@ function applyStreamEvent(
             toolUseId: event.toolUseId || '',
             startTime: Date.now(),
             parentToolUseId: event.parentToolUseId,
-            isNested: event.isNested,
-            elapsedSeconds: event.elapsedSeconds,
             ...(event.toolInputSummary
               ? { toolInputSummary: event.toolInputSummary }
               : {}),
@@ -1361,13 +1341,10 @@ function applyStreamEvent(
     }
     case 'task_progress': {
       updateTaskRuntime(prev, next, event);
-      const label = event.lastToolName
-        ? `Task 进度 [${event.lastToolName}]`
-        : 'Task 进度';
       next.recentEvents = pushEvent(
         prev.recentEvents,
         'task',
-        `${label}: ${event.summary || event.taskDescription || ''}`,
+        `Task 进度: ${event.summary || event.taskDescription || ''}`,
       );
       break;
     }
@@ -2435,15 +2412,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return;
     }
 
-    const ensureSdkTask = (
-      taskId: string,
-      description?: string,
-      isTeammate?: boolean,
-    ) => {
+    const ensureSdkTask = (taskId: string, description?: string) => {
       set((s) => {
         const existingTask = s.sdkTasks[taskId];
         const desc = description || existingTask?.description || 'Task';
-        const teammate = isTeammate || existingTask?.isTeammate || false;
 
         return {
           sdkTasks: {
@@ -2454,15 +2426,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
               status: 'running' as const,
               summary: existingTask?.summary,
               startedAt: existingTask?.startedAt || Date.now(),
-              ...(teammate ? { isTeammate: true } : {}),
             },
           },
         };
       });
-      // Start stale timer for non-teammate tasks
-      if (!isTeammate) {
-        resetSdkTaskStaleTimer(set, get, taskId, chatJid);
-      }
+      resetSdkTaskStaleTimer(set, get, taskId, chatJid);
     };
 
     const resolveOrBindTaskId = (rawId: string): string => {
@@ -2501,7 +2469,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
               description: existingTask.description,
               status,
               summary: summary ?? existingTask.summary,
-              ...(existingTask.isTeammate ? { isTeammate: true } : {}),
             },
           },
         };
@@ -2521,7 +2488,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       ensureSdkTask(
         event.toolUseId!,
         event.taskDescription || event.toolInputSummary,
-        event.isTeammate,
       );
       // 不 return — 让事件同时落入主对话 streaming（显示 Task 工具卡片）
     }
@@ -2565,10 +2531,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const knownTask = !!state.sdkTasks[tid];
       if (knownTask) {
         if (completedSdkTaskIds.has(tid)) return;
-        const task = state.sdkTasks[tid];
-        if (task && !task.isTeammate) {
-          resetSdkTaskStaleTimer(set, get, tid, chatJid);
-        }
+        resetSdkTaskStaleTimer(set, get, tid, chatJid);
         // 不 return — 让事件落入主对话 streaming（步骤⑥）
       }
     }

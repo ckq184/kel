@@ -1822,11 +1822,7 @@ interface StreamingSnapshotEntry {
       title: string;
       status: 'running' | 'completed' | 'error' | 'backgrounded';
       subagentType?: string;
-      taskType?: string;
-      workflowName?: string;
-      usage?: StreamEvent['sdkTaskUsage'];
       latestSummary?: string;
-      lastToolName?: string;
       thinkingTail: string;
       textTail: string;
       activeTools: StreamingSnapshotEntry['activeTools'];
@@ -1968,9 +1964,6 @@ function updateSnapshotTask(
       'Task',
     status: 'running' as const,
     subagentType: event.subagentType,
-    taskType: event.taskType,
-    workflowName: event.workflowName,
-    usage: event.sdkTaskUsage,
     thinkingTail: '',
     textTail: '',
     activeTools: [],
@@ -1981,9 +1974,6 @@ function updateSnapshotTask(
   if (event.taskDescription && (!task.title || task.title === 'Task'))
     task.title = event.taskDescription;
   if (event.subagentType) task.subagentType = event.subagentType;
-  if (event.taskType) task.taskType = event.taskType;
-  if (event.workflowName) task.workflowName = event.workflowName;
-  if (event.sdkTaskUsage) task.usage = event.sdkTaskUsage;
   if (event.eventType === 'text_delta') {
     task.textTail = tailText(
       task.textTail + (event.text || ''),
@@ -2000,7 +1990,6 @@ function updateSnapshotTask(
       event.taskSummary ||
       event.taskDescription ||
       task.latestSummary;
-    task.lastToolName = event.lastToolName || task.lastToolName;
     task.status = 'running';
   } else if (event.eventType === 'tool_use_start' && event.parentToolUseId) {
     const tool = {
@@ -2154,7 +2143,7 @@ function updateStreamingSnapshot(
       pushRecentEvent(snap, {
         id: `task-progress-${Date.now()}`,
         timestamp: Date.now(),
-        text: `${event.lastToolName ? `Task 进度 [${event.lastToolName}]` : 'Task 进度'}: ${event.summary || event.taskDescription || ''}`,
+        text: `Task 进度: ${event.summary || event.taskDescription || ''}`,
         kind: 'task',
       });
       break;

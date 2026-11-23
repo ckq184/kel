@@ -52,16 +52,15 @@ export function feedStreamEventToCard(
         if (se.toolInputSummary) {
           session.updateToolSummary(se.toolUseId, se.toolInputSummary);
         }
-        // Feishu streaming card wants richer metadata (skillName / nested /
-        // raw toolInput for AskUserQuestion). Attach separately so the
+        // Feishu streaming card wants richer metadata (skillName / raw
+        // toolInput for AskUserQuestion). Attach separately so the
         // StreamingSession union's common signature stays tight.
         if (
           session instanceof StreamingCardController &&
-          (se.skillName || se.isNested || se.toolInput)
+          (se.skillName || se.toolInput)
         ) {
           session.setToolMeta(se.toolUseId, {
             skillName: se.skillName,
-            isNested: se.isNested,
             toolInput: se.toolInput,
           });
         }
@@ -133,7 +132,6 @@ export function feedStreamEventToCard(
           ...(se.taskDescription ? { title: se.taskDescription } : {}),
           status: terminalStatus,
           subagentType: se.subagentType,
-          lastToolName: se.lastToolName,
           summary: se.summary || se.taskSummary,
         });
         if (terminalStatus === 'running') {

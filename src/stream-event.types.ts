@@ -340,8 +340,6 @@ export interface StreamEvent {
   sessionId?: string;
   /** SDK message uuid if known. */
   messageUuid?: string;
-  /** Reserved — whether this event was synthesized locally rather than emitted directly by SDK semantics. */
-  isSynthetic?: boolean;
   /** UI priority: primary is surfaced inline, detail in trace panels, debug in developer trace. */
   displayLevel?: StreamDisplayLevel;
   /** 文本载荷（流式增量或通知正文）。 */
@@ -360,8 +358,6 @@ export interface StreamEvent {
   toolUseId?: string;
   /** 父工具调用 ID（嵌套工具调用时指向外层；缺省即顶层调用）。 */
   parentToolUseId?: string | null;
-  /** 是否为嵌套（子代理内部）调用。 */
-  isNested?: boolean;
   /** 触发的技能名称。 */
   skillName?: string;
   /** 工具入参摘要。 */
@@ -373,8 +369,6 @@ export interface StreamEvent {
   /** Tool execution ended in error (carried on `tool_use_end`): cards/Web
    *  render the failure lane instead of a success ✅ (ISSUE-03). */
   isError?: boolean;
-  /** 已耗时（秒）。 */
-  elapsedSeconds?: number;
   /** 状态行文本。 */
   statusText?: string;
   /** SDK 任务描述。 */
@@ -385,32 +379,14 @@ export interface StreamEvent {
   taskStatus?: string;
   /** 任务结果摘要。 */
   taskSummary?: string;
-  /** SDK task discriminant, e.g. `local_workflow` or `subagent`. */
-  taskType?: string;
-  /** Claude Code Workflow meta.name (only present for workflow tasks). */
-  workflowName?: string;
   /** 子代理类型标识。 */
   subagentType?: string;
-  /** 最近一次工具调用的名称（任务进度类事件携带）。 */
-  lastToolName?: string;
-  /** SDK 任务的累计用量（token / 工具调用次数 / 时长）。 */
-  sdkTaskUsage?: {
-    totalTokens: number;
-    toolUses: number;
-    durationMs: number;
-  };
-  /** 是否协作型（teammate）SDK 任务——前端据此跳过普通后台任务的 stale 计时等处理。 */
-  isTeammate?: boolean;
   /** 工具完整入参。 */
   toolInput?: Record<string, unknown>;
   /** Token usage data emitted at query completion */
   usage?: {
     /** Stable logical run ID used to make usage analytics idempotent. */
     eventId?: string;
-    /** Position inside one result's per-message ledger batch (0-based). */
-    batchIndex?: number;
-    /** 本批分片的分母（与 batchIndex 配合表达 N/M 中的 M）。 */
-    batchCount?: number;
     /** 输入 token 数。 */
     inputTokens: number;
     /** 输出 token 数。 */
