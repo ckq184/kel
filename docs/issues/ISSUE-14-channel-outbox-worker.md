@@ -2,7 +2,7 @@
 
 | 字段          | 值                                                                                                                                                              |
 | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 状态          | 进行中                                                                                                                                                          |
+| 状态          | 已完成                                                                                                                                                          |
 | 领取人 / 分支 | `claude/intelligent-shamir-6c676c`                                                                                                                              |
 | 优先级        | P2                                                                                                                                                              |
 | 类型          | 实现                                                                                                                                                            |
@@ -38,4 +38,28 @@
 
 ## 交付记录
 
-（领取后填写）
+- **分支**：`claude/intelligent-shamir-6c676c`，base `38da090`；方案见 `docs/issue14-channel-outbox-worker-plan.md`。
+- **用户拍板（2026-11-23，全部按推荐）**：
+  - 重投范围：**只重投 text**（按 payload 重建，走 `deliverChannelOutboxItem` 状态机）；image/file/card/mutation 无法安全重建，转 `failed` 并 warn。
+  - 认领条件：**只认领终态 turn 的行**；活跃 turn 的行（含运行期飞书限流重试）继续由 turn 重驱。
+  - 轮询周期：**并入 15s 恢复循环**，作为 reconcile 之后的 `afterPass` 阶段，启动时立即跑一轮。
+  - 异常与过期：payload 校验失败转 `failed`+warn；渠道不可用保留 `retry_wait`；`created_at` 超过 **1 小时**转 `failed`。
+  - mutation 幂等回执语义：随“只重投 text”失去意义，mutation 行一律转 `failed`。
+- **提交**：
+  - `51a4835` 立项（状态进行中、README 索引、plan、`.gatescope.json`）；
+  - `9fc4d9b` T1：`listRetryableChannelOutboxForTerminalTurns` + `runChannelOutboxRetryPass` + `tests/channel-outbox-worker.test.ts`；
+  - `4922084` T2：恢复循环 `afterPass` 阶段 + `src/index.ts` 启动接线 + `tests/channel-reliability-recovery-outbox-stage.test.ts`；
+  - `a43571e` T3：改写 `tests/channel-outbox-restart-retry-wait.test.ts`，同步 `docs/API.md`；
+  - `e4991fb` T1 补：逐行异常隔离（自查发现）；
+  - 本交付落档提交。
+- **验收对照**：
+  - 重启后 `retry_wait` 行在一个轮询周期内被收口：`recovery-outbox-stage` 用例证明本轮刚被置为 `interrupted` 的 turn，其 text 行在同一轮重投；不可重建的行转 `failed`。
+  - 复现测试的“滞留”断言改写为“worker 收口”，turn 重驱用例保留为活跃 turn 对照，文件头注释写明两条路径并存。
+  - `uncertain` 行零动作、uncertain-sibling 围栏零绕过：store 查询排除被围栏的 turn，`deliverChannelOutboxItem` 自身也检查围栏，两处都有测试覆盖。
+  - 门禁：`npm run verify` 六步全绿（2805 过 23 跳 0 败，25.9s）；`node scripts/check-scope.mjs` 12 个路径全在声明范围内。
+- **偏差**：
+  1. 没有复用 `claimNextChannelOutbox`：它不能按 turn 状态和围栏过滤。改为新增候选查询，再按 ID 走 `claimChannelOutboxById` 的 CAS（重投经 `deliverChannelOutboxItem`，转 failed 经 `failChannelOutbox`）。`claimNextChannelOutbox` 仍然只有测试在用。
+  2. 改动路径超出 issue 预计：多改了 `src/channel-reliability-recovery.ts`（`afterPass` 挂点）和 `docs/API.md`（原段落描述的正是本缺口，已改为现状）。`.gatescope.json` 的 allow 相应扩宽。
+  3. 证据复核发现：生产中重启产生 `retry_wait` 的窗口实际很窄（所有生产调用都是 `single` 模式，“认领”到“标 sending”之间只隔一个微任务），worker 主要是兜底。
+- **范围外登记**：`claimNextChannelTurnRun` 生产零调用，不在本 issue 处理；image/file payload 不含路径和字节，如果以后要重投附件，需要另立 issue 扩展 payload。
+- **待用户决定**：合入 main、推送、实机验收。
