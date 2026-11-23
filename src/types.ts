@@ -863,8 +863,9 @@ export type WsMessageOut =
       text: string;
       timestamp: string;
       agentId?: string;
-      /** true = ⚠️ 运行时警告（投递失败/文件未找到等），前端以系统提示展示；
-       * 未标记 = 完整回复冗余广播，内容由 new_message 承载，前端无需消费。 */
+      /** true = ⚠️ 运行时警告（投递失败/文件未找到等），前端以系统提示展示。
+       * 后端只以 notice 形式发送 agent_reply（ISSUE-21 B3 停止了完整回复冗余
+       * 广播，回复内容由 new_message 承载）。 */
       notice?: boolean;
     }
   | {

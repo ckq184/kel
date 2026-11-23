@@ -57,3 +57,10 @@ describe('ISSUE-21 A4: auto-created IM conversation log is channel-neutral', () 
     );
   });
 });
+
+describe('ISSUE-21 B3: agent_reply only carries notice warnings', () => {
+  // 广播调用全部带 notice 由 tests/agent-notice-broadcast-contract.test.ts 锁定。
+  test('API docs describe agent_reply as notice-only', () => {
+    expect(read('docs/API.md')).toMatch(/`agent_reply`[^\n]*notice/);
+  });
+});

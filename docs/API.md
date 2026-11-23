@@ -582,7 +582,7 @@ Turn（见 [ISSUE-14](issues/ISSUE-14-channel-outbox-worker.md)）。
 服务端主要事件：
 
 - `new_message`
-- `agent_reply`
+- `agent_reply`（只承载 `notice: true` 的运行时警告，回复内容由 `new_message` 承载）
 - `stream_event`
 - `agent_status`
 - `terminal_output`

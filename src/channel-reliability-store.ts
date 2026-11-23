@@ -1225,6 +1225,12 @@ export function interruptChannelTurnRunsWithDeliveredEffects(
     .run(now, now, DELIVERED_EFFECT_RECONCILIATION_REASON, now).changes;
 }
 
+/**
+ * Test entry point for the shared turn-run claim logic (lease, crash takeover).
+ * Production never polls the next turn: turns are claimed by id through
+ * `claimChannelTurnRunById`. Kept on purpose (ISSUE-21 B1); before wiring a
+ * generic poller into production, decide whether it must filter by turn state.
+ */
 export function claimNextChannelTurnRun(
   owner: string,
   leaseMs: number,
@@ -1737,6 +1743,12 @@ export function listRetryableChannelOutboxForTerminalTurns(
   return rows.map(mapOutbox);
 }
 
+/**
+ * Test entry point for the shared outbox claim logic (lease, retry wait,
+ * crash takeover). Production — inline delivery and the ISSUE-14 worker —
+ * claims by id through `claimChannelOutboxById`, because this poller cannot
+ * filter by turn state. Kept on purpose (ISSUE-21 B1).
+ */
 export function claimNextChannelOutbox(
   owner: string,
   leaseMs: number,

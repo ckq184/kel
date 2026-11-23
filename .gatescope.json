@@ -21,6 +21,7 @@
     "src/task-scheduler.ts",
     "src/ipc/image-delivery.ts",
     "src/web.ts",
+    "src/types.ts",
     "web/src/components/layout/AppLayout.tsx",
     "web/src/stores/chat.ts",
     "shared/workspace-memory-payload.ts",

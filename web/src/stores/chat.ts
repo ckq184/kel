@@ -1620,8 +1620,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // streaming 状态由以下 2 条路径正确清理，sendMessage 不应无条件清空：
       // 1. handleWsNewMessage 收到 is_from_me 消息时
       // 2. status:interrupted 事件时（interrupt_partial 冻结转正的两阶段）
-      // （历史注：早期由 agent_reply 事件清理；该事件的完整回复广播已不由前端
-      // 消费，前端只处理其中 notice=true 的 ⚠️ 警告，见 handleAgentNotice。）
+      // （历史注：早期由 agent_reply 事件清理；该事件现在只承载 notice=true 的
+      // ⚠️ 警告（ISSUE-21 B3 停止了完整回复广播），见 handleAgentNotice。）
 
       const body: {
         chatJid: string;
