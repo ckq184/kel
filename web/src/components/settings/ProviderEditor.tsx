@@ -40,6 +40,11 @@ import {
   buildCustomEnv,
   DEFAULTED_THIRD_PARTY_ENV_KEYS,
 } from '../../utils/custom-env';
+import {
+  applyCustomHeaders,
+  extractCustomHeaders,
+  type HeaderRow,
+} from '../../utils/custom-headers';
 import type { ProviderWithHealth, EnvRow } from './types';
 import { getErrorMessage } from './types';
 
@@ -118,6 +123,11 @@ export function ProviderEditor({
   const [showCustomEnvValues, setShowCustomEnvValues] = useState<
     Record<number, boolean>
   >({});
+  // ISSUE-24：第三方供应商的自定义请求头（存为 ANTHROPIC_CUSTOM_HEADERS）
+  const [customHeaderRows, setCustomHeaderRows] = useState<HeaderRow[]>([]);
+  const [showCustomHeaderValues, setShowCustomHeaderValues] = useState<
+    Record<number, boolean>
+  >({});
 
   // 状态
   const [saving, setSaving] = useState(false);
@@ -128,6 +138,7 @@ export function ProviderEditor({
   useEffect(() => {
     if (!open) return;
     setShowCustomEnvValues({});
+    setShowCustomHeaderValues({});
 
     if (isCreate) {
       setProviderType('third_party');
@@ -144,6 +155,7 @@ export function ProviderEditor({
       setAuthTokenDirty(false);
       setClearTokenOnSave(false);
       setCustomEnvRows([]);
+      setCustomHeaderRows([]);
       setProviderEnvOverrides({});
     } else {
       setProviderType(provider.type);
@@ -167,7 +179,14 @@ export function ProviderEditor({
       setAuthToken('');
       setAuthTokenDirty(false);
       setClearTokenOnSave(false);
-      const providerCustomEnv = provider.customEnv || {};
+      // ISSUE-24：第三方供应商的请求头迁入专用字段，不再出现在环境变量
+      // 列表；官方供应商保持现状（Pi 官方分支不读请求头）。
+      const extracted =
+        provider.type === 'third_party'
+          ? extractCustomHeaders(provider.customEnv || {})
+          : { customEnv: provider.customEnv || {}, headerRows: [] };
+      const providerCustomEnv = extracted.customEnv;
+      setCustomHeaderRows(extracted.headerRows);
       const defaultEnv = Object.fromEntries(
         buildDefaultProviderEnv(modelSelection.model, initialContextWindow).map(
           (row) => [row.key, row.value],
@@ -203,6 +222,19 @@ export function ProviderEditor({
     setCustomEnvRows((prev) => prev.filter((_, i) => i !== index));
   const updateRow = (index: number, field: keyof EnvRow, value: string) =>
     setCustomEnvRows((prev) =>
+      prev.map((row, i) => (i === index ? { ...row, [field]: value } : row)),
+    );
+
+  const addHeaderRow = () =>
+    setCustomHeaderRows((prev) => [...prev, { name: '', value: '' }]);
+  const removeHeaderRow = (index: number) =>
+    setCustomHeaderRows((prev) => prev.filter((_, i) => i !== index));
+  const updateHeaderRow = (
+    index: number,
+    field: keyof HeaderRow,
+    value: string,
+  ) =>
+    setCustomHeaderRows((prev) =>
       prev.map((row, i) => (i === index ? { ...row, [field]: value } : row)),
     );
 
@@ -304,15 +336,24 @@ export function ProviderEditor({
 
     const envResult = buildCustomEnv(envRowsToText(customEnvRows), {
       manageThirdPartyDefaults: providerType === 'third_party',
+      manageCustomHeaders: providerType === 'third_party',
     });
     if (envResult.error) {
       setError(envResult.error);
       return;
     }
-    const savedCustomEnv = {
+    let savedCustomEnv = {
       ...envResult.customEnv,
       ...(providerType === 'third_party' ? providerEnvOverrides : {}),
     };
+    if (providerType === 'third_party') {
+      const headerResult = applyCustomHeaders(savedCustomEnv, customHeaderRows);
+      if (headerResult.error) {
+        setError(headerResult.error);
+        return;
+      }
+      savedCustomEnv = headerResult.customEnv;
+    }
 
     setSaving(true);
     setError(null);
@@ -965,6 +1006,12 @@ export function ProviderEditor({
                   {customEnvRows.length} 项自定义
                 </span>
               )}
+              {providerType === 'third_party' &&
+                customHeaderRows.length > 0 && (
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                    {customHeaderRows.length} 个请求头
+                  </span>
+                )}
             </summary>
 
             <div className="mt-4 space-y-5">
@@ -1058,6 +1105,103 @@ export function ProviderEditor({
                       );
                     })}
                   </div>
+                </section>
+              )}
+
+              {providerType === 'third_party' && (
+                <section
+                  aria-labelledby="custom-provider-headers-heading"
+                  className="border-t border-border pt-4"
+                >
+                  <div className="mb-2 flex items-start justify-between gap-3">
+                    <div>
+                      <h3
+                        id="custom-provider-headers-heading"
+                        className="text-xs font-medium text-foreground"
+                      >
+                        自定义请求头
+                      </h3>
+                      <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                        随每次模型请求发送的额外 HTTP
+                        请求头，例如端点要求的会话头。
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={addHeaderRow}
+                      className="inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-1 rounded-md px-2 text-xs text-primary hover:bg-muted"
+                    >
+                      <Plus className="size-3.5" />
+                      添加
+                    </button>
+                  </div>
+
+                  {customHeaderRows.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      没有自定义请求头。
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {customHeaderRows.map((row, idx) => (
+                        <div
+                          key={idx}
+                          className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center"
+                        >
+                          <Input
+                            type="text"
+                            value={row.name}
+                            onChange={(e) =>
+                              updateHeaderRow(idx, 'name', e.target.value)
+                            }
+                            placeholder="Header-Name"
+                            aria-label="请求头名称"
+                            className="h-auto w-full px-2.5 py-1.5 font-mono text-xs sm:w-[38%]"
+                          />
+                          <Input
+                            type={
+                              showCustomHeaderValues[idx] ? 'text' : 'password'
+                            }
+                            value={row.value}
+                            onChange={(e) =>
+                              updateHeaderRow(idx, 'value', e.target.value)
+                            }
+                            placeholder="value"
+                            aria-label="请求头的值"
+                            className="h-auto flex-1 px-2.5 py-1.5 font-mono text-xs"
+                          />
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setShowCustomHeaderValues((current) => ({
+                                ...current,
+                                [idx]: !current[idx],
+                              }))
+                            }
+                            className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                            aria-label={
+                              showCustomHeaderValues[idx]
+                                ? '隐藏请求头的值'
+                                : '显示请求头的值'
+                            }
+                          >
+                            {showCustomHeaderValues[idx] ? (
+                              <EyeOff className="size-4" />
+                            ) : (
+                              <Eye className="size-4" />
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => removeHeaderRow(idx)}
+                            className="flex size-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-red-500"
+                            aria-label="删除请求头"
+                          >
+                            <X className="size-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </section>
               )}
 
