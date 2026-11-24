@@ -372,8 +372,8 @@ async function runTurn(
         // third-party key by resolvePiProvider (D-2 ②: official endpoints
         // are retired; there is no stored-anthropic-key path anymore).
         authToken: process.env.ANTHROPIC_AUTH_TOKEN,
-        // ISSUE-04 ①: host-declared window overrides the Pi model definition;
-        // undefined keeps the catalog/registration value.
+        // ISSUE-04 ①: host-declared window is written into the registered
+        // third-party model definition; undefined keeps its 200k default.
         contextWindow: resolveContextWindowOverride(
           provider.model,
           provider.declaredContextWindow,

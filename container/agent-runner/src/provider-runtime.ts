@@ -26,7 +26,11 @@ export function resolveProviderConfigError(
   marker: string | undefined,
   baseUrl: string | undefined,
 ): string | null {
-  if (marker === 'official') return OFFICIAL_ENDPOINT_UNSUPPORTED_MESSAGE;
+  // Accept raw marker values too: the startup resolver normalizes before
+  // calling, but future callers may hand over the environment unchanged.
+  if (marker?.trim().toLowerCase() === 'official') {
+    return OFFICIAL_ENDPOINT_UNSUPPORTED_MESSAGE;
+  }
   return baseUrl?.trim() ? null : BASE_URL_REQUIRED_MESSAGE;
 }
 

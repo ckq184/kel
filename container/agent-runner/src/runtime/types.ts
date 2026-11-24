@@ -146,9 +146,9 @@ export type RuntimeSessionOptions = {
      */
     authToken?: string;
     /**
-     * Host-declared context-window override (ISSUE-04 ①). Applied as a
-     * shallow-copy override on the resolved model; undefined keeps the Pi
-     * catalog/registration value.
+     * Host-declared context-window override (ISSUE-04 ①). Written into the
+     * registered third-party model definition; undefined keeps the 200k
+     * registration default.
      */
     contextWindow?: number;
     /**

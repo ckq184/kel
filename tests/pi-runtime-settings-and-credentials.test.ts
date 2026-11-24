@@ -116,18 +116,20 @@ describe('ISSUE-04 ① context window declaration reaches Pi', () => {
 
     expect(officialEnv.providerError).not.toBeNull();
     expect(missingBaseEnv.providerError).not.toBeNull();
-    await expect(
-      resolvePiProvider(modelRuntime, {
-        model: 'glm-5.2',
-        endpointKind: 'official',
-      }),
-    ).rejects.toThrow(officialEnv.providerError!);
-    await expect(
-      resolvePiProvider(modelRuntime, {
-        model: 'glm-5.2',
-        endpointKind: 'custom',
-      }),
-    ).rejects.toThrow(missingBaseEnv.providerError!);
+    // Exact message equality, not substring matching: both layers must share
+    // the single message source.
+    const officialError = await resolvePiProvider(modelRuntime, {
+      model: 'glm-5.2',
+      endpointKind: 'official',
+    }).catch((error: unknown) => error);
+    const missingBaseError = await resolvePiProvider(modelRuntime, {
+      model: 'glm-5.2',
+      endpointKind: 'custom',
+    }).catch((error: unknown) => error);
+    expect((officialError as Error).message).toBe(officialEnv.providerError);
+    expect((missingBaseError as Error).message).toBe(
+      missingBaseEnv.providerError,
+    );
   });
 });
 
