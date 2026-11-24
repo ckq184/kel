@@ -2,8 +2,8 @@
 
 | 字段          | 值                                                                                                                                                                                                                                                                                |
 | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 状态          | 待领取                                                                                                                                                                                                                                                                            |
-| 领取人 / 分支 | —                                                                                                                                                                                                                                                                                 |
+| 状态          | 已完成                                                                                                                                                                                                                                                                            |
+| 领取人 / 分支 | `claude/thesis-01-desktop-removal`                                                                                                                                                                                                                                                |
 | 优先级        | P1                                                                                                                                                                                                                                                                                |
 | 类型          | 裁剪（整模块）                                                                                                                                                                                                                                                                    |
 | 依赖          | 无。与其他 issue 没有文件交集，任何时候都可以并行                                                                                                                                                                                                                                 |
@@ -70,4 +70,15 @@
 
 ## 交付记录
 
-（交付时填写）
+- **提交**：`6e3a8af`（立项：拍板、plan、范围声明与状态领取）、`e78869d`（实现：删除桌面端，同步依赖/脚本/文档/契约测试）。
+- **验证**：
+  - `make install`：新 lockfile 下三侧 `npm ci`（根 / `container/agent-runner` / `web`）+ agent-runner build 全部通过（V-G3）。
+  - `npm run verify`：6/6 全绿，总耗时 32.2s；测试 358 文件 2953 通过、23 跳过（2976）。
+  - `node scripts/check-scope.mjs`：26 个路径全在 `.gatescope.json` 声明内（交付提交新增 `docs/issues2/task-thesis-trim-plan.md` 的范围扩宽，理由见交付提交信息）。
+- **拍板落地**：D-G1 ① 删除 `docs/desktop-identity-split-plan.md`，保留 `docs/dual-desktop-port-isolation-plan.md` 原样（md5 与 HEAD 一致）；D-G2 ① `restart-dev.command` 去掉桌面端启动/等待/日志段，保留前后端重启；D-G3 ① 删除 `esbuild` 直依赖与 `allowScripts` 的 `esbuild@0.25.12`，保留 `esbuild@0.28.2`（tsx 带入）。
+- **独立审查**：规格符合性审查结论"有条件通过"——唯一阻塞项是 `make install` 证据缺失（六步门禁不含 `npm ci`），已在交付前实跑并记入本记录；非阻塞建议采纳：契约测试补 lockfile electron 闭包断言、四依赖区段覆盖、allowScripts 前缀断言、README/AGENTS 断言收窄；保留 `exists('electron')` 的工作树强断言与 `esbuild@0.28.x` 显式契约。
+- **偏差**：
+  - README 实际清理约 45 行（方案估算约 26 行）；删除命令表最宽行后 Prettier 重排了表格列宽。
+  - `npm install` 后 `esbuild@0.28.2` 从 `tsx/node_modules` 提升到根 `node_modules`，并同时满足 `vitest` 内嵌 `vite@8.2.1` 的可选 peer；未新增包。
+  - 安装时 `npm install-scripts` 对 `@google/genai@1.52.0`（实际 2.21.0）与 `fsevents` 的未覆盖告警为本任务前既有状态，未处理（范围外）。
+- **待用户验收**：浏览器冒烟（启动 → 登录 → 上传文件 → 工作区文件面板打开 → Agent 读取工作区文件；主机模式与容器模式各一次）。未做实机验收，不代替用户下结论。

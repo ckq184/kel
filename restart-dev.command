@@ -1,21 +1,19 @@
 #!/bin/bash
-# restart-dev.command — 一键重启 CKQClaw 开发环境（后端 3001 + Vite 5174 + 桌面端）
+# restart-dev.command — 一键重启 CKQClaw 开发环境（后端 3001 + Vite 5174）
 # 用法：Finder 双击，或终端执行 ./restart-dev.command
 # 全部服务后台运行，脚本结束即可关闭终端窗口，不影响服务。
-# 日志：/tmp/ckqclaw-dev.log（前后端）、/tmp/ckqclaw-desktop.log（桌面端）
+# 日志：/tmp/ckqclaw-dev.log（前后端）
 
 set -u
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$REPO_DIR" || exit 1
 
 DEV_LOG=/tmp/ckqclaw-dev.log
-DESKTOP_LOG=/tmp/ckqclaw-desktop.log
 
 echo "[ckqclaw] stopping old services..."
 lsof -ti:3001 -sTCP:LISTEN 2>/dev/null | xargs kill 2>/dev/null
 lsof -ti:5174 -sTCP:LISTEN 2>/dev/null | xargs kill 2>/dev/null
-# 仅杀本仓路径下的 electron / tsx 后端（不得越界杀其他仓库的同名进程）
-pkill -f "$REPO_DIR/node_modules/electron" 2>/dev/null
+# 仅杀本仓路径下的 tsx 后端（不得越界杀其他仓库的同名进程）
 pkill -f "$REPO_DIR/node_modules/tsx" 2>/dev/null
 
 # 等端口释放（最多 10 秒）
@@ -43,24 +41,7 @@ until curl -s -m 2 http://127.0.0.1:3001/api/health 2>/dev/null | grep -q '"stat
 done
 echo "[ckqclaw] backend healthy (3001)"
 
-echo "[ckqclaw] starting desktop (log: $DESKTOP_LOG)..."
-CKQCLAW_RENDERER_URL=http://127.0.0.1:5174 nohup npm run desktop:dev >>"$DESKTOP_LOG" 2>&1 &
-
-# 等桌面端进程出现（最多 20 秒）
-tries=0
-sleep 2
-until pgrep -f "$REPO_DIR/node_modules/electron/dist" >/dev/null 2>&1; do
-  tries=$((tries + 1))
-  if [ "$tries" -ge 10 ]; then
-    echo "[ckqclaw] desktop did not start in time; see $DESKTOP_LOG"
-    exit 1
-  fi
-  sleep 2
-done
-
 echo "[ckqclaw] restart complete:"
 echo "  backend : http://localhost:3001  ✅"
 echo "  vite    : http://localhost:5174  ✅"
-echo "  desktop : running                ✅"
 echo "  logs    : tail -f $DEV_LOG"
-echo "            tail -f $DESKTOP_LOG"

@@ -3,7 +3,6 @@ node_modules/
 
 # Build output
 dist/
-/electron/release/
 
 # Runtime data — databases, encrypted configs, sessions, IPC, env files, agent workspaces
 # All personal data, auto-created at startup, must not be committed.
