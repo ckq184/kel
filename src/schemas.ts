@@ -821,7 +821,6 @@ export const ContainerEnvSchema = z.object({
   anthropicBaseUrl: z.string().max(2000).optional(),
   anthropicAuthToken: z.string().max(2000).optional(),
   anthropicApiKey: z.string().max(2000).optional(),
-  claudeCodeOauthToken: z.string().max(2000).optional(),
   anthropicModel: z.string().max(128).optional(),
   customEnv: z
     .record(z.string().max(256), z.string().max(4096))

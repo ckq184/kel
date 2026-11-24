@@ -222,21 +222,12 @@ function isDangerousEnvKey(key: string): boolean {
 const MAX_CUSTOM_ENV_ENTRIES = 50;
 const MAX_THIRD_PARTY_PROFILES = 20;
 
-// Fallback scopes for .credentials.json when stored credentials lack scopes.
-// Differs from OAUTH_SCOPES in routes/config.ts (the authorize-flow request):
-// authorize requests org:create_api_key; credential files need user:sessions:claude_code.
-const DEFAULT_CREDENTIAL_SCOPES = [
-  'user:inference',
-  'user:profile',
-  'user:sessions:claude_code',
-];
-
 export interface ClaudeOAuthCredentials {
   accessToken: string;
   refreshToken: string;
   expiresAt: number; // Unix timestamp (ms)
   scopes: string[];
-  subscriptionType?: string; // e.g. 'max', 'pro' — written to .credentials.json if present
+  subscriptionType?: string; // storage-compat only; no runtime writer since THESIS-05
 }
 
 export interface OAuthUsageBucket {
@@ -444,11 +435,6 @@ export interface UnifiedProviderPublic {
   anthropicAuthTokenMasked: string | null;
   hasAnthropicApiKey: boolean;
   anthropicApiKeyMasked: string | null;
-  hasClaudeCodeOauthToken: boolean;
-  claudeCodeOauthTokenMasked: string | null;
-  hasClaudeOAuthCredentials: boolean;
-  claudeOAuthCredentialsExpiresAt: number | null;
-  claudeOAuthCredentialsAccessTokenMasked: string | null;
   customEnv: Record<string, string>;
   updatedAt: string;
 }
@@ -1378,8 +1364,6 @@ export function createProvider(input: {
   anthropicModel?: string;
   contextWindow?: ContextWindowPreset;
   anthropicApiKey?: string;
-  claudeCodeOauthToken?: string;
-  claudeOAuthCredentials?: ClaudeOAuthCredentials | null;
   customEnv?: Record<string, string>;
   weight?: number;
   enabled?: boolean;
@@ -1414,10 +1398,8 @@ export function createProvider(input: {
     anthropicApiKey: input.anthropicApiKey
       ? normalizeSecret(input.anthropicApiKey, 'anthropicApiKey')
       : '',
-    claudeCodeOauthToken: input.claudeCodeOauthToken
-      ? normalizeSecret(input.claudeCodeOauthToken, 'claudeCodeOauthToken')
-      : '',
-    claudeOAuthCredentials: input.claudeOAuthCredentials ?? null,
+    claudeCodeOauthToken: '',
+    claudeOAuthCredentials: null,
     customEnv: sanitizeCustomEnvMap(input.customEnv || {}, {
       skipReservedClaudeKeys: true,
     }),
@@ -1488,10 +1470,6 @@ export function updateProviderSecrets(
     clearAnthropicAuthToken?: boolean;
     anthropicApiKey?: string;
     clearAnthropicApiKey?: boolean;
-    claudeCodeOauthToken?: string;
-    clearClaudeCodeOauthToken?: boolean;
-    claudeOAuthCredentials?: ClaudeOAuthCredentials;
-    clearClaudeOAuthCredentials?: boolean;
   },
 ): UnifiedProvider {
   const state = readStoredStateV4();
@@ -1519,23 +1497,6 @@ export function updateProviderSecrets(
     );
   } else if (secrets.clearAnthropicApiKey) {
     updated.anthropicApiKey = '';
-  }
-
-  if (typeof secrets.claudeCodeOauthToken === 'string') {
-    updated.claudeCodeOauthToken = normalizeSecret(
-      secrets.claudeCodeOauthToken,
-      'claudeCodeOauthToken',
-    );
-  } else if (secrets.clearClaudeCodeOauthToken) {
-    updated.claudeCodeOauthToken = '';
-  }
-
-  if (secrets.claudeOAuthCredentials) {
-    updated.claudeOAuthCredentials = secrets.claudeOAuthCredentials;
-    // When full OAuth creds set, clear legacy single token
-    updated.claudeCodeOauthToken = '';
-  } else if (secrets.clearClaudeOAuthCredentials) {
-    updated.claudeOAuthCredentials = null;
   }
 
   state.providers[idx] = updated;
@@ -1608,8 +1569,10 @@ export function providerToConfig(
     anthropicBaseUrl: provider.anthropicBaseUrl,
     anthropicAuthToken: provider.anthropicAuthToken,
     anthropicApiKey: provider.anthropicApiKey,
-    claudeCodeOauthToken: provider.claudeCodeOauthToken,
-    claudeOAuthCredentials: provider.claudeOAuthCredentials,
+    // 官方 OAuth 字段在存储层闲置（D-4 ①），运行时边界统一置空：THESIS-05
+    // 删除 OAuth 写入后已无任何消费方，避免未来新增 sink 再把凭据带出存储层。
+    claudeCodeOauthToken: '',
+    claudeOAuthCredentials: null,
     anthropicModel: provider.anthropicModel,
     contextWindow: provider.contextWindow,
     updatedAt: provider.updatedAt,
@@ -1633,14 +1596,6 @@ export function toPublicProvider(
     anthropicAuthTokenMasked: maskSecret(provider.anthropicAuthToken),
     hasAnthropicApiKey: !!provider.anthropicApiKey,
     anthropicApiKeyMasked: maskSecret(provider.anthropicApiKey),
-    hasClaudeCodeOauthToken: !!provider.claudeCodeOauthToken,
-    claudeCodeOauthTokenMasked: maskSecret(provider.claudeCodeOauthToken),
-    hasClaudeOAuthCredentials: !!provider.claudeOAuthCredentials,
-    claudeOAuthCredentialsExpiresAt:
-      provider.claudeOAuthCredentials?.expiresAt ?? null,
-    claudeOAuthCredentialsAccessTokenMasked: provider.claudeOAuthCredentials
-      ? maskSecret(provider.claudeOAuthCredentials.accessToken)
-      : null,
     customEnv: provider.customEnv || {},
     updatedAt: provider.updatedAt,
   };
@@ -1816,13 +1771,6 @@ export function buildClaudeEnvLines(
 ): string[] {
   const lines: string[] = [];
 
-  // When full OAuth credentials exist, authentication is handled by .credentials.json file.
-  // Only fall back to CLAUDE_CODE_OAUTH_TOKEN env var for legacy single-token mode.
-  if (!config.claudeOAuthCredentials && config.claudeCodeOauthToken) {
-    lines.push(
-      `CLAUDE_CODE_OAUTH_TOKEN=${sanitizeEnvValue(config.claudeCodeOauthToken)}`,
-    );
-  }
   if (config.anthropicApiKey) {
     lines.push(`ANTHROPIC_API_KEY=${sanitizeEnvValue(config.anthropicApiKey)}`);
   }
@@ -1850,26 +1798,6 @@ export function buildClaudeEnvLines(
     }
   }
 
-  // ISSUE-04 ⑥: OAuth-only official providers authenticate via
-  // `Authorization: Bearer`, which is exactly what Pi's ANTHROPIC_AUTH_TOKEN
-  // env discovery emits. Map the OAuth token (legacy single setup token, or
-  // the full credential's access token) onto that env var — Pi never reads
-  // CLAUDE_CODE_OAUTH_TOKEN or Claude's .credentials.json. Explicit
-  // api-key/auth-token credentials win, and custom endpoints never receive
-  // OAuth tokens: they only work against api.anthropic.com.
-  if (
-    !config.anthropicBaseUrl &&
-    !config.anthropicApiKey &&
-    !config.anthropicAuthToken
-  ) {
-    const oauthToken =
-      config.claudeCodeOauthToken?.trim() ||
-      config.claudeOAuthCredentials?.accessToken?.trim() ||
-      '';
-    if (oauthToken) {
-      lines.push(`ANTHROPIC_AUTH_TOKEN=${sanitizeEnvValue(oauthToken)}`);
-    }
-  }
   if (config.anthropicModel) {
     // 任务AL：剥离 [1m] 后缀后再上送，第三方端点不再收到带后缀的模型名。
     lines.push(
@@ -1978,9 +1906,9 @@ function resolveProfileToConfig(profileId: string): ClaudeProviderConfig {
       anthropicBaseUrl: profile.anthropicBaseUrl,
       anthropicAuthToken: profile.anthropicAuthToken,
       anthropicApiKey: state.officialSecrets.anthropicApiKey,
-      claudeCodeOauthToken: state.officialSecrets.claudeCodeOauthToken,
-      claudeOAuthCredentials:
-        state.officialSecrets.claudeOAuthCredentials ?? null,
+      // 官方 OAuth 凭据不再进入运行时配置（THESIS-05）；字段仅为存储类型占位。
+      claudeCodeOauthToken: '',
+      claudeOAuthCredentials: null,
       anthropicModel: profile.anthropicModel,
     },
     profile.updatedAt || state.officialUpdatedAt,
@@ -2044,8 +1972,6 @@ interface ContainerEnvConfig {
   anthropicBaseUrl?: string;
   anthropicAuthToken?: string;
   anthropicApiKey?: string;
-  claudeCodeOauthToken?: string;
-  claudeOAuthCredentials?: ClaudeOAuthCredentials | null;
   anthropicModel?: string;
   /** Arbitrary extra env vars injected into the container */
   customEnv?: Record<string, string>;
@@ -2055,10 +1981,8 @@ export interface ContainerEnvPublicConfig {
   anthropicBaseUrl: string;
   anthropicAuthTokenMasked: string | null;
   anthropicApiKeyMasked: string | null;
-  claudeCodeOauthTokenMasked: string | null;
   hasAnthropicAuthToken: boolean;
   hasAnthropicApiKey: boolean;
-  hasClaudeCodeOauthToken: boolean;
   anthropicModel: string;
   customEnv: Record<string, string>;
 }
@@ -2110,10 +2034,6 @@ export function saveContainerEnvConfig(
     );
   if (sanitized.anthropicApiKey)
     sanitized.anthropicApiKey = sanitizeEnvValue(sanitized.anthropicApiKey);
-  if (sanitized.claudeCodeOauthToken)
-    sanitized.claudeCodeOauthToken = sanitizeEnvValue(
-      sanitized.claudeCodeOauthToken,
-    );
   if (sanitized.anthropicModel)
     sanitized.anthropicModel = sanitizeEnvValue(sanitized.anthropicModel);
   if (sanitized.customEnv) {
@@ -2154,10 +2074,8 @@ export function toPublicContainerEnvConfig(
     anthropicBaseUrl: config.anthropicBaseUrl || '',
     hasAnthropicAuthToken: !!config.anthropicAuthToken,
     hasAnthropicApiKey: !!config.anthropicApiKey,
-    hasClaudeCodeOauthToken: !!config.claudeCodeOauthToken,
     anthropicAuthTokenMasked: maskSecret(config.anthropicAuthToken || ''),
     anthropicApiKeyMasked: maskSecret(config.anthropicApiKey || ''),
-    claudeCodeOauthTokenMasked: maskSecret(config.claudeCodeOauthToken || ''),
     anthropicModel: config.anthropicModel || '',
     customEnv: config.customEnv || {},
   };
@@ -2176,23 +2094,14 @@ export function mergeClaudeEnvConfig(
     anthropicAuthToken:
       override.anthropicAuthToken || global.anthropicAuthToken,
     anthropicApiKey: override.anthropicApiKey || global.anthropicApiKey,
-    claudeCodeOauthToken:
-      override.claudeCodeOauthToken || global.claudeCodeOauthToken,
-    claudeOAuthCredentials:
-      override.claudeOAuthCredentials ?? global.claudeOAuthCredentials,
+    // 官方 OAuth 字段是存储层闲置字段（D-4 ①）：运行时边界统一置空。
+    claudeCodeOauthToken: '',
+    claudeOAuthCredentials: null,
     anthropicModel: override.anthropicModel || global.anthropicModel,
     // 窗口声明是 provider 级属性（任务AL）：工作区覆写不携带该字段，取全局值。
     contextWindow: global.contextWindow,
     updatedAt: global.updatedAt,
   };
-
-  // Third-party provider: strip OAuth credentials so the SDK does not try
-  // the OAuth auth path (which skips the standard Bearer header and causes
-  // 404 on non-Anthropic endpoints like Kimi).
-  if (merged.anthropicBaseUrl) {
-    merged.claudeOAuthCredentials = null;
-    merged.claudeCodeOauthToken = '';
-  }
 
   return merged;
 }
@@ -2312,117 +2221,6 @@ export function buildContainerEnvLines(
   }
 
   return lines;
-}
-
-// ─── OAuth credentials file management ────────────────────────────
-
-/**
- * Write .credentials.json to a Claude session directory.
- * Format matches what Claude Code CLI/Agent SDK natively reads.
- */
-export function writeCredentialsFile(
-  sessionDir: string,
-  config: ClaudeProviderConfig,
-): void {
-  const creds = config.claudeOAuthCredentials;
-  if (!creds) return;
-
-  // Claude CLI requires scopes to recognize the token as valid.
-  // Fall back to a sensible default when the stored credentials lack scopes
-  // (e.g. tokens imported before scopes were captured).
-  const scopes = creds.scopes?.length
-    ? creds.scopes
-    : DEFAULT_CREDENTIAL_SCOPES;
-
-  const claudeAiOauth: {
-    accessToken: string;
-    refreshToken: string;
-    expiresAt: number;
-    scopes: string[];
-    subscriptionType?: string;
-  } = {
-    accessToken: creds.accessToken,
-    refreshToken: creds.refreshToken,
-    expiresAt: creds.expiresAt,
-    scopes,
-  };
-  // Only include subscriptionType when explicitly configured — avoids
-  // misleading Claude CLI when the actual subscription tier is unknown.
-  if (creds.subscriptionType) {
-    claudeAiOauth.subscriptionType = creds.subscriptionType;
-  }
-
-  const credentialsData = { claudeAiOauth };
-
-  const filePath = path.join(sessionDir, '.credentials.json');
-  const tmp = `${filePath}.tmp`;
-  // 0o600 — credentials 是 plaintext OAuth access/refresh token，
-  // 不能让同主机其他本地账号读取（旧版用 0o644 是泄漏）。
-  fs.writeFileSync(tmp, JSON.stringify(credentialsData, null, 2) + '\n', {
-    encoding: 'utf-8',
-    mode: 0o600,
-  });
-  fs.renameSync(tmp, filePath);
-  // 防御性 chmod：rename 在 macOS APFS 上有时会保留旧 inode 的 mode；
-  // 显式再 chmod 一次确保最终落地权限严格。
-  try {
-    fs.chmodSync(filePath, 0o600);
-  } catch {
-    /* ignore — best effort */
-  }
-}
-
-/**
- * Update .credentials.json in all existing session directories + host ~/.claude/
- */
-export function updateAllSessionCredentials(
-  config: ClaudeProviderConfig,
-): void {
-  if (!config.claudeOAuthCredentials) return;
-
-  const sessionsDir = path.join(DATA_DIR, 'sessions');
-  try {
-    if (!fs.existsSync(sessionsDir)) return;
-    for (const folder of fs.readdirSync(sessionsDir)) {
-      const claudeDir = path.join(sessionsDir, folder, '.claude');
-      if (fs.existsSync(claudeDir) && fs.statSync(claudeDir).isDirectory()) {
-        try {
-          writeCredentialsFile(claudeDir, config);
-        } catch (err) {
-          logger.warn(
-            { err, folder },
-            'Failed to write .credentials.json for session',
-          );
-        }
-      }
-      // Also update sub-agent session dirs
-      const agentsDir = path.join(sessionsDir, folder, 'agents');
-      if (fs.existsSync(agentsDir) && fs.statSync(agentsDir).isDirectory()) {
-        for (const agentId of fs.readdirSync(agentsDir)) {
-          const agentClaudeDir = path.join(agentsDir, agentId, '.claude');
-          if (
-            fs.existsSync(agentClaudeDir) &&
-            fs.statSync(agentClaudeDir).isDirectory()
-          ) {
-            try {
-              writeCredentialsFile(agentClaudeDir, config);
-            } catch (err) {
-              logger.warn(
-                { err, folder, agentId },
-                'Failed to write .credentials.json for agent session',
-              );
-            }
-          }
-        }
-      }
-    }
-  } catch (err) {
-    logger.warn({ err }, 'Failed to update session credentials');
-  }
-
-  // Host mode uses CLAUDE_CONFIG_DIR=data/sessions/{folder}/.claude for isolation,
-  // so we must NOT touch ~/.claude/.credentials.json to avoid interfering with
-  // the user's local Claude Code installation.
 }
 
 // ─── Appearance config (plain JSON, no encryption) ────────────────

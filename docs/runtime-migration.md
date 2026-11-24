@@ -159,12 +159,15 @@ and unit/integration coverage for each are in place.
   controls were removed from the UI (stored values stay inert for storage
   compatibility; env injection stopped). The runtime contract keeps
   `autoCompactEnabled`, mapped to `SettingsManager.setCompactionEnabled`.
-- OAuth/setup-token credentials reach Pi through `ANTHROPIC_AUTH_TOKEN`
-  (Bearer) since ISSUE-04: the host maps OAuth-only official-provider tokens,
-  and the runner no longer downgrades bearer tokens into stored X-Api-Key
-  credentials. Pi never reads `CLAUDE_CODE_OAUTH_TOKEN` or Claude's
-  `.credentials.json`; it also never refreshes OAuth tokens — expired ones
-  must be re-imported in the provider UI.
+- OAuth/setup-token credentials no longer reach the Pi runtime. ISSUE-04
+  briefly mapped OAuth-only official-provider tokens to `ANTHROPIC_AUTH_TOKEN`
+  and wrote `.credentials.json`; THESIS-05 removed that mapping and the
+  `.credentials.json` writer. The official provider path itself was retired
+  earlier, in THESIS-04. The host now injects only explicit third-party
+  `anthropicAuthToken` / `anthropicApiKey` (plus Base URL), and stale
+  `.credentials.json` files in existing session directories are still removed
+  for third-party providers. Pi never read `CLAUDE_CODE_OAUTH_TOKEN` or Claude's
+  `.credentials.json`, and it never refreshed OAuth tokens.
 - The built-in main Agent is renamed to Miniclaw; existing databases keep
   stored `Miniclaw`/`Default Agent` default-profile names until the next
   read, which lazily migrates them (one-time version bump and identity-hash

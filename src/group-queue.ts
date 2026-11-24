@@ -1928,37 +1928,6 @@ export class GroupQueue {
   }
 
   /**
-   * Close all active containers/processes so they restart with fresh credentials.
-   * Called after OAuth token refresh to ensure running agents pick up new tokens.
-   */
-  closeAllActiveForCredentialRefresh(): number {
-    let closed = 0;
-    for (const [jid, state] of this.groups) {
-      if (state.active && state.groupFolder) {
-        const inputDir = this.resolveIpcInputDir(state as ActiveGroupState);
-        try {
-          fs.mkdirSync(inputDir, { recursive: true });
-          fs.writeFileSync(path.join(inputDir, '_close'), '');
-          closed++;
-          logger.info(
-            { groupJid: jid, groupFolder: state.groupFolder },
-            'Sent close signal for credential refresh',
-          );
-        } catch {
-          // ignore
-        }
-      }
-    }
-    if (closed > 0) {
-      logger.info(
-        { closed },
-        'Closed active containers/processes for credential refresh',
-      );
-    }
-    return closed;
-  }
-
-  /**
    * Interrupt the current query for the same chat only (do not cross-interrupt
    * sibling chats that share a serialized runner/folder).
    *
@@ -2897,7 +2866,7 @@ export class GroupQueue {
     // 主动写 _close sentinel：runForGroup 的 query() loop 一直在等 IPC 输入，
     // 没有 sentinel 就需要等到 grace 用完再被 SIGTERM/docker stop 强制结束。
     // 写入后 agent 看到 sentinel 自然 break loop、走 finally 清理、conversation
-    // archive 完成。和 closeAllActiveForCredentialRefresh 的策略一致。
+    // archive 完成。与运行中工作区的关闭策略一致。
     for (const [, state] of this.groups) {
       if (!state.active || !state.groupFolder) continue;
       const inputDir = state.taskRunId
