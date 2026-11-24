@@ -16,6 +16,7 @@
  * ProviderEditor 的行为随之收紧：小写 key / 空 value 将被拒（拍板项，
  * 存量已存数据不动）。
  */
+import { CUSTOM_HEADERS_ENV_KEY } from './custom-headers';
 import { buildDefaultProviderEnv } from './provider-model';
 
 export const RESERVED_ENV_KEYS = new Set([
@@ -32,6 +33,8 @@ export const DEFAULTED_THIRD_PARTY_ENV_KEYS = new Set(
 
 interface BuildCustomEnvOptions {
   manageThirdPartyDefaults?: boolean;
+  /** ISSUE-24：请求头由专用「自定义请求头」字段管理时拦截该键。 */
+  manageCustomHeaders?: boolean;
 }
 
 interface BuildCustomEnvResult {
@@ -82,6 +85,12 @@ export function buildCustomEnv(
       return {
         customEnv: {},
         error: `${key} 已在系统预填列表中，请直接修改对应值`,
+      };
+    }
+    if (options?.manageCustomHeaders && key === CUSTOM_HEADERS_ENV_KEY) {
+      return {
+        customEnv: {},
+        error: `${key} 请在「自定义请求头」中配置`,
       };
     }
     if (customEnv[key] !== undefined) {
