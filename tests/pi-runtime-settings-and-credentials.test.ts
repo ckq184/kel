@@ -366,11 +366,4 @@ describe('ISSUE-04 web UI source contracts', () => {
       /buildAgentPromptPatch\(currentPrompts, promptMode/,
     );
   });
-
-  test('official auth tabs carry the Pi bearer note (⑥)', () => {
-    const providerEditor = readSource('components/settings/ProviderEditor.tsx');
-
-    expect(providerEditor).toMatch(/以 Bearer Token\s*方式对官方端点生效/);
-    expect(providerEditor).toMatch(/不会自动刷新/);
-  });
 });

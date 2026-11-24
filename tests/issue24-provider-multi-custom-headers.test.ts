@@ -199,7 +199,7 @@ describe('buildCustomEnv: manageCustomHeaders 拦截', () => {
     expect(result.error).toContain('自定义请求头');
   });
 
-  test('未开启时保持原行为（引导页、官方供应商）', () => {
+  test('未开启时保持原行为（引导页）', () => {
     expect(buildCustomEnv(`${CUSTOM_HEADERS_ENV_KEY}=x-one: v1`)).toEqual({
       customEnv: { [CUSTOM_HEADERS_ENV_KEY]: 'x-one: v1' },
       error: null,
@@ -219,9 +219,7 @@ describe('ProviderEditor 接线（源码契约）', () => {
   });
 
   test('第三方供应商的环境变量开启请求头键拦截', () => {
-    expect(src).toMatch(
-      /manageCustomHeaders:\s*providerType === 'third_party'/,
-    );
+    expect(src).toMatch(/manageCustomHeaders:\s*true/);
   });
 
   test('请求头编辑器只在第三方供应商显示，值框默认打码', () => {

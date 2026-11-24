@@ -80,7 +80,7 @@ export interface AgentProfile {
 export interface ModelConfigOption {
   id: string;
   name: string;
-  type: 'official' | 'third_party';
+  type: 'third_party';
   enabled: boolean;
   anthropic_model: string;
   is_default: boolean;
