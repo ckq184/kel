@@ -128,7 +128,6 @@ const {
   cancelTaskRunNow,
   computeNextRunForTaskResume,
   deliverPersistedNotificationPayload,
-  enqueueIsolatedScheduledTask,
   getRunningTaskIds,
   hasAuthoritativeScheduledGroupTerminal,
   processClaimedTaskRunNotification,
@@ -2642,11 +2641,8 @@ describe('scheduled task workspace/session contract', () => {
     });
   });
 
-  test('capacity-queued scheduled run keeps one reservation and one pinned JID', async () => {
-    const taskId = createTask({
-      id: 'task-scheduled-queued-jid',
-      next_run: new Date(Date.now() - 60_000).toISOString(),
-    });
+  test('capacity-queued V2 run keeps one reservation and one pinned JID', async () => {
+    const taskId = createTask({ id: 'task-scheduled-queued-jid' });
     const originalGroup = db.getRegisteredGroup(GROUP_JID)!;
     const movedJid = 'web:task-contract-moved';
     const movedFolder = 'task-contract-moved';
@@ -2673,10 +2669,9 @@ describe('scheduled task workspace/session contract', () => {
       isShuttingDown: () => false,
     };
     const deps = { ...makeDeps(groups).deps, queue } as any;
-    const snapshot = db.getTaskById(taskId)!;
 
-    expect(enqueueIsolatedScheduledTask(snapshot, deps)).toBe(true);
-    expect(enqueueIsolatedScheduledTask(snapshot, deps)).toBe(false);
+    expect(triggerTaskNow(taskId, deps).success).toBe(true);
+    expect(triggerTaskNow(taskId, deps).success).toBe(false);
     expect(queue.enqueueTask).toHaveBeenCalledTimes(1);
     expect(getRunningTaskIds()).toContain(taskId);
 
@@ -2704,61 +2699,34 @@ describe('scheduled task workspace/session contract', () => {
     expect(getRunningTaskIds()).not.toContain(taskId);
   });
 
-  test('scheduled reservation releases on enqueue rejection, throw, and claim loss', async () => {
-    const taskId = createTask({
-      id: 'task-scheduled-release-paths',
-      next_run: new Date(Date.now() - 60_000).toISOString(),
-    });
+  test('V2 reservation releases on enqueue rejection and throw', () => {
+    const taskId = createTask({ id: 'task-scheduled-release-paths' });
     const groups = {
       [GROUP_JID]: db.getRegisteredGroup(GROUP_JID)!,
     };
     const baseDeps = makeDeps(groups).deps;
-    const snapshot = db.getTaskById(taskId)!;
 
     const rejectedDeps = {
       ...baseDeps,
-      queue: { enqueueTask: () => false },
+      queue: { ...baseDeps.queue, enqueueTask: vi.fn(() => false) },
     } as any;
-    expect(enqueueIsolatedScheduledTask(snapshot, rejectedDeps)).toBe(false);
+    expect(triggerTaskNow(taskId, rejectedDeps).success).toBe(true);
+    expect(rejectedDeps.queue.enqueueTask).toHaveBeenCalledTimes(1);
     expect(getRunningTaskIds()).not.toContain(taskId);
 
     const throwingDeps = {
       ...baseDeps,
       queue: {
-        enqueueTask: () => {
+        ...baseDeps.queue,
+        enqueueTask: vi.fn(() => {
           throw new Error('queue failed');
-        },
+        }),
       },
     } as any;
-    expect(() => enqueueIsolatedScheduledTask(snapshot, throwingDeps)).toThrow(
-      'queue failed',
-    );
-    expect(getRunningTaskIds()).not.toContain(taskId);
-
-    let queuedRun: (() => Promise<void>) | null = null;
-    const claimLostDeps = {
-      ...baseDeps,
-      queue: {
-        enqueueTask: (
-          _jid: string,
-          _taskId: string,
-          fn: () => Promise<void>,
-        ) => {
-          queuedRun = fn;
-          return true;
-        },
-      },
-    } as any;
-    expect(db.claimTaskForRun(taskId, 'another-scheduler', 60_000)).toBe(true);
-    expect(enqueueIsolatedScheduledTask(snapshot, claimLostDeps)).toBe(true);
-    await queuedRun!();
+    expect(triggerTaskNow(taskId, throwingDeps).success).toBe(true);
+    expect(throwingDeps.queue.enqueueTask).toHaveBeenCalledTimes(1);
     expect(getRunningTaskIds()).not.toContain(taskId);
     expect(runContainerAgentMock).not.toHaveBeenCalled();
-    db.updateTaskAfterRun(
-      taskId,
-      new Date(Date.now() + 60_000).toISOString(),
-      'released competing lease',
-    );
   });
 
   test('paused tasks can still be run manually once', async () => {

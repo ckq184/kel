@@ -66,7 +66,7 @@ const db = await import('../src/db.js');
 const { MAX_TASK_PROMPT_LENGTH } = await import('../src/schemas.js');
 const runtimeConfig = await import('../src/runtime-config.js');
 const webContext = await import('../src/web-context.js');
-const { enqueueIsolatedScheduledTask, getRunningTaskIds } =
+const { triggerTaskNow, getRunningTaskIds } =
   await import('../src/task-scheduler.js');
 
 const tasksRoutes = tasksRoutesModule.default;
@@ -455,7 +455,7 @@ describe('tasks route ownership and cleanup contract', () => {
     expect(fs.readFileSync(marker, 'utf8')).toBe('workspace data');
   });
 
-  test('capacity-queued scheduled run blocks route mutation and drop releases it', async () => {
+  test('capacity-queued V2 run blocks route mutation and drop releases it', async () => {
     const targetJid = 'web:tasks-contract-target';
     const targetFolder = 'tasks-contract-target';
     db.setRegisteredGroup(targetJid, {
@@ -488,12 +488,11 @@ describe('tasks route ownership and cleanup contract', () => {
     };
     const deps = {
       registeredGroups: () => groups,
-      queue,
+      getSessions: () => ({}),
+      queue: { ...queue, isShuttingDown: () => false },
     } as any;
 
-    expect(
-      enqueueIsolatedScheduledTask(db.getTaskById('queued-route-task')!, deps),
-    ).toBe(true);
+    expect(triggerTaskNow('queued-route-task', deps).success).toBe(true);
     expect(getRunningTaskIds()).toContain('queued-route-task');
 
     asRouteTestUser(OWNER_ID);
@@ -511,9 +510,7 @@ describe('tasks route ownership and cleanup contract', () => {
     expect(patched.status).toBe(200);
     expect(db.getTaskById('queued-route-task')?.chat_jid).toBe(targetJid);
 
-    expect(
-      enqueueIsolatedScheduledTask(db.getTaskById('queued-route-task')!, deps),
-    ).toBe(true);
+    expect(triggerTaskNow('queued-route-task', deps).success).toBe(true);
     expect(queue.enqueueTask).toHaveBeenCalledTimes(2);
     droppedCallbacks.shift()?.();
   });
