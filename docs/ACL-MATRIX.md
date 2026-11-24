@@ -52,16 +52,15 @@
 
 以下资源以登录用户 ID 为作用域，不接受客户端指定其他 owner：
 
-| 路由族                                              | 权限                                          |
-| --------------------------------------------------- | --------------------------------------------- |
-| `/api/auth/me`、profile、password、sessions、avatar | Login，仅本人                                 |
-| `/api/agent-profiles/*`                             | Login，仅本人 Agent                           |
-| `/api/channel-accounts/*`                           | Login，仅本人渠道账号                         |
-| `/api/skills/*`                                     | Login，仅本人用户 Skills                      |
-| 用户级 `/api/mcp-servers/*`                         | Login，仅本人配置                             |
-| Workspace Memory v2                                 | Login + Workspace owner ACL，见 4.5           |
-| CKQClaw Owner Profile                               | Home actual owner + runtime exact-turn gate   |
-| `/api/usage/*`                                      | Login；普通用户只见本人，管理视图再按角色过滤 |
+| 路由族                                              | 权限                                        |
+| --------------------------------------------------- | ------------------------------------------- |
+| `/api/auth/me`、profile、password、sessions、avatar | Login，仅本人                               |
+| `/api/agent-profiles/*`                             | Login，仅本人 Agent                         |
+| `/api/channel-accounts/*`                           | Login，仅本人渠道账号                       |
+| `/api/skills/*`                                     | Login，仅本人用户 Skills                    |
+| 用户级 `/api/mcp-servers/*`                         | Login，仅本人配置                           |
+| Workspace Memory v2                                 | Login + Workspace owner ACL，见 4.5         |
+| CKQClaw Owner Profile                               | Home actual owner + runtime exact-turn gate |
 
 产品级 Agent 删除前必须先迁移其工作区。渠道账号删除、登出或断开时必须清理/更新
 自身连接和绑定，不能影响其他用户或其他账号。

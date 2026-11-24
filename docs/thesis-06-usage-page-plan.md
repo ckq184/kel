@@ -29,12 +29,14 @@
 2. **Green**：按范围表删除文件与入口；`web/package.json` 去 `recharts` 后 `npm install`。
 3. **协调测试**：删除两个旧测试文件；按上文改写三个测试的残留断言。
 4. **文档**：`docs/API.md`（路由表 1 行 + 用量 6 条 + 小节标题）、`docs/ACL-MATRIX.md` 1 行、`CLAUDE.md` §3.2 路由表与兼容重定向列表各 1 行；跑 `npm run docs:check`。
-5. **清扫（方案 §11.4）**：可达性、死导出、入口、权限与事件、依赖、文案与测试、图标与样式逐项核对。
+5. **清扫（方案 §11.4）**：可达性、死导出、入口、权限与事件、依赖、文案与测试、图标与样式逐项核对。独立审查补漏：删除只服务用量页导出兜底的 `downloadTextFile` 与 `DownloadError` 导出（`web/src/utils/download.ts`），以及唯一设置点已随导航项删除的 `hideOnMobile` 字段与 `BottomTabBar` 过滤分支。
 6. **验证**：`npm run verify` 六步 + `node scripts/check-scope.mjs`；独立规格审查与代码质量审查落 `docs/审查记录.md`。
 
 ## 3. 范围声明（`.gatescope.json` allow）
 
-`.gatescope.json`、`docs/issues2/THESIS-06-usage-page.md`、`docs/issues2/README.md`、`docs/thesis-06-usage-page-plan.md`、`docs/审查记录.md`、`docs/API.md`、`docs/ACL-MATRIX.md`、`CLAUDE.md`、`web/src/pages/UsagePage.tsx`、`web/src/stores/usage.ts`、`web/src/components/usage/**`、`web/src/utils/usage-format.ts`、`web/src/App.tsx`、`web/src/pages/SettingsPage.tsx`、`web/src/components/layout/nav-items.ts`、`web/src/pages/ChatPage.tsx`、`web/src/stores/auth.ts`、`web/src/components/settings/types.ts`、`web/package.json`、`web/package-lock.json`、`src/routes/usage.ts`、`src/web.ts`、`tests/frontend-usage-experience.test.ts`、`tests/routes-usage.test.ts`、`tests/frontend-settings-information-architecture.test.ts`、`tests/frontend-product-terminology.test.ts`、`tests/issue11-compat-and-duplicate-convergence.test.ts`、`tests/thesis-06-usage-page-removal.test.ts`。
+`.gatescope.json`、`docs/issues2/THESIS-06-usage-page.md`、`docs/issues2/README.md`、`docs/thesis-06-usage-page-plan.md`、`docs/审查记录.md`、`docs/API.md`、`docs/ACL-MATRIX.md`、`CLAUDE.md`、`web/src/pages/UsagePage.tsx`、`web/src/stores/usage.ts`、`web/src/components/usage/**`、`web/src/utils/usage-format.ts`、`web/src/App.tsx`、`web/src/pages/SettingsPage.tsx`、`web/src/components/layout/nav-items.ts`、`web/src/components/layout/BottomTabBar.tsx`、`web/src/pages/ChatPage.tsx`、`web/src/stores/auth.ts`、`web/src/components/settings/types.ts`、`web/src/utils/download.ts`、`web/package.json`、`web/package-lock.json`、`src/routes/usage.ts`、`src/web.ts`、`tests/frontend-usage-experience.test.ts`、`tests/routes-usage.test.ts`、`tests/frontend-settings-information-architecture.test.ts`、`tests/frontend-product-terminology.test.ts`、`tests/issue11-compat-and-duplicate-convergence.test.ts`、`tests/thesis-06-usage-page-removal.test.ts`。
+
+其中 `web/src/utils/download.ts` 与 `web/src/components/layout/BottomTabBar.tsx` 是独立审查发现的 §11.4 第 2 项死代码补漏，超出 issue 的预计改动路径，按"扩宽范围只能改声明"登记；详见交付记录。
 
 ## 4. 验收条件
 

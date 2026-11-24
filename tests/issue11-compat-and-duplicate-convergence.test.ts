@@ -435,9 +435,6 @@ describe('error-extraction copies route through the shared module (ISSUE-11 B4)'
   test('remaining copies keep their fallback texts verbatim', () => {
     // 各副本的兜底文案经 fallback 参数原样迁移（抽样锁定；正则容忍
     // prettier 对长行的折行）。
-    expect(read('web/src/stores/usage.ts')).toMatch(
-      /extractErrorMessage\(\s*error,\s*'用量数据加载失败，请检查网络后重试。',\s*\)/,
-    );
     expect(
       read('web/src/components/agents/AgentPromptAssistant.tsx'),
     ).toContain("extractErrorMessage(err, 'AI 调整失败，请稍后重试')");
@@ -447,7 +444,7 @@ describe('error-extraction copies route through the shared module (ISSUE-11 B4)'
   });
 });
 
-// ───────────────────────────── ④.c B5：formatCost / safeStorage / buildCustomEnv
+// ───────────────────────────── ④.c B5：safeStorage / buildCustomEnv
 
 describe('buildCustomEnv strict synthesis (ISSUE-11 B5, user decision #7)', () => {
   test('accepts uppercase KEY=value lines, trims stored values, keeps embedded =', async () => {
@@ -520,7 +517,7 @@ describe('buildCustomEnv strict synthesis (ISSUE-11 B5, user decision #7)', () =
   });
 });
 
-describe('shared storage and usage helpers (ISSUE-11 B5)', () => {
+describe('shared storage helpers (ISSUE-11 B5)', () => {
   test('safeStorage returns live localStorage and null when inaccessible', async () => {
     const { safeStorage } = await import('../web/src/utils/safe-storage');
     // node 测试环境无 localStorage。
@@ -547,27 +544,15 @@ describe('shared storage and usage helpers (ISSUE-11 B5)', () => {
       Reflect.deleteProperty(globalThis, 'localStorage');
     }
   });
-
-  test('formatCost keeps the tiered dollar formatting', async () => {
-    const { formatCost } = await import('../web/src/utils/usage-format');
-    expect(formatCost(1.5)).toBe('$1.50');
-    expect(formatCost(0.02)).toBe('$0.020');
-    expect(formatCost(0.0001)).toBe('$0.0001');
-    expect(formatCost(0)).toBe('$0.00');
-    expect(formatCost(-3)).toBe('$0.00');
-  });
 });
 
 describe('frontend helper uniqueness contracts (ISSUE-11 B)', () => {
   const webSources = listWebSources();
 
-  test('formatCost / safeStorage / buildCustomEnv are each defined exactly once', () => {
+  test('safeStorage / buildCustomEnv are each defined exactly once', () => {
     const defineSites = (pattern: RegExp) =>
       webSources.filter((file) => pattern.test(read(file)));
 
-    expect(defineSites(/function formatCost\(|const formatCost\s*=/)).toEqual([
-      'web/src/utils/usage-format.ts',
-    ]);
     expect(defineSites(/function safeStorage\(|const safeStorage\s*=/)).toEqual(
       ['web/src/utils/safe-storage.ts'],
     );
@@ -595,12 +580,6 @@ describe('frontend helper uniqueness contracts (ISSUE-11 B)', () => {
   });
 
   test('converged consumers import the shared modules', () => {
-    expect(read('web/src/components/usage/UsageTrendChart.tsx')).toContain(
-      "from '../../utils/usage-format'",
-    );
-    expect(read('web/src/pages/UsagePage.tsx')).toContain(
-      "from '../utils/usage-format'",
-    );
     expect(read('web/src/utils/routeRestore.ts')).toContain(
       "from './safe-storage'",
     );

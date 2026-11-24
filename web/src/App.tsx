@@ -69,9 +69,6 @@ const AgentProfilesPage = lazy(() =>
     default: m.AgentProfilesPage,
   })),
 );
-const UsagePage = lazy(() =>
-  import('./pages/UsagePage').then((m) => ({ default: m.UsagePage })),
-);
 // These four were the only synchronous authed routes left. CapabilitiesPage in
 // particular statically pulls SkillsPage → MarkdownRenderer → KaTeX +
 // highlight.js, which hoisted that whole chain into the entry chunk (~1.74MB
@@ -90,20 +87,6 @@ const CapabilitiesPage = lazy(() =>
     default: m.CapabilitiesPage,
   })),
 );
-
-function UsageRouteFallback() {
-  return (
-    <div
-      className="min-h-full px-4 py-5 sm:px-6 lg:px-8 lg:py-8"
-      role="status"
-      aria-live="polite"
-    >
-      <div className="mx-auto max-w-7xl rounded-xl border border-border bg-card/40 p-6 text-sm text-muted-foreground motion-safe:animate-pulse">
-        正在加载用量分析…
-      </div>
-    </div>
-  );
-}
 
 function AgentProfilesRouteFallback() {
   return (
@@ -199,15 +182,6 @@ const appRoutes = createRoutesFromElements(
               <MonitorPage />
             </Suspense>
           </AuthGuard>
-        }
-      />
-      {/* 用量分析（token/成本账本） */}
-      <Route
-        path="/usage"
-        element={
-          <Suspense fallback={<UsageRouteFallback />}>
-            <UsagePage />
-          </Suspense>
         }
       />
       {/* 工作区记忆管理 */}

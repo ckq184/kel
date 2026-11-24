@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 import { api, apiFetch } from '../api/client';
 import { clearMessageSnapshotCache } from '../utils/messageSnapshotCache';
-import { useUsageStore } from './usage';
 
 export type Permission =
   | 'manage_system_config'
@@ -94,7 +93,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   login: async (username: string, password: string) => {
     // Message snapshots are user-scoped application data. Clear them before
     // switching users on a shared browser.
-    useUsageStore.getState().reset();
     await clearMessageSnapshotCache();
     const data = await api.post<{
       success: boolean;
@@ -113,7 +111,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   register: async (payload) => {
     // Same rationale as login: clear user-scoped message snapshots.
-    useUsageStore.getState().reset();
     await clearMessageSnapshotCache();
     const data = await api.post<{ success: boolean; user: UserPublic }>(
       '/api/auth/register',
@@ -131,7 +128,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     await api.post('/api/auth/logout');
     // Clear AFTER server-side session invalidation so the next user on this
     // device cannot see this user's message snapshots.
-    useUsageStore.getState().reset();
     await clearMessageSnapshotCache();
     set({
       authenticated: false,

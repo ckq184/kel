@@ -12,7 +12,7 @@ export function BottomTabBar() {
   const hasPermission = useAuthStore((s) => s.hasPermission);
 
   const navItems = useMemo(
-    () => filterNavItems(hasPermission).filter((item) => !item.hideOnMobile),
+    () => filterNavItems(hasPermission),
     [hasPermission],
   );
 

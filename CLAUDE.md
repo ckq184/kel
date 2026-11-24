@@ -82,7 +82,6 @@ Radix UI。路由以 `web/src/App.tsx` 为准：
 | `/agent-profiles`         | Agent 管理                            |
 | `/capabilities/:section?` | Skills、MCP                           |
 | `/tasks`                  | 定时任务                              |
-| `/usage`                  | Token 用量统计                        |
 | `/memory`                 | 记忆管理                              |
 | `/settings`               | 账户和系统设置                        |
 | `/monitor`                | 运行状态，需要 `manage_system_config` |
@@ -91,10 +90,9 @@ Radix UI。路由以 `web/src/App.tsx` 为准：
 兼容重定向不应新增独立页面，共两层：路由级（`web/src/App.tsx`）`/groups`→`/chat`、
 `/skills`→`/capabilities/skills`、`/mcp-servers`→`/capabilities/mcp`；`/settings` 旧
 tab 级（`web/src/pages/SettingsPage.tsx` 的 `LEGACY_TAB_ROUTES` + automation 特判）
-共 8 处：`groups`→`/chat`、`agent-profiles`→`/agent-profiles`、`memory`→`/memory`、
+共 7 处：`groups`→`/chat`、`agent-profiles`→`/agent-profiles`、`memory`→`/memory`、
 `skills`→`/capabilities/skills`、`mcp-servers`→`/capabilities/mcp`、`bindings`→
-`/settings?tab=my-channels&view=bindings`、`usage`→`/usage`，以及 `automation`→
-`system` 隐式特判。
+`/settings?tab=my-channels&view=bindings`，以及 `automation`→`system` 隐式特判。
 
 ### 3.3 Agent Runner
 

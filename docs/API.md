@@ -29,7 +29,6 @@
 | `/api/memory`                      | `src/routes/memory.ts`           | Workspace Memory v2          |
 | `/api/skills`                      | `src/routes/skills.ts`           | 用户 Skills                  |
 | `/api/mcp-servers`                 | `src/routes/mcp-servers.ts`      | 用户/系统 MCP                |
-| `/api/usage`                       | `src/routes/usage.ts`            | Token 用量                   |
 | `/api/pricing`                     | `src/routes/pricing.ts`          | 自定义模型单价规则           |
 | `/api/admin`                       | `src/routes/admin.ts`            | 用户、邀请和审计             |
 | `/api/bug-report`                  | `src/routes/bug-report.ts`       | 脱敏问题报告                 |
@@ -496,16 +495,7 @@ Web 和 Runtime 不再把它们当作第二个可写真相源。
 完整产品边界与交互约定见
 [Workspace Memory v2](workspace-memory-v2.md)。
 
-## 用量与单价
-
-用量：
-
-- `GET /api/usage/stats`
-- `GET /api/usage/models`
-- `GET /api/usage/filters`
-- `GET /api/usage/records`
-- `GET /api/usage/export.csv`
-- `GET /api/usage/users`
+## 模型单价
 
 自定义模型单价（全部要求 `manage_system_config`）：
 

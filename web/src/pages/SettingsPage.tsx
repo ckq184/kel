@@ -44,7 +44,6 @@ const VALID_TABS: SettingsTab[] = [
   'users',
   'about',
   'bindings',
-  'usage',
   'monitor',
 ];
 const SYSTEM_TABS: SettingsTab[] = [
@@ -65,7 +64,6 @@ const LEGACY_TAB_ROUTES: Partial<Record<SettingsTab, string>> = {
   skills: '/capabilities/skills',
   'mcp-servers': '/capabilities/mcp',
   bindings: '/settings?tab=my-channels&view=bindings',
-  usage: '/usage',
 };
 
 export function SettingsPage() {
@@ -147,7 +145,6 @@ export function SettingsPage() {
     users: '用户与访问',
     about: '关于',
     bindings: '渠道绑定',
-    usage: '用量统计',
     monitor: '运行状态',
   };
 
