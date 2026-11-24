@@ -16,7 +16,7 @@
 
 ## 1. 关键事实（开工前核实）
 
-- **引入点**：`17113e9` 是 `bfa96a1`（main）与 `aa0c18c`（THESIS-01 分支）的合并提交；两个父提交的树里都没有 `node_modules` 条目，合并结果却新增了三条 `120000` 符号链接。`git log --all -- node_modules web/node_modules container/agent-runner/node_modules` 只命中 `17113e9`，说明是合并工作树里的本地链接被 `git add -A` 带进了 evil merge。
+- **引入点**：`17113e9` 是 `bfa96a1`（main）与 `aa0c18c`（THESIS-01 分支）的合并提交；两个父提交的树里都没有 `node_modules` 条目，合并结果却新增了三条 `120000` 符号链接。修复前 `git log --all -- node_modules web/node_modules container/agent-runner/node_modules` 只命中 `17113e9`（修复提交会新增一条删除记录），说明是合并工作树里的本地链接被 `git add -A` 带进了 evil merge。
 - **链接形态**：三条都是指向主 worktree 绝对路径的自引用链接：
   - `node_modules -> /Users/xy/Desktop/workspace/text-repo/node_modules`
   - `web/node_modules -> /Users/xy/Desktop/workspace/text-repo/web/node_modules`
@@ -54,7 +54,7 @@
 
 1. `git ls-files | grep node_modules` 无输出。
 2. 修复后从 main 新建 worktree，根、`web/`、`container/agent-runner/` 三侧 `npm ci` 均成功。
-3. 上述新 worktree 中 `node scripts/check-scope.mjs` 通过，输出不再出现任何 `node_modules` 路径。
+3. 上述新 worktree 中 `node scripts/check-scope.mjs` 通过，**0 条越界路径**。相对 base `5ccf1b3` 的输出里仍会列出三条 `node_modules` 删除项——那是本任务要删除的索引条目，已在 allow 中声明；以修复后提交为 base 时，diff 不再包含任何 `node_modules` 路径。
 4. `npm run verify` 六步全绿。
 5. 本地 main 已包含修复；远端推送由用户执行。
 
@@ -75,4 +75,13 @@
 
 ## 8. 交付记录
 
-（实现与验证完成后补记）
+- **提交**：`41d3d69`（立项：需求结论、关键事实、方案与范围声明）、`30ba533`（实现：取消三条索引追踪、收紧忽略规则、新增契约测试）。
+- **Red 实证**：修复前定向运行 `npx vitest run tests/node-modules-tracking-contract.test.ts` → 2/2 失败。索引断言收到 `container/agent-runner/node_modules`、`node_modules`、`web/node_modules`；忽略规则断言多出 `file-probe/node_modules` 与 `symlink-probe/node_modules`，精确复现尾斜杠规则漏掉文件/符号链接的缺口。
+- **Green**：修复后同一用例 2/2 通过；`git ls-files | grep node_modules` 无输出。
+- **门禁证据**：
+  - 修复 worktree：`npm run verify` 6/6 全绿，38.1s。
+  - 用户场景：从 `30ba533` 新建 worktree `node-modules-tracking-fresh`，`make install` exit 0（根 325 包、runner 126 包 + tsc、web 680 包）；三处 `node_modules` 均为实体目录，`git status` 干净且 `--ignored` 显示三条忽略；`node scripts/check-scope.mjs` 7 个路径全在 allow、**0 条越界**（三条 `node_modules` 是相对 base `5ccf1b3` 的删除项，不是 `npm ci` 产物）；`npm run verify` 6/6 全绿，44.8s，363 文件 2994 通过 23 跳过。
+- **独立审查**：结论"有条件通过"——两个阻塞项均为交付流程项：①验收条件 3 的措辞与实测输出不一致，已改为"0 条越界"并解释三条删除项；②本地 main 尚未包含修复，按第 3 节第 5 步合入后闭环。非阻塞建议处置：`git log` 已加"修复前"限定词；check-scope 输出已随本记录归档；`process.cwd()` 保留（与 `scope-check-contract`、`githooks-contract` 同款，verify 从仓库根执行）；main 基复核在合入后执行。
+- **合入**：本地 main 以 `--no-ff` 合入本分支；合并树的 `npm run verify` 与 `node scripts/check-scope.mjs` 结果见 main 合并提交信息。
+- **偏差**：不重写 `17113e9`/历史，避免 force-push 与改写所有后继 SHA；六个既有 worktree（`main-view`、`thesis-03` 至 `thesis-07`）仍保留旧索引条目，合并前按第 7 节清理；其中 `thesis-05` 已跑过 `npm ci`，其工作树已显示三条删除。
+- **待用户**：未推送；远端更新由用户执行。
