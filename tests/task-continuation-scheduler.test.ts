@@ -219,8 +219,9 @@ describe('schema v71 continuation columns', () => {
   test('task_runs carries the continuation columns with safe defaults', () => {
     // v71 columns survive at head (72 = approval-gate rollback, 73 = custom
     // model pricing table, 74 = auto_memory_recall column, 76 = prune trim,
-    // 77 = usage/billing dead-column trim; all unrelated to task_runs).
-    expect(db.CURRENT_SCHEMA_VERSION).toBe(77);
+    // 77 = usage/billing dead-column trim, 78 = scheduled_tasks legacy lease
+    // columns; all unrelated to task_runs).
+    expect(db.CURRENT_SCHEMA_VERSION).toBe(78);
     const task = createDefinition('schema-defaults-task');
     const run = runToSuccess(task);
     // New columns exist on every row (legacy rows migrate to these defaults).
