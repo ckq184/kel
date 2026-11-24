@@ -246,11 +246,12 @@ describe('setupStatus only counts third-party configurations', () => {
   });
 
   test('official-only credentials are not configured', async () => {
+    // THESIS-05 起创建入口不再接受官方 OAuth 字段；这里保留官方型 + API Key
+    // 的存量形态，确认"已配置"判断仍只认第三方。
     runtimeConfig.createProvider({
       name: 'legacy-official',
       type: 'official',
       anthropicApiKey: 'sk-official',
-      claudeCodeOauthToken: 'legacy-oauth-token',
     });
 
     await expect(setupStatus()).resolves.toMatchObject({

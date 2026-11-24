@@ -49,10 +49,8 @@ import {
   getProviders,
   getSystemSettings,
   getEffectiveExternalDir,
-  mergeClaudeEnvConfig,
   resolveProviderById,
   shellQuoteEnvLines,
-  writeCredentialsFile,
 } from './runtime-config.js';
 import { providerPool } from './provider-pool.js';
 import { resolveProviderFailureDisposition } from './provider-failure.js';
@@ -1278,22 +1276,9 @@ export function buildVolumeMounts(
     });
   }
 
-  // Write .credentials.json for OAuth credentials (session dir is already mounted)
-  const mergedConfig = mergeClaudeEnvConfig(globalConfig, containerOverride);
-  if (mergedConfig.claudeOAuthCredentials) {
-    try {
-      writeCredentialsFile(groupSessionsDir, mergedConfig);
-    } catch (err) {
-      logger.warn(
-        { group: group.name, err },
-        'Failed to write .credentials.json',
-      );
-    }
-  }
-
   // Third-party provider: remove any stale .credentials.json so the SDK
   // does not detect OAuth credentials from a previous official-provider run.
-  if (mergedConfig.anthropicBaseUrl) {
+  if (containerOverride.anthropicBaseUrl || globalConfig.anthropicBaseUrl) {
     try {
       const staleCreds = path.join(groupSessionsDir, '.credentials.json');
       if (fs.existsSync(staleCreds)) fs.unlinkSync(staleCreds);
@@ -2394,19 +2379,6 @@ export async function runHostAgent(
         logger.warn(
           { folder: group.folder, err },
           'Failed to remove .credentials.json for third-party provider',
-        );
-      }
-    }
-
-    // Write .credentials.json for OAuth credentials
-    const mergedConfig = mergeClaudeEnvConfig(globalConfig, containerOverride);
-    if (mergedConfig.claudeOAuthCredentials) {
-      try {
-        writeCredentialsFile(groupSessionsDir, mergedConfig);
-      } catch (err) {
-        logger.warn(
-          { folder: group.folder, err },
-          'Failed to write .credentials.json for host agent',
         );
       }
     }

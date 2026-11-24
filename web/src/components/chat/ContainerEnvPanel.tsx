@@ -98,7 +98,6 @@ export function ContainerEnvPanel({
       anthropicBaseUrl: '',
       anthropicAuthToken: '',
       anthropicApiKey: '',
-      claudeCodeOauthToken: '',
       anthropicModel: '',
       customEnv: {},
     });
@@ -156,7 +155,6 @@ export function ContainerEnvPanel({
     config?.anthropicBaseUrl ||
     config?.hasAnthropicAuthToken ||
     config?.hasAnthropicApiKey ||
-    config?.hasClaudeCodeOauthToken ||
     Object.keys(config?.customEnv ?? {}).some((key) =>
       SYSTEM_MANAGED_ENV_KEYS.has(key),
     ),

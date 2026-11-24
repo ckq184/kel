@@ -11,10 +11,8 @@ export interface ContainerEnvPublicConfig {
   anthropicBaseUrl: string;
   anthropicAuthTokenMasked: string | null;
   anthropicApiKeyMasked: string | null;
-  claudeCodeOauthTokenMasked: string | null;
   hasAnthropicAuthToken: boolean;
   hasAnthropicApiKey: boolean;
-  hasClaudeCodeOauthToken: boolean;
   anthropicModel: string;
   customEnv: Record<string, string>;
 }
@@ -32,7 +30,6 @@ interface ContainerEnvState {
       anthropicBaseUrl?: string;
       anthropicAuthToken?: string;
       anthropicApiKey?: string;
-      claudeCodeOauthToken?: string;
       anthropicModel?: string;
       customEnv?: Record<string, string>;
     },
