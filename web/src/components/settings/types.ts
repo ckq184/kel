@@ -7,7 +7,8 @@ export type { ContextWindowPreset };
 export interface UnifiedProviderPublic {
   id: string;
   name: string;
-  type: 'official' | 'third_party';
+  /** 界面只支持第三方；存储层仍可能返回存量 official（D-4 ①）。 */
+  type: 'third_party';
   enabled: boolean;
   weight: number;
   anthropicBaseUrl: string;
@@ -17,11 +18,6 @@ export interface UnifiedProviderPublic {
   anthropicAuthTokenMasked: string | null;
   hasAnthropicApiKey: boolean;
   anthropicApiKeyMasked: string | null;
-  hasClaudeCodeOauthToken: boolean;
-  claudeCodeOauthTokenMasked: string | null;
-  hasClaudeOAuthCredentials: boolean;
-  claudeOAuthCredentialsExpiresAt: number | null;
-  claudeOAuthCredentialsAccessTokenMasked: string | null;
   customEnv: Record<string, string>;
   updatedAt: string;
 }
@@ -85,26 +81,6 @@ export interface HostIntegrationSettings {
   mainAgentAutoCompactWindow: number;
   mainAgentAutoCompactPercentage: number;
   externalClaudeDir: string;
-}
-
-// ─── OAuth Usage ────────────────────────────────────────────
-
-export interface OAuthUsageBucket {
-  utilization: number;
-  resets_at: string;
-}
-
-export interface OAuthUsageResponse {
-  five_hour: OAuthUsageBucket | null;
-  seven_day: OAuthUsageBucket | null;
-  seven_day_opus: OAuthUsageBucket | null;
-  seven_day_sonnet: OAuthUsageBucket | null;
-}
-
-export interface CachedOAuthUsage {
-  data: OAuthUsageResponse;
-  fetchedAt: number;
-  error?: string;
 }
 
 export type SettingsTab =

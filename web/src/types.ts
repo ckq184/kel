@@ -80,7 +80,8 @@ export interface AgentProfile {
 export interface ModelConfigOption {
   id: string;
   name: string;
-  type: 'official' | 'third_party';
+  /** 界面只支持第三方；存量 official 仅在存储层保留（D-4 ①）。 */
+  type: 'third_party';
   enabled: boolean;
   anthropic_model: string;
   is_default: boolean;

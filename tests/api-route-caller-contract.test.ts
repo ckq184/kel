@@ -32,28 +32,7 @@ const KNOWN_GAPS: Array<{
   path: string;
   issue: string;
   gap: 'no-route' | 'no-caller-no-doc';
-}> = [
-  // THESIS-02 删除后端 OAuth/订阅用量路由；Web 调用方按计划留给 THESIS-03
-  // （界面只剩第三方表单时一并删除）。THESIS-03 完成后删除这三条。
-  {
-    method: 'post',
-    path: '/api/config/claude/oauth/start',
-    issue: 'THESIS-03',
-    gap: 'no-route',
-  },
-  {
-    method: 'post',
-    path: '/api/config/claude/oauth/callback',
-    issue: 'THESIS-03',
-    gap: 'no-route',
-  },
-  {
-    method: 'get',
-    path: '/api/config/claude/providers/${providerId}/usage',
-    issue: 'THESIS-03',
-    gap: 'no-route',
-  },
-];
+}> = [];
 
 interface RouteEntry {
   method: string;

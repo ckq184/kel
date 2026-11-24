@@ -14,7 +14,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import type { ProviderWithHealth, ProviderHealthStatus } from './types';
-import { UsageBars } from './UsageBars';
 
 interface ProviderListProps {
   providers: ProviderWithHealth[];
@@ -57,48 +56,10 @@ function HealthDot({
   return <div className={`w-2 h-2 rounded-full shrink-0 ${color}`} />;
 }
 
-/** 格式化 OAuth 过期时间 */
-function formatOAuthExpiry(expiresAt: number | null): string | null {
-  if (expiresAt == null) return null;
-  if (expiresAt <= Date.now()) return '已过期';
-  return (
-    '过期时间: ' +
-    new Date(expiresAt).toLocaleString('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false,
-    })
-  );
-}
-
-/** 凭据标签：显示认证方式 + OAuth 过期时间 */
+/** 凭据标签：显示认证方式 */
 function CredentialBadges({ provider }: { provider: ProviderWithHealth }) {
-  const badges: { label: string; color: string; detail?: string }[] = [];
+  const badges: { label: string; color: string }[] = [];
 
-  if (provider.hasClaudeOAuthCredentials) {
-    const expired =
-      provider.claudeOAuthCredentialsExpiresAt != null &&
-      provider.claudeOAuthCredentialsExpiresAt <= Date.now();
-    const expiry = formatOAuthExpiry(provider.claudeOAuthCredentialsExpiresAt);
-    badges.push({
-      label: 'OAuth',
-      color: expired
-        ? 'bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800'
-        : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
-      detail: expiry ?? undefined,
-    });
-  }
-  if (provider.hasClaudeCodeOauthToken) {
-    badges.push({
-      label: 'Setup Token',
-      color:
-        'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800',
-    });
-  }
   if (provider.hasAnthropicApiKey) {
     badges.push({
       label: 'API Key',
@@ -124,17 +85,11 @@ function CredentialBadges({ provider }: { provider: ProviderWithHealth }) {
     <span className="inline-flex items-center gap-1.5 flex-wrap">
       <Key className="w-3 h-3 text-muted-foreground shrink-0" />
       {badges.map((b) => (
-        <span key={b.label} className="inline-flex items-center gap-1">
-          <span
-            className={`text-[11px] px-1.5 py-0.5 rounded border ${b.color}`}
-          >
-            {b.label}
-          </span>
-          {b.detail && (
-            <span className="text-[10px] text-muted-foreground">
-              {b.detail}
-            </span>
-          )}
+        <span
+          key={b.label}
+          className={`text-[11px] px-1.5 py-0.5 rounded border ${b.color}`}
+        >
+          {b.label}
         </span>
       ))}
     </span>
@@ -188,21 +143,12 @@ export function ProviderList({
                     !provider.enabled ? 'bg-muted/50 opacity-60' : ''
                   }`}
                 >
-                  {/* 第一行：名称 + 类型 + 操作 */}
+                  {/* 第一行：名称 + 操作 */}
                   <div className="flex items-center gap-2 justify-between">
                     <div className="flex items-center gap-2 min-w-0">
                       <HealthDot health={health} enabled={provider.enabled} />
                       <span className="text-sm font-medium text-foreground truncate">
                         {provider.name}
-                      </span>
-                      <span
-                        className={`text-[11px] px-1.5 py-0.5 rounded shrink-0 ${
-                          provider.type === 'official'
-                            ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300'
-                            : 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300'
-                        }`}
-                      >
-                        {provider.type === 'official' ? '官方' : '第三方'}
                       </span>
                       {isDefault && (
                         <span className="inline-flex items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 text-[11px] text-primary">
@@ -255,18 +201,16 @@ export function ProviderList({
                         <Edit3 className="size-3.5" />
                         编辑
                       </Button>
-                      {provider.type === 'third_party' && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => onDuplicate(provider)}
-                          disabled={disabled || toggling || deleting}
-                          className="h-7 px-2 text-xs"
-                        >
-                          <Copy className="size-3.5" />
-                          复制
-                        </Button>
-                      )}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => onDuplicate(provider)}
+                        disabled={disabled || toggling || deleting}
+                        className="h-7 px-2 text-xs"
+                      >
+                        <Copy className="size-3.5" />
+                        复制
+                      </Button>
                       <Button
                         size="sm"
                         variant="ghost"
@@ -285,15 +229,14 @@ export function ProviderList({
 
                   {/* 第二行：关键信息摘要 */}
                   <div className="mt-1.5 ml-4 flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
-                    {provider.type === 'third_party' &&
-                      provider.anthropicBaseUrl && (
-                        <span
-                          className="font-mono truncate max-w-[200px]"
-                          title={provider.anthropicBaseUrl}
-                        >
-                          {provider.anthropicBaseUrl}
-                        </span>
-                      )}
+                    {provider.anthropicBaseUrl && (
+                      <span
+                        className="font-mono truncate max-w-[200px]"
+                        title={provider.anthropicBaseUrl}
+                      >
+                        {provider.anthropicBaseUrl}
+                      </span>
+                    )}
                     {provider.anthropicModel && (
                       <span className="font-mono text-muted-foreground">
                         {provider.anthropicModel}
@@ -337,11 +280,6 @@ export function ProviderList({
                         {health.activeSessionCount} 活跃会话
                       </div>
                     )}
-
-                  {/* OAuth 用量 */}
-                  {provider.hasClaudeOAuthCredentials && (
-                    <UsageBars providerId={provider.id} />
-                  )}
                 </div>
               );
             })}

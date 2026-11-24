@@ -1,25 +1,18 @@
 {
-  "task": "THESIS-01 - 桌面端裁除：删除 electron/ 与启动脚本、精简 restart-dev、删除 electron/esbuild 依赖与桌面端文档，浏览器访问 3001/5174",
-  "base": "11eeeae",
+  "task": "THESIS-03 - 供应商界面只剩第三方：删除供应商编辑器与引导页的官方模式、OAuth 流程、订阅用量条与官方凭据类型，前端类型收窄为 third_party",
+  "base": "17113e9",
   "allow": [
     ".gatescope.json",
-    "docs/issues2/THESIS-01-desktop-removal.md",
+    "docs/issues2/THESIS-03-provider-ui.md",
     "docs/issues2/README.md",
-    "docs/issues2/task-thesis-trim-plan.md",
-    "docs/thesis-01-desktop-removal-plan.md",
-    "docs/desktop-identity-split-plan.md",
-    "electron/**",
-    "start-desktop.command",
-    "start-desktop.bat",
-    "restart-dev.command",
-    "package.json",
-    "package-lock.json",
-    ".gitignore",
-    "web/vite.config.ts",
-    "README.md",
-    "AGENTS.md",
-    "tests/electron-menu-contract.test.ts",
-    "tests/electron-shell-contract.test.ts",
-    "tests/desktop-removal-contract.test.ts"
+    "docs/thesis-03-provider-ui-plan.md",
+    "docs/审查记录.md",
+    "web/src/components/settings/ProviderEditor.tsx",
+    "web/src/pages/SetupProvidersPage.tsx",
+    "web/src/components/settings/UsageBars.tsx",
+    "web/src/components/settings/ProviderList.tsx",
+    "web/src/components/settings/types.ts",
+    "web/src/types.ts",
+    "tests/**"
   ]
 }
