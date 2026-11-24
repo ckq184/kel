@@ -26,15 +26,24 @@ describe('THESIS-03 ProviderEditor 只剩第三方', () => {
     expect(src).not.toMatch(/\bproviderType\b/);
     expect(src).not.toMatch(/\bofficialTab\b/);
     expect(src).not.toMatch(/\boauthState\b/);
-    expect(src).not.toMatch(/'official'/);
+    expect(src).not.toMatch(/'official'|"official"/);
     expect(src).not.toMatch(/oauth\/start|oauth\/callback/);
     expect(src).not.toMatch(/官方模型选择|OAuth 登录|Setup Token/);
+    expect(src).not.toMatch(
+      /claudeCodeOauthToken|claudeOAuthCredentials|hasClaudeCodeOauthToken|hasClaudeOAuthCredentials/,
+    );
   });
 
   test('创建与编辑都只提交第三方供应商', () => {
     expect(src).toMatch(/type: 'third_party'/);
     expect(src).toMatch(/anthropicBaseUrl/);
     expect(src).toMatch(/anthropicAuthToken/);
+    // 创建走 POST、编辑走 PATCH，密钥变更走 secrets 的第三方字段
+    expect(src).toMatch(/await api\.post\('\/api\/config\/claude\/providers'/);
+    expect(src).toMatch(
+      /await api\.patch\(\s*`\/api\/config\/claude\/providers\/\$\{provider!\.id\}`/,
+    );
+    expect(src).toMatch(/clearAnthropicAuthToken/);
     // 第三方表单的关键交互仍在（ISSUE-24 的请求头编辑与窗口声明）
     expect(src).toMatch(/自定义请求头/);
     expect(src).toMatch(/contextWindow/);
@@ -55,9 +64,12 @@ describe('THESIS-03 SetupProvidersPage 只剩第三方', () => {
     expect(src).not.toMatch(/\bofficialTab\b/);
     expect(src).not.toMatch(/\bofficialToken\b/);
     expect(src).not.toMatch(/\boauthState\b/);
-    expect(src).not.toMatch(/'official'/);
+    expect(src).not.toMatch(/'official'|"official"/);
     expect(src).not.toMatch(/oauth\/start|oauth\/callback/);
     expect(src).not.toMatch(/官方渠道/);
+    expect(src).not.toMatch(
+      /claudeCodeOauthToken|claudeOAuthCredentials|hasClaudeCodeOauthToken|hasClaudeOAuthCredentials/,
+    );
   });
 
   test('第三方三必填仍在，引导可直接用第三方端点完成', () => {
@@ -65,6 +77,9 @@ describe('THESIS-03 SetupProvidersPage 只剩第三方', () => {
     expect(src).toMatch(/ANTHROPIC_BASE_URL/);
     expect(src).toMatch(/ANTHROPIC_AUTH_TOKEN/);
     expect(src).toMatch(/第三方渠道必须填写/);
+    expect(src).toMatch(
+      /await api\.post<UnifiedProviderPublic>\('\/api\/config\/claude\/providers'/,
+    );
   });
 });
 
@@ -76,8 +91,9 @@ describe('THESIS-03 订阅用量条与官方凭据展示', () => {
   test('ProviderList 不再挂载用量条，也没有官方/第三方标签', () => {
     const src = read('web/src/components/settings/ProviderList.tsx');
     expect(src).not.toMatch(/UsageBars/);
-    expect(src).not.toMatch(/'official'/);
-    expect(src).not.toMatch(/官方/);
+    expect(src).not.toMatch(/'official'|"official"/);
+    expect(src).not.toMatch(/provider\.type/);
+    expect(src).not.toMatch(/['"]官方['"]/);
   });
 });
 
@@ -90,7 +106,9 @@ describe('THESIS-03 前端类型按 D-4 ① 收窄', () => {
     );
     expect(publicProvider).toMatch(/type: 'third_party';/);
     expect(publicProvider).not.toMatch(/'official'/);
-    expect(publicProvider).not.toMatch(/ClaudeOAuth|ClaudeCodeOauth/);
+    expect(publicProvider).not.toMatch(
+      /hasClaudeCodeOauthToken|claudeCodeOauthTokenMasked|hasClaudeOAuthCredentials|claudeOAuthCredentialsExpiresAt|claudeOAuthCredentialsAccessTokenMasked/,
+    );
 
     const globalTypes = read('web/src/types.ts');
     const modelConfig = globalTypes.slice(

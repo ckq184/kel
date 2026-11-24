@@ -7,6 +7,7 @@ export type { ContextWindowPreset };
 export interface UnifiedProviderPublic {
   id: string;
   name: string;
+  /** 界面只支持第三方；存储层仍可能返回存量 official（D-4 ①）。 */
   type: 'third_party';
   enabled: boolean;
   weight: number;
