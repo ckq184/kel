@@ -36,33 +36,34 @@
 
 ## 二、索引
 
-| 编号                                                            | 标题                                                               | 优先级 | 依赖                | 需用户决策           | 状态   |
-| --------------------------------------------------------------- | ------------------------------------------------------------------ | ------ | ------------------- | -------------------- | ------ |
-| [ISSUE-01](ISSUE-01-p0-runtime-confirmation.md)                 | P0 实机确认（只读诊断）                                            | P0     | 无                  | 否                   | 已完成 |
-| [ISSUE-02](ISSUE-02-pi-stream-stamping-and-message-boundary.md) | Pi 事件契约（一）：流式盖章与消息边界                              | P0     | 01                  | 部分（已决策 a1）    | 已完成 |
-| [ISSUE-03](ISSUE-03-pi-subagent-and-tool-card.md)               | Pi 事件契约（二）：子代理与工具卡                                  | P0     | 01、02              | 部分（已决策 A）     | 已完成 |
-| [ISSUE-04](ISSUE-04-pi-runtime-settings-and-credentials.md)     | Pi 运行时设置与凭据（6 项“设置不生效”）                            | P0     | 01（仅 OAuth 一项） | **是**               | 已完成 |
-| [ISSUE-05](ISSUE-05-behavior-small-fixes.md)                    | 行为级小修：孤儿结果文件、溢出标记、/pair 正则、safeRoot           | P1     | 无                  | 部分                 | 已完成 |
-| [ISSUE-06](ISSUE-06-frontend-dropped-logic.md)                  | 前端掉线逻辑修复                                                   | P1     | 无                  | 部分                 | 已完成 |
-| [ISSUE-07](ISSUE-07-backend-dropped-logic-decisions.md)         | 后端掉线逻辑与意图项：决策与落地                                   | P1     | 无                  | **是**               | 已完成 |
-| [ISSUE-08](ISSUE-08-dead-code-batch1-orphans.md)                | 死代码批 1：孤儿函数、局部死代码、类成员（不涉及 DB）              | P2     | 无                  | 否                   | 已完成 |
-| [ISSUE-09](ISSUE-09-dead-code-batch2-billing-and-db.md)         | 死代码批 2：billing 残留与 DB 死表死列迁移                         | P2     | 07（仅 3 个列）     | 部分                 | 已完成 |
-| [ISSUE-10](ISSUE-10-dead-code-batch3-legacy-consumers.md)       | 死代码批 3：Claude SDK 遗留消费端与无人消费的链路                  | P2     | 02、03、04          | 部分                 | 已完成 |
-| [ISSUE-11](ISSUE-11-compat-and-duplicate-convergence.md)        | 兼容层下线与重复实现收敛                                           | P3     | 06                  | **是**               | 已完成 |
-| [ISSUE-12](ISSUE-12-structural-refactor.md)                     | 结构重构：镜像函数收敛与巨型函数拆分                               | P3     | 02、03、05、08、10  | **是**（已三项拍板） | 已完成 |
-| [ISSUE-13](ISSUE-13-docs-drift-and-regression-contracts.md)     | 文档漂移修正与防回归契约测试                                       | P3     | 04（仅文档部分）    | 否                   | 已完成 |
-| [ISSUE-14](ISSUE-14-channel-outbox-worker.md)                   | Channel Outbox 后台 worker：重启后 retry_wait 自动重投             | P2     | 无                  | **是**               | 已完成 |
-| [ISSUE-15](ISSUE-15-windows-test-compat.md)                     | Windows 测试兼容性：CRLF 源码锚点与路径分隔符归一                  | P1     | 无                  | 否                   | 已完成 |
-| [ISSUE-16](ISSUE-16-r2-closeout-leftovers.md)                   | R2 收尾遗留：group_created 掉线逻辑、待决策项与零散清理            | P2     | 无                  | **是**               | 已完成 |
-| [ISSUE-17](ISSUE-17-stream-event-consumer-only-fields.md)       | StreamEvent 只有消费者的字段：逐字段决定补生产者还是下线           | P3     | 无                  | **是**               | 已完成 |
-| [ISSUE-18](ISSUE-18-pi-custom-provider-headers.md)              | Pi 运行时读取 ANTHROPIC_CUSTOM_HEADERS：自定义供应商请求头         | P1     | 无                  | **是**（已四项拍板） | 已完成 |
-| [ISSUE-19](ISSUE-19-wechat-context-token-restart.md)            | 微信 context_token 重启丢失与“无 token”被误判为 uncertain          | P2     | 无                  | **是**               | 已完成 |
-| [ISSUE-20](ISSUE-20-container-image-unavailable-error.md)       | 容器镜像不可用时快速失败并明确告知用户                             | P2     | 无                  | **是**               | 已完成 |
-| [ISSUE-21](ISSUE-21-registered-leftovers.md)                    | 各 issue 交付记录中登记的零散遗留：逐项决策与落地                  | P2     | 无                  | **是**               | 已完成 |
-| [ISSUE-22](ISSUE-22-subagent-custom-provider-401.md)            | 子代理没有沿用自定义 Provider：Explore 与显式 model 报 401         | P1     | 无                  | **是**               | 已完成 |
-| [ISSUE-23](ISSUE-23-wechat-ilink-error-classification.md)       | iLink 非零错误码的归类：哪些属于确定拒绝                           | P3     | 无                  | **是**               | 已完成 |
-| [ISSUE-24](ISSUE-24-provider-multi-custom-headers.md)           | 供应商表单无法配置多个自定义请求头                                 | P3     | 无                  | **是**               | 待领取 |
-| [ISSUE-25](ISSUE-25-legacy-scheduler-lease-retirement.md)       | 旧调度租约簇退役：enqueueIsolatedScheduledTask 与 running_until 列 | P3     | 无                  | **是**               | 进行中 |
+| 编号                                                                     | 标题                                                                 | 优先级 | 依赖                | 需用户决策           | 状态   |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------------- | ------ | ------------------- | -------------------- | ------ |
+| [ISSUE-01](ISSUE-01-p0-runtime-confirmation.md)                          | P0 实机确认（只读诊断）                                              | P0     | 无                  | 否                   | 已完成 |
+| [ISSUE-02](ISSUE-02-pi-stream-stamping-and-message-boundary.md)          | Pi 事件契约（一）：流式盖章与消息边界                                | P0     | 01                  | 部分（已决策 a1）    | 已完成 |
+| [ISSUE-03](ISSUE-03-pi-subagent-and-tool-card.md)                        | Pi 事件契约（二）：子代理与工具卡                                    | P0     | 01、02              | 部分（已决策 A）     | 已完成 |
+| [ISSUE-04](ISSUE-04-pi-runtime-settings-and-credentials.md)              | Pi 运行时设置与凭据（6 项“设置不生效”）                              | P0     | 01（仅 OAuth 一项） | **是**               | 已完成 |
+| [ISSUE-05](ISSUE-05-behavior-small-fixes.md)                             | 行为级小修：孤儿结果文件、溢出标记、/pair 正则、safeRoot             | P1     | 无                  | 部分                 | 已完成 |
+| [ISSUE-06](ISSUE-06-frontend-dropped-logic.md)                           | 前端掉线逻辑修复                                                     | P1     | 无                  | 部分                 | 已完成 |
+| [ISSUE-07](ISSUE-07-backend-dropped-logic-decisions.md)                  | 后端掉线逻辑与意图项：决策与落地                                     | P1     | 无                  | **是**               | 已完成 |
+| [ISSUE-08](ISSUE-08-dead-code-batch1-orphans.md)                         | 死代码批 1：孤儿函数、局部死代码、类成员（不涉及 DB）                | P2     | 无                  | 否                   | 已完成 |
+| [ISSUE-09](ISSUE-09-dead-code-batch2-billing-and-db.md)                  | 死代码批 2：billing 残留与 DB 死表死列迁移                           | P2     | 07（仅 3 个列）     | 部分                 | 已完成 |
+| [ISSUE-10](ISSUE-10-dead-code-batch3-legacy-consumers.md)                | 死代码批 3：Claude SDK 遗留消费端与无人消费的链路                    | P2     | 02、03、04          | 部分                 | 已完成 |
+| [ISSUE-11](ISSUE-11-compat-and-duplicate-convergence.md)                 | 兼容层下线与重复实现收敛                                             | P3     | 06                  | **是**               | 已完成 |
+| [ISSUE-12](ISSUE-12-structural-refactor.md)                              | 结构重构：镜像函数收敛与巨型函数拆分                                 | P3     | 02、03、05、08、10  | **是**（已三项拍板） | 已完成 |
+| [ISSUE-13](ISSUE-13-docs-drift-and-regression-contracts.md)              | 文档漂移修正与防回归契约测试                                         | P3     | 04（仅文档部分）    | 否                   | 已完成 |
+| [ISSUE-14](ISSUE-14-channel-outbox-worker.md)                            | Channel Outbox 后台 worker：重启后 retry_wait 自动重投               | P2     | 无                  | **是**               | 已完成 |
+| [ISSUE-15](ISSUE-15-windows-test-compat.md)                              | Windows 测试兼容性：CRLF 源码锚点与路径分隔符归一                    | P1     | 无                  | 否                   | 已完成 |
+| [ISSUE-16](ISSUE-16-r2-closeout-leftovers.md)                            | R2 收尾遗留：group_created 掉线逻辑、待决策项与零散清理              | P2     | 无                  | **是**               | 已完成 |
+| [ISSUE-17](ISSUE-17-stream-event-consumer-only-fields.md)                | StreamEvent 只有消费者的字段：逐字段决定补生产者还是下线             | P3     | 无                  | **是**               | 已完成 |
+| [ISSUE-18](ISSUE-18-pi-custom-provider-headers.md)                       | Pi 运行时读取 ANTHROPIC_CUSTOM_HEADERS：自定义供应商请求头           | P1     | 无                  | **是**（已四项拍板） | 已完成 |
+| [ISSUE-19](ISSUE-19-wechat-context-token-restart.md)                     | 微信 context_token 重启丢失与“无 token”被误判为 uncertain            | P2     | 无                  | **是**               | 已完成 |
+| [ISSUE-20](ISSUE-20-container-image-unavailable-error.md)                | 容器镜像不可用时快速失败并明确告知用户                               | P2     | 无                  | **是**               | 已完成 |
+| [ISSUE-21](ISSUE-21-registered-leftovers.md)                             | 各 issue 交付记录中登记的零散遗留：逐项决策与落地                    | P2     | 无                  | **是**               | 已完成 |
+| [ISSUE-22](ISSUE-22-subagent-custom-provider-401.md)                     | 子代理没有沿用自定义 Provider：Explore 与显式 model 报 401           | P1     | 无                  | **是**               | 已完成 |
+| [ISSUE-23](ISSUE-23-wechat-ilink-error-classification.md)                | iLink 非零错误码的归类：哪些属于确定拒绝                             | P3     | 无                  | **是**               | 已完成 |
+| [ISSUE-24](ISSUE-24-provider-multi-custom-headers.md)                    | 供应商表单无法配置多个自定义请求头                                   | P3     | 无                  | **是**               | 待领取 |
+| [ISSUE-25](ISSUE-25-legacy-scheduler-lease-retirement.md)                | 旧调度租约簇退役：enqueueIsolatedScheduledTask 与 running_until 列   | P3     | 无                  | **是**               | 进行中 |
+| [ISSUE-26](ISSUE-26-scheduler-legacy-finalize-and-manual-reservation.md) | 调度器旧收尾残留：finalizeRecurringRun 恒早退与 pendingManualTaskIds | P3     | 25                  | **是**               | 待领取 |
 
 状态取值：待领取、进行中、待用户决策、已完成、已取消。
 
