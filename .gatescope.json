@@ -1,25 +1,16 @@
 {
-  "task": "THESIS-01 - 桌面端裁除：删除 electron/ 与启动脚本、精简 restart-dev、删除 electron/esbuild 依赖与桌面端文档，浏览器访问 3001/5174",
-  "base": "11eeeae",
+  "task": "THESIS-04 供应商（三）：Runner 与环境变量回退只剩第三方路径（D-2 ②：宿主强制 Base URL，runner 遇 official 报错）",
+  "base": "17113e9",
   "allow": [
     ".gatescope.json",
-    "docs/issues2/THESIS-01-desktop-removal.md",
+    "docs/issues2/THESIS-04-provider-runtime.md",
     "docs/issues2/README.md",
-    "docs/issues2/task-thesis-trim-plan.md",
-    "docs/thesis-01-desktop-removal-plan.md",
-    "docs/desktop-identity-split-plan.md",
-    "electron/**",
-    "start-desktop.command",
-    "start-desktop.bat",
-    "restart-dev.command",
-    "package.json",
-    "package-lock.json",
-    ".gitignore",
-    "web/vite.config.ts",
-    "README.md",
-    "AGENTS.md",
-    "tests/electron-menu-contract.test.ts",
-    "tests/electron-shell-contract.test.ts",
-    "tests/desktop-removal-contract.test.ts"
+    "docs/thesis-04-provider-runtime-plan.md",
+    "docs/审查记录.md",
+    "container/agent-runner/src/provider-runtime.ts",
+    "container/agent-runner/src/runtime/pi/pi-provider.ts",
+    "container/agent-runner/src/pi-index.ts",
+    "src/runtime-config.ts",
+    "tests/**"
   ]
 }
