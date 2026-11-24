@@ -43,4 +43,14 @@
 - **偏差**：
   - `isTaskStillActive` 未在立项方案中点名：它只被已删的非 durable 守卫调用，V2 路径从未经过，删除不改变行为。
   - 另有两处 head 字面量（`tests/pricing-routes.test.ts`、`tests/task-continuation-scheduler.test.ts`）未随 `a4fb4a0` 更新，由 verify 第 4 步发现，在 `043a792` 补齐；`db-upgrade-safety` 的 head pin 按约定与迁移同提交。
-  - 未做实机验收；合入 main、推送由用户决定。
+  - 合入 main、推送由用户决定（用户已决定合入本地 main，合并提交 `3c5ba18`，暂不推送）。
+- **实机验收（2026-11-24，Host 模式，代码与 main `3c5ba18` 一致）**：数据取自一份 v77 验收库的副本，原库未改动。
+
+| 项               | 结果                                                                                                                                                                                                              |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| v77→v78 迁移     | 通过：启动时先生成 `messages-v77-to-v78-*.db` 备份，再执行 v78 trim；库版本 78，`scheduled_tasks` 无两列；备份库仍为 v77 且两列在；v78 上重启不再备份                                                             |
+| script 手动运行  | 通过：`manual / success`，结果为脚本输出                                                                                                                                                                          |
+| script 周期调度  | 通过：60 秒间隔任务按时产生 `scheduled / success`，`next_run` 推进一个周期                                                                                                                                        |
+| 重启 missed 推进 | 通过：两次停机各错过一轮，重启后记为 `backfill / missed`（“Missed while scheduler was offline by 16s / 26s”），`next_run` 推进，任务仍为 active                                                                   |
+| 一次性任务补跑   | 通过：停机期间到期的一次性 script 任务在重启后以 `backfill / success` 执行，任务转为 completed                                                                                                                    |
+| isolated Agent   | 调度链路走通但未拿到模型回复：手动触发后 runner 启动、会话建立，Provider 返回 404，失败如实写回 `task_runs`。该数据副本此前即无任何成功的模型调用记录，属环境配置问题；按用户决定不再重试，成功路径由单元测试覆盖 |
