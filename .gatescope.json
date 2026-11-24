@@ -1,22 +1,17 @@
 {
-  "task": "THESIS-05 供应商（四）：凭据链清理与工作区官方令牌字段（D-3 ①：只摘工作区 claudeCodeOauthToken）",
-  "base": "5ccf1b3",
+  "task": "THESIS-07 - 用量停记账：删除五处账本写入与 usage-service/task-usage，气泡耗时改为内存累加回写",
+  "base": "44bab75",
   "allow": [
     ".gatescope.json",
-    "docs/issues2/THESIS-05-provider-credential-chain.md",
+    "docs/issues2/THESIS-07-usage-ledger-stop.md",
     "docs/issues2/README.md",
-    "docs/issues2/task-thesis-trim-plan.md",
-    "docs/thesis-05-provider-credential-chain-plan.md",
+    "docs/thesis-07-usage-ledger-stop-plan.md",
     "docs/审查记录.md",
-    "docs/runtime-migration.md",
-    "docs/API.md",
-    "src/runtime-config.ts",
-    "src/group-queue.ts",
-    "src/container-runner.ts",
-    "src/routes/groups.ts",
-    "src/schemas.ts",
-    "web/src/components/chat/ContainerEnvPanel.tsx",
-    "web/src/stores/container-env.ts",
+    "src/index.ts",
+    "src/task-scheduler.ts",
+    "src/usage-service.ts",
+    "src/task-usage.ts",
+    "src/usage-accumulator.ts",
     "tests/**"
   ]
 }

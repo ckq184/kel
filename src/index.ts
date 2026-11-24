@@ -171,7 +171,6 @@ import {
   storeScheduledGroupPromptAndCompleteRun,
   storeScheduledGroupWorkspaceResultAndFinalize,
   updateLatestMessageTokenUsage,
-  rebuildMessageTokenUsageFromLedger,
   updateChatName,
   updateTask,
   updateTaskWithRevision,
@@ -525,7 +524,7 @@ import {
   resolveTaskExecutionModeForTarget,
   SCRIPT_TASK_HOST_REQUIRED_ERROR,
 } from './script-task-policy.js';
-import { recordUsageEvent } from './usage-service.js';
+import { createUsageAccumulator } from './usage-accumulator.js';
 import {
   AgentProfile,
   ChannelMessageMeta,
@@ -1785,49 +1784,17 @@ function resetConversationSessionForAgentProfileMismatch(
 }
 
 /**
- * Write usage records from a usage event to the database.
- * Handles both modelUsage (per-model breakdown) and legacy flat format.
- * When modelUsage is present, per-model cache tokens are read directly from each model entry.
+ * Aggregated reply duration without the usage ledger (THESIS-07).
+ *
+ * The ledger used to rebuild `messages.token_usage` by summing every usage
+ * event of one visible reply. With bookkeeping stopped, the host accumulates
+ * the only two fields the bubble still needs (D-C2): durationMs and numTurns.
+ * Keyed by chat + reply message id; eventId prevents replay double counting.
  */
-function writeUsageRecords(opts: {
-  userId: string;
-  groupFolder: string;
-  messageId?: string;
-  agentId?: string;
-  source?: string;
-  usage: {
-    eventId?: string;
-    inputTokens: number;
-    outputTokens: number;
-    cacheReadInputTokens: number;
-    cacheCreationInputTokens: number;
-    reasoningTokens?: number;
-    costUSD: number;
-    durationMs: number;
-    numTurns: number;
-    modelUsage?: Record<
-      string,
-      {
-        inputTokens: number;
-        outputTokens: number;
-        cacheReadInputTokens: number;
-        cacheCreationInputTokens: number;
-        reasoningTokens?: number;
-        costUSD: number;
-      }
-    >;
-  };
-}): ReturnType<typeof recordUsageEvent> {
-  const { userId, groupFolder, messageId, agentId, source, usage } = opts;
-  return recordUsageEvent({
-    userId,
-    groupFolder,
-    agentId,
-    messageId,
-    eventId: usage.eventId,
-    source: source || (agentId ? 'custom-agent' : 'main-agent'),
-    usage,
-  });
+const replyUsageAccumulator = createUsageAccumulator();
+
+function replyUsageKey(chatJid: string, messageId: string): string {
+  return `${chatJid}\u0000${messageId}`;
 }
 
 /**
@@ -6079,33 +6046,6 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
           }
           // 流式事件处理 - 广播 WebSocket + 持久化 SDK Task 生命周期到 DB
           if (result.status === 'stream' && result.streamEvent) {
-            // Claude SDK 的 costUSD 只是上游估算。实时 Web/飞书展示前先走
-            // 与账本相同的 Kaboo 计价入口，确保流式金额和最终统计一致。
-            // 后面的持久化调用会被 eventId 幂等去重，并负责关联最终消息。
-            if (
-              result.streamEvent.eventType === 'usage' &&
-              result.streamEvent.usage
-            ) {
-              try {
-                const accounting = writeUsageRecords({
-                  userId:
-                    effectiveGroup.created_by ||
-                    registeredGroups[chatJid]?.created_by ||
-                    'system',
-                  groupFolder: effectiveGroup.folder,
-                  messageId: lastReplyMsgId,
-                  source: chatJid.split(':', 1)[0] || 'unknown',
-                  usage: result.streamEvent.usage,
-                });
-                result.streamEvent.usage.costUSD =
-                  accounting.providerEstimatedCostUSD;
-              } catch (err) {
-                logger.warn(
-                  { err, chatJid },
-                  'Failed to normalize usage cost before stream delivery',
-                );
-              }
-            }
             const streamInputTurnId = result.inputTurnId ?? lastProcessed.id;
             // Proactive SDK text is private model-loop state. Do not even feed
             // it into the Assistant answer reducer: a later empty/session-only
@@ -6404,23 +6344,19 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
               }
             }
 
-            // Persist token usage to the latest agent message + usage_records
+            // Persist reply duration to the reply message without the ledger.
+            // After THESIS-07 the bubble only keeps durationMs/numTurns (D-C2);
+            // token details are no longer rebuilt from usage_events.
             if (se.eventType === 'usage' && se.usage) {
               try {
-                writeUsageRecords({
-                  userId:
-                    effectiveGroup.created_by ||
-                    registeredGroups[chatJid]?.created_by ||
-                    'system',
-                  groupFolder: effectiveGroup.folder,
-                  messageId: lastReplyMsgId,
-                  source: chatJid.split(':', 1)[0] || 'unknown',
-                  usage: se.usage,
-                });
                 if (lastReplyMsgId) {
-                  rebuildMessageTokenUsageFromLedger(
+                  const totals = replyUsageAccumulator.accrue(
+                    replyUsageKey(chatJid, lastReplyMsgId),
+                    se.usage,
+                  );
+                  updateLatestMessageTokenUsage(
                     chatJid,
-                    effectiveGroup.folder,
+                    JSON.stringify(totals),
                     lastReplyMsgId,
                   );
                 } else {
@@ -6434,13 +6370,13 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
                   {
                     chatJid,
                     msgId: lastReplyMsgId,
-                    costUSD: se.usage.costUSD,
-                    inputTokens: se.usage.inputTokens,
+                    durationMs: se.usage.durationMs,
+                    numTurns: se.usage.numTurns,
                   },
-                  'Token usage persisted',
+                  'Reply usage duration persisted',
                 );
               } catch (err) {
-                logger.warn({ err, chatJid }, 'Failed to persist token usage');
+                logger.warn({ err, chatJid }, 'Failed to persist reply usage');
               }
             }
 
@@ -10031,33 +9967,6 @@ async function processAgentConversation(
 
     // Stream events
     if (output.status === 'stream' && output.streamEvent) {
-      // Keep live Web/Feishu cost on the same Kaboo ledger authority as the
-      // persisted usage page. The later write is replay-safe on eventId.
-      if (
-        output.streamEvent.eventType === 'usage' &&
-        output.streamEvent.usage
-      ) {
-        try {
-          const accounting = writeUsageRecords({
-            userId:
-              effectiveGroup.created_by ||
-              registeredGroups[chatJid]?.created_by ||
-              'system',
-            groupFolder: effectiveGroup.folder,
-            agentId,
-            messageId: lastAgentReplyMsgId,
-            source: chatJid.split(':', 1)[0] || 'unknown',
-            usage: output.streamEvent.usage,
-          });
-          output.streamEvent.usage.costUSD =
-            accounting.providerEstimatedCostUSD;
-        } catch (err) {
-          logger.warn(
-            { err, chatJid, agentId },
-            'Failed to normalize agent usage cost before stream delivery',
-          );
-        }
-      }
       const agentStreamInputTurnId = output.inputTurnId ?? lastProcessed.id;
       // Native-message mode has no framework-owned Assistant answer lane.
       // Keeping hidden deltas out of the reducer also prevents a later empty
@@ -10180,28 +10089,20 @@ async function processAgentConversation(
         }
       }
 
-      // Persist token usage for agent conversations
+      // Persist reply duration for agent conversations without the ledger.
       if (
         output.streamEvent.eventType === 'usage' &&
         output.streamEvent.usage
       ) {
         try {
-          // Sub-Agent 的 effectiveGroup 可能没有 created_by，从父群组继承
-          writeUsageRecords({
-            userId:
-              effectiveGroup.created_by ||
-              registeredGroups[chatJid]?.created_by ||
-              'system',
-            groupFolder: effectiveGroup.folder,
-            agentId,
-            messageId: lastAgentReplyMsgId,
-            source: chatJid.split(':', 1)[0] || 'unknown',
-            usage: output.streamEvent.usage,
-          });
           if (lastAgentReplyMsgId) {
-            rebuildMessageTokenUsageFromLedger(
+            const totals = replyUsageAccumulator.accrue(
+              replyUsageKey(virtualChatJid, lastAgentReplyMsgId),
+              output.streamEvent.usage,
+            );
+            updateLatestMessageTokenUsage(
               virtualChatJid,
-              effectiveGroup.folder,
+              JSON.stringify(totals),
               lastAgentReplyMsgId,
             );
           } else {
@@ -10213,7 +10114,7 @@ async function processAgentConversation(
         } catch (err) {
           logger.warn(
             { err, chatJid, agentId },
-            'Failed to persist agent conversation token usage',
+            'Failed to persist agent conversation reply usage',
           );
         }
       }
