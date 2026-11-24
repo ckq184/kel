@@ -20,13 +20,8 @@ vi.mock(import('../src/config.js'), async (importOriginal) => {
   };
 });
 
-const {
-  initDatabase,
-  createTask,
-  getTaskById,
-  claimTaskForRun,
-  updateTaskAfterRun,
-} = await import('../src/db.js');
+const { initDatabase, createTask, getTaskById, updateTaskAfterRun } =
+  await import('../src/db.js');
 
 const { shouldSkipBackfill, validateCronMinimumInterval } =
   await import('../src/task-scheduler.js');
@@ -89,27 +84,6 @@ describe('task restart recovery — db helpers', () => {
     const after = getTaskById(id)!;
     expect(after.last_run).toBeTruthy();
     expect(after.last_result).toBe('ran ok');
-  });
-
-  test('claimTaskForRun gives a due task to only one scheduler runner until released', () => {
-    const id = makeTask({
-      next_run: new Date(Date.now() - 60_000).toISOString(),
-    });
-
-    expect(claimTaskForRun(id, 'runner-a', 60_000)).toBe(true);
-    expect(claimTaskForRun(id, 'runner-b', 60_000)).toBe(false);
-    const claimed = getTaskById(id)!;
-    expect(claimed.runner_id).toBe('runner-a');
-    expect(claimed.running_until).toBeTruthy();
-
-    updateTaskAfterRun(
-      id,
-      new Date(Date.now() + 60_000).toISOString(),
-      'claimed run done',
-    );
-    const after = getTaskById(id)!;
-    expect(after.running_until).toBeNull();
-    expect(after.runner_id).toBeNull();
   });
 });
 

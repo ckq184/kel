@@ -61,8 +61,6 @@ export function ensureCoreTables(ctx: DbMigrationContext): void {
       created_at TEXT NOT NULL,
       created_by TEXT,
       notify_channels TEXT,
-      running_until TEXT,
-      runner_id TEXT,
       revision INTEGER NOT NULL DEFAULT 1,
       updated_at TEXT NOT NULL DEFAULT '',
       deleted_at TEXT

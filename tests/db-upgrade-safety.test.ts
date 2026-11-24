@@ -473,6 +473,75 @@ describe('database upgrade safety gate', () => {
     expect(tableColumns(reboot, 'users')).not.toContain('ai_name');
     reboot.close();
   });
+
+  test('v78 drops the legacy scheduled_tasks lease columns on upgrade from v77', () => {
+    db.initDatabase();
+    db.closeDatabase();
+
+    // A fresh boot at the head schema no longer creates the columns.
+    const freshBoot = new Database(dbPath, { readonly: true });
+    expect(tableColumns(freshBoot, 'scheduled_tasks')).not.toContain(
+      'running_until',
+    );
+    expect(tableColumns(freshBoot, 'scheduled_tasks')).not.toContain(
+      'runner_id',
+    );
+    freshBoot.close();
+
+    // Fabricate a v77 database whose task still carries a legacy lease.
+    const legacy = new Database(dbPath);
+    addColumnIfMissing(legacy, 'scheduled_tasks', 'running_until', 'TEXT');
+    addColumnIfMissing(legacy, 'scheduled_tasks', 'runner_id', 'TEXT');
+    legacy.exec(`
+      INSERT INTO scheduled_tasks (
+        id, group_folder, chat_jid, prompt, schedule_type, schedule_value,
+        next_run, status, created_at, running_until, runner_id
+      ) VALUES ('task-v77', 'folder-a', 'web:folder-a', 'sentinel prompt',
+        'cron', '0 * * * *', '2026-11-24T01:00:00.000Z', 'active',
+        '2026-11-24T00:00:00.000Z', '2026-11-24T00:30:00.000Z', 'runner-x');
+      UPDATE router_state SET value = '77' WHERE key = 'schema_version';
+    `);
+    legacy.close();
+
+    db.initDatabase();
+    db.closeDatabase();
+
+    const migrated = new Database(dbPath, { readonly: true });
+    expect(
+      (
+        migrated
+          .prepare(
+            "SELECT value FROM router_state WHERE key = 'schema_version'",
+          )
+          .get() as { value: string }
+      ).value,
+    ).toBe(String(db.CURRENT_SCHEMA_VERSION));
+    const columns = tableColumns(migrated, 'scheduled_tasks');
+    expect(columns).not.toContain('running_until');
+    expect(columns).not.toContain('runner_id');
+    // The trim dropped columns, not rows or the live schedule.
+    expect(
+      migrated
+        .prepare(
+          "SELECT prompt, next_run, status FROM scheduled_tasks WHERE id = 'task-v77'",
+        )
+        .get(),
+    ).toEqual({
+      prompt: 'sentinel prompt',
+      next_run: '2026-11-24T01:00:00.000Z',
+      status: 'active',
+    });
+    migrated.close();
+
+    // Re-boot stays idempotent and does not resurrect the columns.
+    db.initDatabase();
+    db.closeDatabase();
+    const reboot = new Database(dbPath, { readonly: true });
+    expect(tableColumns(reboot, 'scheduled_tasks')).not.toContain(
+      'running_until',
+    );
+    reboot.close();
+  });
 });
 
 describe('schema version head', () => {
@@ -504,6 +573,8 @@ describe('schema version head', () => {
     // (dead-code prune; see tests for the 64d6d7b change).
     // v77: drops usage_daily_summary plus the dead billing-mirror and legacy
     // columns (ISSUE-09; write paths removed in the same change).
-    expect(db.CURRENT_SCHEMA_VERSION).toBe(77);
+    // v78: drops scheduled_tasks.running_until / runner_id, the legacy
+    // definition-level lease superseded by task_runs (ISSUE-25).
+    expect(db.CURRENT_SCHEMA_VERSION).toBe(78);
   });
 });
