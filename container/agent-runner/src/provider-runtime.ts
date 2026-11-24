@@ -13,6 +13,12 @@ export interface ClaudeProviderRuntime {
   usageModelKey: string;
   missingRequiredModel: boolean;
   /**
+   * D-2 ② (THESIS-04): readable configuration error when the runtime has no
+   * usable third-party endpoint. Official markers and a missing base URL are
+   * no longer silently downgraded; the entrypoint reports this before running.
+   */
+  providerError: string | null;
+  /**
    * Host-normalized context-window declaration (任务AL), or undefined when the
    * host never injected one — the runner then falls back to the [1m] heuristic
    * on the raw model string so mixed host/runner versions stay no worse than
@@ -37,6 +43,8 @@ function parseDeclaredContextWindow(
  *
  * New hosts inject an authoritative endpoint-kind marker. Falling back to
  * ANTHROPIC_BASE_URL keeps the runner compatible with older hosts and images.
+ * D-2 ② (THESIS-04): an official marker or a missing base URL is reported as a
+ * configuration error instead of being mapped onto the retired official path.
  */
 export function resolveClaudeProviderRuntime(
   env: Readonly<Record<string, string | undefined>>,
@@ -47,12 +55,17 @@ export function resolveClaudeProviderRuntime(
   )
     ?.trim()
     .toLowerCase();
+  const baseUrl = env.ANTHROPIC_BASE_URL?.trim() ?? '';
   const endpointKind: ClaudeEndpointKind =
-    marker === 'official' || marker === 'custom'
-      ? marker
-      : env.ANTHROPIC_BASE_URL?.trim()
-        ? 'custom'
-        : 'official';
+    marker === 'custom' || (marker !== 'official' && !!baseUrl)
+      ? 'custom'
+      : 'official';
+  const providerError =
+    marker === 'official'
+      ? 'Official Anthropic endpoints are no longer supported. Configure a third-party Anthropic-compatible provider with ANTHROPIC_BASE_URL.'
+      : baseUrl
+        ? null
+        : 'A third-party Anthropic-compatible provider requires ANTHROPIC_BASE_URL.';
 
   return {
     endpointKind,
@@ -60,6 +73,7 @@ export function resolveClaudeProviderRuntime(
     queryModelOptions: model ? { model: stripOneMillionSuffix(model) } : {},
     usageModelKey: model || 'default',
     missingRequiredModel: endpointKind === 'custom' && !model,
+    providerError,
     declaredContextWindow: parseDeclaredContextWindow(env),
   };
 }

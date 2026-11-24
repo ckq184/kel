@@ -152,11 +152,10 @@ describe('buildClaudeEnvLines', () => {
     expect(lines).toContain('CUSTOM_FLAG=kept');
   });
 
-  test('keeps runtime tuning customizable for official providers', () => {
-    const lines = buildClaudeEnvLines(
-      config({ anthropicBaseUrl: '', anthropicModel: 'sonnet' }),
-      { CLAUDE_CODE_EFFORT_LEVEL: 'low' },
-    );
+  test('keeps runtime tuning customizable for third-party providers', () => {
+    const lines = buildClaudeEnvLines(config({ anthropicModel: 'glm-5.2' }), {
+      CLAUDE_CODE_EFFORT_LEVEL: 'low',
+    });
 
     expect(lines).toContain('CLAUDE_CODE_EFFORT_LEVEL=low');
     expect(lines).not.toContain('CLAUDE_CODE_EFFORT_LEVEL=max');
@@ -237,7 +236,7 @@ describe('buildClaudeEnvLines', () => {
       { customEnv: { CKQCLAW_CLAUDE_ENDPOINT_KIND: 'official' } },
       { CKQCLAW_CLAUDE_ENDPOINT_KIND: 'official' },
     );
-    const official = buildContainerEnvLines(
+    const unconfigured = buildContainerEnvLines(
       config({ anthropicBaseUrl: '', anthropicModel: '' }),
       {},
       NO_CUSTOM_ENV,
@@ -245,7 +244,12 @@ describe('buildClaudeEnvLines', () => {
 
     expect(thirdParty).toContain('CKQCLAW_CLAUDE_ENDPOINT_KIND=custom');
     expect(thirdParty).not.toContain('CKQCLAW_CLAUDE_ENDPOINT_KIND=official');
-    expect(official).toContain('CKQCLAW_CLAUDE_ENDPOINT_KIND=official');
+    // D-2 ②：没有 Base URL 时不再声明官方端点——运行时会直接拒绝该配置。
+    expect(
+      unconfigured.some((line) =>
+        line.startsWith('CKQCLAW_CLAUDE_ENDPOINT_KIND='),
+      ),
+    ).toBe(false);
   });
 
   test('custom env cannot spoof the managed context window declaration', () => {

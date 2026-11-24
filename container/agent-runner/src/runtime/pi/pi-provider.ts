@@ -1,5 +1,4 @@
 import type { Model } from '@earendil-works/pi-ai';
-import { getModel } from '@earendil-works/pi-ai/compat';
 import type { ModelRuntime } from '@earendil-works/pi-coding-agent';
 
 export type PiProviderResolution = {
@@ -114,19 +113,17 @@ function splitModelRef(value: string): { providerId: string; modelId: string } {
 
 /**
  * Bridge the existing CKQClaw provider env contract to Pi ModelRuntime.
- * Custom Anthropic-compatible endpoints are registered as a separate provider
- * so Pi's built-in Anthropic catalog and credentials remain untouched.
+ * D-2 ② (THESIS-04): third-party Anthropic-compatible endpoints are the only
+ * supported path; they are registered as a separate provider so Pi's built-in
+ * Anthropic catalog is never used. An `official` marker or a missing base URL
+ * is a configuration error.
  *
- * ISSUE-04 ⑥: `authToken` (ANTHROPIC_AUTH_TOKEN) is deliberately not routed
- * through setRuntimeApiKey for official endpoints. A stored runtime key would
- * send it as X-Api-Key, while the official Anthropic OAuth/bearer contract is
- * `Authorization: Bearer` — leaving the env var untouched lets Pi's own
- * resolution (anthropicApiKeyAuth) discover it and emit the Bearer header.
- * Custom registrations keep folding it into the registered api key, which
- * preserves the historical third-party proxy behavior.
+ * ISSUE-04 ⑥: custom registrations fold `authToken` (ANTHROPIC_AUTH_TOKEN)
+ * into the registered api key, which preserves the historical third-party
+ * proxy behavior.
  *
  * ISSUE-04 ①: `contextWindow` overrides the resolved model's window via a
- * shallow copy; undefined keeps the Pi catalog/registration value.
+ * shallow copy; undefined keeps the registration value.
  */
 export async function resolvePiProvider(
   modelRuntime: ModelRuntime,
@@ -138,89 +135,67 @@ export async function resolvePiProvider(
     authToken?: string;
     contextWindow?: number;
     /**
-     * ISSUE-18: extra request headers (parsed `ANTHROPIC_CUSTOM_HEADERS`).
-     * Only custom endpoints receive them; the official branch ignores them.
+     * ISSUE-18: extra request headers (parsed `ANTHROPIC_CUSTOM_HEADERS`),
+     * applied to the registered third-party provider.
      */
     headers?: Record<string, string>;
   },
 ): Promise<PiProviderResolution> {
+  if (input.endpointKind === 'official') {
+    throw new Error(
+      'Official Anthropic endpoints are no longer supported. Configure a third-party Anthropic-compatible provider with ANTHROPIC_BASE_URL.',
+    );
+  }
+  const baseUrl = input.baseUrl?.trim() || '';
+  if (!baseUrl) {
+    throw new Error('Pi third-party provider requires ANTHROPIC_BASE_URL');
+  }
   const rawModel = input.model?.trim() || '';
+  if (!rawModel) {
+    throw new Error('Pi custom provider requires ANTHROPIC_MODEL');
+  }
   const withContextWindow = (model: Model<any>): Model<any> =>
     input.contextWindow
       ? { ...model, contextWindow: input.contextWindow }
       : model;
-  if (!rawModel && input.endpointKind !== 'custom' && !input.baseUrl?.trim()) {
-    const defaultModel = modelRuntime.getModels('anthropic')[0];
-    if (!defaultModel) {
-      throw new Error(
-        'Pi has no built-in Anthropic model. Configure ANTHROPIC_MODEL or Pi models.json.',
-      );
-    }
-    if (input.apiKey?.trim()) {
-      await modelRuntime.setRuntimeApiKey('anthropic', input.apiKey.trim());
-    }
-    return {
-      providerId: defaultModel.provider,
-      modelId: defaultModel.id,
-      model: withContextWindow(defaultModel),
-      custom: false,
-    };
-  }
-  const split = splitModelRef(rawModel || 'claude-sonnet');
-  const custom = input.endpointKind === 'custom' || !!input.baseUrl?.trim();
-  const providerId = custom ? `ckqclaw-${split.providerId}` : split.providerId;
 
-  if (custom) {
-    if (!input.baseUrl?.trim()) {
-      throw new Error('Pi custom provider requires ANTHROPIC_BASE_URL');
-    }
-    if (!rawModel) {
-      throw new Error('Pi custom provider requires ANTHROPIC_MODEL');
-    }
-    const registeredKey = input.apiKey?.trim() || input.authToken?.trim();
-    // Model-level headers are merged by ModelRuntime.getAuth however the key
-    // resolves; provider-level headers would only join API-key auth.
-    const headerEntries = Object.entries(input.headers ?? {});
-    const modelHeaders =
-      headerEntries.length > 0
-        ? Object.fromEntries(
-            headerEntries.map(([name, value]) => [
-              name,
-              escapePiConfigLiteral(value),
-            ]),
-          )
-        : undefined;
-    modelRuntime.registerProvider(providerId, {
-      name: `CKQClaw ${split.providerId} compatible provider`,
-      baseUrl: input.baseUrl.trim(),
-      api: 'anthropic-messages',
-      ...(registeredKey ? { apiKey: registeredKey } : {}),
-      models: [
-        {
-          id: split.modelId,
-          name: split.modelId,
-          api: 'anthropic-messages',
-          reasoning: true,
-          input: ['text', 'image'],
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-          contextWindow: input.contextWindow ?? 200_000,
-          maxTokens: 32_000,
-          ...(modelHeaders ? { headers: modelHeaders } : {}),
-        },
-      ],
-    });
-    restrictAvailableModelsToProvider(modelRuntime, providerId);
-  } else if (input.apiKey?.trim() && providerId === 'anthropic') {
-    await modelRuntime.setRuntimeApiKey('anthropic', input.apiKey.trim());
-  }
+  const split = splitModelRef(rawModel);
+  const providerId = `ckqclaw-${split.providerId}`;
+  const registeredKey = input.apiKey?.trim() || input.authToken?.trim();
+  // Model-level headers are merged by ModelRuntime.getAuth however the key
+  // resolves; provider-level headers would only join API-key auth.
+  const headerEntries = Object.entries(input.headers ?? {});
+  const modelHeaders =
+    headerEntries.length > 0
+      ? Object.fromEntries(
+          headerEntries.map(([name, value]) => [
+            name,
+            escapePiConfigLiteral(value),
+          ]),
+        )
+      : undefined;
+  modelRuntime.registerProvider(providerId, {
+    name: `CKQClaw ${split.providerId} compatible provider`,
+    baseUrl,
+    api: 'anthropic-messages',
+    ...(registeredKey ? { apiKey: registeredKey } : {}),
+    models: [
+      {
+        id: split.modelId,
+        name: split.modelId,
+        api: 'anthropic-messages',
+        reasoning: true,
+        input: ['text', 'image'],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: input.contextWindow ?? 200_000,
+        maxTokens: 32_000,
+        ...(modelHeaders ? { headers: modelHeaders } : {}),
+      },
+    ],
+  });
+  restrictAvailableModelsToProvider(modelRuntime, providerId);
 
-  const model =
-    modelRuntime.getModel(providerId, split.modelId) ||
-    (custom
-      ? undefined
-      : (
-          getModel as unknown as (provider: string, model: string) => Model<any>
-        )(providerId, split.modelId));
+  const model = modelRuntime.getModel(providerId, split.modelId);
   if (!model) {
     throw new Error(
       `Pi model not found: ${providerId}/${split.modelId}. Configure ANTHROPIC_MODEL or Pi models.json.`,
@@ -230,6 +205,6 @@ export async function resolvePiProvider(
     providerId,
     modelId: split.modelId,
     model: withContextWindow(model),
-    custom,
+    custom: true,
   };
 }

@@ -2,56 +2,71 @@ import { describe, expect, test } from 'vitest';
 
 import { resolveClaudeProviderRuntime } from '../container/agent-runner/src/provider-runtime.js';
 
+/**
+ * D-2 ② (THESIS-04): the runtime keeps only the third-party path. An
+ * `official` marker and a missing base URL are configuration errors instead of
+ * silently falling back to Pi's built-in Anthropic catalog.
+ */
 describe('agent-runner provider model contract', () => {
-  test.each([
-    {
-      name: 'official without model uses the SDK default',
-      env: { CKQCLAW_CLAUDE_ENDPOINT_KIND: 'official' },
-      missingRequiredModel: false,
-      queryModelOptions: {},
-      usageModelKey: 'default',
-    },
-    {
-      name: 'official with model passes the selected model',
-      env: {
-        CKQCLAW_CLAUDE_ENDPOINT_KIND: 'official',
-        ANTHROPIC_MODEL: 'sonnet',
-      },
-      missingRequiredModel: false,
-      queryModelOptions: { model: 'sonnet' },
-      usageModelKey: 'sonnet',
-    },
-    {
-      name: 'custom endpoint without model fails fast',
-      env: { CKQCLAW_CLAUDE_ENDPOINT_KIND: 'custom' },
-      missingRequiredModel: true,
-      queryModelOptions: {},
-      usageModelKey: 'default',
-    },
-    {
-      name: 'custom endpoint with model passes the selected model',
-      env: {
-        CKQCLAW_CLAUDE_ENDPOINT_KIND: 'custom',
-        ANTHROPIC_MODEL: 'glm-5.2',
-      },
-      missingRequiredModel: false,
-      queryModelOptions: { model: 'glm-5.2' },
-      usageModelKey: 'glm-5.2',
-    },
-  ])(
-    '$name',
-    ({ env, missingRequiredModel, queryModelOptions, usageModelKey }) => {
-      const runtime = resolveClaudeProviderRuntime(env);
+  test('custom endpoint with model resolves without a provider error', () => {
+    const runtime = resolveClaudeProviderRuntime({
+      CKQCLAW_CLAUDE_ENDPOINT_KIND: 'custom',
+      ANTHROPIC_BASE_URL: 'https://proxy.test',
+      ANTHROPIC_MODEL: 'glm-5.2',
+    });
 
-      expect(runtime.missingRequiredModel).toBe(missingRequiredModel);
-      expect(runtime.queryModelOptions).toEqual(queryModelOptions);
-      expect(runtime.usageModelKey).toBe(usageModelKey);
-    },
-  );
+    expect(runtime.providerError).toBeNull();
+    expect(runtime.endpointKind).toBe('custom');
+    expect(runtime.missingRequiredModel).toBe(false);
+    expect(runtime.queryModelOptions).toEqual({ model: 'glm-5.2' });
+    expect(runtime.usageModelKey).toBe('glm-5.2');
+  });
+
+  test('custom endpoint without model fails fast', () => {
+    const runtime = resolveClaudeProviderRuntime({
+      CKQCLAW_CLAUDE_ENDPOINT_KIND: 'custom',
+      ANTHROPIC_BASE_URL: 'https://proxy.test',
+    });
+
+    expect(runtime.providerError).toBeNull();
+    expect(runtime.missingRequiredModel).toBe(true);
+    expect(runtime.queryModelOptions).toEqual({});
+    expect(runtime.usageModelKey).toBe('default');
+  });
+
+  test('official marker is rejected even when a base URL is present', () => {
+    const runtime = resolveClaudeProviderRuntime({
+      CKQCLAW_CLAUDE_ENDPOINT_KIND: 'official',
+      ANTHROPIC_BASE_URL: 'https://stale-proxy.test',
+      ANTHROPIC_MODEL: 'sonnet',
+    });
+
+    expect(runtime.providerError).toContain('no longer supported');
+    expect(runtime.providerError).toContain('ANTHROPIC_BASE_URL');
+  });
+
+  test('missing marker and missing base URL is rejected', () => {
+    const runtime = resolveClaudeProviderRuntime({
+      ANTHROPIC_MODEL: 'sonnet',
+    });
+
+    expect(runtime.providerError).toContain('ANTHROPIC_BASE_URL');
+  });
+
+  test('falls back to base URL detection for older hosts', () => {
+    const runtime = resolveClaudeProviderRuntime({
+      ANTHROPIC_BASE_URL: 'https://proxy.test',
+      ANTHROPIC_MODEL: 'glm-5.2',
+    });
+
+    expect(runtime.providerError).toBeNull();
+    expect(runtime.endpointKind).toBe('custom');
+  });
 
   test('legacy [1m] model is stripped on the wire and stays intact for budgeting', () => {
     const runtime = resolveClaudeProviderRuntime({
       CKQCLAW_CLAUDE_ENDPOINT_KIND: 'custom',
+      ANTHROPIC_BASE_URL: 'https://proxy.test',
       ANTHROPIC_MODEL: 'glm-5.2[1m]',
     });
 
@@ -66,6 +81,7 @@ describe('agent-runner provider model contract', () => {
   test('declared context window is parsed from the host env declaration', () => {
     const runtime = resolveClaudeProviderRuntime({
       CKQCLAW_CLAUDE_ENDPOINT_KIND: 'custom',
+      ANTHROPIC_BASE_URL: 'https://proxy.test',
       ANTHROPIC_MODEL: 'glm-5.2',
       CKQCLAW_CONTEXT_WINDOW: '1000000',
     });
@@ -76,7 +92,8 @@ describe('agent-runner provider model contract', () => {
 
   test('garbage declaration falls back to the undeclared path', () => {
     const runtime = resolveClaudeProviderRuntime({
-      CKQCLAW_CLAUDE_ENDPOINT_KIND: 'official',
+      CKQCLAW_CLAUDE_ENDPOINT_KIND: 'custom',
+      ANTHROPIC_BASE_URL: 'https://proxy.test',
       ANTHROPIC_MODEL: 'glm-5.2',
       CKQCLAW_CONTEXT_WINDOW: 'not-a-number',
     });
@@ -87,27 +104,10 @@ describe('agent-runner provider model contract', () => {
   test('no declaration keeps declaredContextWindow undefined', () => {
     const runtime = resolveClaudeProviderRuntime({
       CKQCLAW_CLAUDE_ENDPOINT_KIND: 'custom',
+      ANTHROPIC_BASE_URL: 'https://proxy.test',
       ANTHROPIC_MODEL: 'glm-5.2',
     });
 
     expect(runtime.declaredContextWindow).toBeUndefined();
-  });
-
-  test('authoritative official marker ignores an inherited stale base URL', () => {
-    const runtime = resolveClaudeProviderRuntime({
-      CKQCLAW_CLAUDE_ENDPOINT_KIND: 'official',
-      ANTHROPIC_BASE_URL: 'https://stale-proxy.test',
-    });
-
-    expect(runtime.endpointKind).toBe('official');
-    expect(runtime.missingRequiredModel).toBe(false);
-  });
-
-  test('falls back to base URL detection for older hosts', () => {
-    expect(
-      resolveClaudeProviderRuntime({
-        ANTHROPIC_BASE_URL: 'https://proxy.test',
-      }).endpointKind,
-    ).toBe('custom');
   });
 });

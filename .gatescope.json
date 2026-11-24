@@ -9,6 +9,7 @@
     "docs/审查记录.md",
     "container/agent-runner/src/provider-runtime.ts",
     "container/agent-runner/src/runtime/pi/pi-provider.ts",
+    "container/agent-runner/src/runtime/types.ts",
     "container/agent-runner/src/pi-index.ts",
     "src/runtime-config.ts",
     "tests/**"

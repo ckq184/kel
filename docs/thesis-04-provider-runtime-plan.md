@@ -9,9 +9,9 @@
 - **完成条件**：`endpointKind` 为 `official`、或第三方配置缺少 `ANTHROPIC_BASE_URL` 时，runner 给出可读错误；第三方注册、子代理继承父模型、自定义请求头、上下文窗口声明的既有行为不变；宿主环境变量回退只在有 Base URL 时生效；`npm run verify` 六步全绿；`node scripts/check-scope.mjs` 通过。
 - **约束**：不改 `claude-provider.json` 存储格式（version 5）与迁移链；不动 OAuth 凭据写入与会话凭据刷新（THESIS-05）；不动前端（THESIS-03）；不读不写 `data/`。
 
-| #   | 问题                                 | 拍板                                                                                                                                                                                                                     |
-| --- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| D-2 | 没有 Base URL 时的回退怎么处理       | **②**（用户 2026-11-24 拍板）：宿主要求必须有 `ANTHROPIC_BASE_URL`，runner 遇到 `official` 或缺 Base URL 时直接报可读错误；环境变量回退只在有 Base URL 时生效，官方专用的 `CLAUDE_CODE_OAUTH_TOKEN` 回退去掉。纯环境变量配第三方的部署方式保留。 |
+| #   | 问题                           | 拍板                                                                                                                                                                                                                                             |
+| --- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| D-2 | 没有 Base URL 时的回退怎么处理 | **②**（用户 2026-11-24 拍板）：宿主要求必须有 `ANTHROPIC_BASE_URL`，runner 遇到 `official` 或缺 Base URL 时直接报可读错误；环境变量回退只在有 Base URL 时生效，官方专用的 `CLAUDE_CODE_OAUTH_TOKEN` 回退去掉。纯环境变量配第三方的部署方式保留。 |
 
 ## 1. 关键事实（开工前核实）
 
@@ -50,9 +50,12 @@
 
 ## 3. 范围声明（`.gatescope.json` allow）
 
-`.gatescope.json`、`docs/issues2/THESIS-04-provider-runtime.md`、`docs/issues2/README.md`、`docs/thesis-04-provider-runtime-plan.md`、`docs/审查记录.md`、`container/agent-runner/src/provider-runtime.ts`、`container/agent-runner/src/runtime/pi/pi-provider.ts`、`container/agent-runner/src/pi-index.ts`、`src/runtime-config.ts`、`tests/**`。
+`.gatescope.json`、`docs/issues2/THESIS-04-provider-runtime.md`、`docs/issues2/README.md`、`docs/thesis-04-provider-runtime-plan.md`、`docs/审查记录.md`、`container/agent-runner/src/provider-runtime.ts`、`container/agent-runner/src/runtime/pi/pi-provider.ts`、`container/agent-runner/src/runtime/types.ts`、`container/agent-runner/src/pi-index.ts`、`src/runtime-config.ts`、`tests/**`。
 
-`pi-index.ts` 超出 issue 的预计改动路径：runner 的结构化错误出口与既有 `missingRequiredModel` 预检都在该文件，预检错误必须在这里输出，否则只能靠未捕获异常退出（宿主只能看到通用失败）。
+超出 issue 预计改动路径的两个文件：
+
+- `pi-index.ts`：runner 的结构化错误出口与既有 `missingRequiredModel` 预检都在该文件，预检错误必须在这里输出，否则只能靠未捕获异常退出（宿主只能看到通用失败）。
+- `runtime/types.ts`：只改 `provider.authToken` 的注释。原注释以"官方端点不落 stored key"为理由，官方路径删除后该理由失效，属随契约同步的事实订正，无类型/行为改动。
 
 ## 4. 验收条件
 

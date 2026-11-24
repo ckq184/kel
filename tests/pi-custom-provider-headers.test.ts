@@ -149,23 +149,23 @@ describe('ISSUE-18 resolvePiProvider forwards custom headers', () => {
     }
   });
 
-  test('official endpoint ignores custom headers', async () => {
+  test('official endpoint is rejected before registering a provider', async () => {
     const modelRuntime = await createModelRuntime();
     let registerCalls = 0;
     modelRuntime.registerProvider = (() => {
       registerCalls += 1;
     }) as typeof modelRuntime.registerProvider;
 
-    const resolution = await resolvePiProvider(modelRuntime, {
-      model: 'claude-haiku-4-5',
-      endpointKind: 'official',
-      apiKey: 'fake-key',
-      headers: { 'x-test-session': 'fixed-1' },
-    });
+    await expect(
+      resolvePiProvider(modelRuntime, {
+        model: 'claude-haiku-4-5',
+        endpointKind: 'official',
+        apiKey: 'fake-key',
+        headers: { 'x-test-session': 'fixed-1' },
+      }),
+    ).rejects.toThrow(/no longer supported/i);
 
     expect(registerCalls).toBe(0);
-    const auth = await modelRuntime.getAuth(resolution.model);
-    expect(auth?.auth.headers?.['x-test-session']).toBeUndefined();
   });
 });
 
