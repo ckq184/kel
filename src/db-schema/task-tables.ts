@@ -51,8 +51,6 @@ export function ensureTaskTableColumns(ctx: DbMigrationContext): void {
   ensureColumn('scheduled_tasks', 'execution_mode', 'TEXT');
   ensureColumn('scheduled_tasks', 'workspace_jid', 'TEXT');
   ensureColumn('scheduled_tasks', 'workspace_folder', 'TEXT');
-  ensureColumn('scheduled_tasks', 'running_until', 'TEXT');
-  ensureColumn('scheduled_tasks', 'runner_id', 'TEXT');
   ensureColumn('scheduled_tasks', 'revision', 'INTEGER NOT NULL DEFAULT 1');
   ensureColumn('scheduled_tasks', 'updated_at', "TEXT NOT NULL DEFAULT ''");
   ensureColumn('scheduled_tasks', 'deleted_at', 'TEXT');

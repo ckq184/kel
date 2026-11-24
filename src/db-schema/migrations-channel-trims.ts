@@ -7,7 +7,8 @@ import { logger } from '../logger.js';
 // Discord/WhatsApp 渠道退役 trim（children-first 删除序、notify_channels
 // 与 definition_snapshot 存量修剪）、v75→v76 billing/redeem/quota 表族
 // 与死列 DROP、v76→v77 usage_daily_summary 与 billing 镜像死列 DROP——
-// v77 恰为 CURRENT_SCHEMA_VERSION，全部 ? '0'/!vXCheck 门新库执行，
+// 搬运时 v77 恰为 CURRENT_SCHEMA_VERSION；其后 ISSUE-25 追加 v77→v78
+// scheduled_tasks 旧租约两列 DROP。全部 ? '0'/!vXCheck 门新库执行，
 // 破坏性 trim 的回滚路径是 enforcePreMigrationBackup 备份门）。
 // 计划表 2261-2555 外的 2220-2259（v66→v67/v71→v72/v72→v73 注释）为
 // 行界缺口段按 trim 主题并入本单元，提交信息留痕。搬运体逐字节一致，
@@ -351,5 +352,26 @@ export function trimRetiredSchemas(ctx: DbMigrationContext): void {
     logger.info(
       'v77 prune trim: retired usage summary table and dead billing-mirror/legacy columns dropped',
     );
+  }
+
+  // v77→v78 trim (ISSUE-25): drop scheduled_tasks.running_until / runner_id.
+  // They backed the legacy definition-level lease (claimTaskForRun), which
+  // the durable task_runs lease superseded; the writer was removed in the
+  // same change and every other site only cleared them. A lease value left
+  // behind by an old process carries no meaning under V2.
+  const v78Check = getRouterStateInternal('schema_version');
+  if (!v78Check || parseInt(v78Check, 10) < 78) {
+    const dropLegacyTaskLeaseColumns = db.transaction(() => {
+      const cols = db
+        .prepare('PRAGMA table_info(scheduled_tasks)')
+        .all() as Array<{ name: string }>;
+      for (const column of ['running_until', 'runner_id']) {
+        if (cols.some((c) => c.name === column)) {
+          db.exec(`ALTER TABLE scheduled_tasks DROP COLUMN ${column}`);
+        }
+      }
+    });
+    dropLegacyTaskLeaseColumns();
+    logger.info('v78 prune trim: legacy scheduled_tasks lease columns dropped');
   }
 }

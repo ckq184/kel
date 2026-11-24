@@ -505,8 +505,6 @@ export interface ScheduledTask {
   execution_mode?: 'host' | 'container' | null;
   workspace_jid?: string | null;
   workspace_folder?: string | null;
-  running_until?: string | null;
-  runner_id?: string | null;
   next_run: string | null;
   last_run: string | null;
   last_result: string | null;

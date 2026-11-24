@@ -135,7 +135,7 @@ let db: InstanceType<typeof Database>;
  * restating the number. Hardcoding it meant every schema bump edited a dozen
  * unrelated test files, which is churn that hides real assertion changes.
  */
-export const CURRENT_SCHEMA_VERSION = 77;
+export const CURRENT_SCHEMA_VERSION = 78;
 
 export function isDatabaseInitialized(): boolean {
   return Boolean(db?.open);
@@ -1989,8 +1989,8 @@ export function pauseWorkspaceTasksForRebuild(
       const now = new Date().toISOString();
       const pause = db.prepare(
         `UPDATE scheduled_tasks
-         SET status = 'parsing', next_run = NULL, running_until = NULL,
-             runner_id = NULL, revision = revision + 1, updated_at = ?
+         SET status = 'parsing', next_run = NULL,
+             revision = revision + 1, updated_at = ?
          WHERE id = ? AND revision = ? AND deleted_at IS NULL`,
       );
       const snapshots: WorkspaceTaskRebuildPause['tasks'] = [];
@@ -2422,30 +2422,6 @@ export function getDueTaskDefinitionsV2(limit = 100): ScheduledTask[] {
     .map(mapTaskRow);
 }
 
-export function claimTaskForRun(
-  id: string,
-  runnerId: string,
-  leaseMs: number,
-): boolean {
-  const now = new Date();
-  const nowIso = now.toISOString();
-  const leaseUntil = new Date(now.getTime() + leaseMs).toISOString();
-  const result = db
-    .prepare(
-      `
-    UPDATE scheduled_tasks
-    SET runner_id = ?, running_until = ?
-    WHERE id = ?
-      AND status = 'active'
-      AND next_run IS NOT NULL
-      AND next_run <= ?
-      AND (running_until IS NULL OR running_until <= ?)
-  `,
-    )
-    .run(runnerId, leaseUntil, id, nowIso, nowIso);
-  return result.changes === 1;
-}
-
 export function updateTaskAfterRun(
   id: string,
   nextRun: string | null,
@@ -2455,8 +2431,7 @@ export function updateTaskAfterRun(
   db.prepare(
     `
     UPDATE scheduled_tasks
-	    SET next_run = ?, last_run = ?, last_result = ?, status = CASE WHEN ? IS NULL THEN 'completed' ELSE status END,
-	        running_until = NULL, runner_id = NULL
+	    SET next_run = ?, last_run = ?, last_result = ?, status = CASE WHEN ? IS NULL THEN 'completed' ELSE status END
     WHERE id = ?
   `,
   ).run(nextRun, now, lastResult, nextRun, id);
@@ -2472,8 +2447,7 @@ export function pauseTaskAfterRun(id: string, lastResult: string): void {
   db.prepare(
     `
     UPDATE scheduled_tasks
-	    SET next_run = NULL, last_run = ?, last_result = ?, status = 'paused',
-	        running_until = NULL, runner_id = NULL
+	    SET next_run = NULL, last_run = ?, last_result = ?, status = 'paused'
     WHERE id = ?
   `,
   ).run(now, lastResult, id);
@@ -8862,7 +8836,6 @@ export function rebuildWorkspacePersistentState(input: {
         db.prepare(
           `UPDATE scheduled_tasks
            SET deleted_at = ?, status = 'paused', next_run = NULL,
-               running_until = NULL, runner_id = NULL,
                workspace_jid = NULL, workspace_folder = NULL,
                revision = revision + 1, updated_at = ?
            WHERE group_folder = ? AND deleted_at IS NULL`,
