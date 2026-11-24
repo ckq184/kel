@@ -1,15 +1,16 @@
 {
-  "task": "issue23-wechat-ilink-error-classification - iLink 非零错误码的归类（docs/issue23-wechat-ilink-error-classification-plan.md）；用户拍板：仅 -14 视为确定拒绝、仅首个可见调用失败才算、channel-errors.ts 新增 ChannelProviderRejection、实机验收由用户决定",
-  "base": "b75a034",
+  "task": "issue25-legacy-scheduler-lease-retirement - 旧调度租约簇退役（docs/issue25-legacy-scheduler-lease-retirement-plan.md）；用户拍板：函数层全删并改写测试、claimTaskForRun 与 running_until/runner_id 迁移删列、finalizeRecurringRun 等范围外发现登记 ISSUE-26、删 claim-loss 子场景其余改走 V2",
+  "base": "e520f6c",
   "allow": [
     ".gatescope.json",
-    "docs/issue23-wechat-ilink-error-classification-plan.md",
-    "docs/issues/ISSUE-23-wechat-ilink-error-classification.md",
+    "docs/issue25-legacy-scheduler-lease-retirement-plan.md",
+    "docs/issues/ISSUE-25-legacy-scheduler-lease-retirement.md",
+    "docs/issues/ISSUE-26-*.md",
     "docs/issues/README.md",
-    "src/channel-errors.ts",
-    "src/channel-outbox-delivery.ts",
-    "src/wechat.ts",
-    "src/wechat-outbound.ts",
+    "src/task-scheduler.ts",
+    "src/db.ts",
+    "src/db-schema/**",
+    "src/types.ts",
     "tests/**"
   ]
 }
