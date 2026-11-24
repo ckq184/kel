@@ -17,7 +17,7 @@
 
 ## 1. 关键事实（开工前核实）
 
-- **V-G1（esbuild）**：根目录 `esbuild` 只被 `desktop:build:main`、`desktop:build:preload` 两条脚本直接调用，全仓（含 `tests/`、`docs/`）无其他调用点；`web/` 是独立 npm 项目，自带 Vite 的 esbuild。根 lockfile 中 `esbuild@0.28.2` 是 `tsx@4.22.4` 的依赖（`~0.28.0`），删直依赖后仍在；`vitest` 内嵌 `vite@8.2.1` 把 esbuild 列为可选 peer（`^0.27||^0.28`），当前 `0.25.12` 本就被 npm 标记 invalid，删除不影响 vite。`allowScripts` 在仓库内无消费方，按"lockfile 里仍存在的版本"保守保留 0.28.2。
+- **V-G1（esbuild）**：根目录 `esbuild` 只被 `desktop:build:main`、`desktop:build:preload` 两条脚本直接调用，全仓（含 `tests/`、`docs/`）无其他调用点；`web/` 是独立 npm 项目，自带 Vite 的 esbuild。根 lockfile 中 `esbuild@0.28.2` 是 `tsx@4.22.4` 的依赖（`~0.28.0`），删直依赖后仍在；`vitest` 内嵌 `vite@8.2.1` 把 esbuild 列为可选 peer（`^0.27||^0.28`），当前 `0.25.12` 本就被 npm 标记 invalid，删除不影响 vite。`allowScripts` 由本机 npm 的 `install-scripts` 插件消费（`npm install` 输出可见），按"lockfile 里仍存在的版本"保留 0.28.2；安装时的 `@google/genai@1.52.0`（实际 2.21.0）与 `fsevents` 未覆盖告警属本任务前既有状态，不在范围内。
 - **V-G2（文档）**：`CLAUDE.md`、`docs/API.md`、`docs/ACL-MATRIX.md` 无桌面端描述；README 实际桌面端相关约 45 行（方案估算约 26 行，按实际清理），AGENTS.md 3 行（:48-50）。
 - **D-G1（文档）**：两份文档各 37/38 行，均无其他文档链接引用；`desktop-identity-split-plan.md` 只讲桌面端身份/userData/单例锁，随桌面端失效；`dual-desktop-port-isolation-plan.md` 的 3001/5174 端口约定在纯网页并排运行时仍成立。
 - **D-G2（脚本）**：`restart-dev.command` 66 行，桌面端相关约 17 行；核心价值（杀端口、启动 `dev:all`、等健康检查）与桌面端解耦。

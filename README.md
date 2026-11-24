@@ -16,7 +16,7 @@
   <a href="SECURITY.md">安全策略</a>
 </p>
 
-> 一句话：聊天界面让你向 Agent 提问；CKQClaw 让 Agent 拥有长期运行的工作区、可审计的能力边界，以及能够被 Web、桌面端和消息渠道共同使用的运行时。
+> 一句话：聊天界面让你向 Agent 提问；CKQClaw 让 Agent 拥有长期运行的工作区、可审计的能力边界，以及能够被 Web 与消息渠道共同使用的运行时。
 
 ## 产品定位
 
@@ -26,7 +26,7 @@ CKQClaw 是一个面向个人与团队的自托管 AI Agent 工作台。它不�
 - Workspace 文件、执行环境、权限和渠道绑定。
 - 持久化 Session、流式输出、取消、恢复和后台运行。
 - Workspace 级 Memory、Skills、MCP 与 Subagents。
-- Web、Electron Desktop、飞书、QQ、微信等入口。
+- Web、飞书、QQ、微信等入口。
 - Cron、间隔和一次性任务，以及任务运行历史、通知与恢复。
 
 CKQClaw 采用本地优先和显式集成的思路：数据库、工作区元数据、会话状态和配置由自己的服务管理；模型、消息渠道、Docker 与外部工具都作为可配置边界接入。
@@ -35,14 +35,14 @@ CKQClaw 采用本地优先和显式集成的思路：数据库、工作区元数
 
 工作台围绕 `Agent → Workspace → Runtime Session` 组织信息。左侧导航提供工作台、智能体、能力库、任务、用量、账单和设置入口；进入工作台后，可以在同一个界面中切换 Agent、Workspace 和对话上下文。
 
-下面是当前桌面端工作台的实际界面：
+下面是当前 Web 工作台的实际界面：
 
 <p align="center">
   <img src="docs/screenshots/workbench.png" alt="CKQClaw 智能体工作台" width="900" />
 </p>
 
 <p align="center">
-  <em>工作台：在同一个窗口中管理 Agent、Workspace、Session 与对话。</em>
+  <em>工作台：在同一个界面中管理 Agent、Workspace、Session 与对话。</em>
 </p>
 
 <p align="center">
@@ -54,7 +54,7 @@ CKQClaw 采用本地优先和显式集成的思路：数据库、工作区元数
   <em>能力库与模型配置：把 Skills、MCP 和 Provider 配置放在清晰的管理边界内。</em>
 </p>
 
-新的 CKQClaw 图标同时用于 Web/PWA、Electron 窗口和安装包资源：
+新的 CKQClaw 图标用于 Web/PWA 应用：
 
 <p align="center">
   <img src="web/public/icons/logo-1024.png" alt="CKQClaw application icon" width="160" />
@@ -100,17 +100,10 @@ CKQClaw 采用本地优先和显式集成的思路：数据库、工作区元数
 - Scheduler 支持 Cron、固定间隔和一次性任务，提供立即运行、暂停、取消、运行历史和结果投递。
 - 后台任务、Subagent 和渠道回复都沿用同一套 Workspace、Session、owner 与权限上下文。
 
-### Electron Desktop
-
-- Electron 只是 Desktop Shell，复用现有 Web Client，不在 Renderer 中承载数据库、文件系统、凭证、Docker 或 shell/process 权限。
-- Main Process 负责窗口生命周期、外部链接、菜单和受限 IPC；Preload 只暴露白名单 API。
-- 默认提供 macOS arm64 打包配置，并保留 Windows、Linux 目标配置。
-- 同一套 Renderer 可以连接本地 Backend，也可以通过 `CKQCLAW_SERVER_URL` 连接远程 CKQClaw 服务。
-
 ## 工作原理
 
 ```text
-Web Client / Electron Desktop / Message Channels
+Web Client / Message Channels
                          │ HTTP + WebSocket / Channel Adapters
                          ▼
                 CKQClaw Backend
@@ -131,7 +124,7 @@ Web Client / Electron Desktop / Message Channels
           Tools · Extensions · Subagents
 ```
 
-核心边界保持清晰：Backend 负责认证、持久化、队列、调度、渠道和授权；Pi Runner 负责 Agent 执行；Workspace 决定文件与运行边界；Electron Renderer 只负责界面和受限的桌面桥接。
+核心边界保持清晰：Backend 负责认证、持久化、队列、调度、渠道和授权；Pi Runner 负责 Agent 执行；Workspace 决定文件与运行边界；Web Client 只负责界面。
 
 ## 快速开始
 
@@ -171,81 +164,35 @@ npm run dev:all
 
 Agent 容器镜像默认使用 `ckq184/ckqclaw-agent:latest`，可以通过 `CKQCLAW_CONTAINER_IMAGE` 或 `CONTAINER_IMAGE` 覆盖。
 
-### 启动 Electron Desktop
-
-先启动 Backend 与 Vite：
-
-```bash
-npm run dev:all
-```
-
-再在另一个终端启动桌面端：
-
-```bash
-CKQCLAW_RENDERER_URL=http://127.0.0.1:5174 npm run desktop:dev
-```
-
-如果直接使用 Backend 提供的构建后页面，可以省略 `CKQCLAW_RENDERER_URL`：
-
-```bash
-npm run desktop:dev
-```
-
-连接远程 Backend 时：
-
-```bash
-CKQCLAW_SERVER_URL=https://your-ckqclaw.example.com npm run desktop:dev
-```
-
-打包命令：
-
-```bash
-# 生成未安装目录，适合本地冒烟验证
-npm run desktop:package:dir
-
-# 生成当前平台的安装包
-npm run desktop:package
-```
-
-打包配置位于 [`electron/electron-builder.yml`](electron/electron-builder.yml)，图标资源位于 [`electron/assets`](electron/assets)。正式发布前请为目标平台配置签名与公证。
-
 ## 常用命令
 
-| 命令                          | 说明                                                 |
-| ----------------------------- | ---------------------------------------------------- |
-| `npm run dev:all`             | 启动 Backend 与 Vite Web Client                      |
-| `npm run build:all`           | 构建 Backend、Web Client 与 Agent Runner             |
-| `npm run typecheck`           | 检查 Backend TypeScript                              |
-| `make typecheck`              | 执行 Backend、Web、Agent Runner 的完整类型与文档检查 |
-| `npm test -- --run`           | 运行 Vitest 测试                                     |
-| `npm run desktop:typecheck`   | 检查 Electron Main/Preload 类型                      |
-| `npm run desktop:build`       | 构建 Electron Main/Preload bundle                    |
-| `npm run desktop:package:dir` | 构建并生成目录形式的桌面应用                         |
-| `npm run desktop:package`     | 构建并打包桌面应用                                   |
-| `make backup`                 | 创建运行时数据备份                                   |
-| `make restore FILE=...`       | 恢复指定备份                                         |
-| `make status`                 | 查看 Backend、日志和 Docker 状态                     |
-| `make stop`                   | 停止当前端口上的 CKQClaw 服务                        |
+| 命令                    | 说明                                                 |
+| ----------------------- | ---------------------------------------------------- |
+| `npm run dev:all`       | 启动 Backend 与 Vite Web Client                      |
+| `npm run build:all`     | 构建 Backend、Web Client 与 Agent Runner             |
+| `npm run typecheck`     | 检查 Backend TypeScript                              |
+| `make typecheck`        | 执行 Backend、Web、Agent Runner 的完整类型与文档检查 |
+| `npm test -- --run`     | 运行 Vitest 测试                                     |
+| `make backup`           | 创建运行时数据备份                                   |
+| `make restore FILE=...` | 恢复指定备份                                         |
+| `make status`           | 查看 Backend、日志和 Docker 状态                     |
+| `make stop`             | 停止当前端口上的 CKQClaw 服务                        |
 
 ## 配置入口
 
-| 环境变量                  | 用途                                                | 默认值                        |
-| ------------------------- | --------------------------------------------------- | ----------------------------- |
-| `CKQCLAW_SERVER_URL`      | Electron 要连接的 Backend 地址                      | `http://127.0.0.1:3001`       |
-| `CKQCLAW_RENDERER_URL`    | Electron 要加载的 Renderer 地址，适合本地 Vite 开发 | 与 Server URL 相同            |
-| `CKQCLAW_CONTAINER_IMAGE` | Agent Runner 使用的容器镜像                         | `ckq184/ckqclaw-agent:latest` |
-| `CONTAINER_IMAGE`         | 容器镜像的兼容覆盖项                                | 同上                          |
-| `WEB_PORT`                | Makefile 启动 Backend 使用的端口                    | `3001`                        |
+| 环境变量                  | 用途                             | 默认值                        |
+| ------------------------- | -------------------------------- | ----------------------------- |
+| `CKQCLAW_CONTAINER_IMAGE` | Agent Runner 使用的容器镜像      | `ckq184/ckqclaw-agent:latest` |
+| `CONTAINER_IMAGE`         | 容器镜像的兼容覆盖项             | 同上                          |
+| `WEB_PORT`                | Makefile 启动 Backend 使用的端口 | `3001`                        |
 
 不要把 API Key、Session Cookie 或其他凭证写入命令行历史、截图或提交到仓库。远程部署时使用 HTTPS/WSS，并为反向代理、Cookie 和访问控制配置独立的安全边界。
 
 ## 执行与安全边界
 
 - Backend 由 Node.js 运行，负责认证、API、WebSocket、队列、调度、渠道连接、Provider、用量和 SQLite 持久化。
-- Docker 只隔离 Agent 执行环境，不承载 Desktop UI，也不替代 Backend 的授权层。
-- Electron BrowserWindow 使用 `contextIsolation`、关闭 `nodeIntegration` 和 sandbox。
-- Renderer 不直接读取文件、数据库或凭据；需要本机能力时只通过受限 Preload IPC 调用。
-- 外部链接由 Main Process 校验协议后打开；Renderer 导航限制在允许的 Backend/Renderer origin 内。
+- Docker 只隔离 Agent 执行环境，不替代 Backend 的授权层。
+- Web Client 不直接读取文件、数据库或凭据；文件与宿主能力一律经 Backend API 提供。
 - Workspace ACL、owner、用户角色、系统权限和 Host 执行策略在服务端共同判定，不能因为拥有某一层权限就自动越过其他边界。
 - Memory、Skills、MCP 和 Scheduler 任务都继承用户、Agent、Workspace 与 Session 上下文。
 
@@ -256,10 +203,10 @@ npm run desktop:package
 CKQClaw 当前处于持续开发阶段。仓库已经包含：
 
 - Pi Agent Runtime 生产执行路径与 runtime-neutral contract。
-- Web Client 与 Electron Desktop Shell。
+- Web Client。
 - Agent Profile、Workspace、Session、Memory、Skills、MCP 和 Subagents。
 - 多用户认证、ACL、owner 生命周期、调度任务、用量和渠道接入。
-- Host/Docker 双执行边界，以及 macOS arm64 的 Electron 打包配置。
+- Host/Docker 双执行边界。
 
 真实模型调用、Docker 执行、渠道连接和远程部署仍然依赖本地凭证、服务配置与运行环境；没有外部 Provider 时，可以先启动 UI、完成本地初始化，并在设置中稍后补齐配置。
 
@@ -268,12 +215,10 @@ CKQClaw 当前处于持续开发阶段。仓库已经包含：
 ### 近期
 
 - 完善渠道 onboarding、运行监控和失败恢复提示。
-- 增加更多 Electron 打包、签名和发布验证路径。
 - 持续收敛 Workspace、Memory、Skills 与 Scheduler 的产品文档。
 
 ### 长期
 
-- 更完整的跨平台桌面构建。
 - 更丰富的 Agent/Provider 扩展模型。
 - 可视化的运行轨迹、证据链与成本分析。
 - 面向贡献者的能力注册、Skill 开发和渠道适配指南。
@@ -295,11 +240,9 @@ CKQClaw 当前处于持续开发阶段。仓库已经包含：
 make typecheck
 npm test -- --run
 npm run build:all
-npm run desktop:typecheck
-npm run desktop:build
 ```
 
-如果改动了 UI、桌面窗口或交互流程，请附上截图或简短的视觉 QA 说明。新增桌面能力优先放在 Main/Preload，并保持 Renderer 不接触 SQLite、filesystem、credentials、Docker 和 shell/process。
+如果改动了 UI 或交互流程，请附上截图或简短的视觉 QA 说明；前端不直接接触 SQLite、filesystem、credentials、Docker 和 shell/process。
 
 ## License
 

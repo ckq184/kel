@@ -21,14 +21,7 @@
     "dev:all": "npx concurrently --timestamp-format \"yyyy-MM-dd HH:mm:ss.SSS\" -n backend,frontend -c blue,green \"npm run dev\" \"npm run dev:web\"",
     "dev:web": "cd web && npm run dev",
     "build:web": "cd web && npm run build",
-    "build:all": "npx concurrently --group -n backend,web,agent-runner \"npm run build\" \"npm run build:web\" \"npm --prefix container/agent-runner run build\"",
-    "desktop:build": "npm run desktop:build:main && npm run desktop:build:preload",
-    "desktop:build:main": "esbuild electron/src/main/index.ts --bundle --platform=node --format=cjs --outfile=electron/dist/main.cjs --sourcemap --external:electron",
-    "desktop:build:preload": "esbuild electron/src/preload/index.ts --bundle --platform=node --format=cjs --outfile=electron/dist/preload.cjs --sourcemap --external:electron",
-    "desktop:typecheck": "tsc --noEmit -p electron/tsconfig.json",
-    "desktop:dev": "npm run desktop:build && electron electron",
-    "desktop:package": "npm run build:all && npm run desktop:build && electron-builder --projectDir electron --config electron-builder.yml",
-    "desktop:package:dir": "npm run build:all && npm run desktop:build && electron-builder --dir --projectDir electron --config electron-builder.yml"
+    "build:all": "npx concurrently --group -n backend,web,agent-runner \"npm run build\" \"npm run build:web\" \"npm --prefix container/agent-runner run build\""
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "1.3.0",
@@ -55,9 +48,6 @@
     "@types/qrcode": "^1.5.6",
     "@types/ws": "^8.18.1",
     "concurrently": "^9.2.1",
-    "electron": "39.8.10",
-    "electron-builder": "^26.0.12",
-    "esbuild": "^0.25.0",
     "happy-dom": "^20.11.1",
     "prettier": "3.8.3",
     "tsx": "^4.19.0",
@@ -86,17 +76,12 @@
     "lark",
     "chatbot",
     "docker",
-    "mcp",
-    "electron",
-    "desktop"
+    "mcp"
   ],
   "allowScripts": {
     "@google/genai@1.52.0": true,
     "protobufjs@7.6.5": true,
     "better-sqlite3@12.11.1": true,
-    "electron@39.8.10": true,
-    "electron-winstaller@5.4.0": true,
-    "esbuild@0.25.12": true,
     "esbuild@0.28.2": true,
     "node-pty@1.1.0": true
   }
