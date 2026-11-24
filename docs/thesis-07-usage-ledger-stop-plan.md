@@ -1,8 +1,8 @@
 # 任务立项：THESIS-07 用量（二）：停记账，气泡回写改为不经账本
 
-> 立项日期：2026-11-24｜base：`5ccf1b3`｜分支：`claude/thesis-07-usage-ledger-stop`
+> 立项日期：2026-11-24｜base：`5ccf1b3`（立项）→ `38418cc`（THESIS-06 合入后的实现基线）｜分支：`claude/thesis-07-usage-ledger-stop`
 > 来源：[docs/issues2/THESIS-07-usage-ledger-stop.md](issues2/THESIS-07-usage-ledger-stop.md)（方案 §6 L2/T2，审核更正 S1）
-> **状态：只立项，不实现。** THESIS-06 尚未完成，本分支在 06 合入 main 前不进入 Green，避免违反任务池声明的依赖顺序（README 第三节 06↔07 为 ❌）。
+> **状态：THESIS-06 已合入 main（38418cc），本分支 rebase 后进入实现（TDD Red→Green）。**
 
 ## 0. 需求采访结论（2026-11-24，用户拍板）
 
@@ -10,12 +10,12 @@
 - **完成条件**：对话与 isolated 定时任务跑完后 `usage_records`、`usage_events` 不新增记录；一条回复连续收到多次不同 `eventId` 的 `usage` 事件时，消息上的耗时是各次之和，同一 `eventId` 重放不重复累加；推送给 Web 与飞书的流事件里 `costUSD` 是上游原值；`npm run verify` 六步全绿；`node scripts/check-scope.mjs` 通过；用户完成人工冒烟。
 - **约束**：不改 `src/db.ts`、不改表结构、不动 `usage` 流事件本身、不删定价层（THESIS-08）、不改前端气泡与飞书卡片显示（THESIS-09）、不读写 `data/`。
 
-| #        | 问题                                      | 拍板                                                                                                                         |
-| -------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| 依赖     | THESIS-06 未完成，07 依赖它且矩阵为 ❌    | **只立项不实现**：本提交只落 plan、范围声明与领取状态；06 完成并合入 main 后，rebase 本分支再进入实现。                      |
-| 拆包确认 | 方案 §15 v0.4「停记账随模型单价一并执行」 | **确认按现有拆分**：07 先停记账，08 紧随其后删定价；中间态定价层只被 `/api/pricing` 与设置页使用，不影响功能。               |
-| 内存状态 | 累加态只放内存，进程重启时中间态丢失      | **接受**：已写入的耗时保留，只影响重启时恰好在回复中的极少数消息；不为此改 `src/db.ts`。                                     |
-| 实现落点 | issue 原文写「在 `src/index.ts` 内」累加  | **抽独立纯模块** `src/usage-accumulator.ts`：`index.ts` 顶层会执行 `main()`，测试无法导入；抽模块才能按 TDD 单测累加与去重。 |
+| #        | 问题                                      | 拍板                                                                                                                                                        |
+| -------- | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 依赖     | THESIS-06 未完成，07 依赖它且矩阵为 ❌    | **已解除**：06 已合入 main（`38418cc`），本分支 rebase 后进入实现；立项阶段曾只立项不实现。                                                                 |
+| 拆包确认 | 方案 §15 v0.4「停记账随模型单价一并执行」 | **确认按现有拆分**：07 先停记账，08 紧随其后删定价；中间态定价层只被 `/api/pricing` 与设置页使用，不影响功能。                                              |
+| 内存状态 | 累加态只放内存，进程重启时中间态丢失      | **接受**：重启后同一回复若继续收到 usage 事件，累计从 0 重来，整值覆盖可能让气泡耗时暂时变小；只影响重启瞬间仍在生成/多轮回复的消息。不为此改 `src/db.ts`。 |
+| 实现落点 | issue 原文写「在 `src/index.ts` 内」累加  | **抽独立纯模块** `src/usage-accumulator.ts`：`index.ts` 顶层会执行 `main()`，测试无法导入；抽模块才能按 TDD 单测累加与去重。                                |
 
 ## 1. 关键事实（开工前核实，锚点为 `5ccf1b3`）
 
@@ -30,13 +30,13 @@
 - **测试面（比 issue 多一处）**：
   - 随本包删除：`tests/usage-accounting.test.ts`（630）、`tests/task-usage-routing.test.ts`（200）；
   - **issue 未列、执行前必须处理**：`tests/pricing-routes.test.ts` 第 54 行导入 `usage-service`，`describe('custom pricing store + recordUsageEvent injection')`（`:268-468`，5 个用例）与 `:683-720` 的缓存失效用例依赖 `recordUsageEvent`。本包删 `usage-service` 后该文件无法编译，需删掉这些用例并移除 `recordUsageEvent`/`getEffectiveCustomPricing` 导入；其余 CRUD 与 `/api/pricing` 路由用例保留，留给 THESIS-08 整文件删除。
-  - 不动：`tests/pi-usage-stream.test.ts`（`usage` 流事件）、`tests/routes-usage.test.ts`（用 `db.recordUsageEventBatch` 播种，属于 THESIS-06 的删除范围）。
+  - 不动：`tests/pi-usage-stream.test.ts`（`usage` 流事件）；`tests/routes-usage.test.ts` 已随 THESIS-06 删除。
 - **文档**：`CLAUDE.md`、`docs/API.md`、`docs/ACL-MATRIX.md` 均未提及 `usage-service`/`task-usage`/`writeUsageRecords`；本包无文档正文改动，只需 `docs:check` 通过。
 - **红线**：不改 `src/db.ts`；`rebuildMessageTokenUsageFromLedger`、`recordUsageEventBatch` 等函数本体留给 THESIS-14 随表删除。
 
-## 2. 实现步骤（TDD，06 完成后执行）
+## 2. 实现步骤（TDD）
 
-> 立项提交只含 plan、范围声明与领取状态，**不落 Red 用例**：当前分支上写失败用例会让 `npm run verify` 第 4 步变红，违反提交前门槛。Red 用例与 Green 一起放在 06 完成后的实现提交里，先红后绿。
+> 立项提交只含 plan、范围声明与领取状态，**不落 Red 用例**：当时分支上写失败用例会让 `npm run verify` 第 4 步变红。06 合入后，Red 用例与 Green 一起落在实现提交里：先确认 8 个用例因模块缺失/契约未满足而红，再写实现转绿。
 
 1. **Red**：
    - 新增 `tests/usage-accumulator.test.ts`（纯模块）：
@@ -89,6 +89,7 @@
 - **气泡回写路径必须先改**：只删账本不改回写，气泡耗时会变成 0；实现顺序按第 2 节先落累加模块再删调用点。
 - **飞书卡片的费用一行会消失**：它来自本包删除的 `costUSD` 覆盖步骤，属 D-C3 ① 的预期行为。
 - **直到 THESIS-09 之前，刷新后的气泡只在有 `msgId` 的分支缺 token 明细**：本包按 D-C2 只累加耗时与轮数；实时气泡仍由前端流事件拼 token，不受影响。
-- **重启丢失中间态**：用户已确认接受；已写入的耗时保留。
+- **重启丢失中间态**：用户已确认接受。注意累加是整值覆盖：重启或条目淘汰后，同一回复若继续收到 usage 事件，累计从 0 重来，气泡耗时可能暂时变小；只影响重启瞬间仍在生成/多轮回复的消息。
+- **缺 `eventId` 时无法去重**：旧 `deriveUsageEventId` 会用内容哈希兜底；新实现缺 `eventId` 按次累加。Pi runner 恒带 `eventId`（`pi-session.ts:134-143`），实践无回退；第三方/旧集成若不带则由上游保证不重放。
 - **并行协调**：`src/task-scheduler.ts` 也是 R2 任务池 ISSUE-26 的改动对象，两者不同时进行；`tests/pricing-routes.test.ts` 同时是 THESIS-08 的删除对象，本包只删依赖 `recordUsageEvent` 的用例，08 再整文件删除。
 - **回滚**：实现提交一到两笔，`git revert <提交号>`；无数据迁移，回滚零额外操作。

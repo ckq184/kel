@@ -75,7 +75,6 @@ import { GroupQueue } from './group-queue.js';
 import { logger } from './logger.js';
 import { removeFlowArtifacts } from './file-manager.js';
 import { runScript } from './script-runner.js';
-import { recordIsolatedTaskUsage } from './task-usage.js';
 import type { StreamEvent } from './stream-event.types.js';
 import {
   AgentProfile,
@@ -1201,21 +1200,6 @@ async function runTaskInner(
         // Broadcast stream events to WebSocket clients viewing the task workspace
         if (streamedOutput.status === 'stream' && streamedOutput.streamEvent) {
           deps.broadcastStreamEvent?.(effectiveJid, streamedOutput.streamEvent);
-          // The isolated path bypasses the group-chat runner stream loop, so
-          // usage events must be ledgered here or task runs vanish from
-          // analytics/quota/billing (eventId-keyed idempotent, replays dedup).
-          try {
-            recordIsolatedTaskUsage(streamedOutput, {
-              taskId: task.id,
-              workspaceFolder: workspace.folder,
-              userId: workspaceOwnerId ?? taskOwnerId,
-            });
-          } catch (err) {
-            logger.warn(
-              { taskId: task.id, taskRunId: options?.taskRunId, err },
-              'Failed to record isolated task usage',
-            );
-          }
         }
         if (streamedOutput.providerFailure) {
           if (streamedOutput.providerFailureTerminal === true) {

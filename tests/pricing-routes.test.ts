@@ -51,7 +51,6 @@ vi.mock('../src/middleware/auth.ts', async (importOriginal) => {
 const db = await import('../src/db.js');
 const { getEffectiveCustomPricing, invalidateCustomPricingCache } =
   await import('../src/custom-pricing-store.js');
-const { recordUsageEvent } = await import('../src/usage-service.js');
 const pricingRoutes = (await import('../src/routes/pricing.js')).default;
 
 const dbPath = path.join(storeDir, 'messages.db');
@@ -265,8 +264,12 @@ describe('custom_model_pricing CRUD', () => {
   });
 });
 
-describe('custom pricing store + recordUsageEvent injection', () => {
-  // 临时 DB 在文件内共享：前序 describe 的 CRUD 残留必须清空，桶断言才独立。
+/*
+ * 定价规则投影到 effective set 的纯 store 行为。THESIS-07 删除了依赖
+ * 已停用记账服务的计价注入用例，但这部分仍服务于 `/api/pricing` 与
+ * 设置页，保留到 THESIS-08 整包删除定价层。
+ */
+describe('custom pricing store projection', () => {
   beforeEach(() => {
     for (const rule of db.listCustomModelPricingRules()) {
       db.deleteCustomModelPricingRule(rule.id);
@@ -274,54 +277,7 @@ describe('custom pricing store + recordUsageEvent injection', () => {
     invalidateCustomPricingCache();
   });
 
-  const glmUsage = {
-    inputTokens: 55_679,
-    outputTokens: 3_230,
-    cacheReadInputTokens: 50_112,
-    cacheCreationInputTokens: 0,
-    costUSD: 0,
-    durationMs: 1_000,
-    numTurns: 1,
-    modelUsage: {
-      'glm-5.3-flash': {
-        inputTokens: 55_679,
-        outputTokens: 3_230,
-        cacheReadInputTokens: 50_112,
-        cacheCreationInputTokens: 0,
-        costUSD: 0,
-      },
-    },
-  };
-
-  function recordOnce(eventId: string, createdAt: string) {
-    return recordUsageEvent({
-      userId: 'pricing-owner',
-      groupFolder: 'pricing-group',
-      source: 'agent',
-      eventId,
-      createdAt,
-      usage: { ...glmUsage, eventId },
-    });
-  }
-
-  test('an enabled custom pattern prices new events; disabling falls back', () => {
-    db.createUser({
-      id: 'pricing-owner',
-      username: 'pricing-owner',
-      password_hash: 'x',
-      display_name: 'Pricing Owner',
-      role: 'member',
-      status: 'active',
-      permissions: [],
-      must_change_password: false,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    });
-
-    // 无规则 → 内置 Sonnet 兜底：0.167037+0.04845+0.0150336 = $0.2305206 → 23 cents
-    const baseline = recordOnce('usage:baseline', '2026-11-09T10:00:00.000Z');
-    expect(baseline.providerEstimatedCostUSD).toBe(0.23);
-
+  test('enabled pattern rules are projected into the effective set', () => {
     const rule = db.createCustomModelPricingRule({
       kind: 'pattern',
       pattern: 'glm-5.3-flash',
@@ -336,22 +292,11 @@ describe('custom pricing store + recordUsageEvent injection', () => {
       'glm-5.3-flash',
     ]);
 
-    // 自定义价：55,679×0.6 + 3,230×2.2 + 50,112×0.1（/1M）= $0.0455246 → 5 cents
-    // （独立半小时桶，事件金额=单笔全价而非桶增量）
-    const customPriced = recordOnce('usage:custom', '2026-11-09T10:35:00.000Z');
-    expect(customPriced.providerEstimatedCostUSD).toBe(0.05);
-
-    // 禁用规则 → 显式失效后立即回落 Sonnet 兜底。
-    db.updateCustomModelPricingRule(rule.id, { enabled: false });
-    invalidateCustomPricingCache();
-    const disabled = recordOnce('usage:disabled', '2026-11-09T11:05:00.000Z');
-    expect(disabled.providerEstimatedCostUSD).toBe(0.23);
-
     db.deleteCustomModelPricingRule(rule.id);
     invalidateCustomPricingCache();
   });
 
-  test('custom fallback prices unmatched models and cache TTL is bypassed by invalidation', () => {
+  test('custom fallback is projected and reverts after deletion', () => {
     const fallback = db.createCustomModelPricingRule({
       kind: 'fallback',
       inputPricePerMTok: 0.5,
@@ -364,10 +309,6 @@ describe('custom pricing store + recordUsageEvent injection', () => {
     const effective = getEffectiveCustomPricing();
     expect(effective.patterns).toEqual([]);
     expect(effective.fallback?.inputPricePerMTok).toBe(0.5);
-
-    // 55,679×0.5 + 3,230×2 + 50,112×0.05（/1M）= $0.0402336 → 4 cents
-    const priced = recordOnce('usage:fallback', '2026-11-09T12:00:00.000Z');
-    expect(priced.providerEstimatedCostUSD).toBe(0.04);
 
     db.deleteCustomModelPricingRule(fallback.id);
     invalidateCustomPricingCache();
@@ -393,75 +334,6 @@ describe('custom pricing store + recordUsageEvent injection', () => {
 
     db.deleteCustomModelPricingRule(disabledPattern.id);
     db.deleteCustomModelPricingRule(disabledFallback.id);
-    invalidateCustomPricingCache();
-  });
-
-  test('half-hour bucket keeps new-price re-basing semantics: never over-charges', () => {
-    // 同一 UTC 半小时桶内两次事件，中途把单价从 $100/MTok 降到 $0.4/MTok。
-    const rule = db.createCustomModelPricingRule({
-      kind: 'pattern',
-      pattern: 'clamp-model',
-      inputPricePerMTok: 100,
-    });
-    invalidateCustomPricingCache();
-    const usage = (tokens: number, eventId: string) => ({
-      eventId,
-      inputTokens: tokens,
-      outputTokens: 0,
-      cacheReadInputTokens: 0,
-      cacheCreationInputTokens: 0,
-      costUSD: 0,
-      durationMs: 1,
-      numTurns: 1,
-      modelUsage: {
-        'clamp-model': {
-          inputTokens: tokens,
-          outputTokens: 0,
-          cacheReadInputTokens: 0,
-          cacheCreationInputTokens: 0,
-          costUSD: 0,
-        },
-      },
-    });
-
-    const first = recordUsageEvent({
-      userId: 'pricing-owner',
-      groupFolder: 'pricing-group',
-      source: 'agent',
-      eventId: 'usage:clamp-1',
-      createdAt: '2026-11-09T12:00:00.000Z',
-      usage: usage(6_000, 'usage:clamp-1'),
-    });
-    // 6,000×100/1M = $0.6 → 60 cents
-    expect(first.providerEstimatedCostUSD).toBe(0.6);
-
-    db.updateCustomModelPricingRule(rule.id, { inputPricePerMTok: 0.4 });
-    invalidateCustomPricingCache();
-
-    const second = recordUsageEvent({
-      userId: 'pricing-owner',
-      groupFolder: 'pricing-group',
-      source: 'agent',
-      eventId: 'usage:clamp-2',
-      createdAt: '2026-11-09T12:10:00.000Z',
-      usage: usage(6_000, 'usage:clamp-2'),
-    });
-    // 桶前量按新价重算：round(12,000×0.4/1M×100)=0 − round(6,000×0.4/1M×100)=0 → 增量 0，
-    // 绝不为负也绝不多计；历史第一行 60 cents 不回算。
-    expect(second.providerEstimatedCostUSD).toBe(0);
-
-    const third = recordUsageEvent({
-      userId: 'pricing-owner',
-      groupFolder: 'pricing-group',
-      source: 'agent',
-      eventId: 'usage:clamp-3',
-      createdAt: '2026-11-09T12:20:00.000Z',
-      usage: usage(1_000_000, 'usage:clamp-3'),
-    });
-    // round(1,012,000×0.4/1M×100)=40 − round(12,000×0.4/1M×100)=0 → 40 cents
-    expect(third.providerEstimatedCostUSD).toBe(0.4);
-
-    db.deleteCustomModelPricingRule(rule.id);
     invalidateCustomPricingCache();
   });
 });
@@ -678,44 +550,5 @@ describe('/api/pricing admin routes', () => {
       source: 'fallback-custom',
       pricing: { inputPricePerMTok: 0.5 },
     });
-  });
-
-  test('mutations invalidate the pricing cache for the very next usage event', async () => {
-    const created = await post({
-      kind: 'pattern',
-      pattern: 'glm-5.3-flash',
-      inputPricePerMTok: 0.6,
-      outputPricePerMTok: 2.2,
-      cacheReadPricePerMTok: 0.1,
-    });
-    expect(created.status).toBe(201);
-    // 不手动 invalidate：路由变更必须已使缓存失效，下一事件按新价落库。
-    const priced = recordUsageEvent({
-      userId: 'pricing-owner',
-      groupFolder: 'pricing-group',
-      source: 'agent',
-      eventId: 'usage:route-cache',
-      createdAt: '2026-11-09T13:00:00.000Z',
-      usage: {
-        eventId: 'usage:route-cache',
-        inputTokens: 55_679,
-        outputTokens: 3_230,
-        cacheReadInputTokens: 50_112,
-        cacheCreationInputTokens: 0,
-        costUSD: 0,
-        durationMs: 1,
-        numTurns: 1,
-        modelUsage: {
-          'glm-5.3-flash': {
-            inputTokens: 55_679,
-            outputTokens: 3_230,
-            cacheReadInputTokens: 50_112,
-            cacheCreationInputTokens: 0,
-            costUSD: 0,
-          },
-        },
-      },
-    });
-    expect(priced.providerEstimatedCostUSD).toBe(0.05);
   });
 });
