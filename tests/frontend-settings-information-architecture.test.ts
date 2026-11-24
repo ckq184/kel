@@ -25,7 +25,7 @@ describe('settings information architecture', () => {
     expect(nav).toContain('min-h-0 flex-1 overflow-y-auto px-3 pb-28');
     expect(nav).toContain('SheetDescription');
     expect(nav).not.toMatch(
-      /key: '(groups|agent-profiles|memory|skills|mcp-servers|usage)'/,
+      /key: '(groups|agent-profiles|memory|skills|mcp-servers)'/,
     );
   });
 
@@ -50,7 +50,7 @@ describe('settings information architecture', () => {
     const capabilities = read('web/src/pages/CapabilitiesPage.tsx');
 
     expect(app).toContain('path="/capabilities/:section?"');
-    expect(app).toContain('path="/usage"');
+    expect(app).not.toContain('path="/usage"');
     expect(app).toContain('requiredPermission="manage_system_config"');
     expect(settings).toContain("skills: '/capabilities/skills'");
     expect(settings).toContain("'mcp-servers': '/capabilities/mcp'");
@@ -59,11 +59,11 @@ describe('settings information architecture', () => {
       "bindings: '/settings?tab=my-channels&view=bindings'",
     );
     // ISSUE-11 A6：LEGACY_TAB_ROUTES 全量映射补锁（skills/mcp/bindings 三条
-    // 已由上方锁定，此处补 groups/agent-profiles/memory/usage 四条）。
+    // 已由上方锁定，此处补 groups/agent-profiles/memory 三条）。
     expect(settings).toContain("groups: '/chat'");
     expect(settings).toContain("'agent-profiles': '/agent-profiles'");
     expect(settings).toContain("memory: '/memory'");
-    expect(settings).toContain("usage: '/usage'");
+    expect(settings).not.toContain("usage: '/usage'");
     expect(navItems).toContain("label: '能力库'");
     expect(capabilities).toMatch(/能力库[\s\S]*具体智能体的“能力配置”/);
   });

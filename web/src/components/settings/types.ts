@@ -103,7 +103,6 @@ export type SettingsTab =
   | 'users'
   | 'about'
   | 'bindings'
-  | 'usage'
   | 'monitor';
 
 export function getErrorMessage(err: unknown, fallback: string): string {

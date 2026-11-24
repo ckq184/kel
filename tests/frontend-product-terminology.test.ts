@@ -14,7 +14,6 @@ describe('product terminology', () => {
       'web/src/pages/ChatPage.tsx',
       'web/src/pages/AgentProfilesPage.tsx',
       'web/src/components/chat/CreateContainerDialog.tsx',
-      'web/src/pages/UsagePage.tsx',
       'web/src/pages/SettingsPage.tsx',
     ]
       .map(read)
@@ -24,7 +23,6 @@ describe('product terminology', () => {
     expect(productSurface).toContain('主智能体');
     expect(productSurface).toContain('自定义智能体');
     expect(productSurface).toContain('为智能体新建工作区');
-    expect(productSurface).toContain('智能体运行次数');
     expect(productSurface).not.toMatch(
       /label: 'Agent'|主 Agent|自定义 Agent|Agent 工作区|选择 Agent|创建 Agent|Agent 运行次数|Agent 列表/,
     );

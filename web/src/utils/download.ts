@@ -12,7 +12,7 @@
 
 import { withBasePath } from './url';
 
-export class DownloadError extends Error {
+class DownloadError extends Error {
   constructor(
     public readonly status: number,
     message: string,
@@ -65,15 +65,6 @@ function triggerBlobDownload(blob: Blob, filename: string): void {
   document.body.removeChild(a);
   // Revoke after a short delay so the browser has time to start the download.
   setTimeout(() => URL.revokeObjectURL(url), 3000);
-}
-
-/** Download UTF-8 text generated in the browser (for example a CSV export). */
-export function downloadTextFile(
-  content: string,
-  filename: string,
-  mimeType = 'text/plain;charset=utf-8',
-): void {
-  triggerBlobDownload(new Blob([content], { type: mimeType }), filename);
 }
 
 /**

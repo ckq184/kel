@@ -77,7 +77,6 @@ import mcpServersRoutes from './routes/mcp-servers.js';
 import workspaceConfigRoutes from './routes/workspace-config.js';
 import agentProfileRoutes from './routes/agent-profiles.js';
 import workspaceRoutes from './routes/workspaces.js';
-import { usage as usageRoutes } from './routes/usage.js';
 import pricingRoutes from './routes/pricing.js';
 import bugReportRoutes from './routes/bug-report.js';
 import channelAccountRoutes, {
@@ -230,7 +229,6 @@ app.route('/api/workspaces', workspaceRoutes);
 app.route('/api/groups', agentRoutes); // Workspace session routes; /agents paths remain compatibility aliases
 app.route('/api/groups', workspaceConfigRoutes); // Workspace config under /api/groups/:jid/workspace-config
 app.route('/api', monitorRoutes);
-app.route('/api/usage', usageRoutes);
 app.route('/api/pricing', pricingRoutes);
 app.route('/api/bug-report', bugReportRoutes);
 app.route('/api/channel-accounts', channelAccountRoutes);
