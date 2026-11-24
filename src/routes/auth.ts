@@ -16,7 +16,6 @@ import {
 } from '../avatar-upload.js';
 import {
   LoginSchema,
-  RegisterSchema,
   ProfileUpdateSchema,
   ChangePasswordSchema,
 } from '../schemas.js';
@@ -30,13 +29,9 @@ import {
   updateUserFields,
   getUserSessions,
   getUserCount,
-  registerUserWithInvite,
-  registerUserWithoutInvite,
-  logAuthEvent,
   ensureUserHomeGroup,
 } from '../db.js';
 import {
-  getRegistrationConfig,
   getEnabledProviders,
   getFeishuProviderConfigWithSource,
   getAppearanceConfig,
@@ -147,7 +142,7 @@ authRoutes.post('/setup', async (c) => {
 
   const usernameError = validateUsername(rawUsername);
   if (usernameError) return c.json({ error: usernameError }, 400);
-  // 归一化大小写（与 login / register 一致）。
+  // 归一化大小写（与 login 一致）。
   const username = rawUsername.toLowerCase();
 
   const passwordError = validatePassword(password);
@@ -177,15 +172,6 @@ authRoutes.post('/setup', async (c) => {
     }
     return c.json({ error: 'Username already taken' }, 400);
   }
-
-  logAuthEvent({
-    event_type: 'user_created',
-    username,
-    actor_username: 'system',
-    ip_address: ip,
-    user_agent: ua,
-    details: { source: 'setup_wizard', role: 'admin' },
-  });
 
   // Create admin home group (web:main, folder=main, host mode)
   try {
@@ -234,7 +220,7 @@ authRoutes.post('/login', async (c) => {
     return c.json({ error: 'Invalid credentials' }, 401);
   }
 
-  // Username 归一化（与 register / setup / admin create 保持一致）。
+  // Username 归一化（与 setup 一致）。
   const username = validation.data.username.toLowerCase();
   const { password } = validation.data;
   const ip = getClientIp(c);
@@ -249,13 +235,6 @@ authRoutes.post('/login', async (c) => {
     loginLockoutMinutes,
   );
   if (!rateCheck.allowed) {
-    logAuthEvent({
-      event_type: 'login_failed',
-      username,
-      ip_address: ip,
-      user_agent: ua,
-      details: { reason: 'rate_limited' },
-    });
     return c.json(
       {
         error: `Too many login attempts. Try again in ${rateCheck.retryAfterSeconds}s`,
@@ -283,19 +262,6 @@ authRoutes.post('/login', async (c) => {
 
   if (!user || user.status !== 'active' || !passwordMatch) {
     recordLoginAttempt(username, ip);
-    logAuthEvent({
-      event_type: 'login_failed',
-      username,
-      ip_address: ip,
-      user_agent: ua,
-      details: {
-        reason: !user
-          ? 'user_not_found'
-          : user.status !== 'active'
-            ? 'account_inactive'
-            : 'wrong_password',
-      },
-    });
     return c.json({ error: 'Invalid credentials' }, 401);
   }
 
@@ -326,12 +292,6 @@ authRoutes.post('/login', async (c) => {
     );
   }
 
-  logAuthEvent({
-    event_type: 'login_success',
-    username,
-    ip_address: ip,
-    user_agent: ua,
-  });
   const updatedUser = getUserById(user.id) ?? user;
   const setupStatus =
     updatedUser.role === 'admin' ? buildSetupStatus() : undefined;
@@ -352,182 +312,10 @@ authRoutes.post('/login', async (c) => {
   );
 });
 
-authRoutes.get('/register/status', (c) => {
-  // Before initial admin setup, force users through /setup first.
-  if (getUserCount(true) === 0) {
-    return c.json({
-      allowRegistration: false,
-      requireInviteCode: true,
-    });
-  }
-
-  const config = getRegistrationConfig();
-  return c.json({
-    allowRegistration: config.allowRegistration,
-    requireInviteCode: config.requireInviteCode,
-  });
-});
-
-authRoutes.post('/register', async (c) => {
-  if (getUserCount(true) === 0) {
-    return c.json({ error: '系统尚未初始化，请先完成管理员设置。' }, 403);
-  }
-
-  // Check registration switch
-  const regConfig = getRegistrationConfig();
-  if (!regConfig.allowRegistration) {
-    return c.json({ error: '注册功能已关闭' }, 403);
-  }
-
-  const body = await c.req.json().catch(() => ({}));
-  const validation = RegisterSchema.safeParse(body);
-  if (!validation.success) {
-    return zodBadRequest(c, validation.error, 'request-format');
-  }
-
-  // Username 大小写归一化：避免 'admin' / 'Admin' / 'ADMIN' 是三个独立账号
-  // （审计 / 聊天 / 提及视觉混淆）。统一以小写存储，登录、查找、显示都按
-  // 小写比较。display_name 仍可保留用户的原始大小写偏好。
-  const username = validation.data.username.toLowerCase();
-  const { password, display_name, invite_code } = validation.data;
-
-  // If invite code is required but not provided, reject
-  if (regConfig.requireInviteCode && !invite_code) {
-    return c.json({ error: '需要提供邀请码' }, 400);
-  }
-
-  const ip = getClientIp(c);
-  const ua = c.req.header('user-agent') || null;
-
-  // IP-based rate limiting for register endpoint
-  const {
-    maxLoginAttempts: regMaxAttempts,
-    loginLockoutMinutes: regLockoutMin,
-  } = getSystemSettings();
-  const rateCheck = checkLoginRateLimit(
-    `register:${ip}`,
-    ip,
-    regMaxAttempts,
-    regLockoutMin,
-  );
-  if (!rateCheck.allowed) {
-    return c.json(
-      {
-        error: `Too many registration attempts. Try again in ${rateCheck.retryAfterSeconds}s`,
-      },
-      429,
-    );
-  }
-
-  // Validate username format
-  const usernameError = validateUsername(username);
-  if (usernameError) return c.json({ error: usernameError }, 400);
-
-  const passwordError = validatePassword(password);
-  if (passwordError) return c.json({ error: passwordError }, 400);
-
-  const now = new Date().toISOString();
-  const userId = generateUserId();
-  const passwordHash = await hashPassword(password);
-
-  // Branch: with invite code or without
-  const withInvite = !!invite_code;
-  const result = withInvite
-    ? registerUserWithInvite({
-        id: userId,
-        username,
-        password_hash: passwordHash,
-        display_name: display_name || username,
-        invite_code: invite_code!,
-        created_at: now,
-        updated_at: now,
-      })
-    : registerUserWithoutInvite({
-        id: userId,
-        username,
-        password_hash: passwordHash,
-        display_name: display_name || username,
-        created_at: now,
-        updated_at: now,
-      });
-
-  if (!result.ok) {
-    recordLoginAttempt(`register:${ip}`, ip);
-    if (result.reason === 'username_taken') {
-      return c.json(
-        { error: 'Registration failed. Username may already be taken.' },
-        400,
-      );
-    }
-    return c.json({ error: 'Invalid or expired invite code' }, 400);
-  }
-
-  if (withInvite) {
-    logAuthEvent({
-      event_type: 'invite_used',
-      username,
-      ip_address: ip,
-      user_agent: ua,
-      details: { invite_code: invite_code!.slice(0, 8) + '...' },
-    });
-  }
-  logAuthEvent({
-    event_type: 'register_success',
-    username,
-    ip_address: ip,
-    user_agent: ua,
-    details: { role: result.role, with_invite: withInvite },
-  });
-  // 计入注册成功次数：registerLimit 仅记录失败时，攻击者可用同 IP 不停换合法
-  // username 无限创建账号（auto-create home group / IM channel 槽位 / 数据库
-  // 行）。把成功也计入同一个 bucket，让 maxLoginAttempts 同时约束失败 + 成功。
-  recordLoginAttempt(`register:${ip}`, ip);
-
-  // Create home group for new user
-  try {
-    ensureUserHomeGroup(userId, result.role, username);
-  } catch (err) {
-    logger.warn(
-      { err, userId },
-      'Failed to create home group during registration',
-    );
-  }
-
-  // Auto-login
-  const token = generateSessionToken();
-  createUserSession({
-    id: token,
-    user_id: userId,
-    ip_address: ip,
-    user_agent: ua,
-    created_at: now,
-    expires_at: sessionExpiresAt(),
-    last_active_at: now,
-  });
-
-  const newUser = getUserById(userId)!;
-  return new Response(
-    JSON.stringify({ success: true, user: toUserPublic(newUser) }),
-    {
-      status: 201,
-      headers: {
-        'Content-Type': 'application/json',
-        'Set-Cookie': setSessionCookie(c, token),
-      },
-    },
-  );
-});
-
 authRoutes.post('/logout', authMiddleware, (c) => {
   const sessionId = c.get('sessionId');
   deleteUserSession(sessionId);
   invalidateSessionCache(sessionId);
-  const user = c.get('user') as AuthUser;
-  logAuthEvent({
-    event_type: 'logout',
-    username: user.username,
-    ip_address: getClientIp(c),
-  });
 
   return new Response(JSON.stringify({ success: true }), {
     status: 200,
@@ -578,7 +366,7 @@ authRoutes.put('/profile', authMiddleware, async (c) => {
   if (validation.data.username !== undefined) {
     const usernameError = validateUsername(validation.data.username);
     if (usernameError) return c.json({ error: usernameError }, 400);
-    // 大小写归一化（与 login / register / setup 一致）。
+    // 大小写归一化（与 login / setup 一致）。
     const newUsername = validation.data.username.toLowerCase();
     if (newUsername !== fullUser.username) {
       const existed = getUserByUsername(newUsername);
@@ -616,13 +404,6 @@ authRoutes.put('/profile', authMiddleware, async (c) => {
     throw err;
   }
   const updated = getUserById(user.id)!;
-  logAuthEvent({
-    event_type: 'profile_updated',
-    username: updated.username,
-    actor_username: fullUser.username,
-    ip_address: getClientIp(c),
-    details: { fields: Object.keys(updates) },
-  });
   return c.json({ success: true, user: toUserPublic(updated) });
 });
 
@@ -677,13 +458,6 @@ authRoutes.put('/password', authMiddleware, async (c) => {
     last_active_at: now,
   });
 
-  logAuthEvent({
-    event_type: 'password_changed',
-    username: user.username,
-    ip_address: ip,
-    details: { cleared_force_change: true, sessions_revoked: true },
-  });
-
   const updated = getUserById(user.id)!;
   return new Response(
     JSON.stringify({ success: true, user: toUserPublic(updated) }),
@@ -725,11 +499,6 @@ authRoutes.delete('/sessions/:id', authMiddleware, (c) => {
 
   deleteUserSession(target.id);
   invalidateSessionCache(target.id);
-  logAuthEvent({
-    event_type: 'session_revoked',
-    username: user.username,
-    ip_address: getClientIp(c),
-  });
   return c.json({ success: true });
 });
 

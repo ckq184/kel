@@ -20,7 +20,6 @@ import {
   getAgent,
   getAgentProfileForWorkspace,
   getUserById,
-  logAuthEvent,
   deleteWorkspaceSessions,
   deleteSessionsByProviderIdAroundCommit,
   getSession,
@@ -41,7 +40,6 @@ import {
   systemConfigMiddleware,
 } from '../middleware/auth.js';
 import {
-  RegistrationConfigSchema,
   AppearanceConfigSchema,
   HostIntegrationSettingsSchema,
   SystemSettingsSchema,
@@ -64,8 +62,6 @@ import {
   setProviderEnabled,
   deleteProvider,
   toPublicProvider,
-  getRegistrationConfig,
-  saveRegistrationConfig,
   getAppearanceConfig,
   saveAppearanceConfig,
   getSystemSettings,
@@ -92,7 +88,6 @@ import {
   type ChannelChatInfo,
 } from '../channel-mount-service.js';
 import { providerPool } from '../provider-pool.js';
-import { getClientIp } from '../utils.js';
 import {
   getWorkspaceRuntimeJids,
   quiesceWorkspaceRunnersAroundCommit,
@@ -1205,52 +1200,6 @@ function restoreDefaultChannelError(restored: { reason: string }): string {
   return 'Channel account has no default or owner home workspace';
 }
 
-// ─── Registration config ─────────────────────────────────────────
-
-configRoutes.get(
-  '/registration',
-  authMiddleware,
-  systemConfigMiddleware,
-  (c) => {
-    try {
-      return c.json(getRegistrationConfig());
-    } catch (err) {
-      logger.error({ err }, 'Failed to load registration config');
-      return c.json({ error: 'Failed to load registration config' }, 500);
-    }
-  },
-);
-
-configRoutes.put(
-  '/registration',
-  authMiddleware,
-  systemConfigMiddleware,
-  async (c) => {
-    const body = await c.req.json().catch(() => ({}));
-    const validation = RegistrationConfigSchema.safeParse(body);
-    if (!validation.success) {
-      return zodBadRequest(c, validation.error, 'body-format');
-    }
-
-    try {
-      const actor = (c.get('user') as AuthUser).username;
-      const saved = saveRegistrationConfig(validation.data);
-      appendClaudeConfigAudit(actor, 'update_registration_config', [
-        'allowRegistration',
-        'requireInviteCode',
-      ]);
-      return c.json(saved);
-    } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : 'Invalid registration config payload';
-      logger.warn({ err }, 'Invalid registration config payload');
-      return c.json({ error: message }, 400);
-    }
-  },
-);
-
 // ─── Appearance config ────────────────────────────────────────────
 
 const SYSTEM_AGENT_AVATAR_PREFIX = 'system-agent-';
@@ -1361,16 +1310,6 @@ function toSystemSettingsResponse(
   };
 }
 
-function changedSettingFields(
-  before: Record<string, unknown>,
-  after: Record<string, unknown>,
-  submitted: Record<string, unknown>,
-): string[] {
-  return Object.keys(submitted)
-    .filter((key) => !Object.is(before[key], after[key]))
-    .sort();
-}
-
 configRoutes.get('/system', authMiddleware, systemConfigMiddleware, (c) => {
   try {
     return c.json(toSystemSettingsResponse(getSystemSettings()));
@@ -1392,7 +1331,6 @@ configRoutes.put(
     }
 
     try {
-      const before = toSystemSettingsResponse(getSystemSettings());
       // Deprecated compatibility inputs. Accept them so stale Web clients do
       // not fail the whole request, but never persist or apply them.
       const effectiveSettings = { ...validation.data };
@@ -1408,22 +1346,6 @@ configRoutes.put(
       }
       const saved = saveSystemSettings(effectiveSettings);
       const response = toSystemSettingsResponse(saved);
-      const changedFields = changedSettingFields(
-        before,
-        response,
-        effectiveSettings,
-      );
-      if (changedFields.length > 0) {
-        const actor = c.get('user') as AuthUser;
-        logAuthEvent({
-          event_type: 'system_settings_updated',
-          username: actor.username,
-          actor_username: actor.username,
-          ip_address: getClientIp(c),
-          user_agent: c.req.header('user-agent') ?? null,
-          details: { changed_fields: changedFields },
-        });
-      }
       return c.json(response);
     } catch (err) {
       const message =
@@ -1688,34 +1610,6 @@ configRoutes.put(
         saved = commit();
       }
       const response = toHostIntegrationResponse(saved);
-      const changedFields = changedSettingFields(
-        before,
-        response,
-        validation.data,
-      );
-      const actor = c.get('user') as AuthUser;
-      if (changedFields.length > 0) {
-        logAuthEvent({
-          event_type: 'host_integration_updated',
-          username: actor.username,
-          actor_username: actor.username,
-          ip_address: getClientIp(c),
-          user_agent: c.req.header('user-agent') ?? null,
-          // Only names and a boolean are recorded; the host path is never logged.
-          details: {
-            changed_fields: changedFields,
-            external_claude_dir_configured: Boolean(response.externalClaudeDir),
-            ...(hostOnlyMigration
-              ? {
-                  host_only_migrated_groups:
-                    hostOnlyMigration.affectedGroups.length,
-                  host_only_migrated_tasks:
-                    hostOnlyMigration.migratedTaskIds.length,
-                }
-              : {}),
-          },
-        });
-      }
 
       return c.json(response);
     });

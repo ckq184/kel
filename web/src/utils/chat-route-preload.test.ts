@@ -12,7 +12,7 @@ describe('chat route preload policy', () => {
     ['/ckqclaw/chat/workspace', '', '/ckqclaw/', true],
     ['/ckqclaw/', '#/chat/workspace?agent=one', '/ckqclaw/', true],
     ['/login', '', '/', false],
-    ['/register', '', '/', false],
+    ['/setup', '', '/', false],
     ['/setup/providers', '', '/', false],
     ['/tasks', '', '/', false],
     ['/memory', '', '/', false],

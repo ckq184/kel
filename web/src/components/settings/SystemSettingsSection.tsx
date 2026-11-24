@@ -18,9 +18,7 @@ type NumericSettingKey =
   | 'containerTimeout'
   | 'idleTimeout'
   | 'containerMaxOutputSize'
-  | 'maxConcurrentContainers'
-  | 'maxLoginAttempts'
-  | 'loginLockoutMinutes';
+  | 'maxConcurrentContainers';
 
 interface FieldConfig {
   key: NumericSettingKey;
@@ -36,7 +34,6 @@ interface FieldConfig {
 }
 
 interface FieldGroup {
-  scope: 'runtime' | 'security';
   title: string;
   description: string;
   fields: FieldConfig[];
@@ -44,7 +41,6 @@ interface FieldGroup {
 
 const fieldGroups: FieldGroup[] = [
   {
-    scope: 'runtime',
     title: '运行资源',
     description:
       'Docker 容器使用显式容量上限；宿主机模式仅对同一会话串行，不限制不同会话并发。正在运行的任务不会被中断。',
@@ -94,37 +90,6 @@ const fieldGroups: FieldGroup[] = [
         toStored: (value) => value,
         min: 1,
         max: 100,
-        step: 1,
-      },
-    ],
-  },
-  {
-    scope: 'security',
-    title: '登录与注册限流',
-    description:
-      '保存后立即用于新的登录和注册尝试。按用户名和来源 IP 计数，服务重启后计数会清空。',
-    fields: [
-      {
-        key: 'maxLoginAttempts',
-        label: '认证尝试次数上限',
-        description:
-          '同一用户名或来源 IP 达到该次数后，暂时拒绝新的登录或注册请求。',
-        unit: '次',
-        toDisplay: (value) => value,
-        toStored: (value) => value,
-        min: 1,
-        max: 100,
-        step: 1,
-      },
-      {
-        key: 'loginLockoutMinutes',
-        label: '登录与注册限流时间',
-        description: '触发认证限流后，需要等待的时间。',
-        unit: '分钟',
-        toDisplay: (value) => value,
-        toStored: (value) => value,
-        min: 1,
-        max: 1440,
         step: 1,
       },
     ],
@@ -248,11 +213,7 @@ function NumberSettingField({
   );
 }
 
-export function SystemSettingsSection({
-  scope = 'runtime',
-}: {
-  scope?: FieldGroup['scope'];
-}) {
+export function SystemSettingsSection() {
   const canManage = useAuthStore((state) =>
     state.hasPermission('manage_system_config'),
   );
@@ -298,32 +259,21 @@ export function SystemSettingsSection({
     void loadSettings();
   }, [loadSettings]);
 
-  const activeGroups = useMemo(
-    () => fieldGroups.filter((group) => group.scope === scope),
-    [scope],
-  );
-  const activeFields = useMemo(
-    () => activeGroups.flatMap((group) => group.fields),
-    [activeGroups],
-  );
-
   const errors = useMemo(() => {
     if (!values) return {} as Partial<Record<NumericSettingKey, string>>;
     return Object.fromEntries(
-      activeFields
+      fields
         .map((field) => [field.key, getFieldError(field, values[field.key])])
         .filter((entry) => entry[1]),
     ) as Partial<Record<NumericSettingKey, string>>;
-  }, [activeFields, values]);
+  }, [values]);
 
   const dirty = useMemo(
     () =>
       !!values &&
       !!initialValues &&
-      activeFields.some(
-        (field) => values[field.key] !== initialValues[field.key],
-      ),
-    [activeFields, initialValues, values],
+      fields.some((field) => values[field.key] !== initialValues[field.key]),
+    [initialValues, values],
   );
 
   const handleSave = async () => {
@@ -332,7 +282,7 @@ export function SystemSettingsSection({
     if (Object.keys(errors).length > 0) return;
 
     const payload: Partial<SystemSettings> = {};
-    for (const field of activeFields) {
+    for (const field of fields) {
       payload[field.key] = field.toStored(Number(values[field.key]));
     }
 
@@ -384,12 +334,11 @@ export function SystemSettingsSection({
   return (
     <div>
       <p className="text-sm leading-6 text-muted-foreground">
-        {scope === 'runtime' && '管理工作区运行边界、日志和执行容量。'}
-        {scope === 'security' && '管理登录与注册请求的认证限流策略。'}
+        管理工作区运行边界、日志和执行容量。
       </p>
 
       <div className="mt-6 divide-y divide-border">
-        {activeGroups.map((group) => (
+        {fieldGroups.map((group) => (
           <section key={group.title} className="py-6 first:pt-0">
             <header className="mb-5 max-w-2xl">
               <h2 className="text-base font-semibold text-foreground">
@@ -613,7 +562,6 @@ export function HostIntegrationSettingsSection({
                   className="mt-1 text-xs leading-5 text-muted-foreground"
                 >
                   开启后，管理员拥有的工作区和定时任务会统一迁移到宿主机，并禁止再选择
-                  Docker；普通成员仍固定使用
                   Docker。关闭后不会自动把已有工作区迁回
                   Docker。宿主机工作区暂不支持网页终端。
                 </p>

@@ -111,8 +111,11 @@ describe('settings information architecture', () => {
     );
     const page = read('web/src/pages/SettingsPage.tsx');
 
-    expect(system).toMatch(/scope: 'runtime'/);
-    expect(system).toMatch(/scope: 'security'/);
+    // D-D2 ②：登录限流设置界面已删除，SystemSettingsSection 只剩运行资源。
+    expect(system).toContain("title: '运行资源'");
+    expect(system).not.toContain("scope: 'security'");
+    expect(system).not.toContain('maxLoginAttempts');
+    expect(system).not.toContain('loginLockoutMinutes');
     expect(system).not.toMatch(/scope: 'automation'/);
     const validTabs = page.match(
       /const VALID_TABS:[\s\S]*?=\s*\[([\s\S]*?)\];/,
@@ -129,9 +132,11 @@ describe('settings information architecture', () => {
     expect(system).toMatch(
       /当前目录同时作为提示词、Rules、Skills 与 MCP 的来源/,
     );
+    // V-E5：单账号下「普通成员仍固定使用 Docker」不再成立，文案已改写。
     expect(system).toMatch(
-      /管理员纯宿主机模式[\s\S]*普通成员仍固定使用\s+Docker/,
+      /管理员纯宿主机模式[\s\S]*关闭后不会自动把已有工作区迁回\s*Docker/,
     );
+    expect(system).not.toContain('普通成员仍固定使用');
     expect(page).toContain("currentUser?.role !== 'admin'");
   });
 

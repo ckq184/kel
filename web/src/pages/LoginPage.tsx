@@ -1,43 +1,24 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Loader2, Globe, Sparkles } from 'lucide-react';
 import { useAuthStore } from '../stores/auth';
 import { LogoLoading } from '../components/common/LogoLoading';
-import { api } from '../api/client';
 import { extractErrorMessage } from '../utils/error';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 
-interface RegisterStatus {
-  allowRegistration: boolean;
-  requireInviteCode: boolean;
-}
-
-type Tab = 'login' | 'register';
-
 export function LoginPage() {
-  const [searchParams] = useSearchParams();
-  const [tab, setTab] = useState<Tab>(
-    searchParams.get('tab') === 'register' ? 'register' : 'login',
-  );
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const login = useAuthStore((state) => state.login);
-  const register = useAuthStore((state) => state.register);
   const initialized = useAuthStore((state) => state.initialized);
   const checkStatus = useAuthStore((state) => state.checkStatus);
 
   // Login fields
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
-
-  // Register fields
-  const [regUsername, setRegUsername] = useState('');
-  const [regPassword, setRegPassword] = useState('');
-  const [regDisplayName, setRegDisplayName] = useState('');
-  const [regInviteCode, setRegInviteCode] = useState('');
 
   useEffect(() => {
     if (initialized === null) {
@@ -46,25 +27,6 @@ export function LoginPage() {
       navigate('/setup', { replace: true });
     }
   }, [initialized, checkStatus, navigate]);
-
-  const [regStatus, setRegStatus] = useState<RegisterStatus>({
-    allowRegistration: true,
-    requireInviteCode: true,
-  });
-
-  useEffect(() => {
-    api
-      .get<RegisterStatus>('/api/auth/register/status')
-      .then((data) => setRegStatus(data))
-      .catch(() => {
-        setRegStatus({ allowRegistration: true, requireInviteCode: true });
-      });
-  }, []);
-
-  const switchTab = (t: Tab) => {
-    setTab(t);
-    setError('');
-  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -82,53 +44,6 @@ export function LoginPage() {
       navigate(mustChange ? '/settings' : '/chat');
     } catch (err) {
       setError(extractErrorMessage(err) || '登录失败');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-
-    if (!/^[a-zA-Z0-9_]{3,32}$/.test(regUsername)) {
-      setError('用户名须为 3-32 位字母、数字或下划线');
-      return;
-    }
-    if (regPassword.length < 8) {
-      setError('密码长度不能少于 8 位');
-      return;
-    }
-    if (regPassword.length > 128) {
-      setError('密码长度不能超过 128 位');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const payload: {
-        username: string;
-        password: string;
-        display_name?: string;
-        invite_code?: string;
-      } = {
-        username: regUsername,
-        password: regPassword,
-        display_name: regDisplayName || undefined,
-      };
-      if (regStatus.requireInviteCode || regInviteCode.trim()) {
-        payload.invite_code = regInviteCode;
-      }
-      await register(payload);
-      const state = useAuthStore.getState();
-      if (state.user?.role === 'admin' && state.setupStatus?.needsSetup) {
-        navigate('/setup/providers');
-        return;
-      }
-      const mustChange = useAuthStore.getState().user?.must_change_password;
-      navigate(mustChange ? '/settings' : '/setup/channels');
-    } catch (err) {
-      setError(extractErrorMessage(err) || '注册失败');
     } finally {
       setLoading(false);
     }
@@ -242,14 +157,10 @@ export function LoginPage() {
                 </div>
 
                 <h2 className="text-lg lg:text-xl font-semibold text-foreground text-center mb-1">
-                  {tab === 'login' ? '欢迎回来' : '注册新账户'}
+                  欢迎回来
                 </h2>
                 <p className="text-muted-foreground text-xs lg:text-sm text-center mb-5 lg:mb-6">
-                  {tab === 'login'
-                    ? '登录以继续使用 CKQClaw'
-                    : regStatus.requireInviteCode
-                      ? '需要邀请码才能注册'
-                      : '创建你的账户'}
+                  登录以继续使用 CKQClaw
                 </p>
 
                 {error && (
@@ -262,174 +173,47 @@ export function LoginPage() {
                 )}
 
                 {/* ── Login form ── */}
-                {tab === 'login' && (
-                  <>
-                    <form onSubmit={handleLogin} className="text-left">
-                      <div className="mb-3 lg:mb-4">
-                        <Label
-                          htmlFor="login-username"
-                          className="mb-1.5 text-sm"
-                        >
-                          用户名
-                        </Label>
-                        <Input
-                          id="login-username"
-                          type="text"
-                          value={loginUsername}
-                          onChange={(e) => setLoginUsername(e.target.value)}
-                          placeholder="请输入用户名"
-                          required
-                          autoFocus
-                          className="h-9 bg-background/50"
-                        />
-                      </div>
+                <form onSubmit={handleLogin} className="text-left">
+                  <div className="mb-3 lg:mb-4">
+                    <Label htmlFor="login-username" className="mb-1.5 text-sm">
+                      用户名
+                    </Label>
+                    <Input
+                      id="login-username"
+                      type="text"
+                      value={loginUsername}
+                      onChange={(e) => setLoginUsername(e.target.value)}
+                      placeholder="请输入用户名"
+                      required
+                      autoFocus
+                      className="h-9 bg-background/50"
+                    />
+                  </div>
 
-                      <div className="mb-5 lg:mb-6">
-                        <Label
-                          htmlFor="login-password"
-                          className="mb-1.5 text-sm"
-                        >
-                          密码
-                        </Label>
-                        <Input
-                          id="login-password"
-                          type="password"
-                          value={loginPassword}
-                          onChange={(e) => setLoginPassword(e.target.value)}
-                          placeholder="请输入密码"
-                          required
-                          className="h-9 bg-background/50"
-                        />
-                      </div>
+                  <div className="mb-5 lg:mb-6">
+                    <Label htmlFor="login-password" className="mb-1.5 text-sm">
+                      密码
+                    </Label>
+                    <Input
+                      id="login-password"
+                      type="password"
+                      value={loginPassword}
+                      onChange={(e) => setLoginPassword(e.target.value)}
+                      placeholder="请输入密码"
+                      required
+                      className="h-9 bg-background/50"
+                    />
+                  </div>
 
-                      <Button
-                        type="submit"
-                        disabled={loading}
-                        className="w-full h-9"
-                      >
-                        {loading && <Loader2 className="size-4 animate-spin" />}
-                        {loading ? '登录中...' : '登录'}
-                      </Button>
-                    </form>
-
-                    {regStatus.allowRegistration && (
-                      <p className="text-center text-sm text-muted-foreground mt-4">
-                        {regStatus.requireInviteCode
-                          ? '有邀请码？'
-                          : '还没有账户？'}
-                        <button
-                          type="button"
-                          onClick={() => switchTab('register')}
-                          className="text-primary hover:text-primary/80 ml-1 font-medium"
-                        >
-                          去注册
-                        </button>
-                      </p>
-                    )}
-                  </>
-                )}
-
-                {/* ── Register form ── */}
-                {tab === 'register' && (
-                  <>
-                    <form onSubmit={handleRegister} className="text-left">
-                      {regStatus.requireInviteCode && (
-                        <div className="mb-3">
-                          <Label
-                            htmlFor="reg-invite"
-                            className="mb-1.5 text-sm"
-                          >
-                            邀请码
-                          </Label>
-                          <Input
-                            id="reg-invite"
-                            type="text"
-                            value={regInviteCode}
-                            onChange={(e) => setRegInviteCode(e.target.value)}
-                            placeholder="请输入邀请码"
-                            required
-                            autoFocus
-                            className="h-9 bg-background/50 font-mono"
-                          />
-                        </div>
-                      )}
-
-                      <div className="mb-3">
-                        <Label
-                          htmlFor="reg-username"
-                          className="mb-1.5 text-sm"
-                        >
-                          用户名
-                        </Label>
-                        <Input
-                          id="reg-username"
-                          type="text"
-                          value={regUsername}
-                          onChange={(e) => setRegUsername(e.target.value)}
-                          placeholder="3-32 位字母、数字或下划线"
-                          required
-                          autoFocus={!regStatus.requireInviteCode}
-                          className="h-9 bg-background/50"
-                        />
-                      </div>
-
-                      <div className="mb-3">
-                        <Label htmlFor="reg-display" className="mb-1.5 text-sm">
-                          显示名称{' '}
-                          <span className="text-muted-foreground font-normal">
-                            (可选)
-                          </span>
-                        </Label>
-                        <Input
-                          id="reg-display"
-                          type="text"
-                          value={regDisplayName}
-                          onChange={(e) => setRegDisplayName(e.target.value)}
-                          placeholder="留空则使用用户名"
-                          className="h-9 bg-background/50"
-                        />
-                      </div>
-
-                      <div className="mb-5 lg:mb-6">
-                        <Label
-                          htmlFor="reg-password"
-                          className="mb-1.5 text-sm"
-                        >
-                          密码
-                        </Label>
-                        <Input
-                          id="reg-password"
-                          type="password"
-                          value={regPassword}
-                          onChange={(e) => setRegPassword(e.target.value)}
-                          placeholder="至少 8 位"
-                          required
-                          className="h-9 bg-background/50"
-                        />
-                      </div>
-
-                      <Button
-                        type="submit"
-                        disabled={loading}
-                        className="w-full h-9"
-                      >
-                        {loading && <Loader2 className="size-4 animate-spin" />}
-                        {loading ? '注册中...' : '注册'}
-                      </Button>
-                    </form>
-
-                    <p className="text-center text-sm text-muted-foreground mt-4">
-                      已有账户？
-                      <button
-                        type="button"
-                        onClick={() => switchTab('login')}
-                        className="text-primary hover:text-primary/80 ml-1 font-medium"
-                      >
-                        去登录
-                      </button>
-                    </p>
-                  </>
-                )}
+                  <Button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full h-9"
+                  >
+                    {loading && <Loader2 className="size-4 animate-spin" />}
+                    {loading ? '登录中...' : '登录'}
+                  </Button>
+                </form>
               </div>
             </div>
           </div>
