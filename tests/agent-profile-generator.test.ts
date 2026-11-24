@@ -3,15 +3,70 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 const sdkQuery = vi.fn();
 vi.mock('../src/sdk-query.js', () => ({ sdkQuery }));
 vi.mock('../src/runtime-config.js', () => ({
-  getClaudeProviderConfig: () => ({ anthropicApiKey: 'configured' }),
+  getClaudeProviderConfig: vi.fn(() => ({
+    anthropicBaseUrl: 'https://gateway.example.test',
+    anthropicApiKey: 'configured',
+  })),
 }));
 
 const { generateAgentProfileDraft, refineAgentProfilePrompt } =
   await import('../src/agent-profile-generator.js');
+const runtimeConfig = await import('../src/runtime-config.js');
 
-beforeEach(() => sdkQuery.mockReset());
+beforeEach(() => {
+  sdkQuery.mockReset();
+  vi.mocked(runtimeConfig.getClaudeProviderConfig).mockReturnValue({
+    anthropicBaseUrl: 'https://gateway.example.test',
+    anthropicApiKey: 'configured',
+  } as ReturnType<typeof runtimeConfig.getClaudeProviderConfig>);
+});
 
 describe('AgentProfile AI generation', () => {
+  test('official-only credentials without base URL reject before calling the model', async () => {
+    vi.mocked(runtimeConfig.getClaudeProviderConfig).mockReturnValue({
+      anthropicApiKey: 'sk-official',
+      claudeCodeOauthToken: 'legacy-oauth-token',
+      claudeOAuthCredentials: { accessToken: 'legacy-access' },
+    } as unknown as ReturnType<typeof runtimeConfig.getClaudeProviderConfig>);
+
+    await expect(generateAgentProfileDraft('review code')).rejects.toThrow(
+      'Claude 提供商未配置',
+    );
+    expect(sdkQuery).not.toHaveBeenCalled();
+  });
+
+  test('empty configuration rejects before calling the model', async () => {
+    vi.mocked(runtimeConfig.getClaudeProviderConfig).mockReturnValue(
+      {} as ReturnType<typeof runtimeConfig.getClaudeProviderConfig>,
+    );
+
+    await expect(generateAgentProfileDraft('review code')).rejects.toThrow(
+      'Claude 提供商未配置',
+    );
+    expect(sdkQuery).not.toHaveBeenCalled();
+  });
+
+  test('base URL + Auth Token is usable', async () => {
+    vi.mocked(runtimeConfig.getClaudeProviderConfig).mockReturnValue({
+      anthropicBaseUrl: 'https://gateway.example.test',
+      anthropicAuthToken: 'gateway-token',
+    } as ReturnType<typeof runtimeConfig.getClaudeProviderConfig>);
+    sdkQuery.mockResolvedValueOnce(
+      JSON.stringify({
+        name: 'Auth Token Agent',
+        identity_prompt: 'Reviewer',
+        soul_prompt: '',
+        agents_prompt: 'Review diffs',
+        tools_prompt: '',
+        prompt_mode: 'append',
+      }),
+    );
+
+    await expect(
+      generateAgentProfileDraft('review code'),
+    ).resolves.toMatchObject({ name: 'Auth Token Agent' });
+  });
+
   test('generates all four prompt sections', async () => {
     sdkQuery.mockResolvedValueOnce(
       JSON.stringify({

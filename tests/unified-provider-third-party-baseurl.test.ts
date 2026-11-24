@@ -98,15 +98,22 @@ async function putProviderSecrets(
 }
 
 // ISSUE-07 项10：third_party 供应商使用 Auth Token 时必须配置 Base URL。
-// official + token-only（官方 Bearer 场景）为现行有意语义，必须继续放行。
+// THESIS-02：接口封口后 type 只接受 third_party，官方型不再可由接口创建。
 describe('unified provider third_party base URL rules', () => {
-  test('official + auth-token-only stays allowed (official Bearer scenario)', () => {
+  test('official is rejected at the schema', () => {
     const result = UnifiedProviderCreateSchema.safeParse({
       name: 'official-bearer',
       type: 'official',
       anthropicAuthToken: 'sk-official-token',
     });
-    expect(result.success).toBe(true);
+    expect(result.success).toBe(false);
+    expect(result.error?.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: ['type'],
+        }),
+      ]),
+    );
   });
 
   test('third_party + auth-token-only is rejected on anthropicBaseUrl', () => {
@@ -224,11 +231,12 @@ describe('provider write routes enforce the third_party base URL rule', () => {
     );
   });
 
-  test('PATCH on an official provider stays allowed', async () => {
+  test('PATCH on a third-party provider edits non-key fields', async () => {
     const provider = runtimeConfig.createProvider({
-      name: 'official-patch-target',
-      type: 'official',
-      anthropicApiKey: 'official-key',
+      name: 'tp-patch-target',
+      type: 'third_party',
+      anthropicBaseUrl: 'https://gateway.example.test',
+      anthropicApiKey: 'sk-third-party',
     });
 
     const response = await patchProvider(provider.id, {
@@ -361,9 +369,9 @@ describe('provider write routes enforce the third_party base URL rule', () => {
     );
   });
 
-  test('secrets adding a token to an official provider stays allowed (official Bearer scenario)', async () => {
+  test('secrets adding a token to a legacy official provider is rejected (rule is unconditional)', async () => {
     const provider = runtimeConfig.createProvider({
-      name: 'official-bearer-target',
+      name: 'legacy-official-bearer-target',
       type: 'official',
       anthropicApiKey: 'official-key',
     });
@@ -372,9 +380,10 @@ describe('provider write routes enforce the third_party base URL rule', () => {
       anthropicAuthToken: 'Bearer sk-official',
     });
 
-    expect(response.status).toBe(200);
-    expect(storedProvider(provider.id)?.anthropicAuthToken).toBe(
-      'Bearer sk-official',
-    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      error: TOKEN_WITHOUT_BASE_URL_ERROR,
+    });
+    expect(storedProvider(provider.id)?.anthropicAuthToken).toBe('');
   });
 });

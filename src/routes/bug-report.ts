@@ -72,12 +72,13 @@ async function checkCapabilities(): Promise<{
       .then(() => true)
       .catch(() => false),
   ]);
-  // Claude availability is determined by provider config, not CLI presence
+  // Claude availability is determined by provider config, not CLI presence.
+  // THESIS-02：改为与 setupStatus 一致的第三方判定——有 Base URL，且有
+  // Auth Token 或 API Key；官方两个字段不再算作可用。
   const providerConfig = getClaudeProviderConfig();
   const claude = !!(
-    providerConfig.anthropicApiKey ||
-    providerConfig.claudeCodeOauthToken ||
-    providerConfig.claudeOAuthCredentials
+    providerConfig.anthropicBaseUrl &&
+    (providerConfig.anthropicAuthToken || providerConfig.anthropicApiKey)
   );
 
   // Get gh username if available

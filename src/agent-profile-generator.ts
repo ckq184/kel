@@ -27,12 +27,12 @@ interface AgentProfilePromptRefinement {
 const MAX_AGENT_NAME_LENGTH = 80;
 
 function hasUsableClaudeProvider(): boolean {
+  // THESIS-02：与 setupStatus / bug-report 统一为第三方判定——有 Base URL，
+  // 且有 Auth Token 或 API Key；官方两个字段不再算作可用。
   const config = getClaudeProviderConfig();
   return !!(
-    config.anthropicApiKey ||
-    config.anthropicAuthToken ||
-    config.claudeCodeOauthToken ||
-    config.claudeOAuthCredentials
+    config.anthropicBaseUrl &&
+    (config.anthropicAuthToken || config.anthropicApiKey)
   );
 }
 
