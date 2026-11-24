@@ -5,6 +5,7 @@
     ".gatescope.json",
     "docs/issues2/THESIS-01-desktop-removal.md",
     "docs/issues2/README.md",
+    "docs/issues2/task-thesis-trim-plan.md",
     "docs/thesis-01-desktop-removal-plan.md",
     "docs/desktop-identity-split-plan.md",
     "electron/**",
