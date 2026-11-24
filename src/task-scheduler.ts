@@ -4,12 +4,7 @@ import { CronExpressionParser } from 'cron-parser';
 import fs from 'fs';
 import path from 'path';
 
-import {
-  DATA_DIR,
-  GROUPS_DIR,
-  SCHEDULER_POLL_INTERVAL,
-  TIMEZONE,
-} from './config.js';
+import { DATA_DIR, GROUPS_DIR, TIMEZONE } from './config.js';
 import { getSystemSettings } from './runtime-config.js';
 import { channelConversationJid } from './channel-address.js';
 import {
@@ -39,7 +34,6 @@ import {
   getAllTasks,
   cleanupOldTaskRunLogs,
   cleanupStaleRunningLogs,
-  claimTaskForRun,
   deleteGroupData,
   getDueTaskDefinitionsV2,
   getNextScheduledTaskWakeAt,
@@ -348,7 +342,7 @@ function prepareIsolatedTaskRun(
   deps: SchedulerDependencies,
   manualRun = false,
   explicitTaskRunId?: string,
-): { queueJid: string; options: RunTaskOptions } | null {
+): { queueJid: string; options: PreparedTaskRunOptions } | null {
   const workspace = resolveTaskWorkspace(task, deps);
   if (!workspace) {
     logger.error(
@@ -599,13 +593,13 @@ export function formatScheduledTaskWorkspaceResult(input: {
 interface RunTaskOptions {
   /** Unique ID for isolated task IPC namespace (tasks-run/{taskRunId}/) */
   taskRunId?: string;
-  /** Manual trigger — don't update next_run, skip isTaskStillActive check */
+  /** Manual trigger — don't update next_run */
   manualRun?: boolean;
   /** Workspace pinned when this run entered GroupQueue. */
   sourceWorkspaceJid?: string;
   sourceWorkspaceFolder?: string;
   /** V2 occurrence already owns a fenced task_runs lease. */
-  durableRun?: ClaimedTaskRun;
+  durableRun: ClaimedTaskRun;
   /**
    * Exposes the exact isolated terminal hand-off to the owning queue callback
    * so it can retry one synchronous DB failure without falling back to a
@@ -614,17 +608,18 @@ interface RunTaskOptions {
   onDurableTerminalHandoffPrepared?: (commit: () => boolean) => void;
 }
 
+/** Run options resolved before the V2 claim is attached. */
+type PreparedTaskRunOptions = Omit<
+  RunTaskOptions,
+  'durableRun' | 'onDurableTerminalHandoffPrepared'
+>;
+
 const runningTaskIds = new Set<string>();
 const pendingManualTaskIds = new Set<string>();
-const pendingScheduledTaskIds = new Set<string>();
 const activeDurableTaskIds = new Set<string>();
 
 function isTaskReserved(taskId: string): boolean {
-  return (
-    runningTaskIds.has(taskId) ||
-    pendingManualTaskIds.has(taskId) ||
-    pendingScheduledTaskIds.has(taskId)
-  );
+  return runningTaskIds.has(taskId) || pendingManualTaskIds.has(taskId);
 }
 
 export function getRunningTaskIds(): string[] {
@@ -639,12 +634,7 @@ export function getRunningTaskIds(): string[] {
     // Database may not be initialized in small unit tests/import-time callers.
   }
   return [
-    ...new Set([
-      ...runningTaskIds,
-      ...pendingManualTaskIds,
-      ...pendingScheduledTaskIds,
-      ...durableTaskIds,
-    ]),
+    ...new Set([...runningTaskIds, ...pendingManualTaskIds, ...durableTaskIds]),
   ];
 }
 
@@ -839,76 +829,17 @@ function safeUpdateTaskRunLog(
   }
 }
 
-/**
- * Re-check DB before running — task may have been cancelled/paused while queued.
- * Returns true if the task is still active and should proceed.
- */
-function isTaskStillActive(taskId: string, label?: string): boolean {
-  const currentTask = getTaskById(taskId);
-  if (!currentTask || currentTask.status !== 'active') {
-    logger.info(
-      { taskId },
-      `Skipping ${label ?? 'task'}: deleted or no longer active since enqueue`,
-    );
-    return false;
-  }
-  return true;
-}
-
 const SCHEDULER_RUNNER_ID = `${process.pid}:${randomUUID()}`;
 const MIN_INTERVAL_MS = 60 * 1000;
-
-function getTaskLeaseMs(): number {
-  const settings = getSystemSettings();
-  return (
-    Math.max(settings.containerTimeout, settings.idleTimeout) +
-    SCHEDULER_POLL_INTERVAL
-  );
-}
-
-/**
- * Legacy definition-level lease. Every production entry point (isolated,
- * script and group runs) passes a durable `task_runs` claim, so this is only
- * reachable through `enqueueIsolatedScheduledTask`, which only tests call.
- * Retirement, including the `running_until`/`runner_id` columns, is tracked
- * as ISSUE-25.
- */
-function claimScheduledRun(taskId: string, label: string): boolean {
-  const claimed = claimTaskForRun(
-    taskId,
-    SCHEDULER_RUNNER_ID,
-    getTaskLeaseMs(),
-  );
-  if (!claimed) {
-    logger.info(
-      { taskId, runnerId: SCHEDULER_RUNNER_ID },
-      `Skipping ${label}: another scheduler runner already claimed it`,
-    );
-  }
-  return claimed;
-}
 
 async function runTask(
   staleTask: ScheduledTask,
   deps: SchedulerDependencies,
-  options?: RunTaskOptions,
+  options: RunTaskOptions,
 ): Promise<void> {
-  if (
-    !options?.manualRun &&
-    !options?.durableRun &&
-    !isTaskStillActive(staleTask.id, 'task')
-  )
-    return;
-
   // Refresh task from DB to avoid stale closure data
   const task = getTaskById(staleTask.id);
   if (!task) return;
-  if (
-    !options?.manualRun &&
-    !options?.durableRun &&
-    !claimScheduledRun(task.id, 'task')
-  )
-    return;
 
   runningTaskIds.add(task.id);
   // 顶层兜底 finally：runningTaskIds.add 之后到 inner runTask 真正进入 try
@@ -921,49 +852,6 @@ async function runTask(
   } finally {
     cleanupIsolatedTaskRun(task, deps, options);
     runningTaskIds.delete(task.id);
-  }
-}
-
-/**
- * Non-durable isolated enqueue. No production caller: the V2 scheduler always
- * enqueues with a durable claim. Kept for the contract tests until ISSUE-25
- * retires the legacy lease cluster.
- */
-export function enqueueIsolatedScheduledTask(
-  task: ScheduledTask,
-  deps: SchedulerDependencies,
-): boolean {
-  if (isTaskReserved(task.id)) return false;
-
-  const prepared = prepareIsolatedTaskRun(task, deps);
-  if (!prepared) return false;
-
-  pendingScheduledTaskIds.add(task.id);
-  const releaseReservation = () => {
-    pendingScheduledTaskIds.delete(task.id);
-  };
-
-  try {
-    const accepted = deps.queue.enqueueTask(
-      prepared.queueJid,
-      task.id,
-      async () => {
-        try {
-          await runTask(task, deps, prepared.options);
-        } finally {
-          releaseReservation();
-        }
-      },
-      { onDropped: releaseReservation },
-    );
-    if (accepted === false) {
-      releaseReservation();
-      return false;
-    }
-    return true;
-  } catch (err) {
-    releaseReservation();
-    throw err;
   }
 }
 
@@ -1615,22 +1503,13 @@ async function runScriptTask(
   staleTask: ScheduledTask,
   deps: SchedulerDependencies,
   groupJid: string,
-  manualRun = false,
-  durableRun?: ClaimedTaskRun,
+  manualRun: boolean,
+  durableRun: ClaimedTaskRun,
   abortSignal?: AbortSignal,
 ): Promise<void> {
-  if (
-    !manualRun &&
-    !durableRun &&
-    !isTaskStillActive(staleTask.id, 'script task')
-  )
-    return;
-
   // Refresh task from DB to avoid stale closure data
   const task = getTaskById(staleTask.id);
   if (!task) return;
-  if (!manualRun && !durableRun && !claimScheduledRun(task.id, 'script task'))
-    return;
 
   runningTaskIds.add(task.id);
   // 顶层兜底 finally（同 runTask）。
@@ -2036,16 +1915,10 @@ async function runGroupModeTask(
   task: ScheduledTask,
   deps: SchedulerDependencies,
   targetGroupJid: string,
-  manualRun = false,
-  durableRun?: ClaimedTaskRun,
+  manualRun: boolean,
+  durableRun: ClaimedTaskRun,
 ): Promise<void> {
   const startTime = Date.now();
-  if (
-    !manualRun &&
-    !durableRun &&
-    !claimScheduledRun(task.id, 'group-mode task')
-  )
-    return;
   runningTaskIds.add(task.id);
   let resultSummary = '已排队到源工作区，等待智能体执行';
 
@@ -3421,7 +3294,6 @@ export function startSchedulerLoop(deps: SchedulerDependencies): void {
   // task-run leases expire/recover naturally; do NOT clear all DB leases.
   runningTaskIds.clear();
   pendingManualTaskIds.clear();
-  pendingScheduledTaskIds.clear();
 
   // Durable V2 leases recover by expiry and must remain untouched. Legacy
   // running logs have no lease/owner, so after startup they are necessarily
