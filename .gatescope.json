@@ -1,16 +1,14 @@
 {
-  "task": "issue25-legacy-scheduler-lease-retirement - 旧调度租约簇退役（docs/issue25-legacy-scheduler-lease-retirement-plan.md）；用户拍板：函数层全删并改写测试、claimTaskForRun 与 running_until/runner_id 迁移删列、finalizeRecurringRun 等范围外发现登记 ISSUE-26、删 claim-loss 子场景其余改走 V2",
-  "base": "e520f6c",
+  "task": "issue24-provider-multi-custom-headers - 供应商表单配置多个自定义请求头（docs/issue24-provider-multi-custom-headers-plan.md）；用户拍板：方案②专用请求头行编辑器、明文沿用现状、迁入并拦截、不改引导页、同runner规则校验、重名拒绝、坏行放进一行让用户修、仅第三方供应商显示",
+  "base": "e6c62ec",
   "allow": [
     ".gatescope.json",
-    "docs/issue25-legacy-scheduler-lease-retirement-plan.md",
-    "docs/issues/ISSUE-25-legacy-scheduler-lease-retirement.md",
-    "docs/issues/ISSUE-26-*.md",
+    "docs/issue24-provider-multi-custom-headers-plan.md",
+    "docs/issues/ISSUE-24-provider-multi-custom-headers.md",
     "docs/issues/README.md",
-    "src/task-scheduler.ts",
-    "src/db.ts",
-    "src/db-schema/**",
-    "src/types.ts",
+    "web/src/utils/custom-headers.ts",
+    "web/src/utils/custom-env.ts",
+    "web/src/components/settings/ProviderEditor.tsx",
     "tests/**"
   ]
 }

@@ -61,7 +61,7 @@
 | [ISSUE-21](ISSUE-21-registered-leftovers.md)                             | 各 issue 交付记录中登记的零散遗留：逐项决策与落地                    | P2     | 无                  | **是**               | 已完成 |
 | [ISSUE-22](ISSUE-22-subagent-custom-provider-401.md)                     | 子代理没有沿用自定义 Provider：Explore 与显式 model 报 401           | P1     | 无                  | **是**               | 已完成 |
 | [ISSUE-23](ISSUE-23-wechat-ilink-error-classification.md)                | iLink 非零错误码的归类：哪些属于确定拒绝                             | P3     | 无                  | **是**               | 已完成 |
-| [ISSUE-24](ISSUE-24-provider-multi-custom-headers.md)                    | 供应商表单无法配置多个自定义请求头                                   | P3     | 无                  | **是**               | 待领取 |
+| [ISSUE-24](ISSUE-24-provider-multi-custom-headers.md)                    | 供应商表单无法配置多个自定义请求头                                   | P3     | 无                  | **是**               | 进行中 |
 | [ISSUE-25](ISSUE-25-legacy-scheduler-lease-retirement.md)                | 旧调度租约簇退役：enqueueIsolatedScheduledTask 与 running_until 列   | P3     | 无                  | **是**               | 已完成 |
 | [ISSUE-26](ISSUE-26-scheduler-legacy-finalize-and-manual-reservation.md) | 调度器旧收尾残留：finalizeRecurringRun 恒早退与 pendingManualTaskIds | P3     | 25                  | **是**               | 待领取 |
 
