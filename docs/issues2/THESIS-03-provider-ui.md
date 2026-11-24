@@ -2,7 +2,7 @@
 
 | 字段          | 值                                                                                                                                                                                                                                                            |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 状态          | 进行中                                                                                                                                                                                                                                                        |
+| 状态          | 已完成                                                                                                                                                                                                                                                        |
 | 领取人 / 分支 | THESIS-03 会话 / `claude/thesis-03-provider-ui`                                                                                                                                                                                                               |
 | 优先级        | P1                                                                                                                                                                                                                                                            |
 | 类型          | 裁剪（前端）                                                                                                                                                                                                                                                  |
@@ -57,4 +57,48 @@
 
 ## 交付记录
 
-（交付时填写）
+交付日期 2026-11-24，分支 `claude/thesis-03-provider-ui`，base `17113e9`（main，含 THESIS-01、THESIS-02）。
+
+### 提交
+
+| 提交      | 内容                                                                                         |
+| --------- | -------------------------------------------------------------------------------------------- |
+| `b2093ef` | 立项：领取、立项计划 `docs/thesis-03-provider-ui-plan.md`、`.gatescope.json`                 |
+| `decc279` | 实现：删除编辑器与引导页的官方模式/OAuth/订阅用量条，收窄前端类型，含 Red 契约用例与测试同步 |
+| `2d99a6f` | 审查后收紧契约断言与类型注释（只改测试与注释，无实现行为变更）                               |
+| 本提交    | 交付落档：状态改为已完成、交付记录、README 索引、`docs/审查记录.md`                          |
+
+### 实现要点
+
+- `ProviderEditor.tsx`：删除类型切换、官方认证三页（OAuth / Setup Token / API Key）、OAuth 流程、官方模型选择与官方凭据保存分支；创建固定提交 `type: 'third_party'`，编辑只走第三方 PATCH 与 secrets；保留环境变量、自定义请求头、上下文窗口、名称回退与"保存时清空当前密钥"。
+- `SetupProvidersPage.tsx`：删除模式切换与官方创建分支，页面直接呈现第三方表单；Base URL 与 Auth Token 必填、模型可选、自定义环境变量保留；删除只被 OAuth 成功提示使用的 `notice` 状态。
+- 删除 `UsageBars.tsx`；`ProviderList.tsx` 去掉挂载、官方/第三方标签、`provider.type` 条件与官方凭据徽章，保留 API Key / Auth Token 徽章。
+- `settings/types.ts`：`UnifiedProviderPublic.type` 收窄为 `'third_party'`，删除 OAuth 用量三类型与官方凭据展示字段；`web/src/types.ts` 的 `ModelConfigOption.type` 同步收窄；两处注明存储层仍可能返回存量 `official`（D-4 ①）。
+- 测试：新增 `tests/thesis-03-provider-ui.test.ts`（9 例源码契约）；删除官方模型别名与官方认证页文案两例；`issue24` 的 `manageCustomHeaders` 断言改为常量并去掉标题里的"官方供应商"；`api-route-caller-contract` 按 THESIS-02 交付记录删除 3 条 `THESIS-03` 的 `KNOWN_GAPS`。
+
+### 验证
+
+- `npm run verify`：6/6 全绿（361 文件，2981 通过 / 23 跳过 / 0 失败，最终轮 49.8s）。
+- `node scripts/check-scope.mjs`：15 个路径全在声明范围内，无扩宽。
+- 独立规格符合性审查：通过（零阻塞）；独立代码质量审查：通过（Critical 0 / Major 0 / Minor 6），详见 `docs/审查记录.md`。
+- 未做实机人工验收，由用户执行：设置页供应商列表无"官方"标签；新建与编辑只有第三方表单；引导页 `/setup/providers` 无"官方渠道"，用第三方端点能完成引导。
+
+### 前端清扫（方案 §11.4）
+
+1. **可达性**：`UsageBars` 只被 `ProviderList` 引用，删除后无新孤儿文件。
+2. **死导出**：OAuth 用量三类型、`formatOAuthExpiry` 与官方凭据展示字段已删；`BalancingConfig`、`withAgentContextSource` 未动。
+3. **入口**：编辑器、引导页、列表里没有官方选项、OAuth 入口或订阅用量条。
+4. **权限与事件**：`UsageBars` 的可见性监听与 3 分钟轮询随文件删除。
+5. **依赖**：`web/package.json` 没有只服务官方界面的包，未改 lockfile。
+6. **文案与测试**：官方认证/模型文案随功能删除；`issue24` 测试标题去掉"官方供应商"；无新增界面术语测试样例。
+7. **图标与样式**：`ExternalLink`、`Key` 不再导入；无专属样式表改动。
+
+### 与 issue 描述的偏差和登记项
+
+- **`tests/no-duplicate-helpers-contract.test.ts:380` 的预期不成立**：该断言的扫描范围是 `src`、`shared`、`container/agent-runner/src`（`SOURCE_DIRS` 不含 `web`）。删除前端 `OAuthUsageBucket` 后用例仍绿，未修改该用例；issue「执行前核实」的"必失败"判断有误。
+- **官方凭据展示字段一并删除**：`hasClaudeCodeOauthToken`、`claudeCodeOauthTokenMasked`、`hasClaudeOAuthCredentials`、`claudeOAuthCredentialsExpiresAt`、`claudeOAuthCredentialsAccessTokenMasked` 从 `UnifiedProviderPublic` 与列表徽章删除。issue 范围表只点名 `types.ts:10`，本项按方案 §11.2"settings/types.ts（官方与 OAuth 的类型字段）"的清扫口径执行。
+- **类型收窄是前端断言**：后端 wire 仍可能返回 `official`（D-4 ①）；当前无前端代码读取 `provider.type`，字段旁已加注释说明。
+- **存量 official 供应商的过渡行为（请用户注意）**：D-1 ① 的前提是先在旧界面删净官方型供应商。若未清理，列表仍会显示该条目，但编辑会要求填写 API 端点、复制会因 schema 拒绝而 400；若它是默认供应商，删除按钮仍禁用，需先新增第三方并设为默认后清理。不会损坏数据。请在做人工验收前确认存量已清理。
+- **删除行后的可见性错位**：环境变量/请求头行的"显示/隐藏"按数组下标存储，删除前一行会让后一行继承可见状态。该行为在 base 已存在，不是本包引入，未扩大范围修改。
+- **`web/src/pages/UsagePage.tsx:335`** 的注释仍提到已删除的 `UsageBars`；该页归 THESIS-06 删除，本包未动。
+- **范围外发现（建议另立任务）**：main `17113e9`（THESIS-01 合入）把三处绝对路径 `node_modules` 符号链接纳入版本库（根、`web/`、`container/agent-runner/`，指向本机主工作树）。之后创建的 worktree 会直接指向主工作树依赖，换机即失效。本包未修改。
