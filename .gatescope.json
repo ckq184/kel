@@ -1,18 +1,22 @@
 {
-  "task": "THESIS-04 供应商（三）：Runner 与环境变量回退只剩第三方路径（D-2 ②：宿主强制 Base URL，runner 遇 official 报错）",
-  "base": "17113e9",
+  "task": "THESIS-05 供应商（四）：凭据链清理与工作区官方令牌字段（D-3 ①：只摘工作区 claudeCodeOauthToken）",
+  "base": "5ccf1b3",
   "allow": [
     ".gatescope.json",
-    "CLAUDE.md",
-    "docs/issues2/THESIS-04-provider-runtime.md",
+    "docs/issues2/THESIS-05-provider-credential-chain.md",
     "docs/issues2/README.md",
-    "docs/thesis-04-provider-runtime-plan.md",
+    "docs/issues2/task-thesis-trim-plan.md",
+    "docs/thesis-05-provider-credential-chain-plan.md",
     "docs/审查记录.md",
-    "container/agent-runner/src/provider-runtime.ts",
-    "container/agent-runner/src/runtime/pi/pi-provider.ts",
-    "container/agent-runner/src/runtime/types.ts",
-    "container/agent-runner/src/pi-index.ts",
+    "docs/runtime-migration.md",
+    "docs/API.md",
     "src/runtime-config.ts",
+    "src/group-queue.ts",
+    "src/container-runner.ts",
+    "src/routes/groups.ts",
+    "src/schemas.ts",
+    "web/src/components/chat/ContainerEnvPanel.tsx",
+    "web/src/stores/container-env.ts",
     "tests/**"
   ]
 }
