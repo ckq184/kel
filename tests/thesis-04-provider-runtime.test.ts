@@ -159,12 +159,18 @@ describe('runner source contracts (D-2 ②)', () => {
     expect(source).not.toMatch(/setRuntimeApiKey\(\s*'anthropic'/);
   });
 
-  test('the runner entrypoint surfaces the provider configuration error', () => {
+  test('the runner entrypoint surfaces the provider configuration error first', () => {
     const source = fs.readFileSync(
       path.resolve('container/agent-runner/src/pi-index.ts'),
       'utf8',
     );
 
-    expect(source).toMatch(/provider\.providerError/);
+    const errorCheck = source.indexOf('provider.providerError');
+    const modelCheck = source.indexOf('provider.missingRequiredModel');
+    expect(errorCheck).toBeGreaterThan(-1);
+    // The configuration error is checked before the missing-model pre-flight,
+    // and it writes a structured `status: 'error'` output (not just a log).
+    expect(modelCheck).toBeGreaterThan(errorCheck);
+    expect(source.slice(errorCheck, modelCheck)).toMatch(/status:\s*'error'/);
   });
 });

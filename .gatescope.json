@@ -3,6 +3,7 @@
   "base": "17113e9",
   "allow": [
     ".gatescope.json",
+    "CLAUDE.md",
     "docs/issues2/THESIS-04-provider-runtime.md",
     "docs/issues2/README.md",
     "docs/thesis-04-provider-runtime-plan.md",

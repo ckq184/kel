@@ -50,12 +50,15 @@
 
 ## 3. 范围声明（`.gatescope.json` allow）
 
-`.gatescope.json`、`docs/issues2/THESIS-04-provider-runtime.md`、`docs/issues2/README.md`、`docs/thesis-04-provider-runtime-plan.md`、`docs/审查记录.md`、`container/agent-runner/src/provider-runtime.ts`、`container/agent-runner/src/runtime/pi/pi-provider.ts`、`container/agent-runner/src/runtime/types.ts`、`container/agent-runner/src/pi-index.ts`、`src/runtime-config.ts`、`tests/**`。
+`.gatescope.json`、`CLAUDE.md`、`docs/issues2/THESIS-04-provider-runtime.md`、`docs/issues2/README.md`、`docs/thesis-04-provider-runtime-plan.md`、`docs/审查记录.md`、`container/agent-runner/src/provider-runtime.ts`、`container/agent-runner/src/runtime/pi/pi-provider.ts`、`container/agent-runner/src/runtime/types.ts`、`container/agent-runner/src/pi-index.ts`、`src/runtime-config.ts`、`tests/**`。
 
-超出 issue 预计改动路径的两个文件：
+超出 issue 预计改动路径的三个文件：
 
 - `pi-index.ts`：runner 的结构化错误出口与既有 `missingRequiredModel` 预检都在该文件，预检错误必须在这里输出，否则只能靠未捕获异常退出（宿主只能看到通用失败）。
 - `runtime/types.ts`：只改 `provider.authToken` 的注释。原注释以"官方端点不落 stored key"为理由，官方路径删除后该理由失效，属随契约同步的事实订正，无类型/行为改动。
+- `CLAUDE.md`：§常见修改入口的"上下文窗口声明"一行仍写"官方端点浅拷贝覆盖目录值"，官方路径删除后失实，改为"第三方端点替换写死 200k、无声明保留注册值"。
+
+`docs/API.md`、`docs/ACL-MATRIX.md` 经 grep 确认无对应接口/权限行需要同步；`docs/runtime-migration.md` 的 OAuth 映射陈述属历史迁移记录，留给 THESIS-05 删除该映射时一并订正（登记在交付记录）。
 
 ## 4. 验收条件
 
