@@ -227,7 +227,7 @@ describe('ProviderEditor 接线（源码契约）', () => {
   test('请求头编辑器只在第三方供应商显示，值框默认打码', () => {
     expect(src).toMatch(/自定义请求头/);
     expect(src).toMatch(
-      /type=\{showCustomHeaderValues\[idx\] \? 'text' : 'password'\}/,
+      /type=\{\s*showCustomHeaderValues\[idx\] \? 'text' : 'password'\s*\}/,
     );
   });
 
