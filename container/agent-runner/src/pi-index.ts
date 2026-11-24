@@ -34,7 +34,10 @@ import { loadWorkspaceMemoryTurnContext } from './workspace-memory-context.js';
 import { buildCkqclawPromptPlan } from './prompt-plan.js';
 import { resolveContextWindowOverride } from './context-window.js';
 import { resolveAgentThinkingLevel } from './pi-settings.js';
-import { resolveClaudeProviderRuntime } from './provider-runtime.js';
+import {
+  MODEL_REQUIRED_MESSAGE,
+  resolveClaudeProviderRuntime,
+} from './provider-runtime.js';
 import { resolveAgentRuntimeKind } from './runtime-config.js';
 import { adaptClaudeMcpToolsToPi } from './runtime/pi/pi-tools.js';
 import { parseCustomHeaders } from './runtime/pi/pi-provider.js';
@@ -494,8 +497,7 @@ async function main(): Promise<void> {
     writeOutput({
       status: 'error',
       result: null,
-      error:
-        'ANTHROPIC_MODEL is required for a custom Anthropic-compatible provider.',
+      error: MODEL_REQUIRED_MESSAGE,
     });
     process.exitCode = 1;
     return;

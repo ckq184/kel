@@ -6,6 +6,30 @@ export const CKQCLAW_CONTEXT_WINDOW_ENV = 'CKQCLAW_CONTEXT_WINDOW';
 
 export type ClaudeEndpointKind = 'official' | 'custom';
 
+/**
+ * D-2 ② (THESIS-04): the runner startup pre-flight and the Pi resolver must
+ * report the same configuration errors, so the policy and messages live here
+ * and are shared by both layers.
+ */
+export const OFFICIAL_ENDPOINT_UNSUPPORTED_MESSAGE =
+  'Official Anthropic endpoints are no longer supported. Configure a third-party Anthropic-compatible provider with ANTHROPIC_BASE_URL.';
+export const BASE_URL_REQUIRED_MESSAGE =
+  'A third-party Anthropic-compatible provider requires ANTHROPIC_BASE_URL.';
+export const MODEL_REQUIRED_MESSAGE =
+  'ANTHROPIC_MODEL is required for a third-party Anthropic-compatible provider.';
+
+/**
+ * Resolve the readable configuration error for an endpoint marker and base
+ * URL. An explicit `official` marker wins over an inherited stale base URL.
+ */
+export function resolveProviderConfigError(
+  marker: string | undefined,
+  baseUrl: string | undefined,
+): string | null {
+  if (marker === 'official') return OFFICIAL_ENDPOINT_UNSUPPORTED_MESSAGE;
+  return baseUrl?.trim() ? null : BASE_URL_REQUIRED_MESSAGE;
+}
+
 export interface ClaudeProviderRuntime {
   endpointKind: ClaudeEndpointKind;
   model: string;
@@ -60,12 +84,7 @@ export function resolveClaudeProviderRuntime(
     marker === 'custom' || (marker !== 'official' && !!baseUrl)
       ? 'custom'
       : 'official';
-  const providerError =
-    marker === 'official'
-      ? 'Official Anthropic endpoints are no longer supported. Configure a third-party Anthropic-compatible provider with ANTHROPIC_BASE_URL.'
-      : baseUrl
-        ? null
-        : 'A third-party Anthropic-compatible provider requires ANTHROPIC_BASE_URL.';
+  const providerError = resolveProviderConfigError(marker, baseUrl);
 
   return {
     endpointKind,

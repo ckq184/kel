@@ -120,6 +120,17 @@ describe('host environment fallback (D-2 ②)', () => {
       anthropicModel: 'glm-5.2',
     });
   });
+
+  test('a legacy OAuth token is ignored even when a base URL is present', () => {
+    process.env.ANTHROPIC_BASE_URL = 'https://proxy.test';
+    process.env.CLAUDE_CODE_OAUTH_TOKEN = 'fake-oauth-token';
+    process.env.ANTHROPIC_MODEL = 'glm-5.2';
+
+    const config = runtimeConfig.getClaudeProviderConfig();
+
+    expect(config.claudeCodeOauthToken).toBe('');
+    expect(config.anthropicBaseUrl).toBe('https://proxy.test');
+  });
 });
 
 describe('endpoint marker derivation (D-2 ②)', () => {

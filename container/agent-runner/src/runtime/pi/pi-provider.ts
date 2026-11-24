@@ -1,6 +1,11 @@
 import type { Model } from '@earendil-works/pi-ai';
 import type { ModelRuntime } from '@earendil-works/pi-coding-agent';
 
+import {
+  MODEL_REQUIRED_MESSAGE,
+  resolveProviderConfigError,
+} from '../../provider-runtime.js';
+
 export type PiProviderResolution = {
   providerId: string;
   modelId: string;
@@ -126,8 +131,8 @@ function splitModelRef(value: string): { providerId: string; modelId: string } {
  * into the registered api key, which preserves the historical third-party
  * proxy behavior.
  *
- * ISSUE-04 ①: `contextWindow` overrides the resolved model's window via a
- * shallow copy; undefined keeps the registration value.
+ * ISSUE-04 ①: `contextWindow` is written into the registered model definition;
+ * undefined keeps the 200k registration default.
  */
 export async function resolvePiProvider(
   modelRuntime: ModelRuntime,
@@ -145,23 +150,14 @@ export async function resolvePiProvider(
     headers?: Record<string, string>;
   },
 ): Promise<PiProviderResolution> {
-  if (input.endpointKind === 'official') {
-    throw new Error(
-      'Official Anthropic endpoints are no longer supported. Configure a third-party Anthropic-compatible provider with ANTHROPIC_BASE_URL.',
-    );
-  }
+  const configError = resolveProviderConfigError(
+    input.endpointKind,
+    input.baseUrl,
+  );
+  if (configError) throw new Error(configError);
   const baseUrl = input.baseUrl?.trim() || '';
-  if (!baseUrl) {
-    throw new Error('Pi third-party provider requires ANTHROPIC_BASE_URL');
-  }
   const rawModel = input.model?.trim() || '';
-  if (!rawModel) {
-    throw new Error('Pi custom provider requires ANTHROPIC_MODEL');
-  }
-  const withContextWindow = (model: Model<any>): Model<any> =>
-    input.contextWindow
-      ? { ...model, contextWindow: input.contextWindow }
-      : model;
+  if (!rawModel) throw new Error(MODEL_REQUIRED_MESSAGE);
 
   const split = splitModelRef(rawModel);
   const providerId = `ckqclaw-${split.providerId}`;
@@ -208,7 +204,7 @@ export async function resolvePiProvider(
   return {
     providerId,
     modelId: split.modelId,
-    model: withContextWindow(model),
+    model,
     custom: true,
   };
 }

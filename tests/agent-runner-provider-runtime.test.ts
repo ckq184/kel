@@ -63,6 +63,36 @@ describe('agent-runner provider model contract', () => {
     expect(runtime.endpointKind).toBe('custom');
   });
 
+  test('a garbage marker with a base URL still resolves as custom', () => {
+    const runtime = resolveClaudeProviderRuntime({
+      CKQCLAW_CLAUDE_ENDPOINT_KIND: 'not-a-kind',
+      ANTHROPIC_BASE_URL: 'https://proxy.test',
+      ANTHROPIC_MODEL: 'glm-5.2',
+    });
+
+    expect(runtime.providerError).toBeNull();
+    expect(runtime.endpointKind).toBe('custom');
+  });
+
+  test('a garbage marker without a base URL is rejected', () => {
+    const runtime = resolveClaudeProviderRuntime({
+      CKQCLAW_CLAUDE_ENDPOINT_KIND: 'not-a-kind',
+      ANTHROPIC_MODEL: 'glm-5.2',
+    });
+
+    expect(runtime.providerError).toContain('ANTHROPIC_BASE_URL');
+  });
+
+  test('a whitespace-only base URL is treated as missing', () => {
+    const runtime = resolveClaudeProviderRuntime({
+      CKQCLAW_CLAUDE_ENDPOINT_KIND: 'custom',
+      ANTHROPIC_BASE_URL: '   ',
+      ANTHROPIC_MODEL: 'glm-5.2',
+    });
+
+    expect(runtime.providerError).toContain('ANTHROPIC_BASE_URL');
+  });
+
   test('legacy [1m] model is stripped on the wire and stays intact for budgeting', () => {
     const runtime = resolveClaudeProviderRuntime({
       CKQCLAW_CLAUDE_ENDPOINT_KIND: 'custom',
