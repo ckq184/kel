@@ -2,7 +2,7 @@
 
 | 字段          | 值                                                                                                                                                                                                                        |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 状态          | 进行中                                                                                                                                                                                                                    |
+| 状态          | 已完成                                                                                                                                                                                                                    |
 | 领取人 / 分支 | THESIS-07 会话 / `claude/thesis-07-usage-ledger-stop`                                                                                                                                                                     |
 | 优先级        | P1                                                                                                                                                                                                                        |
 | 类型          | 裁剪（记账层，方案 L2）                                                                                                                                                                                                   |
@@ -70,4 +70,14 @@
 
 ## 交付记录
 
-（交付时填写）
+- **状态**：已完成（2026-11-24）。分支 `claude/thesis-07-usage-ledger-stop`；立项 `4a14cc6`，实现 `217c12c`。
+- **验证结果**：`npm run verify` 六步全绿（362 文件，2985 通过 / 23 跳过 / 0 失败，30.1s）；`node scripts/check-scope.mjs` 实现树 14 路径、交付树 15 路径全在声明范围内。独立代理规格符合性与代码质量两轮审查均通过（Critical 0 / Major 0 / Minor 5，均不阻塞；处置见 `docs/审查记录.md`）。
+- **改动**：删除五处账本写入（`src/index.ts` 两处 `costUSD` 计价覆盖、两处写账本+`rebuildMessageTokenUsageFromLedger` 回写，`src/task-scheduler.ts` 的 `recordIsolatedTaskUsage`）、`writeUsageRecords` 包装、`src/usage-service.ts`、`src/task-usage.ts`；新增 `src/usage-accumulator.ts` 按回复累加 `durationMs`/`numTurns`，`eventId` 去重，经 `updateLatestMessageTokenUsage` 按消息 ID 整值回写；无 `msgId` 分支保持原行为。`costUSD` 不再被宿主覆盖。
+- **与 issue 的偏差**：
+  1. 累加逻辑放在新模块 `src/usage-accumulator.ts`，不是 issue 原文的 `src/index.ts` 内——`index.ts` 顶层执行 `main()`，测试无法导入；用户已批准抽纯模块。
+  2. `tests/pricing-routes.test.ts` 额外删除 6 个依赖 `recordUsageEvent` 的计价注入用例（issue 未列；删 `usage-service` 后该文件无法编译），保留并补 3 个纯 store 投影用例；整文件留给 THESIS-08 删除。
+  3. 立项阶段因 THESIS-06 未完成只立项不实现；06 合入 `38418cc` 后 rebase 再实现（用户拍板）。
+  4. `src/custom-pricing-store.ts:5` 顶部注释仍提到已删除的 `recordUsageEvent`；该文件属定价层，本包不改，随 THESIS-08 整文件删除。
+- **已知限制**（用户已接受）：累加态只在内存；重启或条目淘汰后，同一回复继续收到 usage 事件时累计从 0 重来，整值覆盖可能让气泡耗时暂时变小。缺 `eventId` 时无法去重；Pi runner 恒带 `eventId`，实践无回退。
+- **测试覆盖缺口登记**：`tests/usage-accounting.test.ts` 同时覆盖仍在 `src/db.ts` 的 `rebuildMessageTokenUsageFromLedger`/`recordUsageEventBatch` 等函数；这些函数已无生产调用方，随 THESIS-14 删表时一并删除。`tests/pricing-routes.test.ts` 删掉的计价注入/禁用投影/缓存失效用例由 THESIS-08 整文件删除收口。
+- **人工冒烟（待用户）**：对话一轮后气泡显示耗时；运行一次定时任务后正常结束；飞书卡片不再显示费用一行（D-C3 ① 预期行为，不是缺陷）。

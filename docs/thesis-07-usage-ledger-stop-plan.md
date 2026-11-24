@@ -2,7 +2,7 @@
 
 > 立项日期：2026-11-24｜base：`5ccf1b3`（立项）→ `38418cc`（THESIS-06 合入后的实现基线）｜分支：`claude/thesis-07-usage-ledger-stop`
 > 来源：[docs/issues2/THESIS-07-usage-ledger-stop.md](issues2/THESIS-07-usage-ledger-stop.md)（方案 §6 L2/T2，审核更正 S1）
-> **状态：THESIS-06 已合入 main（38418cc），本分支 rebase 后进入实现（TDD Red→Green）。**
+> **状态：已实现并交付（实现提交 `217c12c`），等待用户人工冒烟。**
 
 ## 0. 需求采访结论（2026-11-24，用户拍板）
 
