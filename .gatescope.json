@@ -1,18 +1,13 @@
 {
-  "task": "THESIS-04 供应商（三）：Runner 与环境变量回退只剩第三方路径（D-2 ②：宿主强制 Base URL，runner 遇 official 报错）",
-  "base": "17113e9",
+  "task": "node-modules-tracking-cleanup - 取消 17113e9 误追踪的三处 node_modules 符号链接，收紧忽略规则并加防回潮契约测试",
+  "base": "5ccf1b3",
   "allow": [
     ".gatescope.json",
-    "CLAUDE.md",
-    "docs/issues2/THESIS-04-provider-runtime.md",
-    "docs/issues2/README.md",
-    "docs/thesis-04-provider-runtime-plan.md",
-    "docs/审查记录.md",
-    "container/agent-runner/src/provider-runtime.ts",
-    "container/agent-runner/src/runtime/pi/pi-provider.ts",
-    "container/agent-runner/src/runtime/types.ts",
-    "container/agent-runner/src/pi-index.ts",
-    "src/runtime-config.ts",
-    "tests/**"
+    "docs/node-modules-tracking-cleanup-plan.md",
+    ".gitignore",
+    "tests/node-modules-tracking-contract.test.ts",
+    "node_modules",
+    "web/node_modules",
+    "container/agent-runner/node_modules"
   ]
 }

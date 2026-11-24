@@ -1,5 +1,7 @@
 # Dependencies
-node_modules/
+# No trailing slash: symlinks and plain files named node_modules (e.g. a
+# worktree linking to the main checkout's install) must be ignored too.
+node_modules
 
 # Build output
 dist/
