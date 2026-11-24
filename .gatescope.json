@@ -1,5 +1,24 @@
 {
-  "task": "thesis-trim-review - 毕设裁减方案审核与任务池拆分（docs/issues2/）：方案升v0.8修正漂移、审核报告、README索引与并行矩阵、THESIS-01至15；只改文档不改代码",
-  "base": "d6e04aa",
-  "allow": [".gatescope.json", "docs/issues2/**"]
+  "task": "THESIS-01 - 桌面端裁除：删除 electron/ 与启动脚本、精简 restart-dev、删除 electron/esbuild 依赖与桌面端文档，浏览器访问 3001/5174",
+  "base": "11eeeae",
+  "allow": [
+    ".gatescope.json",
+    "docs/issues2/THESIS-01-desktop-removal.md",
+    "docs/issues2/README.md",
+    "docs/thesis-01-desktop-removal-plan.md",
+    "docs/desktop-identity-split-plan.md",
+    "electron/**",
+    "start-desktop.command",
+    "start-desktop.bat",
+    "restart-dev.command",
+    "package.json",
+    "package-lock.json",
+    ".gitignore",
+    "web/vite.config.ts",
+    "README.md",
+    "AGENTS.md",
+    "tests/electron-menu-contract.test.ts",
+    "tests/electron-shell-contract.test.ts",
+    "tests/desktop-removal-contract.test.ts"
+  ]
 }
