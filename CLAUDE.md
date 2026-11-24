@@ -77,7 +77,7 @@ Radix UI。路由以 `web/src/App.tsx` 为准：
 | `/setup`                  | 首个管理员初始化                      |
 | `/setup/providers`        | Provider 引导                         |
 | `/setup/channels`         | 用户渠道引导                          |
-| `/login`、`/register`     | 登录和注册                            |
+| `/login`                  | 登录                                  |
 | `/chat/:groupFolder?`     | 工作台与会话                          |
 | `/agent-profiles`         | Agent 管理                            |
 | `/capabilities/:section?` | Skills、MCP                           |
@@ -85,7 +85,6 @@ Radix UI。路由以 `web/src/App.tsx` 为准：
 | `/memory`                 | 记忆管理                              |
 | `/settings`               | 账户和系统设置                        |
 | `/monitor`                | 运行状态，需要 `manage_system_config` |
-| `/users`                  | 用户、邀请和审计管理                  |
 
 兼容重定向不应新增独立页面，共两层：路由级（`web/src/App.tsx`）`/groups`→`/chat`、
 `/skills`→`/capabilities/skills`、`/mcp-servers`→`/capabilities/mcp`；`/settings` 旧

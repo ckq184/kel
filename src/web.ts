@@ -5,7 +5,7 @@
  * - 模块级 `app` 装配：压缩 / CORS 白名单（isAllowedOrigin：同源放行、
  *   `*` 全放行、localhost 任意端口可关、逗号分隔自定义白名单）
  * - `/api/*` 路由挂载：业务实现分散在 `routes/*.ts`，本文件只做挂载点
- *   （auth / groups / memory / config / tasks / skills / admin / monitor 等）
+ *   （auth / groups / memory / config / tasks / skills / monitor 等）
  * - Web 用户消息与 Agent 会话消息处理（handleWebUserMessage /
  *   handleAgentConversationMessage）
  * - 静态资源托管（conditionalStatic：web/dist 的 SPA fallback）
@@ -67,7 +67,6 @@ import groupRoutes from './routes/groups.js';
 import memoryRoutes from './routes/memory.js';
 import configRoutes, { injectConfigDeps } from './routes/config.js';
 import tasksRoutes from './routes/tasks.js';
-import adminRoutes from './routes/admin.js';
 import fileRoutes from './routes/files.js';
 import monitorRoutes, { injectMonitorDeps } from './routes/monitor.js';
 import skillsRoutes from './routes/skills.js';
@@ -221,7 +220,6 @@ app.route('/api/memory', memoryRoutes);
 app.route('/api/config', configRoutes);
 app.route('/api/tasks', tasksRoutes);
 app.route('/api/skills', skillsRoutes);
-app.route('/api/admin', adminRoutes);
 app.route('/api/browse', browseRoutes);
 app.route('/api/mcp-servers', mcpServersRoutes);
 app.route('/api/agent-profiles', agentProfileRoutes);

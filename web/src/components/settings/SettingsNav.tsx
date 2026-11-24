@@ -11,8 +11,6 @@ import {
   Settings2,
   SlidersHorizontal,
   User,
-  UserCog,
-  UserPlus,
 } from 'lucide-react';
 
 import {
@@ -79,12 +77,6 @@ const systemItems: NavItem[] = [
 ];
 
 const managementItems: NavItem[] = [
-  {
-    key: 'registration',
-    label: '注册策略',
-    icon: <UserPlus className="size-4" />,
-  },
-  { key: 'users', label: '用户与访问', icon: <UserCog className="size-4" /> },
   { key: 'monitor', label: '运行状态', icon: <Gauge className="size-4" /> },
 ];
 
@@ -98,7 +90,6 @@ interface SettingsNavProps {
   activeTab: SettingsTab;
   onTabChange: (tab: SettingsTab) => void;
   canManageSystemConfig: boolean;
-  canManageUsers: boolean;
   isAdmin: boolean;
   mustChangePassword: boolean;
   open?: boolean;
@@ -109,7 +100,6 @@ export function SettingsNav({
   activeTab,
   onTabChange,
   canManageSystemConfig,
-  canManageUsers,
   isAdmin,
   mustChangePassword,
   open,
@@ -121,10 +111,7 @@ export function SettingsNav({
     }
     return canManageSystemConfig;
   });
-  const management = managementItems.filter((item) => {
-    if (item.key === 'users') return canManageUsers;
-    return canManageSystemConfig;
-  });
+  const management = managementItems.filter(() => canManageSystemConfig);
   const sections = [
     { label: '账户设置', items: accountItems },
     ...(system.length ? [{ label: '系统配置', items: system }] : []),

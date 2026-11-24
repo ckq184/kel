@@ -6,7 +6,6 @@ import { toast } from 'sonner';
 import { useAuthStore } from '../stores/auth';
 import { SettingsNav } from '../components/settings/SettingsNav';
 import { ClaudeProviderSection } from '../components/settings/ClaudeProviderSection';
-import { RegistrationSection } from '../components/settings/RegistrationSection';
 import { ProfileSection } from '../components/settings/ProfileSection';
 import { PreferencesSection } from '../components/settings/PreferencesSection';
 import { SecuritySection } from '../components/settings/SecuritySection';
@@ -20,13 +19,11 @@ import {
 } from '../components/settings/SystemSettingsSection';
 import { UserChannelsSection } from '../components/settings/UserChannelsSection';
 import { ModelPricingSection } from '../components/settings/ModelPricingSection';
-import { UsersPage } from './UsersPage';
 import { MonitorPage } from './MonitorPage';
 import type { SettingsTab } from '../components/settings/types';
 
 const VALID_TABS: SettingsTab[] = [
   'claude',
-  'registration',
   'appearance',
   'system',
   'main-agent',
@@ -41,21 +38,19 @@ const VALID_TABS: SettingsTab[] = [
   'memory',
   'skills',
   'mcp-servers',
-  'users',
   'about',
   'bindings',
   'monitor',
 ];
 const SYSTEM_TABS: SettingsTab[] = [
   'claude',
-  'registration',
   'appearance',
   'system',
   'main-agent',
   'host-integration',
   'pricing',
 ];
-const FULLPAGE_TABS: SettingsTab[] = ['users', 'monitor'];
+const FULLPAGE_TABS: SettingsTab[] = ['monitor'];
 
 const LEGACY_TAB_ROUTES: Partial<Record<SettingsTab, string>> = {
   groups: '/chat',
@@ -77,11 +72,6 @@ export function SettingsPage() {
   const mustChangePassword = !!currentUser?.must_change_password;
   const canManageSystemConfig =
     hasSystemConfigPermission && !mustChangePassword;
-  const canManageUsers =
-    currentUser?.role === 'admin' ||
-    !!currentUser?.permissions.includes('manage_users') ||
-    !!currentUser?.permissions.includes('manage_invites') ||
-    !!currentUser?.permissions.includes('view_audit_log');
 
   const defaultTab: SettingsTab = canManageSystemConfig ? 'claude' : 'profile';
   const rawTabValue = searchParams.get('tab');
@@ -104,14 +94,12 @@ export function SettingsPage() {
         return defaultTab;
       }
       if (raw === 'monitor' && !canManageSystemConfig) return defaultTab;
-      if (raw === 'users' && !canManageUsers) return defaultTab;
       return raw;
     }
     return defaultTab;
   }, [
     rawTab,
     canManageSystemConfig,
-    canManageUsers,
     mustChangePassword,
     defaultTab,
     currentUser?.role,
@@ -127,7 +115,6 @@ export function SettingsPage() {
 
   const sectionTitle: Record<SettingsTab, string> = {
     claude: '模型配置',
-    registration: '注册策略',
     appearance: '常规与品牌',
     system: '运行与容量',
     'main-agent': '主 CKQClaw',
@@ -142,7 +129,6 @@ export function SettingsPage() {
     memory: 'Workspace Memory',
     skills: '技能(Skill)管理',
     'mcp-servers': 'MCP 服务器',
-    users: '用户与访问',
     about: '关于',
     bindings: '渠道绑定',
     monitor: '运行状态',
@@ -181,7 +167,6 @@ export function SettingsPage() {
         activeTab={activeTab}
         onTabChange={handleTabChange}
         canManageSystemConfig={canManageSystemConfig}
-        canManageUsers={!!canManageUsers}
         isAdmin={currentUser?.role === 'admin'}
         mustChangePassword={mustChangePassword}
         open={navOpen}
@@ -190,10 +175,7 @@ export function SettingsPage() {
 
       <div data-settings-content="true" className="min-w-0 flex-1">
         {FULLPAGE_TABS.includes(activeTab) ? (
-          <>
-            {activeTab === 'users' && <UsersPage />}
-            {activeTab === 'monitor' && <MonitorPage />}
-          </>
+          <>{activeTab === 'monitor' && <MonitorPage />}</>
         ) : (
           <div className="px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
             <div className="mx-auto max-w-6xl">
@@ -215,7 +197,7 @@ export function SettingsPage() {
               )}
 
               {activeTab === 'system' ? (
-                <SystemSettingsSection scope="runtime" />
+                <SystemSettingsSection />
               ) : activeTab === 'main-agent' ||
                 activeTab === 'host-integration' ? (
                 <div>
@@ -239,14 +221,6 @@ export function SettingsPage() {
                         }
                         setError={(message) => message && toast.error(message)}
                       />
-                    </div>
-                  )}
-                  {activeTab === 'registration' && (
-                    <div className="space-y-8">
-                      <RegistrationSection />
-                      <div className="border-t border-border pt-6">
-                        <SystemSettingsSection scope="security" />
-                      </div>
                     </div>
                   )}
                   {activeTab === 'appearance' && <AppearanceSection />}

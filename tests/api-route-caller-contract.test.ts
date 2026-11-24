@@ -273,7 +273,9 @@ describe('API route ↔ caller bidirectional contract (ISSUE-13 §B.3)', () => {
     // 漂移——先修扫描器再谈契约，不得放宽匹配规则来制造通过。
     expect(routeScan.unmappedFiles).toEqual([]);
     expect(routeScan.multiInstanceFiles).toEqual([]);
-    expect(routes.length).toBeGreaterThan(180);
+    // THESIS-10 下线注册、注册策略与 /api/admin 共 16 条路由后，结构锚点
+    // 随实际基线下调；仍保留宽松下界，防止扫描器整体失效时静默通过。
+    expect(routes.length).toBeGreaterThan(160);
     expect(callers.length).toBeGreaterThan(120);
     expect(routes.some((r) => r.path === '/api/messages')).toBe(true);
     expect(callers.some((c) => c.path === '/api/messages')).toBe(true);

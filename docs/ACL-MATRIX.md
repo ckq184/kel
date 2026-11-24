@@ -19,9 +19,6 @@
 | Delete   | `canDeleteGroup`             | 当前用户是 owner 且不是 Home Workspace |
 | Host     | `hasHostExecutionPermission` | admin 角色                             |
 | System   | `systemConfigMiddleware`     | `manage_system_config`                 |
-| Users    | `usersManageMiddleware`      | `manage_users`                         |
-| Invites  | `inviteManageMiddleware`     | `manage_invites`                       |
-| Audit    | `auditViewMiddleware`        | `view_audit_log`                       |
 | IM Owner | `owner_im_id` 比对           | 当前渠道原生 sender 是记录的主人       |
 
 核心原则：
@@ -35,16 +32,14 @@
 
 ## 2. Public 接口
 
-| 路由                            | 方法 | 附加条件               |
-| ------------------------------- | ---- | ---------------------- |
-| `/api/auth/status`              | GET  | 无                     |
-| `/api/auth/setup`               | POST | 仅用户表为空           |
-| `/api/auth/login`               | POST | 登录限流               |
-| `/api/auth/register/status`     | GET  | 无                     |
-| `/api/auth/register`            | POST | 注册策略、邀请码、限流 |
-| `/api/auth/avatars/:filename`   | GET  | 仅允许受管头像路径     |
-| `/api/config/appearance/public` | GET  | 只返回公开外观         |
-| `/api/health`                   | GET  | 不返回敏感运行详情     |
+| 路由                            | 方法 | 附加条件           |
+| ------------------------------- | ---- | ------------------ |
+| `/api/auth/status`              | GET  | 无                 |
+| `/api/auth/setup`               | POST | 仅用户表为空       |
+| `/api/auth/login`               | POST | 登录限流           |
+| `/api/auth/avatars/:filename`   | GET  | 仅允许受管头像路径 |
+| `/api/config/appearance/public` | GET  | 只返回公开外观     |
+| `/api/health`                   | GET  | 不返回敏感运行详情 |
 
 `/ws` 不是 Public。Upgrade 时必须同时通过 Cookie Session 与 Origin 校验。
 
@@ -194,19 +189,16 @@ read-only 投影按 host-issued turn ID 精确匹配当前或已接纳的 queued
 - 原生话题容器使用 `thread_map`，不能绑定到一个固定 Session 后吞并所有话题。
 - Unbind 必须原子恢复该 Bot 的默认工作区；无法解析默认目标时保留旧绑定并报错。
 
-## 6. 系统和管理权限
+## 6. 系统权限
 
-| 路由族/操作                                       | 权限                                  |
-| ------------------------------------------------- | ------------------------------------- |
-| Provider、系统容量、Host 集成、注册策略、系统外观 | `manage_system_config`                |
-| 系统 MCP 写入                                     | admin                                 |
-| 用户创建、禁用、恢复、角色与权限                  | `manage_users`                        |
-| 邀请码                                            | `manage_invites`                      |
-| 审计日志和导出                                    | `view_audit_log`                      |
-| `/api/pricing/*` 自定义模型单价                   | `manage_system_config`                |
-| `/api/docker/pull`、运行监控管理                  | `manage_system_config`                |
-| `/api/status/channel-outbox/*` 人工裁决           | `manage_system_config`                |
-| `POST /api/groups/:jid/reset-owner`               | admin break-glass，同时仍验证目标资源 |
+| 路由族/操作                             | 权限                                  |
+| --------------------------------------- | ------------------------------------- |
+| Provider、系统容量、Host 集成、系统外观 | `manage_system_config`                |
+| 系统 MCP 写入                           | admin                                 |
+| `/api/pricing/*` 自定义模型单价         | `manage_system_config`                |
+| `/api/docker/pull`、运行监控管理        | `manage_system_config`                |
+| `/api/status/channel-outbox/*` 人工裁决 | `manage_system_config`                |
+| `POST /api/groups/:jid/reset-owner`     | admin break-glass，同时仍验证目标资源 |
 
 系统 MCP 默认仅 admin 可用；只有显式设置为 shared 后，普通成员的 Agent 才能进入
 有效能力清单。API 不回传 Secret 明文。

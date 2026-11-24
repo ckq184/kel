@@ -48,7 +48,6 @@ vi.mock('../src/middleware/auth.ts', async (importOriginal) => {
 const web = await import('../src/web.js');
 const db = await import('../src/db.js');
 const stopGroup = vi.fn(async () => {});
-const reconnectUserIMChannels = vi.fn(async () => {});
 const runtimeSafetyBlocks = new Map<string, Set<string>>();
 const liveGroups: Record<string, any> = {};
 const blockGroupsForRuntimeSafety = vi.fn(
@@ -82,7 +81,6 @@ const app = web.createAppForTest({
   getRegisteredGroups: () => liveGroups,
   sessions: {},
   ensureTerminalContainerStarted: vi.fn(() => true),
-  reconnectUserIMChannels,
 } as any);
 
 beforeAll(() => {
@@ -173,8 +171,9 @@ describe('system settings capability boundaries', () => {
     ).toBe(403);
   });
 
-  test('admin host update logs names but never the sensitive path', async () => {
+  test('admin host update no longer writes auth audit records', async () => {
     asSystemSettingsTestUser('admin');
+    const before = db.queryAuthAuditLogs().total;
     const response = await app.request('/api/config/host-integration', {
       method: 'PUT',
       headers: {
@@ -187,15 +186,10 @@ describe('system settings capability boundaries', () => {
       }),
     });
     expect(response.status).toBe(200);
-    const logs = db.queryAuthAuditLogs({
-      event_type: 'host_integration_updated',
-    }).logs;
-    expect(logs).toHaveLength(1);
-    expect(logs[0].details).toMatchObject({
-      changed_fields: ['externalClaudeDir', 'mainAgentContextSource'],
-      external_claude_dir_configured: true,
-    });
-    expect(JSON.stringify(logs[0].details)).not.toContain(tmpDir);
+    expect(db.queryAuthAuditLogs().total).toBe(before);
+    expect(
+      db.queryAuthAuditLogs({ event_type: 'host_integration_updated' }).logs,
+    ).toHaveLength(0);
   });
 
   test('combined host and compact update quiesces admin custom and member default workspaces without discarding work', async () => {
@@ -501,135 +495,5 @@ describe('system settings capability boundaries', () => {
       ),
     ).toBe(false);
     stopGroup.mockImplementation(async () => {});
-  });
-
-  test('promoting a member under host-only mode migrates runtimes and retries cleanup safely', async () => {
-    const now = new Date().toISOString();
-    db.createUser({
-      id: 'settings-promoted-admin',
-      username: 'settings-promoted-admin',
-      password_hash: 'hash',
-      display_name: 'Promoted Admin',
-      role: 'member',
-      status: 'active',
-      created_at: now,
-      updated_at: now,
-      must_change_password: false,
-    });
-    db.setRegisteredGroup('web:settings-promoted-admin', {
-      name: 'Promoted admin workspace',
-      folder: 'settings-promoted-admin',
-      added_at: now,
-      executionMode: 'container',
-      created_by: 'settings-promoted-admin',
-    });
-    db.createTask({
-      id: 'settings-promoted-admin-task',
-      group_folder: 'settings-promoted-admin',
-      chat_jid: 'web:settings-promoted-admin',
-      prompt: 'promotion migration',
-      schedule_type: 'cron',
-      schedule_value: '0 10 * * *',
-      context_mode: 'isolated',
-      execution_type: 'agent',
-      execution_mode: 'container',
-      next_run: new Date(Date.now() + 60_000).toISOString(),
-      status: 'active',
-      created_at: now,
-      created_by: 'settings-promoted-admin',
-      notify_channels: null,
-    });
-    db.setSession('settings-promoted-admin', 'promotion-initial-session');
-
-    let targetStops = 0;
-    stopGroup.mockImplementation(async (jid: string) => {
-      if (jid !== 'web:settings-promoted-admin') return;
-      targetStops += 1;
-      if (targetStops === 2) {
-        db.setSession('settings-promoted-admin', 'promotion-late-session');
-        throw new Error('simulated promotion post-commit failure');
-      }
-    });
-    runtimeSafetyBlocks.clear();
-    asSystemSettingsTestUser('admin');
-    const failed = await app.request(
-      '/api/admin/users/settings-promoted-admin',
-      {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ role: 'admin' }),
-      },
-    );
-    expect(failed.status).toBe(503);
-    expect(await failed.json()).toMatchObject({
-      persisted: true,
-      retryable: true,
-    });
-    expect(db.getUserById('settings-promoted-admin')?.role).toBe('admin');
-    expect(
-      db.getRegisteredGroup('web:settings-promoted-admin')?.executionMode,
-    ).toBe('host');
-    expect(db.getTaskById('settings-promoted-admin-task')?.execution_mode).toBe(
-      'host',
-    );
-    expect(db.getSession('settings-promoted-admin')).toBe(
-      'promotion-late-session',
-    );
-    expect(runtimeSafetyBlocks.has('web:settings-promoted-admin')).toBe(true);
-
-    stopGroup.mockImplementation(async () => {});
-    const repaired = await app.request(
-      '/api/admin/users/settings-promoted-admin',
-      {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ role: 'admin' }),
-      },
-    );
-    expect(repaired.status).toBe(200);
-    expect(db.getSession('settings-promoted-admin')).toBeUndefined();
-    expect(runtimeSafetyBlocks.has('web:settings-promoted-admin')).toBe(false);
-    stopGroup.mockImplementation(async () => {});
-  });
-
-  test('reactivating an administrator applies host-only mode before reconnecting channels', async () => {
-    const now = new Date().toISOString();
-    db.createUser({
-      id: 'settings-reactivated-admin',
-      username: 'settings-reactivated-admin',
-      password_hash: 'hash',
-      display_name: 'Reactivated Admin',
-      role: 'admin',
-      status: 'disabled',
-      created_at: now,
-      updated_at: now,
-      must_change_password: false,
-    });
-    db.setRegisteredGroup('web:settings-reactivated-admin', {
-      name: 'Reactivated admin workspace',
-      folder: 'settings-reactivated-admin',
-      added_at: now,
-      executionMode: 'container',
-      created_by: 'settings-reactivated-admin',
-    });
-    reconnectUserIMChannels.mockClear();
-    stopGroup.mockImplementation(async () => {});
-
-    const response = await app.request(
-      '/api/admin/users/settings-reactivated-admin',
-      {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ status: 'active' }),
-      },
-    );
-    expect(response.status).toBe(200);
-    expect(db.getUserById('settings-reactivated-admin')?.status).toBe('active');
-    expect(
-      db.getRegisteredGroup('web:settings-reactivated-admin')?.executionMode,
-    ).toBe('host');
-    expect(reconnectUserIMChannels).toHaveBeenCalledWith(
-      'settings-reactivated-admin',
-    );
   });
 });

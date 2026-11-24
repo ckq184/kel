@@ -2,14 +2,12 @@
  * 前端路由真相源：全部路由集中在本文件的 `appRoutes`（createRoutesFromElements）。
  *
  * 结构：
- * - 公开路由：/login /register /setup（首启引导）；
+ * - 公开路由：/login /setup（首启引导）；
  * - 受保护路由统一包在 AuthGuard + AppLayout 布局内（/setup/providers 与
  *   /setup/channels 仅 AuthGuard 无布局）；
  * - 页面组件全部 React.lazy 按需加载；ChatPage 另有手动 preload（下方
  *   shouldPreloadChatRoute——历史上静态 modulepreload 让 /login 也下载了
  *   ChatPage + MarkdownRenderer 的整条依赖链）；
- * - 权限门：/monitor 要求 manage_system_config；/users 要求
- *   manage_users / manage_invites / view_audit_log 之一；
  * - 兼容重定向：/groups→/chat、/skills→/capabilities/skills、
  *   /mcp-servers→/capabilities/mcp、/ 与 * → /chat。
  *
@@ -26,7 +24,6 @@ import {
 } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
 import { LoginPage } from './pages/LoginPage';
-import { RegisterPage } from './pages/RegisterPage';
 import { SetupPage } from './pages/SetupPage';
 import { SetupProvidersPage } from './pages/SetupProvidersPage';
 import { SetupChannelsPage } from './pages/SetupChannelsPage';
@@ -76,9 +73,6 @@ const AgentProfilesPage = lazy(() =>
 const MemoryPage = lazy(() =>
   import('./pages/MemoryPage').then((m) => ({ default: m.MemoryPage })),
 );
-const UsersPage = lazy(() =>
-  import('./pages/UsersPage').then((m) => ({ default: m.UsersPage })),
-);
 const MonitorPage = lazy(() =>
   import('./pages/MonitorPage').then((m) => ({ default: m.MonitorPage })),
 );
@@ -106,7 +100,6 @@ const appRoutes = createRoutesFromElements(
   <>
     {/* Public Routes */}
     <Route path="/login" element={<LoginPage />} />
-    <Route path="/register" element={<RegisterPage />} />
     {/* 首次启动引导（创建管理员/配置 Provider/渠道） */}
     <Route path="/setup" element={<SetupPage />} />
     {/* 引导的后续两步：已登录但无布局包裹 */}
@@ -217,23 +210,6 @@ const appRoutes = createRoutesFromElements(
           <Suspense fallback={null}>
             <SettingsPage />
           </Suspense>
-        }
-      />
-      {/* 用户/邀请/审计管理，三种权限任一即可进入 */}
-      <Route
-        path="/users"
-        element={
-          <AuthGuard
-            requiredAnyPermissions={[
-              'manage_users',
-              'manage_invites',
-              'view_audit_log',
-            ]}
-          >
-            <Suspense fallback={null}>
-              <UsersPage />
-            </Suspense>
-          </AuthGuard>
         }
       />
     </Route>

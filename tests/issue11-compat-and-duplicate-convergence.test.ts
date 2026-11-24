@@ -438,9 +438,6 @@ describe('error-extraction copies route through the shared module (ISSUE-11 B4)'
     expect(
       read('web/src/components/agents/AgentPromptAssistant.tsx'),
     ).toContain("extractErrorMessage(err, 'AI 调整失败，请稍后重试')");
-    expect(read('web/src/components/users/utils.ts')).not.toMatch(
-      /function getErrorMessage\(/,
-    );
   });
 });
 

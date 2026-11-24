@@ -53,12 +53,6 @@ interface AuthState {
   initialized: boolean | null; // null = not checked yet
   checking: boolean;
   login: (username: string, password: string) => Promise<void>;
-  register: (data: {
-    username: string;
-    password: string;
-    display_name?: string;
-    invite_code?: string;
-  }) => Promise<void>;
   logout: () => Promise<void>;
   checkAuth: () => Promise<void>;
   checkStatus: () => Promise<void>;
@@ -105,21 +99,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       user: data.user,
       setupStatus: data.setupStatus ?? null,
       appearance: data.appearance ?? null,
-      initialized: true,
-    });
-  },
-
-  register: async (payload) => {
-    // Same rationale as login: clear user-scoped message snapshots.
-    await clearMessageSnapshotCache();
-    const data = await api.post<{ success: boolean; user: UserPublic }>(
-      '/api/auth/register',
-      payload,
-    );
-    set({
-      authenticated: true,
-      user: data.user,
-      setupStatus: null,
       initialized: true,
     });
   },

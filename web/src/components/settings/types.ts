@@ -70,8 +70,6 @@ export interface SystemSettings {
   idleTimeout: number;
   containerMaxOutputSize: number;
   maxConcurrentContainers: number;
-  maxLoginAttempts: number;
-  loginLockoutMinutes: number;
   fallbackModel: string;
 }
 
@@ -85,7 +83,6 @@ export interface HostIntegrationSettings {
 
 export type SettingsTab =
   | 'claude'
-  | 'registration'
   | 'appearance'
   | 'system'
   | 'main-agent'
@@ -100,7 +97,6 @@ export type SettingsTab =
   | 'memory'
   | 'skills'
   | 'mcp-servers'
-  | 'users'
   | 'about'
   | 'bindings'
   | 'monitor';

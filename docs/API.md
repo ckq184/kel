@@ -30,7 +30,6 @@
 | `/api/skills`                      | `src/routes/skills.ts`           | 用户 Skills                  |
 | `/api/mcp-servers`                 | `src/routes/mcp-servers.ts`      | 用户/系统 MCP                |
 | `/api/pricing`                     | `src/routes/pricing.ts`          | 自定义模型单价规则           |
-| `/api/admin`                       | `src/routes/admin.ts`            | 用户、邀请和审计             |
 | `/api/bug-report`                  | `src/routes/bug-report.ts`       | 脱敏问题报告                 |
 | `/api/browse`                      | `src/routes/browse.ts`           | Host 目录选择                |
 | `/api`                             | `src/routes/monitor.ts`          | 健康、状态和 Docker 构建     |
@@ -43,8 +42,6 @@ Public：
 - `GET /api/auth/status`
 - `POST /api/auth/setup`，仅用户表为空时可用
 - `POST /api/auth/login`
-- `GET /api/auth/register/status`
-- `POST /api/auth/register`
 - `GET /api/auth/avatars/:filename`
 
 登录后：
@@ -303,7 +300,6 @@ Provider：
   active admin 拥有的工作区和定时任务持久迁移为 Host；普通成员数据不变
 - `GET /api/config/external-resources`
 - `GET /api/config/external-resources/rule`
-- `GET|PUT /api/config/registration`
 - `GET|PUT /api/config/appearance`
 - `GET /api/config/appearance/public`，Public
 - `POST|DELETE /api/config/appearance/avatar`
@@ -511,19 +507,7 @@ Web 和 Runtime 不再把它们当作第二个可写真相源。
 自定义兜底 → 内置 Sonnet 兜底。规则变更即时生效（缓存显式失效），只影响新事件，
 历史用量行金额不回算。
 
-## 管理、监控与问题报告
-
-管理：
-
-- `GET|POST /api/admin/users`
-- `PATCH|DELETE /api/admin/users/:id`
-- `POST /api/admin/users/:id/restore`
-- `DELETE /api/admin/users/:id/sessions`
-- `GET /api/admin/permission-templates`
-- `GET|POST /api/admin/invites`
-- `DELETE /api/admin/invites/:code`
-- `GET /api/admin/audit-log`
-- `GET /api/admin/audit-log/export`
+## 监控与问题报告
 
 监控：
 

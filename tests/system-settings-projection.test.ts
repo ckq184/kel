@@ -20,7 +20,9 @@ describe('system settings API projection', () => {
       uiType.indexOf('export interface HostIntegrationSettings'),
     );
     const uiKeys = [...block.matchAll(/^\s{2}(\w+):/gm)].map((m) => m[1]);
-    expect(uiKeys.length).toBeGreaterThan(5);
+    // THESIS-10 D-D2 ② 删掉两项登录限流 UI 字段后剩 5 项；仍保留下界，
+    // 防止解析失败时零字段静默通过。
+    expect(uiKeys.length).toBeGreaterThan(4);
 
     const configRoute = read('src/routes/config.ts');
     for (const key of uiKeys) {
