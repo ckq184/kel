@@ -1,14 +1,5 @@
 {
-  "task": "issue24-provider-multi-custom-headers - 供应商表单配置多个自定义请求头（docs/issue24-provider-multi-custom-headers-plan.md）；用户拍板：方案②专用请求头行编辑器、明文沿用现状、迁入并拦截、不改引导页、同runner规则校验、重名拒绝、坏行放进一行让用户修、仅第三方供应商显示",
-  "base": "e6c62ec",
-  "allow": [
-    ".gatescope.json",
-    "docs/issue24-provider-multi-custom-headers-plan.md",
-    "docs/issues/ISSUE-24-provider-multi-custom-headers.md",
-    "docs/issues/README.md",
-    "web/src/utils/custom-headers.ts",
-    "web/src/utils/custom-env.ts",
-    "web/src/components/settings/ProviderEditor.tsx",
-    "tests/**"
-  ]
+  "task": "thesis-trim-review - 毕设裁减方案审核与任务池拆分（docs/issues2/）：方案升v0.8修正漂移、审核报告、README索引与并行矩阵、THESIS-01至15；只改文档不改代码",
+  "base": "d6e04aa",
+  "allow": [".gatescope.json", "docs/issues2/**"]
 }
