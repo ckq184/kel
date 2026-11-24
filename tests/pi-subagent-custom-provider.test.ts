@@ -96,20 +96,15 @@ describe('ISSUE-22 T1 custom endpoint narrows subagent model availability', () =
     expect(resolution.custom).toBe(true);
   });
 
-  test('official endpoint keeps the built-in Anthropic catalog available (Explore uses haiku)', async () => {
+  test('official endpoints are rejected instead of exposing the built-in catalog (D-2 ②)', async () => {
     const runtime = await createModelRuntime();
-    const resolution = await resolvePiProvider(runtime, {
-      model: 'claude-sonnet-4-5',
-      endpointKind: 'official',
-    });
-    await runtime.getAvailable();
-    const registry = new ModelRegistry(runtime);
 
-    const explore = resolveModel(EXPLORE_MODEL, registry);
-    expect(typeof explore).not.toBe('string');
-    expect(explore.provider).toBe('anthropic');
-    expect(explore.id).toMatch(/haiku-4-5/);
-    expect(resolution.custom).toBe(false);
+    await expect(
+      resolvePiProvider(runtime, {
+        model: 'claude-sonnet-4-5',
+        endpointKind: 'official',
+      }),
+    ).rejects.toThrow(/no longer supported/i);
   });
 });
 

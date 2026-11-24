@@ -6,12 +6,46 @@ export const CKQCLAW_CONTEXT_WINDOW_ENV = 'CKQCLAW_CONTEXT_WINDOW';
 
 export type ClaudeEndpointKind = 'official' | 'custom';
 
+/**
+ * D-2 ② (THESIS-04): the runner startup pre-flight and the Pi resolver must
+ * report the same configuration errors, so the policy and messages live here
+ * and are shared by both layers.
+ */
+export const OFFICIAL_ENDPOINT_UNSUPPORTED_MESSAGE =
+  'Official Anthropic endpoints are no longer supported. Configure a third-party Anthropic-compatible provider with ANTHROPIC_BASE_URL.';
+export const BASE_URL_REQUIRED_MESSAGE =
+  'A third-party Anthropic-compatible provider requires ANTHROPIC_BASE_URL.';
+export const MODEL_REQUIRED_MESSAGE =
+  'ANTHROPIC_MODEL is required for a third-party Anthropic-compatible provider.';
+
+/**
+ * Resolve the readable configuration error for an endpoint marker and base
+ * URL. An explicit `official` marker wins over an inherited stale base URL.
+ */
+export function resolveProviderConfigError(
+  marker: string | undefined,
+  baseUrl: string | undefined,
+): string | null {
+  // Accept raw marker values too: the startup resolver normalizes before
+  // calling, but future callers may hand over the environment unchanged.
+  if (marker?.trim().toLowerCase() === 'official') {
+    return OFFICIAL_ENDPOINT_UNSUPPORTED_MESSAGE;
+  }
+  return baseUrl?.trim() ? null : BASE_URL_REQUIRED_MESSAGE;
+}
+
 export interface ClaudeProviderRuntime {
   endpointKind: ClaudeEndpointKind;
   model: string;
   queryModelOptions: { model?: string };
   usageModelKey: string;
   missingRequiredModel: boolean;
+  /**
+   * D-2 ② (THESIS-04): readable configuration error when the runtime has no
+   * usable third-party endpoint. Official markers and a missing base URL are
+   * no longer silently downgraded; the entrypoint reports this before running.
+   */
+  providerError: string | null;
   /**
    * Host-normalized context-window declaration (任务AL), or undefined when the
    * host never injected one — the runner then falls back to the [1m] heuristic
@@ -37,6 +71,8 @@ function parseDeclaredContextWindow(
  *
  * New hosts inject an authoritative endpoint-kind marker. Falling back to
  * ANTHROPIC_BASE_URL keeps the runner compatible with older hosts and images.
+ * D-2 ② (THESIS-04): an official marker or a missing base URL is reported as a
+ * configuration error instead of being mapped onto the retired official path.
  */
 export function resolveClaudeProviderRuntime(
   env: Readonly<Record<string, string | undefined>>,
@@ -47,12 +83,12 @@ export function resolveClaudeProviderRuntime(
   )
     ?.trim()
     .toLowerCase();
+  const baseUrl = env.ANTHROPIC_BASE_URL?.trim() ?? '';
   const endpointKind: ClaudeEndpointKind =
-    marker === 'official' || marker === 'custom'
-      ? marker
-      : env.ANTHROPIC_BASE_URL?.trim()
-        ? 'custom'
-        : 'official';
+    marker === 'custom' || (marker !== 'official' && !!baseUrl)
+      ? 'custom'
+      : 'official';
+  const providerError = resolveProviderConfigError(marker, baseUrl);
 
   return {
     endpointKind,
@@ -60,6 +96,7 @@ export function resolveClaudeProviderRuntime(
     queryModelOptions: model ? { model: stripOneMillionSuffix(model) } : {},
     usageModelKey: model || 'default',
     missingRequiredModel: endpointKind === 'custom' && !model,
+    providerError,
     declaredContextWindow: parseDeclaredContextWindow(env),
   };
 }

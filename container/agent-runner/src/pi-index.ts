@@ -34,7 +34,10 @@ import { loadWorkspaceMemoryTurnContext } from './workspace-memory-context.js';
 import { buildCkqclawPromptPlan } from './prompt-plan.js';
 import { resolveContextWindowOverride } from './context-window.js';
 import { resolveAgentThinkingLevel } from './pi-settings.js';
-import { resolveClaudeProviderRuntime } from './provider-runtime.js';
+import {
+  MODEL_REQUIRED_MESSAGE,
+  resolveClaudeProviderRuntime,
+} from './provider-runtime.js';
 import { resolveAgentRuntimeKind } from './runtime-config.js';
 import { adaptClaudeMcpToolsToPi } from './runtime/pi/pi-tools.js';
 import { parseCustomHeaders } from './runtime/pi/pi-provider.js';
@@ -365,12 +368,12 @@ async function runTurn(
         endpointKind: provider.endpointKind,
         baseUrl: process.env.ANTHROPIC_BASE_URL,
         apiKey: process.env.ANTHROPIC_API_KEY,
-        // Bearer token stays out of setRuntimeApiKey (ISSUE-04 ⑥): Pi's env
-        // discovery turns it into Authorization: Bearer, which is the only
-        // shape official Anthropic OAuth tokens authenticate with.
+        // Bearer token (ISSUE-04 ⑥) is folded into the registered
+        // third-party key by resolvePiProvider (D-2 ②: official endpoints
+        // are retired; there is no stored-anthropic-key path anymore).
         authToken: process.env.ANTHROPIC_AUTH_TOKEN,
-        // ISSUE-04 ①: host-declared window overrides the Pi model definition;
-        // undefined keeps the catalog/registration value.
+        // ISSUE-04 ①: host-declared window is written into the registered
+        // third-party model definition; undefined keeps its 200k default.
         contextWindow: resolveContextWindowOverride(
           provider.model,
           provider.declaredContextWindow,
@@ -479,12 +482,22 @@ async function main(): Promise<void> {
     );
   }
   const provider = resolveClaudeProviderRuntime(process.env);
+  // D-2 ② (THESIS-04): official endpoints and missing base URLs are
+  // configuration errors, reported before any session or provider work starts.
+  if (provider.providerError) {
+    writeOutput({
+      status: 'error',
+      result: null,
+      error: provider.providerError,
+    });
+    process.exitCode = 1;
+    return;
+  }
   if (provider.missingRequiredModel) {
     writeOutput({
       status: 'error',
       result: null,
-      error:
-        'ANTHROPIC_MODEL is required for a custom Anthropic-compatible provider.',
+      error: MODEL_REQUIRED_MESSAGE,
     });
     process.exitCode = 1;
     return;

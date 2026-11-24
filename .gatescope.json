@@ -1,18 +1,18 @@
 {
-  "task": "THESIS-03 - 供应商界面只剩第三方：删除供应商编辑器与引导页的官方模式、OAuth 流程、订阅用量条与官方凭据类型，前端类型收窄为 third_party",
+  "task": "THESIS-04 供应商（三）：Runner 与环境变量回退只剩第三方路径（D-2 ②：宿主强制 Base URL，runner 遇 official 报错）",
   "base": "17113e9",
   "allow": [
     ".gatescope.json",
-    "docs/issues2/THESIS-03-provider-ui.md",
+    "CLAUDE.md",
+    "docs/issues2/THESIS-04-provider-runtime.md",
     "docs/issues2/README.md",
-    "docs/thesis-03-provider-ui-plan.md",
+    "docs/thesis-04-provider-runtime-plan.md",
     "docs/审查记录.md",
-    "web/src/components/settings/ProviderEditor.tsx",
-    "web/src/pages/SetupProvidersPage.tsx",
-    "web/src/components/settings/UsageBars.tsx",
-    "web/src/components/settings/ProviderList.tsx",
-    "web/src/components/settings/types.ts",
-    "web/src/types.ts",
+    "container/agent-runner/src/provider-runtime.ts",
+    "container/agent-runner/src/runtime/pi/pi-provider.ts",
+    "container/agent-runner/src/runtime/types.ts",
+    "container/agent-runner/src/pi-index.ts",
+    "src/runtime-config.ts",
     "tests/**"
   ]
 }

@@ -140,17 +140,15 @@ export type RuntimeSessionOptions = {
     baseUrl?: string;
     apiKey?: string;
     /**
-     * Bearer-style token (`ANTHROPIC_AUTH_TOKEN`, ISSUE-04 ⑥). For official
-     * endpoints this is deliberately NOT forwarded through setRuntimeApiKey:
-     * it stays in the process env so Pi's own resolution sends
-     * `Authorization: Bearer`. Custom registrations keep folding it into the
-     * registered api key, preserving third-party proxy behavior.
+     * Bearer-style token (`ANTHROPIC_AUTH_TOKEN`, ISSUE-04 ⑥). D-2 ②
+     * (THESIS-04): official endpoints are retired, so the resolver always
+     * folds this into the registered third-party api key.
      */
     authToken?: string;
     /**
-     * Host-declared context-window override (ISSUE-04 ①). Applied as a
-     * shallow-copy override on the resolved model; undefined keeps the Pi
-     * catalog/registration value.
+     * Host-declared context-window override (ISSUE-04 ①). Written into the
+     * registered third-party model definition; undefined keeps the 200k
+     * registration default.
      */
     contextWindow?: number;
     /**

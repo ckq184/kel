@@ -5,14 +5,15 @@ import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { ModelRuntime } from '@earendil-works/pi-coding-agent';
 
 import { resolveAgentThinkingLevel } from '../container/agent-runner/src/pi-settings.js';
+import { resolveClaudeProviderRuntime } from '../container/agent-runner/src/provider-runtime.js';
 import { resolvePiProvider } from '../container/agent-runner/src/runtime/pi/pi-provider.js';
 
 /**
  * ISSUE-04 contract tests: the six host settings now have real Pi consumers.
  * ① context window declaration → Pi model contextWindow;
- * ③ effort → Pi thinkingLevel; ⑥ OAuth bearer tokens reach Pi via
- * ANTHROPIC_AUTH_TOKEN env discovery instead of being downgraded to
- * X-Api-Key via setRuntimeApiKey.
+ * ③ effort → Pi thinkingLevel; ⑥ third-party bearer tokens are folded into
+ * the registered api key (setRuntimeApiKey is gone with the official path,
+ * D-2 ② / THESIS-04).
  *
  * The provider scenarios drive the real ModelRuntime on temp auth/models
  * stores, exactly like the production adapter does. All tokens are fake
@@ -79,66 +80,72 @@ describe('ISSUE-04 ① context window declaration reaches Pi', () => {
     expect(resolution.model.contextWindow).toBe(200_000);
   });
 
-  test('official model with a declaration gets a shallow-copy override', async () => {
+  test('official endpoints are rejected before model resolution (D-2 ②)', async () => {
     const modelRuntime = await createModelRuntime();
-    const catalogModel = modelRuntime.getModel('anthropic', 'claude-haiku-4-5');
-    expect(catalogModel?.contextWindow).toBe(200_000);
 
-    const resolution = await resolvePiProvider(modelRuntime, {
-      model: 'claude-haiku-4-5',
-      endpointKind: 'official',
-      contextWindow: 512_000,
-    });
-
-    expect(resolution.model.contextWindow).toBe(512_000);
-    // 覆盖必须落在浅拷贝上：共享目录对象不得被原地修改
-    expect(resolution.model).not.toBe(catalogModel);
-    expect(catalogModel?.contextWindow).toBe(200_000);
-    expect(modelRuntime.getModel('anthropic', 'claude-haiku-4-5')).toBe(
-      catalogModel,
-    );
+    await expect(
+      resolvePiProvider(modelRuntime, {
+        model: 'claude-haiku-4-5',
+        endpointKind: 'official',
+        contextWindow: 512_000,
+      }),
+    ).rejects.toThrow(/no longer supported/i);
   });
 
-  test('official model without a declaration keeps the catalog window', async () => {
+  test('custom endpoints without a base URL are rejected (D-2 ②)', async () => {
     const modelRuntime = await createModelRuntime();
-    const resolution = await resolvePiProvider(modelRuntime, {
-      model: 'claude-haiku-4-5',
-      endpointKind: 'official',
+
+    await expect(
+      resolvePiProvider(modelRuntime, {
+        model: 'glm-5.2',
+        endpointKind: 'custom',
+      }),
+    ).rejects.toThrow(/ANTHROPIC_BASE_URL/);
+  });
+
+  test('pre-flight and resolver report the same configuration error (D-2 ②)', async () => {
+    const modelRuntime = await createModelRuntime();
+    const officialEnv = resolveClaudeProviderRuntime({
+      CKQCLAW_CLAUDE_ENDPOINT_KIND: 'official',
+      ANTHROPIC_MODEL: 'glm-5.2',
+    });
+    const missingBaseEnv = resolveClaudeProviderRuntime({
+      CKQCLAW_CLAUDE_ENDPOINT_KIND: 'custom',
+      ANTHROPIC_MODEL: 'glm-5.2',
     });
 
-    expect(resolution.model.contextWindow).toBe(200_000);
+    expect(officialEnv.providerError).not.toBeNull();
+    expect(missingBaseEnv.providerError).not.toBeNull();
+    // Exact message equality, not substring matching: both layers must share
+    // the single message source.
+    const officialError = await resolvePiProvider(modelRuntime, {
+      model: 'glm-5.2',
+      endpointKind: 'official',
+    }).catch((error: unknown) => error);
+    const missingBaseError = await resolvePiProvider(modelRuntime, {
+      model: 'glm-5.2',
+      endpointKind: 'custom',
+    }).catch((error: unknown) => error);
+    expect((officialError as Error).message).toBe(officialEnv.providerError);
+    expect((missingBaseError as Error).message).toBe(
+      missingBaseEnv.providerError,
+    );
   });
 });
 
 describe('ISSUE-04 ⑥ credential routing (bearer vs api key)', () => {
-  test('explicit api key is stored via setRuntimeApiKey', async () => {
+  test('official rejection never writes a runtime api key', async () => {
     const modelRuntime = await createModelRuntime();
-    await resolvePiProvider(modelRuntime, {
-      model: 'claude-haiku-4-5',
-      endpointKind: 'official',
-      apiKey: 'fake-api-key-1',
-    });
 
-    const auth = await modelRuntime.getAuth('anthropic');
-    expect(auth?.auth).toMatchObject({ apiKey: 'fake-api-key-1' });
-    expect(auth?.source).toBe('stored credential');
-  });
+    await expect(
+      resolvePiProvider(modelRuntime, {
+        model: 'claude-haiku-4-5',
+        endpointKind: 'official',
+        apiKey: 'fake-api-key-1',
+      }),
+    ).rejects.toThrow(/no longer supported/i);
 
-  test('bearer token stays in env discovery and never becomes a stored api key', async () => {
-    const modelRuntime = await createModelRuntime();
-    process.env.ANTHROPIC_AUTH_TOKEN = 'fake-bearer-2';
-    await resolvePiProvider(modelRuntime, {
-      model: 'claude-haiku-4-5',
-      endpointKind: 'official',
-      authToken: 'fake-bearer-2',
-    });
-
-    // 不落 stored credential：env 发现路径产出 Authorization: Bearer
-    const auth = await modelRuntime.getAuth('anthropic');
-    expect(auth?.auth).toMatchObject({
-      headers: { Authorization: 'Bearer fake-bearer-2' },
-    });
-    expect(auth?.source).toBe('ANTHROPIC_AUTH_TOKEN');
+    expect(await modelRuntime.getAuth('anthropic')).toBeUndefined();
   });
 
   test('custom endpoint keeps folding the bearer token into the registered key', async () => {
@@ -153,6 +160,20 @@ describe('ISSUE-04 ⑥ credential routing (bearer vs api key)', () => {
     // 现状保留：custom 注册折入 apiKey（Bearer 代理语义不在本任务改动面）
     const auth = await modelRuntime.getAuth('ckqclaw-anthropic');
     expect(auth?.auth).toMatchObject({ apiKey: 'fake-bearer-3' });
+  });
+
+  test('an explicit api key wins over the bearer token in the registered key', async () => {
+    const modelRuntime = await createModelRuntime();
+    await resolvePiProvider(modelRuntime, {
+      model: 'glm-5.2',
+      endpointKind: 'custom',
+      baseUrl: 'https://proxy.test',
+      apiKey: 'fake-api-key-priority',
+      authToken: 'fake-bearer-lower-priority',
+    });
+
+    const auth = await modelRuntime.getAuth('ckqclaw-anthropic');
+    expect(auth?.auth).toMatchObject({ apiKey: 'fake-api-key-priority' });
   });
 });
 

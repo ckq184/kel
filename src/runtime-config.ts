@@ -107,7 +107,7 @@ const INHERITED_CLAUDE_PROVIDER_ENV_KEYS = [
 /**
  * Remove provider-owned values inherited from the CKQClaw parent process.
  * The selected provider is reapplied afterwards from buildContainerEnvLines().
- * Without this reset, switching to an official provider in host mode can retain
+ * Without this reset, switching third-party providers in host mode can retain
  * a previous ANTHROPIC_BASE_URL/model/token and silently use the wrong endpoint.
  */
 export function clearInheritedClaudeProviderEnv(
@@ -1679,11 +1679,19 @@ export function resolveProviderById(providerId: string): {
 }
 
 function defaultsFromEnv(): ClaudeProviderConfig {
+  // D-2 ② (THESIS-04): environment variables only form a provider when a
+  // third-party base URL is present. Official-only credentials
+  // (CLAUDE_CODE_OAUTH_TOKEN, or ANTHROPIC_API_KEY without a base URL) no
+  // longer imply an endpoint.
+  const baseUrl = process.env.ANTHROPIC_BASE_URL || '';
+  const hasBaseUrl = !!baseUrl.trim();
   const raw = {
-    anthropicBaseUrl: process.env.ANTHROPIC_BASE_URL || '',
-    anthropicAuthToken: process.env.ANTHROPIC_AUTH_TOKEN || '',
-    anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
-    claudeCodeOauthToken: process.env.CLAUDE_CODE_OAUTH_TOKEN || '',
+    anthropicBaseUrl: baseUrl,
+    anthropicAuthToken: hasBaseUrl
+      ? process.env.ANTHROPIC_AUTH_TOKEN || ''
+      : '',
+    anthropicApiKey: hasBaseUrl ? process.env.ANTHROPIC_API_KEY || '' : '',
+    claudeCodeOauthToken: '',
     claudeOAuthCredentials: null,
     anthropicModel: process.env.ANTHROPIC_MODEL || '',
   };
@@ -1695,7 +1703,7 @@ function defaultsFromEnv(): ClaudeProviderConfig {
       anthropicBaseUrl: '',
       anthropicAuthToken: raw.anthropicAuthToken.trim(),
       anthropicApiKey: raw.anthropicApiKey.trim(),
-      claudeCodeOauthToken: raw.claudeCodeOauthToken.trim(),
+      claudeCodeOauthToken: '',
       claudeOAuthCredentials: null,
       anthropicModel: raw.anthropicModel.trim(),
       updatedAt: null,
@@ -2260,8 +2268,11 @@ export function buildContainerEnvLines(
   profileCustomEnv?: Record<string, string>,
 ): string[] {
   const merged = mergeClaudeEnvConfig(global, override);
+  // D-2 ② (THESIS-04): only a third-party base URL yields a valid endpoint
+  // marker. Without one the runner reports a configuration error instead of
+  // falling back to the retired official path.
   const lines = [
-    `${CLAUDE_ENDPOINT_KIND_ENV}=${merged.anthropicBaseUrl ? 'custom' : 'official'}`,
+    ...(merged.anthropicBaseUrl ? [`${CLAUDE_ENDPOINT_KIND_ENV}=custom`] : []),
     ...buildClaudeEnvLines(merged, profileCustomEnv),
   ];
 
