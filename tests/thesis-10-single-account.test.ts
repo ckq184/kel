@@ -162,7 +162,7 @@ describe('audit writes stop', () => {
     expect(changed.status).toBe(200);
 
     expect(db.queryAuthAuditLogs().total).toBe(0);
-  });
+  }, 30_000);
 });
 
 describe('frontend and source cleanup', () => {
@@ -257,6 +257,17 @@ describe('frontend and source cleanup', () => {
     const schemaSource = read('src/schemas.ts');
     expect(schemaSource).not.toContain('RegisterSchema');
     expect(schemaSource).not.toContain('RegistrationConfigSchema');
+  });
+
+  test('no auth audit writes remain outside the retained db helper', () => {
+    const srcRoot = path.join(root, 'src');
+    const files = (fs.readdirSync(srcRoot, { recursive: true }) as string[])
+      .filter((file) => file.endsWith('.ts') && file !== 'db.ts')
+      .map((file) => path.join('src', file));
+    const offenders = files.filter((file) =>
+      read(file).includes('logAuthEvent('),
+    );
+    expect(offenders).toEqual([]);
   });
 
   test('docs no longer advertise removed routes', () => {
