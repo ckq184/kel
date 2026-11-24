@@ -102,16 +102,16 @@ function buildSetupStatus() {
   // Check ALL enabled providers, not just the first one.
   // V3→V4 migration can produce empty providers that sort before real ones,
   // causing getClaudeProviderConfig() (first-match) to return an unconfigured provider.
+  // THESIS-02：接口封口后只认第三方配置——有 Base URL，且有 Auth Token
+  // 或 API Key（anthropicApiKey 是 runner 第三方分支的共用密钥，不是
+  // 官方专用）。官方两个字段不再算作已配置。
   const providers = getEnabledProviders();
   const claudeConfigured = providers.some((p) => {
-    const hasOfficial =
-      !!p.claudeCodeOauthToken?.trim() ||
-      !!p.claudeOAuthCredentials ||
-      !!p.anthropicApiKey?.trim();
-    const hasThirdParty = !!(
-      p.anthropicBaseUrl?.trim() && p.anthropicAuthToken?.trim()
+    const hasBaseUrl = !!p.anthropicBaseUrl?.trim();
+    const hasCredential = !!(
+      p.anthropicAuthToken?.trim() || p.anthropicApiKey?.trim()
     );
-    return hasOfficial || hasThirdParty;
+    return hasBaseUrl && hasCredential;
   });
   const { source: feishuSource } = getFeishuProviderConfigWithSource();
   const feishuConfigured = feishuSource !== 'none';

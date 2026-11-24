@@ -287,13 +287,14 @@ Provider：
 - `POST /api/config/claude/providers/:id/toggle`
 - `POST /api/config/claude/providers/:id/reset-health`
 - `GET /api/config/claude/providers/health`
-- `GET /api/config/claude/providers/:id/usage`
 - `PUT /api/config/claude/balancing`
 - `PUT /api/config/claude/default`，设置所有继承型 Agent 使用的默认模型配置；
   切换会停稳受影响 Runner，停稳失败返回 503 并携带 `persisted` 标记
 - `POST /api/config/claude/apply`
-- `POST /api/config/claude/oauth/start`
-- `POST /api/config/claude/oauth/callback`
+
+供应商只接受第三方端点（Anthropic Messages 协议兼容）；创建请求的 `type`
+固定为 `third_party`，官方 Claude 型与 OAuth 流程已下线。密钥端点只接受
+`anthropicAuthToken` 与 `anthropicApiKey`，不再接受官方凭据字段。
 
 系统：
 

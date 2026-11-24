@@ -778,14 +778,6 @@ export const InviteCreateSchema = z.object({
   expires_in_hours: z.number().int().min(1).max(8760).optional(),
 });
 
-const ClaudeOAuthCredentialsSchema = z.object({
-  accessToken: z.string().min(1),
-  refreshToken: z.string().min(1),
-  expiresAt: z.number(),
-  scopes: z.array(z.string()).default([]),
-  subscriptionType: z.string().optional(),
-});
-
 // 飞书/Lark 官方 appId 形如 `cli_xxxxxxxxxxxxxxxx`(cli_ 前缀 + 小写字母数字)。
 // 历史上有用户把用户名 / 手机号 / 邮箱前缀填进去,后端不校验直接存,飞书 SDK 拿这串
 // 错误的 appId 反复重试拿 token,导致日志被 axios error dump 灌爆(实测 ~2.5G/天)。
@@ -900,7 +892,9 @@ const ProviderBaseUrlSchema = z
 export const UnifiedProviderCreateSchema = z
   .object({
     name: z.string().min(1).max(64),
-    type: z.enum(['official', 'third_party']),
+    // THESIS-02：接口封口，只接受第三方端点；官方型由存储层兼容读取
+    // （D-4 ①），不再经由 API 创建。
+    type: z.literal('third_party'),
     anthropicBaseUrl: ProviderBaseUrlSchema.optional(),
     anthropicAuthToken: z.string().max(2000).optional(),
     anthropicModel: z.string().max(128).optional(),
@@ -913,32 +907,23 @@ export const UnifiedProviderCreateSchema = z
         z.literal(1_000_000),
       ])
       .optional(),
+    // anthropicApiKey 是共用字段：runner 第三方分支以 apiKey || authToken
+    // 注册（pi-provider.ts:180），不是官方专用。
     anthropicApiKey: z.string().max(2000).optional(),
-    claudeCodeOauthToken: z.string().max(2000).optional(),
-    claudeOAuthCredentials: ClaudeOAuthCredentialsSchema.optional(),
     customEnv: z.record(z.string().max(256), z.string().max(4096)).optional(),
     weight: z.number().int().min(1).max(100).optional(),
     enabled: z.boolean().optional(),
   })
   .superRefine((data, ctx) => {
-    if (
-      data.type === 'third_party' &&
-      !data.anthropicBaseUrl?.trim() &&
-      !data.anthropicAuthToken?.trim()
-    ) {
+    if (!data.anthropicBaseUrl?.trim() && !data.anthropicAuthToken?.trim()) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['anthropicBaseUrl'],
         message: '第三方供应商需要提供 Base URL 或 Auth Token',
       });
     }
-    // third_party 供应商没有官方端点可回退，Auth Token 必须指向自建的
-    // Base URL；official + token-only（官方 Bearer 场景）为有意语义，放行。
-    if (
-      data.type === 'third_party' &&
-      !!data.anthropicAuthToken?.trim() &&
-      !data.anthropicBaseUrl?.trim()
-    ) {
+    // 第三方供应商没有官方端点可回退，Auth Token 必须指向自建的 Base URL。
+    if (!!data.anthropicAuthToken?.trim() && !data.anthropicBaseUrl?.trim()) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['anthropicBaseUrl'],
@@ -981,10 +966,6 @@ export const UnifiedProviderSecretsSchema = z
     clearAnthropicAuthToken: z.boolean().optional(),
     anthropicApiKey: z.string().max(2000).optional(),
     clearAnthropicApiKey: z.boolean().optional(),
-    claudeCodeOauthToken: z.string().max(2000).optional(),
-    clearClaudeCodeOauthToken: z.boolean().optional(),
-    claudeOAuthCredentials: ClaudeOAuthCredentialsSchema.optional(),
-    clearClaudeOAuthCredentials: z.boolean().optional(),
   })
   .refine(
     (data) => {
@@ -992,11 +973,7 @@ export const UnifiedProviderSecretsSchema = z
         typeof data.anthropicAuthToken === 'string' ||
         data.clearAnthropicAuthToken === true ||
         typeof data.anthropicApiKey === 'string' ||
-        data.clearAnthropicApiKey === true ||
-        typeof data.claudeCodeOauthToken === 'string' ||
-        data.clearClaudeCodeOauthToken === true ||
-        data.claudeOAuthCredentials !== undefined ||
-        data.clearClaudeOAuthCredentials === true
+        data.clearAnthropicApiKey === true
       );
     },
     { message: 'At least one secret field must be provided' },

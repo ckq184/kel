@@ -1,5 +1,19 @@
 {
-  "task": "thesis-trim-review - 毕设裁减方案审核与任务池拆分（docs/issues2/）：方案升v0.8修正漂移、审核报告、README索引与并行矩阵、THESIS-01至15；只改文档不改代码",
-  "base": "d6e04aa",
-  "allow": [".gatescope.json", "docs/issues2/**"]
+  "task": "thesis-02-provider-api-seal - 供应商接口封口：type 只接受 third_party、官方凭据输入摘除、OAuth 与订阅用量路由下线、三处已配置判断改第三方口径",
+  "base": "11eeeae",
+  "allow": [
+    ".gatescope.json",
+    "docs/issues2/THESIS-02-provider-api-seal.md",
+    "docs/issues2/README.md",
+    "docs/thesis-02-provider-api-seal-plan.md",
+    "docs/API.md",
+    "docs/ACL-MATRIX.md",
+    "docs/审查记录.md",
+    "src/schemas.ts",
+    "src/routes/config.ts",
+    "src/routes/auth.ts",
+    "src/routes/bug-report.ts",
+    "src/agent-profile-generator.ts",
+    "tests/**"
+  ]
 }

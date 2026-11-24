@@ -33,8 +33,26 @@ const KNOWN_GAPS: Array<{
   issue: string;
   gap: 'no-route' | 'no-caller-no-doc';
 }> = [
-  // 当前无条目。历史条目：paired-chats PUT（no-route，ISSUE-06 第 3 项）已随
-  // ISSUE-06 落地（rename 消费端下线）删除。新增时必须注明 issue 号。
+  // THESIS-02 删除后端 OAuth/订阅用量路由；Web 调用方按计划留给 THESIS-03
+  // （界面只剩第三方表单时一并删除）。THESIS-03 完成后删除这三条。
+  {
+    method: 'post',
+    path: '/api/config/claude/oauth/start',
+    issue: 'THESIS-03',
+    gap: 'no-route',
+  },
+  {
+    method: 'post',
+    path: '/api/config/claude/oauth/callback',
+    issue: 'THESIS-03',
+    gap: 'no-route',
+  },
+  {
+    method: 'get',
+    path: '/api/config/claude/providers/${providerId}/usage',
+    issue: 'THESIS-03',
+    gap: 'no-route',
+  },
 ];
 
 interface RouteEntry {

@@ -1,6 +1,5 @@
 // Configuration management routes
 
-import { randomBytes, createHash } from 'node:crypto';
 import { zodBadRequest } from '../validation-response.js';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -64,7 +63,6 @@ import {
   updateProviderSecrets,
   setProviderEnabled,
   deleteProvider,
-  providerToConfig,
   toPublicProvider,
   getRegistrationConfig,
   saveRegistrationConfig,
@@ -74,14 +72,7 @@ import {
   getEffectiveExternalDir,
   getContainerEnvConfig,
   saveSystemSettings,
-  updateAllSessionCredentials,
 } from '../runtime-config.js';
-import type {
-  ClaudeOAuthCredentials,
-  CachedOAuthUsage,
-  OAuthUsageResponse,
-} from '../runtime-config.js';
-import { parseOAuthUsageBucket } from '../runtime-config.js';
 import type { AudienceMode, AuthUser, RegisteredGroup } from '../types.js';
 import { logger } from '../logger.js';
 import {
@@ -304,32 +295,6 @@ interface ClaudeMutationResult<T> {
   applied: ClaudeApplyResultPayload;
 }
 
-class ClaudeConfigPersistedError<T> extends Error {
-  constructor(
-    public readonly persistedValue: T,
-    public readonly cause: unknown,
-  ) {
-    super(
-      cause instanceof Error
-        ? cause.message
-        : 'Provider configuration was persisted but a follow-up action failed',
-    );
-    this.name = 'ClaudeConfigPersistedError';
-  }
-}
-
-function runAfterProviderPersistence<T>(
-  persistedValue: T,
-  followUp: () => void,
-): T {
-  try {
-    followUp();
-    return persistedValue;
-  } catch (error) {
-    throw new ClaudeConfigPersistedError(persistedValue, error);
-  }
-}
-
 function appendClaudeConfigAuditBestEffort(
   actor: string,
   action: string,
@@ -481,7 +446,6 @@ async function mutateClaudeConfigForAllGroups<T>(
 
   const targets = getClaudeRuntimeTargets();
   const reason = String(metadata?.trigger ?? 'claude_config_apply');
-  const knownRuntimeJids = getKnownClaudeRuntimeJids();
   try {
     const result = await quiesceWorkspaceRunnersAroundCommit(
       deps,
@@ -521,27 +485,16 @@ async function mutateClaudeConfigForAllGroups<T>(
       async () => {
         let value: T;
         let clearedSessionsCount: number | undefined;
-        try {
-          if (options?.clearSessionsForProviderId) {
-            const committed = commitProviderConfigWithSessionInvalidation(
-              options.clearSessionsForProviderId,
-              options.sessionInvalidation,
-              commit,
-            );
-            value = committed.value;
-            clearedSessionsCount = committed.clearedSessionsCount;
-          } else {
-            value = commit();
-          }
-        } catch (error) {
-          if (error instanceof ClaudeConfigPersistedError) {
-            deps.queue.blockGroupsForRuntimeSafety?.(
-              knownRuntimeJids,
-              `${reason}: provider config persisted but follow-up failed`,
-              PROVIDER_RUNTIME_SAFETY_SOURCE,
-            );
-          }
-          throw error;
+        if (options?.clearSessionsForProviderId) {
+          const committed = commitProviderConfigWithSessionInvalidation(
+            options.clearSessionsForProviderId,
+            options.sessionInvalidation,
+            commit,
+          );
+          value = committed.value;
+          clearedSessionsCount = committed.clearedSessionsCount;
+        } else {
+          value = commit();
         }
         return { value, clearedSessionsCount };
       },
@@ -580,24 +533,6 @@ async function mutateClaudeConfigForAllGroups<T>(
     );
     return { value: result.value.value, applied };
   } catch (err) {
-    if (err instanceof ClaudeConfigPersistedError) {
-      const applied: ClaudeApplyResultPayload = {
-        success: false,
-        stoppedCount: 0,
-        failedCount: 1,
-        persisted: true,
-        phase: 'post_commit',
-        error:
-          'Configuration was saved, but provider runtime cleanup did not complete safely',
-      };
-      appendClaudeConfigAuditBestEffort(
-        actor,
-        'apply_to_all_flows',
-        ['queue.stopGroup'],
-        { ...applied, ...(metadata || {}) },
-      );
-      return { value: err.persistedValue as T, applied };
-    }
     if (!(err instanceof WorkspaceRuntimeQuiesceError)) throw err;
     const committed = err.committedValue as
       | { value: T; clearedSessionsCount?: number }
@@ -638,107 +573,6 @@ async function applyClaudeConfigToAllGroups(
     options,
   );
   return result.applied;
-}
-
-// --- OAuth 常量 ---
-
-const OAUTH_CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
-const OAUTH_REDIRECT_URI = 'https://console.anthropic.com/oauth/code/callback';
-const OAUTH_SCOPES = 'org:create_api_key user:profile user:inference';
-const OAUTH_AUTHORIZE_URL = 'https://claude.ai/oauth/authorize';
-const OAUTH_TOKEN_URL = 'https://api.anthropic.com/v1/oauth/token';
-const OAUTH_FLOW_TTL = 10 * 60 * 1000; // 10 minutes
-
-interface OAuthFlow {
-  codeVerifier: string;
-  expiresAt: number;
-  targetProviderId?: string; // 空 = 创建新供应商
-}
-const oauthFlows = new Map<string, OAuthFlow>();
-
-// Periodic cleanup of expired flows
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, flow] of oauthFlows) {
-    if (flow.expiresAt < now) oauthFlows.delete(key);
-  }
-}, 60_000);
-
-// --- OAuth Usage Cache ---
-
-const OAUTH_USAGE_API = 'https://api.anthropic.com/api/oauth/usage';
-const USAGE_CACHE_TTL_MS = 3 * 60 * 1000; // 3 minutes
-const usageCache = new Map<string, CachedOAuthUsage>();
-const inFlightUsageRequests = new Map<string, Promise<CachedOAuthUsage>>();
-
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, entry] of usageCache) {
-    if (now - entry.fetchedAt >= USAGE_CACHE_TTL_MS) {
-      usageCache.delete(key);
-    }
-  }
-}, 5 * 60_000);
-
-async function fetchOAuthUsage(providerId: string): Promise<CachedOAuthUsage> {
-  const cached = usageCache.get(providerId);
-  if (cached && Date.now() - cached.fetchedAt < USAGE_CACHE_TTL_MS) {
-    return cached;
-  }
-
-  // Deduplicate concurrent requests for the same provider
-  const inFlight = inFlightUsageRequests.get(providerId);
-  if (inFlight) return inFlight;
-
-  const providers = getProviders();
-  const provider = providers.find((p) => p.id === providerId);
-  if (!provider) {
-    throw new Error('Provider not found');
-  }
-  if (!provider.claudeOAuthCredentials) {
-    throw new Error('Provider has no OAuth credentials');
-  }
-
-  const requestPromise = (async () => {
-    try {
-      const resp = await fetch(OAUTH_USAGE_API, {
-        headers: {
-          Authorization: `Bearer ${provider.claudeOAuthCredentials!.accessToken}`,
-          'anthropic-beta': 'oauth-2025-04-20',
-        },
-      });
-
-      if (!resp.ok) {
-        // Return stale cache if available, otherwise throw
-        if (cached) {
-          const stale: CachedOAuthUsage = {
-            ...cached,
-            error: `HTTP ${resp.status}`,
-          };
-          usageCache.set(providerId, stale);
-          return stale;
-        }
-        throw new Error(`Usage API returned ${resp.status}`);
-      }
-
-      const raw = (await resp.json()) as Record<string, unknown>;
-      const data: OAuthUsageResponse = {
-        five_hour: parseOAuthUsageBucket(raw.five_hour),
-        seven_day: parseOAuthUsageBucket(raw.seven_day),
-        seven_day_opus: parseOAuthUsageBucket(raw.seven_day_opus),
-        seven_day_sonnet: parseOAuthUsageBucket(raw.seven_day_sonnet),
-      };
-
-      const result: CachedOAuthUsage = { data, fetchedAt: Date.now() };
-      usageCache.set(providerId, result);
-      return result;
-    } finally {
-      inFlightUsageRequests.delete(providerId);
-    }
-  })();
-
-  inFlightUsageRequests.set(providerId, requestPromise);
-  return requestPromise;
 }
 
 // --- Routes ---
@@ -899,30 +733,24 @@ configRoutes.patch(
       return await withClaudeConfigMutationLock(async () => {
         const previous = getProviders().find((p) => p.id === id);
         if (!previous) throw new Error('未找到指定供应商');
-        // ISSUE-07 项10（规格审查修复）：third_party + Auth Token 必须配置
-        // Base URL。create 口由 UnifiedProviderCreateSchema.superRefine 拦截，
-        // 但 PATCH 是部分更新，必须按合并后的最终状态校验——
-        // UnifiedProviderPatchSchema 不携带 type 与密钥字段，故 type 与
-        // authToken 只能来自现有 provider，而 baseUrl 可能被 payload 显式
-        // 置空或改写（ProviderBaseUrlSchema 允许空串）。official +
-        // token-only（官方 Bearer 场景）为有意语义，放行。
+        // THESIS-02：接口只剩第三方路径，合并态校验对所有供应商无条件生效
+        // （不再按 previous.type 放行官方 Bearer 场景）。create 口由
+        // UnifiedProviderCreateSchema.superRefine 拦截；PATCH 是部分更新，
+        // 必须按合并后的最终状态校验——UnifiedProviderPatchSchema 不携带
+        // type 与密钥字段，故 authToken 只能来自现有 provider，而 baseUrl
+        // 可能被 payload 显式置空或改写（ProviderBaseUrlSchema 允许空串）。
         const mergedBaseUrl =
           validation.data.anthropicBaseUrl !== undefined
             ? validation.data.anthropicBaseUrl.trim()
             : previous.anthropicBaseUrl;
-        if (
-          previous.type === 'third_party' &&
-          !!previous.anthropicAuthToken.trim() &&
-          !mergedBaseUrl.trim()
-        ) {
+        if (!!previous.anthropicAuthToken.trim() && !mergedBaseUrl.trim()) {
           throw new Error('第三方供应商使用 Auth Token 时必须配置 Base URL');
         }
-        // ISSUE-16 C1（用户拍板补校验）：无 token 的 third_party 不得被 PATCH
+        // ISSUE-16 C1（用户拍板补校验）：无 token 的供应商不得被 PATCH
         // 清空 Base URL 而进入「Base URL 与 Auth Token 双空」——create 口的
         // 「至少填一项」规则。只拦进入双空的写入；存量双空脏数据编辑其他
         // 字段不受影响。
         if (
-          previous.type === 'third_party' &&
           !previous.anthropicAuthToken.trim() &&
           !!previous.anthropicBaseUrl.trim() &&
           !mergedBaseUrl.trim()
@@ -1065,24 +893,18 @@ configRoutes.put(
       return await withClaudeConfigMutationLock(async () => {
         const previous = getProviders().find((provider) => provider.id === id);
         if (!previous) throw new Error('未找到指定供应商');
-        // ISSUE-07 项10（规格审查修复）：为 third_party 补设 Auth Token 时
-        // 必须已有 Base URL（create 口由 UnifiedProviderCreateSchema.
-        // superRefine 拦截）。secrets 口只改密钥，按现有 provider 状态 +
-        // 新 token 判断合并态；official + token-only（官方 Bearer 场景）为
-        // 有意语义，放行。
+        // THESIS-02：secrets 口同样对所有供应商无条件校验合并态，不再
+        // 为官方 Bearer 场景放行。secrets 口只改密钥，按现有 provider
+        // 状态 + 新 token 判断。
         const incomingAuthToken =
           typeof validation.data.anthropicAuthToken === 'string'
             ? validation.data.anthropicAuthToken.trim()
             : '';
-        if (
-          previous.type === 'third_party' &&
-          !!incomingAuthToken &&
-          !previous.anthropicBaseUrl.trim()
-        ) {
+        if (!!incomingAuthToken && !previous.anthropicBaseUrl.trim()) {
           throw new Error('第三方供应商使用 Auth Token 时必须配置 Base URL');
         }
         // ISSUE-16 C1（用户拍板补校验）：secrets 口清空 token 不得让无 Base
-        // URL 的 third_party 进入「双空」（create 口「至少填一项」规则）；
+        // URL 的供应商进入「双空」（create 口「至少填一项」规则）；
         // 只拦进入双空的写入，存量双空数据不受影响。
         const mergedAuthToken =
           validation.data.anthropicAuthToken !== undefined
@@ -1091,7 +913,6 @@ configRoutes.put(
               ? ''
               : previous.anthropicAuthToken.trim();
         if (
-          previous.type === 'third_party' &&
           !previous.anthropicBaseUrl.trim() &&
           !!previous.anthropicAuthToken.trim() &&
           !mergedAuthToken
@@ -1107,14 +928,6 @@ configRoutes.put(
           changedFields.push('anthropicApiKey:set');
         if (validation.data.clearAnthropicApiKey)
           changedFields.push('anthropicApiKey:clear');
-        if (validation.data.claudeCodeOauthToken !== undefined)
-          changedFields.push('claudeCodeOauthToken:set');
-        if (validation.data.clearClaudeCodeOauthToken)
-          changedFields.push('claudeCodeOauthToken:clear');
-        if (validation.data.claudeOAuthCredentials)
-          changedFields.push('claudeOAuthCredentials:set');
-        if (validation.data.clearClaudeOAuthCredentials)
-          changedFields.push('claudeOAuthCredentials:clear');
 
         const commit = () => {
           const updated = updateProviderSecrets(id, validation.data);
@@ -1122,12 +935,7 @@ configRoutes.put(
             `id:${id}`,
             ...changedFields,
           ]);
-          return runAfterProviderPersistence(updated, () => {
-            if (validation.data.claudeOAuthCredentials && updated.enabled) {
-              updateAllSessionCredentials(providerToConfig(updated));
-              deps?.queue?.closeAllActiveForCredentialRefresh();
-            }
-          });
+          return updated;
         };
 
         const mutation = previous.enabled
@@ -1324,24 +1132,6 @@ configRoutes.get(
   },
 );
 
-// ─── GET /claude/providers/:id/usage — OAuth 用量数据 ─────
-configRoutes.get(
-  '/claude/providers/:id/usage',
-  authMiddleware,
-  systemConfigMiddleware,
-  async (c) => {
-    const { id } = c.req.param();
-    try {
-      const usage = await fetchOAuthUsage(id);
-      return c.json(usage);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
-      logger.warn({ err, providerId: id }, 'Failed to fetch OAuth usage');
-      return c.json({ error: msg }, 400);
-    }
-  },
-);
-
 // ─── PUT /claude/balancing — 更新负载均衡参数 ─────
 configRoutes.put(
   '/claude/balancing',
@@ -1390,177 +1180,6 @@ configRoutes.post(
     } catch (err) {
       logger.error({ err }, 'Failed to apply Claude config to all groups');
       return c.json({ error: 'Server not initialized' }, 500);
-    }
-  },
-);
-
-// ─── POST /claude/oauth/start — 启动 OAuth PKCE 流程 ─────
-configRoutes.post(
-  '/claude/oauth/start',
-  authMiddleware,
-  systemConfigMiddleware,
-  async (c) => {
-    const body = await c.req.json().catch(() => ({}));
-    const targetProviderId =
-      typeof (body as Record<string, unknown>).targetProviderId === 'string'
-        ? ((body as Record<string, unknown>).targetProviderId as string)
-        : undefined;
-
-    const state = randomBytes(32).toString('hex');
-    const codeVerifier = randomBytes(32).toString('base64url');
-    const codeChallenge = createHash('sha256')
-      .update(codeVerifier)
-      .digest('base64url');
-
-    oauthFlows.set(state, {
-      codeVerifier,
-      expiresAt: Date.now() + OAUTH_FLOW_TTL,
-      targetProviderId,
-    });
-
-    const params = new URLSearchParams({
-      response_type: 'code',
-      client_id: OAUTH_CLIENT_ID,
-      redirect_uri: OAUTH_REDIRECT_URI,
-      scope: OAUTH_SCOPES,
-      state,
-      code_challenge: codeChallenge,
-      code_challenge_method: 'S256',
-    });
-
-    return c.json({
-      authorizeUrl: `${OAUTH_AUTHORIZE_URL}?${params.toString()}`,
-      state,
-    });
-  },
-);
-
-// ─── POST /claude/oauth/callback — OAuth 回调 ─────
-configRoutes.post(
-  '/claude/oauth/callback',
-  authMiddleware,
-  systemConfigMiddleware,
-  async (c) => {
-    const body = await c.req.json().catch(() => ({}));
-    const { state, code } = body as { state?: string; code?: string };
-
-    if (!state || !code) {
-      return c.json({ error: 'Missing state or code' }, 400);
-    }
-
-    const cleanedCode = code.trim().split('#')[0]?.split('&')[0] ?? code.trim();
-
-    const flow = oauthFlows.get(state);
-    if (!flow) {
-      return c.json({ error: 'Invalid or expired OAuth state' }, 400);
-    }
-    if (flow.expiresAt < Date.now()) {
-      oauthFlows.delete(state);
-      return c.json({ error: 'OAuth flow expired' }, 400);
-    }
-    oauthFlows.delete(state);
-
-    try {
-      const tokenResp = await fetch(OAUTH_TOKEN_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent':
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-          Accept: 'application/json, text/plain, */*',
-          Referer: 'https://claude.ai/',
-          Origin: 'https://claude.ai',
-        },
-        body: JSON.stringify({
-          grant_type: 'authorization_code',
-          client_id: OAUTH_CLIENT_ID,
-          code: cleanedCode,
-          redirect_uri: OAUTH_REDIRECT_URI,
-          code_verifier: flow.codeVerifier,
-          state,
-          expires_in: 31536000, // 1 year
-        }),
-      });
-
-      if (!tokenResp.ok) {
-        const errText = await tokenResp.text().catch(() => '');
-        logger.warn(
-          { status: tokenResp.status, body: errText },
-          'OAuth token exchange failed',
-        );
-        return c.json(
-          { error: `Token exchange failed: ${tokenResp.status}` },
-          400,
-        );
-      }
-
-      const tokenData = (await tokenResp.json()) as {
-        access_token?: string;
-        refresh_token?: string;
-        expires_in?: number;
-        scope?: string;
-        [key: string]: unknown;
-      };
-
-      if (!tokenData.access_token) {
-        return c.json({ error: 'No access_token in response' }, 400);
-      }
-
-      const actor = (c.get('user') as AuthUser).username;
-
-      let oauthCredentials: ClaudeOAuthCredentials | null = null;
-      if (tokenData.refresh_token) {
-        const expiresAt = tokenData.expires_in
-          ? Date.now() + tokenData.expires_in * 1000
-          : Date.now() + 8 * 60 * 60 * 1000;
-        oauthCredentials = {
-          accessToken: tokenData.access_token,
-          refreshToken: tokenData.refresh_token,
-          expiresAt,
-          scopes: tokenData.scope ? tokenData.scope.split(' ') : [],
-        };
-      }
-
-      let provider;
-      if (flow.targetProviderId) {
-        // Update existing provider's OAuth credentials
-        provider = updateProviderSecrets(flow.targetProviderId, {
-          claudeOAuthCredentials: oauthCredentials ?? undefined,
-          claudeCodeOauthToken: oauthCredentials
-            ? undefined
-            : tokenData.access_token,
-          clearAnthropicApiKey: true,
-        });
-      } else {
-        // Create new official provider
-        provider = createProvider({
-          name: '官方 Claude (OAuth)',
-          type: 'official',
-          claudeOAuthCredentials: oauthCredentials,
-          claudeCodeOauthToken: oauthCredentials ? '' : tokenData.access_token,
-          enabled: true,
-        });
-      }
-
-      // Write .credentials.json to all sessions
-      if (oauthCredentials) {
-        updateAllSessionCredentials(providerToConfig(provider));
-        deps?.queue?.closeAllActiveForCredentialRefresh();
-      }
-
-      appendClaudeConfigAudit(actor, 'oauth_login', [
-        `providerId:${provider.id}`,
-        oauthCredentials
-          ? 'claudeOAuthCredentials:set'
-          : 'claudeCodeOauthToken:set',
-      ]);
-
-      return c.json(toPublicProvider(provider));
-    } catch (err) {
-      logger.error({ err }, 'OAuth token exchange error');
-      const message =
-        err instanceof Error ? err.message : 'OAuth token exchange failed';
-      return c.json({ error: message }, 500);
     }
   },
 );
