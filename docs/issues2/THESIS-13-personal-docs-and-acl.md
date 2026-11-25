@@ -2,7 +2,7 @@
 
 | 字段          | 值                                                                                                                                                                                                                            |
 | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 状态          | 进行中                                                                                                                                                                                                                        |
+| 状态          | 已完成                                                                                                                                                                                                                        |
 | 领取人 / 分支 | claude/thesis-13-personal-docs-and-acl                                                                                                                                                                                        |
 | 优先级        | P2                                                                                                                                                                                                                            |
 | 类型          | 文档                                                                                                                                                                                                                          |
@@ -50,4 +50,15 @@
 
 ## 交付记录
 
-（交付时填写）
+- **提交**：`ac799d5`（立项）、`424aa1b`（Red）、`83efc82`（文档改写）、`034f06c`（审查处置）、`bb79c95`（复核处置）；本提交为交付（三处状态与记录）。
+- **分支 / base**：`claude/thesis-13-personal-docs-and-acl`，base `da4920b`。
+- **改动**：
+  - `README.md`、`CLAUDE.md`、`AGENTS.md`：产品定位改为个人版；README 顺带校正"用量、账单""管理员初始化"等与 THESIS-06/08/10 后界面不符的表述；`CLAUDE.md` §6.1 的"每个用户/跨用户"改为"同一账号/跨账号"。
+  - `docs/ACL-MATRIX.md`：按 D-E6 ① 整体改写为"个人版访问边界"，只保留登录会话与 IM 侧访问控制两层；补回仍有效的纵深防御（账号资源、工作区归属、删除/环境变量、Workspace Memory v2、Owner Profile、定时任务/`task-acl`/MCP、`adminHostOnlyMode`、legacy memory 410）；WebSocket 的"Docker Build 流"更正为"Docker pull 进度"。
+  - `docs/API.md`：ACL 链接与访问措辞同步；`delete-impact` 影响面按实际响应收窄。
+  - `tests/thesis-13-personal-docs.test.ts`：新增 6 个契约用例，锁定定位口径、ACL 两层结构、已删除标识符/路由与保留的边界符号。
+- **验证**：`npm run verify` 6/6 全绿（366 文件，3015 通过 / 23 跳过 / 0 失败）；`node scripts/check-scope.mjs` 通过（12 个路径，含本记录与方案台账）；`npm run docs:check` 通过（127 个 Markdown）。
+- **审查**：独立规格审查初轮 2 个阻塞（Docker Build 事实错误、方案台账未进范围声明），处置后复核通过；代码质量审查 M2 过度删减已补回，Minor 逐项处置。详见 `docs/审查记录.md`。
+- **偏差 / 计划外修正**：新增 `tests/thesis-13-personal-docs.test.ts` 与 `docs/issues2/task-thesis-trim-plan.md` 超出 issue 的预计改动路径，已分别写入 plan §3 与 `.gatescope.json` allow；README 的"界面与体验""首次进入""渠道与自动化"三处校正不在 issue 逐条列出的锚点内，属同一产品定位与陈旧界面描述的顺带修正。
+- **未做**：未实机验收（文档包，无运行界面变化）；未改代码行为、schema、表结构与 `data/`；`CLAUDE.md` §7 表族清单（`invite_codes`、`auth_audit_log`）留给 THESIS-14。
+- **后续建议**：无新增 issue。
