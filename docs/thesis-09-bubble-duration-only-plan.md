@@ -2,6 +2,7 @@
 
 > 立项日期：2026-11-25｜base：`479e2fd`｜分支：`claude/thesis-09-bubble-duration-only`
 > 来源：[docs/issues2/THESIS-09-bubble-duration-only.md](issues2/THESIS-09-bubble-duration-only.md)（方案 §6 T4、§11.2，审核更正 S1/O5）
+> **状态：已实现并交付（实现提交 `f94d719`），等待用户人工验收。**
 
 ## 0. 需求采访结论（2026-11-25，用户拍板）
 

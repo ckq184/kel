@@ -2,7 +2,7 @@
 
 | 字段          | 值                                                                                                                                                                                                                                                                        |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 状态          | 进行中                                                                                                                                                                                                                                                                    |
+| 状态          | 已完成                                                                                                                                                                                                                                                                    |
 | 领取人 / 分支 | THESIS-09 会话 / `claude/thesis-09-bubble-duration-only`                                                                                                                                                                                                                  |
 | 优先级        | P2                                                                                                                                                                                                                                                                        |
 | 类型          | 裁剪（显示层）                                                                                                                                                                                                                                                            |
@@ -65,4 +65,23 @@
 
 ## 交付记录
 
-（交付时填写）
+- **提交**：立项 `737853e`、实现 `f94d719`、交付 `（本提交）`。
+- **验证**：`npm run verify` 6/6 全绿（366 测试文件，3017 通过 / 23 跳过 / 0 失败）；`node scripts/check-scope.mjs` 实现树 18 路径、交付树 19 路径全部在声明范围内；`make typecheck`、`make build` 通过。23 skipped 为基线既有，本包未新增 skip。
+- **改动**：
+  - 气泡：`MessageBubble.tsx` 的 `TokenUsageDisplay` 改为 `ReplyDuration`，只渲染 `durationMs`（0/负数/非数字/缺失不渲染）；删除 Tooltip 明细与三个 token 辅助函数导入。
+  - 辅助函数：`token-usage-presentation.ts` 只保留 `parseTokenUsage`（排除数组），历史完整 `token_usage` JSON 仍可解析。
+  - 实时拼装：`stores/chat.ts` 两处 usage 事件只写 `{durationMs,numTurns}`，与 THESIS-07 宿主回写一致。
+  - 飞书 D-C3 ②：legacy note 只输出 `⏱ <耗时> · <轮数>`（无数据空串）；v2 meta row 删除 `💡 Token`，耗时值追加轮数，仅轮数时用 `🔁 轮数`；删除 `formatFeishuTokenSummary`、`formatTokens`、`CardMeta` 的 token/cost 字段与控制器透传。
+- **偏差与登记**：
+  1. D-C3 按用户拍板取 ②，不是审核建议的 ①。
+  2. `src/feishu-cards/types.ts` 超出 issue 预计的三个飞书文件：删除 `CardMeta` 中随之失效的 token/cost 字段，避免共享类型留死字段；已在 plan §3 与 `.gatescope.json` 登记。
+  3. `formatTokens`（`sections.ts`）随 `💡 Token` 字段删除后失去唯一消费者，一并删除；`tests/feishu-card.test.ts` 的对应断言同步移除。
+  4. v2 meta row 在「耗时缺失但轮数 > 1」时用独立 `🔁 轮数` 字段，而不是把轮数追加到 `⏱ 耗时`；行为符合「只显示耗时与轮数」，与 plan §0 的字面写法略有差异。
+  5. 空 usage note 时 legacy 路径提前返回，不再用 trace-only 整卡 patch 覆盖已有摘要；`complete()` 已定稿 trace footer，不丢 trace。
+  6. 宿主无 `lastReplyMsgId` 的兜底分支仍 `JSON.stringify(se.usage)` 写入完整 usage（THESIS-07 行为，本包非目标不改）；气泡只读 `durationMs`，多余字段被忽略。
+  7. 方案 `docs/issues2/task-thesis-trim-plan.md` 的 D-C3 行仍保留选项描述与「选 ①」风险措辞；最终拍板 ② 记录在本 issue、README 索引与交付记录，未扩宽方案文件。
+  8. 用量专题（06/07/08/09）尚未全部完成（08 进行中），方案 §2 裁决台账不更新。
+- **审查**：规格符合性审查通过（零阻塞）；代码质量审查初轮 1 个 Major（`patchUsageNote` 丢失 `modelUsage` 类型契约）、6 个 Minor；Major 与 5 个 Minor 已修复（补 `modelUsage`、补主对话/流式卡片用例、finite 防护、数组排除、空 note 提前返回、组件改名），复核通过（Critical 0 / Major 0 / Minor 3，剩余为非阻塞的源码契约脆弱性与窄 trace 边界）。详见 `docs/审查记录.md`。
+- **已知限制**：飞书 v2 路径的模型标签仍依赖 `modelUsage`（只用于选主模型，不显示 token）；无 `modelUsage` 时模型字段省略，属既有行为。
+- **人工验收（用户）**：流式回复过程中与刷新页面后，气泡都只显示耗时；飞书卡片摘要只有耗时与轮数、无 token/费用；历史消息气泡不回显 token 明细。
+- **未实机验收**，由用户执行上述人工验收。
