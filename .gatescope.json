@@ -1,25 +1,13 @@
 {
-  "task": "THESIS-12 个人用户（三）：去掉强制改密（D-E3 ①；列保留给 THESIS-14；普通改密不动）",
-  "base": "1454e51a25fd777680165450c2c5c6fa041f53d2",
+  "task": "THESIS-15 可选：前端可达性契约测试（O7 采纳；新增 tests/frontend-reachability-contract.test.ts，不改产品代码）",
+  "base": "da4920b809f502b76a3ed24b504cde5cd8210c96",
   "allow": [
     ".gatescope.json",
-    "docs/issues2/THESIS-12-drop-forced-password-change.md",
+    "docs/issues2/THESIS-15-frontend-reachability-contract.md",
     "docs/issues2/README.md",
-    "docs/thesis-12-drop-forced-password-change-plan.md",
+    "docs/issues2/task-thesis-trim-plan.md",
+    "docs/thesis-15-frontend-reachability-contract-plan.md",
     "docs/审查记录.md",
-    "src/middleware/auth.ts",
-    "src/web.ts",
-    "src/routes/auth.ts",
-    "src/reset-admin.ts",
-    "src/types.ts",
-    "src/db.ts",
-    "web/src/components/auth/AuthGuard.tsx",
-    "web/src/pages/LoginPage.tsx",
-    "web/src/api/client.ts",
-    "web/src/pages/SettingsPage.tsx",
-    "web/src/components/settings/SettingsNav.tsx",
-    "web/src/stores/auth.ts",
-    "web/tests/e2e/mobile-chat-harness.tsx",
-    "tests/**"
+    "tests/frontend-reachability-contract.test.ts"
   ]
 }
