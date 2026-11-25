@@ -24,7 +24,7 @@ export function McpServerCard({
   const hasConflict = server.conflictSources.length > 1;
   const preview =
     server.runtimeAvailable === false
-      ? '仅管理员可用'
+      ? '当前不可用'
       : isHttpType
         ? `${server.type?.toUpperCase()} ${server.url || ''}`
         : [server.command, ...(server.args || [])].join(' ');

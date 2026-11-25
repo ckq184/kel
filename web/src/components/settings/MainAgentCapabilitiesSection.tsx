@@ -244,7 +244,7 @@ export function MainAgentCapabilitiesSection() {
   if (!profile) {
     return (
       <div className="border-b border-border py-6 text-sm text-destructive">
-        无法读取当前管理员的主 CKQClaw 配置。
+        无法读取主 CKQClaw 配置。
       </div>
     );
   }

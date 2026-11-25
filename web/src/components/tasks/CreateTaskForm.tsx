@@ -178,7 +178,7 @@ export function CreateTaskForm({
       </Select>
       <p className="mt-1 text-xs text-muted-foreground">
         {isScript
-          ? '脚本仅可选择管理员宿主机工作区，并直接在该宿主机目录中执行。'
+          ? '脚本仅可选择宿主机工作区，并直接在该宿主机目录中执行。'
           : '任务会在这个工作区的目录和环境中执行，并继承该工作区的智能体。'}
       </p>
     </div>
@@ -264,7 +264,7 @@ export function CreateTaskForm({
         ? groups[chatJid]?.execution_mode
         : defaultWorkspaceMode;
       if (selectedMode && selectedMode !== 'host') {
-        newErrors.executionMode = '请选择管理员宿主机工作区';
+        newErrors.executionMode = '请选择宿主机工作区';
       }
     } else {
       if (!formData.prompt.trim()) newErrors.prompt = '请输入 Prompt';
@@ -540,7 +540,7 @@ export function CreateTaskForm({
                 </Select>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {adminHostOnlyMode
-                    ? '管理员纯宿主机模式已开启，任务固定在宿主机执行。'
+                    ? '纯宿主机模式已开启，任务固定在宿主机执行。'
                     : isScript
                       ? '脚本固定使用宿主机模式；Docker 容器脚本不会被执行。'
                       : executionModeExplicit

@@ -195,7 +195,7 @@ export function ContainerEnvPanel({
         >
           <p className="text-[11px] text-muted-foreground leading-relaxed">
             这里保存项目运行需要的环境变量，仅对当前工作区生效。Provider
-            地址和凭据由系统管理员统一管理；保存后工作区会自动重建。
+            地址和凭据由系统统一管理；保存后工作区会自动重建。
           </p>
           {error && (
             <p

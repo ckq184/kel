@@ -353,7 +353,7 @@ describe('buildAgentCapabilityPreview', () => {
       }),
     );
     expect(memberPreview.notes).toContain(
-      '有 1 个系统 MCP 仅限管理员，普通成员智能体不会继承。',
+      '有 1 个系统 MCP 当前不可用，智能体不会继承。',
     );
 
     const adminPreview = buildAgentCapabilityPreview({

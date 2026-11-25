@@ -797,7 +797,7 @@ export function AgentProfilesPage() {
                       <div className="border-b px-5 py-4">
                         <h2 className="text-sm font-semibold">宿主机配置</h2>
                         <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                          决定是否将管理员的 ~/.claude 作为完整用户配置层叠加；
+                          决定是否将宿主机的 ~/.claude 作为完整用户配置层叠加；
                           工作区仍是运行目录。宿主机 MCP 随配置加载，CKQClaw MCP
                           与宿主机 Skills 在“能力配置”中独立设置。
                         </p>

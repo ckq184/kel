@@ -508,7 +508,7 @@ export function CreateContainerDialog({
                     )}
                     {canHostExec && adminHostOnlyMode && (
                       <p className="rounded-md border border-warning/30 bg-warning-bg px-3 py-2 text-xs leading-5 text-warning">
-                        管理员纯宿主机模式已开启，新工作区固定直接在服务器上运行。
+                        纯宿主机模式已开启，新工作区固定直接在服务器上运行。
                       </p>
                     )}
                   </div>

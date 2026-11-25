@@ -132,7 +132,7 @@ describe('settings information architecture', () => {
     );
     // V-E5：单账号下「普通成员仍固定使用 Docker」不再成立，文案已改写。
     expect(system).toMatch(
-      /管理员纯宿主机模式[\s\S]*关闭后不会自动把已有工作区迁回\s*Docker/,
+      /纯宿主机模式[\s\S]*关闭后不会自动把已有工作区迁回\s*Docker/,
     );
     expect(system).not.toContain('普通成员仍固定使用');
     expect(page).toMatch(/const isAdmin = currentUser\?\.role/);
@@ -186,7 +186,7 @@ describe('settings information architecture', () => {
     expect(mainCapabilities).toMatch(/CKQClaw 用户 Skills|CKQClaw MCP/);
     expect(mainCapabilities).not.toContain('工具与扩展能力边界');
     expect(mainCapabilities).toContain('/api/agent-profiles/');
-    expect(workspaceEnv).toMatch(/Provider\s+地址和凭据由系统管理员统一管理/);
+    expect(workspaceEnv).toMatch(/Provider\s+地址和凭据由系统统一管理/);
     expect(workspaceEnv).not.toContain('MODEL_PRESETS');
     expect(workspaceEnv).not.toContain('setAuthToken');
     expect(workspaceEnv).toContain("anthropicModel: ''");

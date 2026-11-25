@@ -199,7 +199,7 @@ describe('source-qualified MCP frontend behavior', () => {
     expect(options.map((option) => option.id)).toEqual(['system:shared']);
   });
 
-  test('system create/edit forms expose explicit access choices and warn about full runtime config', () => {
+  test('system create/edit forms keep member access out of the UI', () => {
     const addDialog = fs.readFileSync(
       path.join(
         process.cwd(),
@@ -216,16 +216,12 @@ describe('source-qualified MCP frontend behavior', () => {
     );
 
     for (const source of [addDialog, detail]) {
-      expect(source).toContain("['admin_only', '仅管理员'");
-      expect(source).toContain("['shared', '共享给成员'");
-      expect(source).toContain('完整 command、args、url、env 和 headers');
+      expect(source).not.toContain('memberAccess');
+      expect(source).not.toContain('成员访问');
+      expect(source).not.toContain('共享给成员');
     }
-    expect(addDialog).toContain("scope === 'system'");
+    // 系统 MCP 的徽标/只读提示仍保留，隐藏的只是成员访问控件。
     expect(detail).toContain("server.source === 'system'");
-    expect(addDialog).toContain(
-      "...(scope === 'system' ? { memberAccess } : {})",
-    );
-    expect(detail).toContain("...(server.source === 'system'");
   });
 
   test('toggle failures preserve the loaded list and reject for row-level feedback', async () => {
