@@ -1,13 +1,20 @@
 {
-  "task": "THESIS-17 - sdkQuery 只剩第三方路径（D-Q1 ① 不统一已配置口径）",
-  "base": "5a47254",
+  "task": "THESIS-18 - 裁减遗留死代码清扫（宿主、Runner、脚本）",
+  "base": "248c7cb",
   "allow": [
     ".gatescope.json",
-    "docs/thesis-17-sdk-query-third-party-only-plan.md",
-    "docs/issues3/THESIS-17-sdk-query-third-party-only.md",
+    "docs/thesis-18-dead-code-sweep-plan.md",
+    "docs/issues3/THESIS-18-dead-code-sweep.md",
     "docs/issues3/README.md",
     "docs/审查记录.md",
-    "src/sdk-query.ts",
-    "tests/sdk-query-third-party-only.test.ts"
+    "src/runtime-config.ts",
+    "src/auth.ts",
+    "src/db.ts",
+    "container/agent-runner/src/runtime/pi/pi-provider.ts",
+    "container/agent-runner/src/runtime/pi/pi-runtime.ts",
+    "scripts/test-real-model-smoke.ts",
+    "tests/no-duplicate-helpers-contract.test.ts",
+    "tests/pi-subagent-custom-provider.test.ts",
+    "tests/thesis-18-dead-code-sweep.test.ts"
   ]
 }
