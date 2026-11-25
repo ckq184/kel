@@ -2,7 +2,7 @@
 
 | 字段          | 值                                                                                                                                                                                                                         |
 | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 状态          | 进行中                                                                                                                                                                                                                     |
+| 状态          | 已完成                                                                                                                                                                                                                     |
 | 领取人 / 分支 | `claude/thesis-12-drop-forced-password-change`                                                                                                                                                                             |
 | 优先级        | P3                                                                                                                                                                                                                         |
 | 类型          | 裁剪（死机制）                                                                                                                                                                                                             |
@@ -57,4 +57,13 @@
 
 ## 交付记录
 
-（交付时填写）
+- **提交**：立项 `247bff3`、Red `fdbd21c`、实现 `6728e02`、审查处置 `bcdc8c0`、交付（本提交）。
+- **验证**：`npm run verify` 6/6 全绿（365 文件，3009 通过 / 23 跳过 / 0 失败，33.6s）；`node scripts/check-scope.mjs` 20 路径全在 `.gatescope.json` 声明范围内。独立规格审查与代码质量审查均通过（零阻塞），详见 `docs/审查记录.md` 的 THESIS-12 节。
+- **与 issue 描述的偏差**：
+  1. 实际改动路径比 issue 的「预计改动路径」多出 `src/web.ts`（两处 WebSocket 闸门）、`src/db.ts`（仅重复的 `toUserPublic` 响应映射）、`web/src/components/settings/SettingsNav.tsx`、`web/src/pages/LoginPage.tsx`、`web/src/api/client.ts`、`web/tests/e2e/mobile-chat-harness.tsx` 与 `tests/message-bubble-duration-only.test.tsx`；均属同一机制的落地处，已随立项计划与 `.gatescope.json` 登记。
+  2. 测试改动少于 issue 估计的「约 43 行」：`users.must_change_password` 列、`src/db.ts` 的 DB 映射与写入辅助、`User` / `UserSessionWithUser` 均按非目标保留，因此 `createUser` 的 DB 行夹具字段无需删除；仅删两个 `UserPublic` 响应夹具字段，并新增 5 条契约/回归用例。
+  3. WebSocket 闸门删除只由源码契约覆盖，未补行为级 WS 用例（与立项计划验收第 3 条一致）。
+  4. 旧库中 `must_change_password = 1` 的账号在改密/命令行重置后不再清零该列；当前无消费者，列由 THESIS-14 按 D-F2 处理。
+  5. `docs/task-thesis-lite-delivery.md` 是历史交付档案，仍描述旧的强制改密流程，本次不改写。
+- **待用户验收**：人工冒烟——登录后不被强制跳转；在设置页改密后用新密码登录。
+- **方案台账**：个人用户专题尚未收口（THESIS-13 未完成），按 README 第一节第 6 步留待 13 交付时统一更新。
