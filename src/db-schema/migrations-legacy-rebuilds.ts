@@ -293,27 +293,6 @@ export function migrateLegacySchemaRebuilds(ctx: DbMigrationContext): void {
     'expires_at',
     'last_active_at',
   ]);
-  assertSchema('invite_codes', [
-    'code',
-    'created_by',
-    'role',
-    'permission_template',
-    'permissions',
-    'max_uses',
-    'used_count',
-    'expires_at',
-    'created_at',
-  ]);
-  assertSchema('auth_audit_log', [
-    'id',
-    'event_type',
-    'username',
-    'actor_username',
-    'ip_address',
-    'user_agent',
-    'details',
-    'created_at',
-  ]);
 
   // Store schema version after all migrations complete
   // Migrate existing web groups: assign to first admin

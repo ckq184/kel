@@ -716,53 +716,6 @@ export interface UserSessionWithUser extends UserSession {
   must_change_password: boolean;
 }
 
-export interface InviteCode {
-  code: string;
-  created_by: string;
-  role: UserRole;
-  max_uses: number;
-  used_count: number;
-  expires_at: string | null;
-  created_at: string;
-}
-
-export interface InviteCodeWithCreator extends InviteCode {
-  creator_username: string;
-}
-
-export type AuthEventType =
-  | 'login_success'
-  | 'login_failed'
-  | 'logout'
-  | 'password_changed'
-  | 'profile_updated'
-  | 'user_created'
-  | 'user_disabled'
-  | 'user_enabled'
-  | 'user_deleted'
-  | 'user_restored'
-  | 'user_updated'
-  | 'role_changed'
-  | 'session_revoked'
-  | 'invite_created'
-  | 'invite_deleted'
-  | 'invite_used'
-  | 'recovery_reset'
-  | 'register_success'
-  | 'system_settings_updated'
-  | 'host_integration_updated';
-
-export interface AuthAuditLog {
-  id: number;
-  event_type: AuthEventType;
-  username: string;
-  actor_username: string | null;
-  ip_address: string | null;
-  user_agent: string | null;
-  details: Record<string, unknown> | null;
-  created_at: string;
-}
-
 // --- Sub-Agent types ---
 
 export type AgentStatus = 'idle' | 'running' | 'completed' | 'error';

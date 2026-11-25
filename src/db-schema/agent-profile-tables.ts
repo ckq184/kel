@@ -8,7 +8,7 @@ import {
 // ISSUE-12 波 3 单元 3.3：Agent Profile 表族两段自 src/db.ts 原文搬运。
 // ensureAgentProfileTables（原 db.ts 885-1018）：agents/agent_profiles/
 // agent_profile_prompt_versions/agent_builder_drafts/workspace_agent_
-// profiles/custom_model_pricing 六组建表，无门控幂等建表。
+// profiles 五组建表，无门控幂等建表。
 // migrateAgentProfileColumns（原 db.ts 1676-1844）：v29→v32 agents
 // last_im_jid/spawned_from_jid 与 v36→v37 sessions provider_id 结构探测、
 // v39→v44/v46→v47/v67→v68 profile 列与索引、v68→v69 effort 门控、
@@ -130,32 +130,6 @@ export function ensureAgentProfileTables(ctx: DbMigrationContext): void {
     );
     CREATE INDEX IF NOT EXISTS idx_workspace_agent_profiles_profile
       ON workspace_agent_profiles(agent_profile_id);
-  `);
-
-  // Custom model pricing (task V): admin-managed per-model unit prices.
-  // Prices are USD per million tokens and are resolved by the pure pricing
-  // module before any usage event is recorded; history rows are immutable.
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS custom_model_pricing (
-      id TEXT PRIMARY KEY,
-      kind TEXT NOT NULL DEFAULT 'pattern' CHECK (kind IN ('pattern','fallback')),
-      pattern TEXT NOT NULL DEFAULT '',
-      display_name TEXT NOT NULL DEFAULT '',
-      family TEXT NOT NULL DEFAULT 'custom',
-      input_price_per_mtok REAL NOT NULL DEFAULT 0,
-      output_price_per_mtok REAL NOT NULL DEFAULT 0,
-      cache_read_price_per_mtok REAL NOT NULL DEFAULT 0,
-      cache_creation_price_per_mtok REAL NOT NULL DEFAULT 0,
-      reasoning_price_per_mtok REAL NOT NULL DEFAULT 0,
-      enabled INTEGER NOT NULL DEFAULT 1,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-    -- At most one custom fallback rule; duplicate pattern strings collide.
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_pricing_fallback
-      ON custom_model_pricing (kind) WHERE kind = 'fallback';
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_pricing_pattern
-      ON custom_model_pricing (pattern) WHERE kind = 'pattern';
   `);
 }
 

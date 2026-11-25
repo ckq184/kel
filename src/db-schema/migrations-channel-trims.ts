@@ -8,7 +8,8 @@ import { logger } from '../logger.js';
 // 与 definition_snapshot 存量修剪）、v75→v76 billing/redeem/quota 表族
 // 与死列 DROP、v76→v77 usage_daily_summary 与 billing 镜像死列 DROP——
 // 搬运时 v77 恰为 CURRENT_SCHEMA_VERSION；其后 ISSUE-25 追加 v77→v78
-// scheduled_tasks 旧租约两列 DROP。全部 ? '0'/!vXCheck 门新库执行，
+// scheduled_tasks 旧租约两列 DROP，THESIS-14 追加 v78→v79 五张死表 DROP。
+// 全部 ? '0'/!vXCheck 门新库执行，
 // 破坏性 trim 的回滚路径是 enforcePreMigrationBackup 备份门）。
 // 计划表 2261-2555 外的 2220-2259（v66→v67/v71→v72/v72→v73 注释）为
 // 行界缺口段按 trim 主题并入本单元，提交信息留痕。搬运体逐字节一致，
@@ -54,9 +55,10 @@ export function trimRetiredSchemas(ctx: DbMigrationContext): void {
   }
 
   // v72 -> v73 (task V): custom_model_pricing only. The table and its partial
-  // unique indexes are created idempotently by the base schema block above
-  // (CREATE TABLE/INDEX IF NOT EXISTS), so this bump carries no data migration
-  // and needs no versioned step; existing usage rows are never repriced.
+  // unique indexes were created idempotently by the base schema block at the
+  // time, so this bump carried no data migration and needed no versioned step;
+  // existing usage rows were never repriced. The table itself was dropped in
+  // v79 (THESIS-14) after its read/write paths were removed.
 
   // v74 -> v75 (task AJ): retire the Telegram/Discord/WhatsApp IM channels.
   // User-approved destructive trim (2026-11-12): account rows plus every row
@@ -373,5 +375,42 @@ export function trimRetiredSchemas(ctx: DbMigrationContext): void {
     });
     dropLegacyTaskLeaseColumns();
     logger.info('v78 prune trim: legacy scheduled_tasks lease columns dropped');
+  }
+
+  // v78→v79 trim (THESIS-14): drop the five tables whose read/write paths
+  // were removed by THESIS-06/07/08/10. Upgrading databases at v39+ keep
+  // their data in the pre-migration backup written by
+  // enforcePreMigrationBackup; older/unversioned databases follow that
+  // gate's existing threshold and get no backup. No table here is a parent
+  // of another; invite_codes' FK points at users, which is not dropped.
+  const v79Check = getRouterStateInternal('schema_version');
+  if (!v79Check || parseInt(v79Check, 10) < 79) {
+    const dropDeadTables = db.transaction(() => {
+      const dropped: string[] = [];
+      for (const table of [
+        'usage_events',
+        'usage_records',
+        'custom_model_pricing',
+        'auth_audit_log',
+        'invite_codes',
+      ]) {
+        if (tableExists(table)) dropped.push(table);
+      }
+      db.exec(`
+        DROP TABLE IF EXISTS usage_events;
+        DROP TABLE IF EXISTS usage_records;
+        DROP TABLE IF EXISTS custom_model_pricing;
+        DROP TABLE IF EXISTS auth_audit_log;
+        DROP TABLE IF EXISTS invite_codes;
+      `);
+      return dropped;
+    });
+    const dropped = dropDeadTables();
+    if (dropped.length > 0) {
+      logger.info(
+        { dropped },
+        'v79 dead-table trim: removed tables with no read/write paths',
+      );
+    }
   }
 }

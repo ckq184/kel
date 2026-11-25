@@ -391,13 +391,6 @@ describe('each converged helper family has exactly one implementation', () => {
     ).toBe(1);
   });
 
-  test('normalizePricingPattern is exported once', () => {
-    expect(filesDefining('normalizePricingPattern')).toEqual(['src/db.ts']);
-    expect(read('src/db.ts')).toMatch(
-      /export\s+function\s+normalizePricingPattern/,
-    );
-  });
-
   test('avatar validation (size / MIME map / error text) lives only in the shared helper', () => {
     // 位于 src/ 根（同 http-upload-policy.ts 先例）：共享 helper 非 route 模块，
     // 放在 src/routes/ 会被 docs:check 要求入 API.md 路由索引。

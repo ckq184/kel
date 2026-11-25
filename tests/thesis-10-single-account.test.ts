@@ -140,8 +140,12 @@ describe('single-account API surface', () => {
 });
 
 describe('audit writes stop', () => {
-  test('login, logout and password change write no auth audit rows', async () => {
-    expect(db.queryAuthAuditLogs().total).toBe(0);
+  test('login, logout and password change no longer write auth audit rows', async () => {
+    // THESIS-14 (v79) dropped auth_audit_log together with its read/write
+    // helpers, so there is no audit API left to observe. The flow below still
+    // guards the login/logout/password-change endpoints.
+    expect('queryAuthAuditLogs' in db).toBe(false);
+    expect('logAuthEvent' in db).toBe(false);
 
     const firstCookie = await login();
     const logout = await request('POST', '/api/auth/logout', {
@@ -160,8 +164,6 @@ describe('audit writes stop', () => {
       },
     );
     expect(changed.status).toBe(200);
-
-    expect(db.queryAuthAuditLogs().total).toBe(0);
   }, 30_000);
 });
 
@@ -259,10 +261,10 @@ describe('frontend and source cleanup', () => {
     expect(schemaSource).not.toContain('RegistrationConfigSchema');
   });
 
-  test('no auth audit writes remain outside the retained db helper', () => {
+  test('no auth audit writes remain in src', () => {
     const srcRoot = path.join(root, 'src');
     const files = (fs.readdirSync(srcRoot, { recursive: true }) as string[])
-      .filter((file) => file.endsWith('.ts') && file !== 'db.ts')
+      .filter((file) => file.endsWith('.ts'))
       .map((file) => path.join('src', file));
     const offenders = files.filter((file) =>
       read(file).includes('logAuthEvent('),

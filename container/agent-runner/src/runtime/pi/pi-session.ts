@@ -56,9 +56,9 @@ function nonNegative(value: unknown): number {
  *   increment) → never add it on top.
  * - model attribution prefers `responseModel` (the model that actually served).
  *
- * The event id seeds the host's `usage_events` idempotency key: session id +
- * the turn's first assistant timestamp survive runner restarts and session
- * replays, so a re-delivered turn deduplicates instead of double charging.
+ * The event id seeds the host's reply-duration accumulator dedupe key: session
+ * id + the turn's first assistant timestamp survive runner restarts and
+ * session replays, so a re-delivered turn is counted once.
  */
 export function aggregatePiTurnUsage(
   messages: ReadonlyArray<unknown>,

@@ -239,7 +239,7 @@ data/
 
 核心表族：
 
-- 用户与认证：`users`、`user_sessions`、`invite_codes`、`auth_audit_log`
+- 用户与认证：`users`、`user_sessions`
 - 工作区与会话：`registered_groups`、`sessions`、`workspaces`、
   `workspace_runtime_sessions`
 - Agent：`agent_profiles`、`agent_profile_prompt_versions`、
@@ -248,7 +248,6 @@ data/
   `im_context_bindings`
 - 消息与调度：`chats`、`messages`、`scheduled_tasks`、`task_runs`、
   `task_run_logs`
-- 用量：`usage_records`、`usage_events`、`usage_daily_summary`
 
 Channel Reliability 的 Inbox/Turn/Outbox/Card 表由
 `src/channel-reliability-store.ts` 在同一数据库连接上创建。

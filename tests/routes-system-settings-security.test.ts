@@ -169,27 +169,6 @@ describe('system settings capability boundaries', () => {
     ).toBe(403);
   });
 
-  test('admin host update no longer writes auth audit records', async () => {
-    asSystemSettingsTestUser('admin');
-    const before = db.queryAuthAuditLogs().total;
-    const response = await app.request('/api/config/host-integration', {
-      method: 'PUT',
-      headers: {
-        'content-type': 'application/json',
-        'user-agent': 'settings-security-test',
-      },
-      body: JSON.stringify({
-        externalClaudeDir: tmpDir,
-        mainAgentContextSource: 'managed',
-      }),
-    });
-    expect(response.status).toBe(200);
-    expect(db.queryAuthAuditLogs().total).toBe(before);
-    expect(
-      db.queryAuthAuditLogs({ event_type: 'host_integration_updated' }).logs,
-    ).toHaveLength(0);
-  });
-
   test('combined host and compact update quiesces admin custom and member default workspaces without discarding work', async () => {
     const now = new Date().toISOString();
     for (const [id, role] of [
