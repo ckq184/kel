@@ -113,11 +113,24 @@ function listSourceFiles(dir: string): string[] {
 }
 
 function interfaceBlock(source: string, name: string): string {
-  const start = source.indexOf(`export interface ${name} {`);
+  const marker = `export interface ${name} {`;
+  const start = source.indexOf(marker);
   expect(start).toBeGreaterThanOrEqual(0);
-  const end = source.indexOf('\n}', start);
+
+  let depth = 0;
+  let end = -1;
+  for (let i = start + marker.length - 1; i < source.length; i += 1) {
+    if (source[i] === '{') depth += 1;
+    if (source[i] === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        end = i;
+        break;
+      }
+    }
+  }
   expect(end).toBeGreaterThan(start);
-  return source.slice(start, end);
+  return source.slice(start, end + 1);
 }
 
 describe('THESIS-12 强制改密机制已去掉', () => {
@@ -138,6 +151,9 @@ describe('THESIS-12 强制改密机制已去掉', () => {
   });
 
   test('被标记账号不再被 HTTP 闸门拦住', async () => {
+    // 先确认标记真的落在 DB 行上，避免将来映射变化让本用例静默退化。
+    expect(db.getUserById('thesis12-flagged')?.must_change_password).toBe(true);
+
     const { response, cookie } = await login(flaggedUsername, flaggedPhrase);
     expect(response.status).toBe(200);
     expect(cookie).toBeTruthy();
