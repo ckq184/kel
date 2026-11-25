@@ -8,7 +8,6 @@ export interface UserPublic {
   display_name: string;
   role: 'admin' | 'member';
   status: 'active' | 'disabled' | 'deleted';
-  must_change_password: boolean;
   disable_reason: string | null;
   notes: string | null;
   created_at: string;

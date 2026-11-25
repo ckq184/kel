@@ -78,7 +78,6 @@ export function toUserPublic(u: User): UserPublic {
     display_name: u.display_name,
     role: u.role,
     status: u.status,
-    must_change_password: u.must_change_password,
     disable_reason: u.disable_reason,
     notes: u.notes,
     avatar_emoji: u.avatar_emoji ?? null,
@@ -160,7 +159,6 @@ authRoutes.post('/setup', async (c) => {
     display_name: username,
     role: 'admin',
     status: 'active',
-    must_change_password: false,
     notes: 'Initial admin (setup wizard)',
     created_at: now,
     updated_at: now,
@@ -435,7 +433,6 @@ authRoutes.put('/password', authMiddleware, async (c) => {
   const newHash = await hashPassword(validation.data.new_password);
   updateUserFields(user.id, {
     password_hash: newHash,
-    must_change_password: false,
   });
 
   // Revoke all existing sessions for this user

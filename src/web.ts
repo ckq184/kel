@@ -1112,15 +1112,6 @@ function setupWebSocket(server: any): WebSocketServer {
       socket.destroy();
       return;
     }
-    // 强制改密码用户不能通过 WebSocket 发指令 / 操作终端，否则 HTTP 中
-    // PASSWORD_CHANGE_REQUIRED 形同虚设——admin 重置密码后用户仍能继续与
-    // agent 交互、开容器终端。HTTP 仍允许 /api/auth/me / /password / /sessions
-    // 完成强制改密流程。
-    if (session.must_change_password) {
-      socket.write('HTTP/1.1 403 Password Change Required\r\n\r\n');
-      socket.destroy();
-      return;
-    }
     request.__ckqclawSessionId = token;
 
     wss.handleUpgrade(request, socket, head, (ws) => {
@@ -1270,12 +1261,6 @@ function setupWebSocket(server: any): WebSocketServer {
           }
           invalidateSessionCache(sessionId);
           ws.close(1008, 'Unauthorized');
-          return;
-        }
-        // 与 upgrade 处一致：管理员重置密码后被强制改密的 session 不能继续
-        // 操作 agent / 终端；ws.close(1008) 让前端收到关闭再走改密流程。
-        if (session.must_change_password) {
-          ws.close(1008, 'Password change required');
           return;
         }
 

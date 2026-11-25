@@ -77,11 +77,6 @@ export function AuthGuard({ children, requireAdmin }: AuthGuardProps) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  // Users with must_change_password go to settings
-  if (user?.must_change_password && location.pathname !== '/settings') {
-    return <Navigate to="/settings" replace />;
-  }
-
   // Admin onboarding: force provider setup flow before entering full app.
   if (
     user?.role === 'admin' &&

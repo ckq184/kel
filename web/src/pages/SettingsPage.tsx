@@ -64,8 +64,7 @@ export function SettingsPage() {
   const [navOpen, setNavOpen] = useState(false);
 
   const isAdmin = currentUser?.role === 'admin';
-  const mustChangePassword = !!currentUser?.must_change_password;
-  const canAccessSystemSettings = isAdmin && !mustChangePassword;
+  const canAccessSystemSettings = isAdmin;
 
   const defaultTab: SettingsTab = canAccessSystemSettings
     ? 'claude'
@@ -78,7 +77,6 @@ export function SettingsPage() {
   ) as SettingsTab | null;
 
   const activeTab = useMemo((): SettingsTab => {
-    if (mustChangePassword) return 'security';
     const raw = rawTab;
     if (raw && VALID_TABS.includes(raw)) {
       if (SYSTEM_TABS.includes(raw) && !canAccessSystemSettings)
@@ -90,13 +88,7 @@ export function SettingsPage() {
       return raw;
     }
     return defaultTab;
-  }, [
-    rawTab,
-    canAccessSystemSettings,
-    mustChangePassword,
-    defaultTab,
-    isAdmin,
-  ]);
+  }, [rawTab, canAccessSystemSettings, defaultTab, isAdmin]);
 
   const handleTabChange = useCallback(
     (tab: SettingsTab) => {
@@ -132,8 +124,7 @@ export function SettingsPage() {
     'host-integration': '管理宿主机 Claude 目录的来源。',
   };
 
-  const legacyRoute =
-    !mustChangePassword && rawTab ? LEGACY_TAB_ROUTES[rawTab] : undefined;
+  const legacyRoute = rawTab ? LEGACY_TAB_ROUTES[rawTab] : undefined;
   if (legacyRoute) return <Navigate to={legacyRoute} replace />;
 
   return (
@@ -160,7 +151,6 @@ export function SettingsPage() {
         onTabChange={handleTabChange}
         canAccessSystemSettings={canAccessSystemSettings}
         isAdmin={isAdmin}
-        mustChangePassword={mustChangePassword}
         open={navOpen}
         onOpenChange={setNavOpen}
       />
@@ -181,12 +171,6 @@ export function SettingsPage() {
                   </p>
                 )}
               </header>
-
-              {mustChangePassword && (
-                <div className="mb-6 rounded-xl border border-warning/20 bg-warning-bg px-4 py-3 text-sm text-warning">
-                  检测到首次登录或管理员重置密码，请先在“安全与设备”中修改密码；完成前其他设置暂不可用。
-                </div>
-              )}
 
               {activeTab === 'system' ? (
                 <SystemSettingsSection />

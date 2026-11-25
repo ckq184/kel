@@ -29,7 +29,6 @@ async function main(): Promise<void> {
       role: 'admin',
       status: 'active',
       password_hash: passwordHash,
-      must_change_password: false,
       disable_reason: null,
       deleted_at: null,
     });
@@ -45,7 +44,6 @@ async function main(): Promise<void> {
     display_name: username,
     role: 'admin',
     status: 'active',
-    must_change_password: false,
     created_at: now,
     updated_at: now,
     notes: 'Created by reset-admin script',
