@@ -94,7 +94,7 @@ Host 执行是额外边界：`hasHostExecutionPermission()` 要求 admin 角色�
 
 #### 1.5.3 删除与环境变量
 
-- 删除工作区前会暂停相关序列化键、停止工作区与 Runner，失败时恢复；`GET /api/groups/:jid/delete-impact` 用同一删除边界检查渠道绑定与任务影响面，且仅接受 `web:` 工作区。
+- 删除工作区前会暂停相关序列化键、停止工作区与 Runner，失败时恢复；`GET /api/groups/:jid/delete-impact` 用同一删除边界检查渠道绑定影响面（绑定会话、主 IM 群与话题上下文），且仅接受 `web:` 工作区；定时任务在删除时另行停止，不在该接口返回。
 - `GET|PUT /api/groups/:jid/env` 必须先通过 `canAccessGroup()`；Host Workspace 额外要求 admin；非 admin 必须是工作区 owner；admin 仍需先通过工作区访问检查，不能借角色读取其他账号的工作区。
 
 #### 1.5.4 Workspace Memory v2

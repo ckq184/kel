@@ -18,6 +18,9 @@ describe('THESIS-13 personal product positioning', () => {
 
     const claude = read('CLAUDE.md');
     expect(claude).toContain('自托管、个人 Agent 工作台');
+
+    const agents = read('AGENTS.md');
+    expect(agents).toContain('自托管、个人 Agent 工作台');
   });
 
   test('README and docs/API.md link to the personal access-boundary document', () => {

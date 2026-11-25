@@ -57,8 +57,8 @@ Public：
 
 - `GET|POST /api/groups`
 - `PATCH|DELETE /api/groups/:jid`
-- `GET /api/groups/:jid/delete-impact`，删除前影响面检查（渠道绑定、任务与
-  运行状态），要求与删除相同的权限，且仅接受 `web:` 工作区
+- `GET /api/groups/:jid/delete-impact`，删除前影响面检查（渠道绑定与会话绑定），
+  要求与删除相同的权限，且仅接受 `web:` 工作区
 - `PATCH /api/groups/:jid/agent-profile`
 - `POST /api/groups/:jid/stop`
 - `POST /api/groups/:jid/interrupt`
