@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react';
 import { useMonitorStore } from '../stores/monitor';
-import { useAuthStore } from '../stores/auth';
 import { ContainerStatus } from '../components/monitor/ContainerStatus';
 import { QueueStatus } from '../components/monitor/QueueStatus';
 import { SystemInfo } from '../components/monitor/SystemInfo';
@@ -33,9 +32,6 @@ export function MonitorPage() {
     clearPullResult,
     loadUncertainOutbox,
   } = useMonitorStore();
-  const canManageSystem = useAuthStore((s) =>
-    s.hasPermission('manage_system_config'),
-  );
   const logEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -48,16 +44,15 @@ export function MonitorPage() {
     return () => clearInterval(interval);
   }, [loadStatus]);
 
-  // 待人工确认的渠道投递（uncertain Channel Outbox）：接口要求
-  // manage_system_config，无权限用户不轮询；与系统状态共用 10 秒节奏
+  // 待人工确认的渠道投递（uncertain Channel Outbox）：与系统状态共用
+  // 10 秒节奏；页面路由已由 admin 角色守卫。
   useEffect(() => {
-    if (!canManageSystem) return;
     loadUncertainOutbox();
     const interval = setInterval(() => {
       loadUncertainOutbox();
     }, 10000);
     return () => clearInterval(interval);
-  }, [loadUncertainOutbox, canManageSystem]);
+  }, [loadUncertainOutbox]);
 
   // WebSocket listeners for Docker Hub pull progress
   useEffect(() => {
@@ -171,11 +166,7 @@ export function MonitorPage() {
                         </>
                       )}
                     </div>
-                    <Button
-                      onClick={handlePull}
-                      disabled={pulling || !canManageSystem}
-                      title={!canManageSystem ? '需要系统配置权限' : undefined}
-                    >
+                    <Button onClick={handlePull} disabled={pulling}>
                       {pulling ? (
                         <>
                           <Loader2 className="w-4 h-4 animate-spin" />

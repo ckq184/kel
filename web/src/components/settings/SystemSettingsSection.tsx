@@ -214,9 +214,6 @@ function NumberSettingField({
 }
 
 export function SystemSettingsSection() {
-  const canManage = useAuthStore((state) =>
-    state.hasPermission('manage_system_config'),
-  );
   const [settings, setSettings] = useState<SystemSettings | null>(null);
   const [values, setValues] = useState<Record<
     NumericSettingKey,
@@ -235,7 +232,6 @@ export function SystemSettingsSection() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const loadSettings = useCallback(async () => {
-    if (!canManage) return;
     setLoading(true);
     setLoadError(null);
     try {
@@ -253,7 +249,7 @@ export function SystemSettingsSection() {
     } finally {
       setLoading(false);
     }
-  }, [canManage]);
+  }, []);
 
   useEffect(() => {
     void loadSettings();
@@ -302,14 +298,6 @@ export function SystemSettingsSection() {
       setSaving(false);
     }
   };
-
-  if (!canManage) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        需要系统配置权限才能查看和修改系统参数。
-      </p>
-    );
-  }
 
   if (loading) {
     return (

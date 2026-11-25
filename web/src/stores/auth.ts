@@ -2,20 +2,12 @@ import { create } from 'zustand';
 import { api, apiFetch } from '../api/client';
 import { clearMessageSnapshotCache } from '../utils/messageSnapshotCache';
 
-export type Permission =
-  | 'manage_system_config'
-  | 'manage_group_env'
-  | 'manage_users'
-  | 'manage_invites'
-  | 'view_audit_log';
-
 export interface UserPublic {
   id: string;
   username: string;
   display_name: string;
   role: 'admin' | 'member';
   status: 'active' | 'disabled' | 'deleted';
-  permissions: Permission[];
   must_change_password: boolean;
   disable_reason: string | null;
   notes: string | null;
@@ -71,7 +63,6 @@ interface AuthState {
   }) => Promise<void>;
   uploadAvatar: (file: File) => Promise<string>;
   fetchAppearance: () => Promise<void>;
-  hasPermission: (permission: Permission) => boolean;
 }
 
 let checkAuthInFlight: Promise<void> | null = null;
@@ -274,12 +265,5 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } catch {
       // API not yet available, keep current state
     }
-  },
-
-  hasPermission: (permission: Permission): boolean => {
-    const user = get().user;
-    if (!user) return false;
-    if (user.role === 'admin') return true;
-    return user.permissions.includes(permission);
   },
 }));

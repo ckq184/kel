@@ -83,7 +83,7 @@ const aboutItem: NavItem = {
 interface SettingsNavProps {
   activeTab: SettingsTab;
   onTabChange: (tab: SettingsTab) => void;
-  canManageSystemConfig: boolean;
+  canAccessSystemSettings: boolean;
   isAdmin: boolean;
   mustChangePassword: boolean;
   open?: boolean;
@@ -93,7 +93,7 @@ interface SettingsNavProps {
 export function SettingsNav({
   activeTab,
   onTabChange,
-  canManageSystemConfig,
+  canAccessSystemSettings,
   isAdmin,
   mustChangePassword,
   open,
@@ -103,9 +103,9 @@ export function SettingsNav({
     if (item.key === 'main-agent' || item.key === 'host-integration') {
       return isAdmin;
     }
-    return canManageSystemConfig;
+    return canAccessSystemSettings;
   });
-  const management = managementItems.filter(() => canManageSystemConfig);
+  const management = managementItems.filter(() => canAccessSystemSettings);
   const sections = [
     { label: '账户设置', items: accountItems },
     ...(system.length ? [{ label: '系统配置', items: system }] : []),

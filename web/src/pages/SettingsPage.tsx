@@ -63,14 +63,13 @@ export function SettingsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [navOpen, setNavOpen] = useState(false);
 
-  const hasSystemConfigPermission =
-    currentUser?.role === 'admin' ||
-    !!currentUser?.permissions.includes('manage_system_config');
+  const isAdmin = currentUser?.role === 'admin';
   const mustChangePassword = !!currentUser?.must_change_password;
-  const canManageSystemConfig =
-    hasSystemConfigPermission && !mustChangePassword;
+  const canAccessSystemSettings = isAdmin && !mustChangePassword;
 
-  const defaultTab: SettingsTab = canManageSystemConfig ? 'claude' : 'profile';
+  const defaultTab: SettingsTab = canAccessSystemSettings
+    ? 'claude'
+    : 'profile';
   const rawTabValue = searchParams.get('tab');
   // Keep bookmarks and already-open tabs from the retired automation page on
   // the closest remaining settings surface instead of falling back to models.
@@ -82,24 +81,21 @@ export function SettingsPage() {
     if (mustChangePassword) return 'security';
     const raw = rawTab;
     if (raw && VALID_TABS.includes(raw)) {
-      if (SYSTEM_TABS.includes(raw) && !canManageSystemConfig)
+      if (SYSTEM_TABS.includes(raw) && !canAccessSystemSettings)
         return defaultTab;
-      if (
-        (raw === 'main-agent' || raw === 'host-integration') &&
-        currentUser?.role !== 'admin'
-      ) {
+      if ((raw === 'main-agent' || raw === 'host-integration') && !isAdmin) {
         return defaultTab;
       }
-      if (raw === 'monitor' && !canManageSystemConfig) return defaultTab;
+      if (raw === 'monitor' && !canAccessSystemSettings) return defaultTab;
       return raw;
     }
     return defaultTab;
   }, [
     rawTab,
-    canManageSystemConfig,
+    canAccessSystemSettings,
     mustChangePassword,
     defaultTab,
-    currentUser?.role,
+    isAdmin,
   ]);
 
   const handleTabChange = useCallback(
@@ -162,8 +158,8 @@ export function SettingsPage() {
       <SettingsNav
         activeTab={activeTab}
         onTabChange={handleTabChange}
-        canManageSystemConfig={canManageSystemConfig}
-        isAdmin={currentUser?.role === 'admin'}
+        canAccessSystemSettings={canAccessSystemSettings}
+        isAdmin={isAdmin}
         mustChangePassword={mustChangePassword}
         open={navOpen}
         onOpenChange={setNavOpen}
