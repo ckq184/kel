@@ -7,9 +7,9 @@
 
 - API 默认前缀为 `/api`，WebSocket 为 `/ws`。
 - 除明确标记 Public 的接口外，均需要有效的 CKQClaw Cookie Session。
-- 资源接口还会执行 owner、admin 角色、Host 执行权限等检查，见
-  [ACL 权限矩阵](ACL-MATRIX.md)。
-- 其他用户的资源通常以 `404` 返回，避免泄漏资源是否存在。
+- 资源接口还会执行登录会话、owner、admin 角色、Host 执行权限等检查，见
+  [个人版访问边界](ACL-MATRIX.md)。
+- 无权访问的资源通常以 `404` 返回，避免泄漏资源是否存在。
 - Secret 写入后加密保存；读取 API 只返回脱敏值或“是否已配置”状态。
 
 ## 路由模块
@@ -120,8 +120,8 @@ HTTP 状态为 409；请求不会停止现有 Runner，也不会修改绑定。
 `host_path` 是 CKQClaw/Docker 守护进程所在服务器上的绝对目录，不是浏览器
 所在设备的目录；`container_path` 是 `/workspace/extra/` 下的相对路径。来源目录
 必须通过 `config/mount-allowlist.json`，目标不能重复、嵌套、穿越或覆盖运行时
-保留目录。普通用户、停用管理员和 host 模式请求都会被拒绝。权限、allowlist、
-真实路径与目录类型会在每次容器启动前重新校验，因此管理员被降权、目录被删除、
+保留目录。非管理员账号、停用账号和 host 模式请求都会被拒绝。owner、allowlist、
+真实路径与目录类型会在每次容器启动前重新校验，因此账号被降权、目录被删除、
 符号链接被替换或策略收紧后，旧配置不会继续生效。管理界面使用
 `GET /api/browse/directories?purpose=mount` 浏览服务器目录；未配置有效 allowlist
 时该入口 fail-closed。
@@ -296,7 +296,7 @@ Provider：
 - `GET|PUT /api/config/system`
 - `GET|PUT /api/config/host-integration`，仅 admin；包含
   `adminHostOnlyMode`。从 `false` 切到 `true` 时会停稳管理员工作区运行器，并把
-  active admin 拥有的工作区和定时任务持久迁移为 Host；普通成员数据不变
+  active admin 拥有的工作区和定时任务持久迁移为 Host；其他账号的数据不变
 - `GET /api/config/external-resources`
 - `GET /api/config/external-resources/rule`
 - `GET|PUT /api/config/appearance`

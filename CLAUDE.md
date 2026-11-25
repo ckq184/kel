@@ -18,7 +18,7 @@
 
 ## 2. 产品模型
 
-CKQClaw 是基于 Pi Agent Runtime 的自托管、多用户 Agent 工作台，支持 Web 与飞书、
+CKQClaw 是基于 Pi Agent Runtime 的自托管、个人 Agent 工作台，支持 Web 与飞书、
 QQ、微信三渠道。
 
 当前产品层级：
@@ -55,7 +55,7 @@ Agent Profile（身份、四段 Prompt、能力策略）
 | `src/task-scheduler.ts`            | Cron、interval、once 调度和重启恢复                    |
 | `src/channel-mount-service.ts`     | 工作区/会话绑定和原生线程路由                          |
 | `src/channel-reliability-store.ts` | Inbox、Turn、Outbox、Streaming Card 的持久状态机       |
-| `src/im-manager.ts`                | 多用户、多账号渠道连接池                               |
+| `src/im-manager.ts`                | 多账号渠道连接池                                       |
 | `src/agent-capability-preview.ts`  | Agent 最终上下文和能力预览                             |
 | `src/claude-context-resolver.ts`   | 兼容上下文、Skills 与来源解析                          |
 
@@ -255,13 +255,16 @@ Channel Reliability 的 Inbox/Turn/Outbox/Card 表由
 
 ## 8. 认证与访问边界
 
+- 单账号模式：首次启动通过 `POST /api/auth/setup` 创建唯一账号，之后不提供注册、账号管理或多人协作入口。
 - Cookie 会话使用 HMAC 签名，密钥来自环境变量、持久文件或首次自动生成。
-- `canAccessGroup`、`canModifyGroup` 和 `canDeleteGroup` 不提供 admin 全局旁路；
-  工作区和渠道资源按 `created_by` 隔离。
-- Host 工作区额外要求 admin 角色。
-- 系统配置与运行状态的管理操作使用 `adminRoleMiddleware`（admin 角色）；只读的 `GET /api/status` 仍对已登录账号开放。用户、邀请与审计界面已随单账号收口下线。
+- 除公开接口外，HTTP 与 WebSocket 都要求有效登录会话；`/ws` 升级同时校验 Cookie Session 与 Origin。
+- 登录限流按用户名与来源 IP 计数，超过阈值返回 429。
+- 唯一账号恒为 admin：系统配置、Host 集成、系统外观与运行状态管理操作使用 `adminRoleMiddleware`；只读的 `GET /api/status` 对已登录账号开放。
+- Host 工作区额外要求 admin 角色，并在启动前用 `canExecuteOnHost` 复查 owner 当前状态。
+- `canAccessGroup`、`canModifyGroup` 和 `canDeleteGroup` 保留为数据归属检查，不提供 admin 全局旁路；单账号下当前账号即工作区 owner。
+- IM 侧访问控制独立于 Web 会话：机器人主人、发送者白名单、响应对象、激活方式与 IM 命令的主人约束。
 - 敏感写操作必须先停止或暂停相关 Runner，并在提交失败时恢复队列。
-- API 返回资源不存在时通常使用 404 隐藏其他用户资源是否存在。
+- API 返回资源不存在时通常使用 404，避免泄漏资源是否存在。
 
 完整边界见 `docs/ACL-MATRIX.md`。
 
