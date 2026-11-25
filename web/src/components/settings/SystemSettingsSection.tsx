@@ -483,8 +483,7 @@ export function HostIntegrationSettingsSection({
     <div>
       {scope === 'host' && (
         <div className="rounded-lg border border-warning/30 bg-warning-bg px-4 py-3 text-xs leading-5 text-warning">
-          这些设置会读取宿主机文件，只对系统管理员开放。自定义智能体
-          是否继承宿主机 Claude Code 配置，请在对应智能体的设置中管理。
+          这些设置会读取宿主机文件，属于系统级配置。自定义智能体的继承方式请在对应智能体的设置中管理。
         </div>
       )}
 
@@ -500,9 +499,10 @@ export function HostIntegrationSettingsSection({
                   id="host-integration-main-agent-context-description"
                   className="mt-1 text-xs leading-5 text-muted-foreground"
                 >
-                  开启后自动继承宿主机提示词、Rules、全部 Skills 与 MCP，
-                  无需再逐项选择；CKQClaw 管理的能力继续附加。普通用户的 默认
-                  CKQClaw 始终使用托管配置。
+                  开启后自动继承宿主机提示词、Rules、全部 Skills 与
+                  MCP，无需再逐项选择；CKQClaw
+                  管理的能力继续附加。自定义智能体的默认 CKQClaw
+                  始终使用托管配置。
                 </p>
               </div>
               <Switch
@@ -531,7 +531,7 @@ export function HostIntegrationSettingsSection({
                   id="main-agent-auto-compact-default-description"
                   className="mt-1 text-xs leading-5 text-muted-foreground"
                 >
-                  全局作用于所有用户的默认 CKQClaw。Pi 运行时在上下文接近窗口
+                  全局作用于默认 CKQClaw。Pi 运行时在上下文接近窗口
                   上限时自动压缩；历史百分比与固定阈值配置已于 Pi 运行时下线
                   （存量值仅保留存储兼容），实际压缩时机由运行时决定。
                 </p>
@@ -544,12 +544,12 @@ export function HostIntegrationSettingsSection({
           <>
             <div className="flex min-h-16 items-start justify-between gap-6">
               <div className="min-w-0">
-                <Label htmlFor="admin-host-only-mode">管理员纯宿主机模式</Label>
+                <Label htmlFor="admin-host-only-mode">纯宿主机模式</Label>
                 <p
                   id="admin-host-only-mode-description"
                   className="mt-1 text-xs leading-5 text-muted-foreground"
                 >
-                  开启后，管理员拥有的工作区和定时任务会统一迁移到宿主机，并禁止再选择
+                  开启后，工作区和定时任务会统一迁移到宿主机，并禁止再选择
                   Docker。关闭后不会自动把已有工作区迁回
                   Docker。宿主机工作区暂不支持网页终端。
                 </p>

@@ -136,7 +136,7 @@ export function MonitorPage() {
                     <CheckCircle className="w-5 h-5 text-success" />
                     <span className="text-sm text-muted-foreground">
                       {status.adminHostOnlyMode
-                        ? '管理员纯宿主机模式已开启，当前工作区无需 Docker。'
+                        ? '纯宿主机模式已开启，当前工作区无需 Docker。'
                         : '当前没有 Docker 模式的工作区，无需检查镜像。'}
                     </span>
                   </div>

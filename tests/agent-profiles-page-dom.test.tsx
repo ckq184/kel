@@ -386,9 +386,7 @@ describe('智能体宿主机 Skills 自动保存', () => {
     expect(container?.textContent).toContain(
       '智能体配置已保存，但工作区运行时清理未完成',
     );
-    expect(container?.textContent).toContain(
-      '只有管理员可以查看和授权宿主机 Skills',
-    );
+    expect(container?.textContent).toContain('当前无法查看和授权宿主机 Skills');
     const retryCleanup = Array.from(
       container!.querySelectorAll<HTMLButtonElement>('button'),
     ).find((button) => button.textContent?.includes('重试清理'));

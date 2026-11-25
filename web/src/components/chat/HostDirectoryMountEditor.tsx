@@ -167,7 +167,7 @@ export function HostDirectoryMountEditor({
             宿主机目录挂载
           </h3>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            仅管理员可用。选择 CKQClaw/Docker
+            选择 CKQClaw/Docker
             服务器上的目录，并实时挂载到容器；这不是复制，源目录后续变化会直接反映到容器中。
           </p>
         </div>

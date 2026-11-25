@@ -100,7 +100,6 @@ export function AgentSkillsPolicyEditor({
       <SkillSourceSection
         title="宿主机 Skills"
         description="来自 ~/.claude/skills，可单独启用；不会同时加载宿主机 CLAUDE.md 或 Rules。"
-        badge="管理员"
       >
         {hostAvailable ? (
           <>
@@ -214,7 +213,7 @@ export function AgentSkillsPolicyEditor({
           </>
         ) : (
           <p className="rounded-lg border border-border bg-muted/30 px-3 py-3 text-xs leading-5 text-muted-foreground">
-            只有管理员可以查看和授权宿主机 Skills。
+            当前无法查看和授权宿主机 Skills。
           </p>
         )}
       </SkillSourceSection>

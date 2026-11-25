@@ -238,9 +238,7 @@ export function McpServersPage() {
                         系统 MCP ({systemServers.length})
                       </h2>
                       <p className="mb-3 text-xs leading-5 text-muted-foreground">
-                        系统列表对所有用户可见，仅管理员可修改；是否允许成员的
-                        智能体
-                        使用由每项配置决定。系统与个人存在同名配置时，个人配置优先。
+                        系统列表对所有账号可见，配置在此统一维护。系统与个人存在同名配置时，个人配置优先。
                       </p>
                       <div className="space-y-2">
                         {systemServers.map((server) => (

@@ -32,9 +32,6 @@ export function AddMcpServerDialog({
 }: AddMcpServerDialogProps) {
   const [id, setId] = useState('');
   const [scope, setScope] = useState<McpServerSource>('user');
-  const [memberAccess, setMemberAccess] = useState<'admin_only' | 'shared'>(
-    'admin_only',
-  );
   const [serverType, setServerType] = useState<ServerType>('stdio');
   const [command, setCommand] = useState('');
   const [args, setArgs] = useState<string[]>([]);
@@ -49,7 +46,6 @@ export function AddMcpServerDialog({
   const reset = () => {
     setId('');
     setScope('user');
-    setMemberAccess('admin_only');
     setServerType('stdio');
     setCommand('');
     setArgs([]);
@@ -102,7 +98,6 @@ export function AddMcpServerDialog({
         await onAdd({
           id: id.trim(),
           scope,
-          ...(scope === 'system' ? { memberAccess } : {}),
           type: serverType as 'http' | 'sse',
           url: url.trim(),
           headers: Object.keys(headersObj).length > 0 ? headersObj : undefined,
@@ -117,7 +112,6 @@ export function AddMcpServerDialog({
         await onAdd({
           id: id.trim(),
           scope,
-          ...(scope === 'system' ? { memberAccess } : {}),
           command: command.trim(),
           args: args.length > 0 ? args : undefined,
           env: Object.keys(envObj).length > 0 ? envObj : undefined,
@@ -148,7 +142,7 @@ export function AddMcpServerDialog({
                 {(
                   [
                     ['user', '我的 MCP', '仅你和你的智能体可用'],
-                    ['system', '系统 MCP', '所有用户可见，管理员维护'],
+                    ['system', '系统 MCP', '所有账号可见，在此统一维护'],
                   ] as const
                 ).map(([value, title, description]) => (
                   <button
@@ -169,45 +163,6 @@ export function AddMcpServerDialog({
                   </button>
                 ))}
               </div>
-            </div>
-          )}
-
-          {isAdmin && scope === 'system' && (
-            <div>
-              <Label className="mb-1">成员访问</Label>
-              <div className="grid grid-cols-2 gap-2">
-                {(
-                  [
-                    ['admin_only', '仅管理员', '普通成员的智能体不可使用'],
-                    ['shared', '共享给成员', '允许普通成员的智能体使用'],
-                  ] as const
-                ).map(([value, title, description]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    disabled={submitting}
-                    aria-pressed={memberAccess === value}
-                    onClick={() => setMemberAccess(value)}
-                    className={`rounded-lg border px-3 py-2 text-left transition-colors ${
-                      memberAccess === value
-                        ? 'border-primary bg-brand-50 ring-1 ring-primary'
-                        : 'border-border hover:bg-muted/60'
-                    }`}
-                  >
-                    <span className="block text-sm font-medium">{title}</span>
-                    <span className="mt-0.5 block text-[11px] text-muted-foreground">
-                      {description}
-                    </span>
-                  </button>
-                ))}
-              </div>
-              {memberAccess === 'shared' && (
-                <p className="mt-2 rounded-lg border border-warning/20 bg-warning-bg px-3 py-2 text-xs leading-5 text-warning">
-                  共享会把完整 command、args、url、env 和 headers
-                  配置交给普通成员的智能体
-                  运行。请确认其中所有凭据都允许成员使用。
-                </p>
-              )}
             </div>
           )}
 

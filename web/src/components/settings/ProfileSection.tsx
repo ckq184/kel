@@ -115,7 +115,6 @@ export function ProfileSection() {
               {displayName || username || '未设置'}
             </div>
             <div className="mt-0.5 text-xs text-muted-foreground">
-              {currentUser?.role === 'admin' ? '管理员' : '普通成员'} ·{' '}
               {currentUser?.status === 'active' ? '已启用' : '已禁用'}
             </div>
           </div>

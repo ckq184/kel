@@ -450,7 +450,8 @@ export function TaskDetail({ task }: TaskDetailProps) {
           </div>
           {task.permissions.risk_level === 'high' && (
             <p className="mt-3 rounded-md bg-warning-bg/60 px-3 py-2 text-xs text-warning">
-              高权限任务：可在宿主机执行 Shell 命令，仅管理员可以修改或运行。
+              高权限任务：可在宿主机执行 Shell
+              命令，修改或运行会直接影响宿主机环境。
             </p>
           )}
         </div>
@@ -633,9 +634,9 @@ export function TaskDetail({ task }: TaskDetailProps) {
               </select>
               <p className="mt-1 text-xs text-muted-foreground">
                 {adminHostOnlyMode
-                  ? '管理员纯宿主机模式已开启，任务固定在宿主机执行。'
+                  ? '纯宿主机模式已开启，任务固定在宿主机执行。'
                   : task.execution_type === 'script'
-                    ? '脚本固定为宿主机模式；必须同时选择管理员宿主机工作区。'
+                    ? '脚本固定为宿主机模式；必须同时选择宿主机工作区。'
                     : '切换工作区时会自动继承目标工作区模式，也可在保存前手动调整。'}
               </p>
             </>
@@ -650,8 +651,8 @@ export function TaskDetail({ task }: TaskDetailProps) {
               {editing && !isAdmin && (
                 <p className="mt-1 text-xs text-muted-foreground">
                   {editForm.execution_mode === 'host'
-                    ? '这是旧版宿主机任务；成员只能查看，执行模式仅管理员可修改。'
-                    : '成员任务固定使用 Docker 容器；宿主机模式仅管理员可用。'}
+                    ? '这是旧版宿主机任务；执行模式不可修改。'
+                    : '该任务固定使用 Docker 容器；宿主机模式不可用。'}
                 </p>
               )}
             </>
@@ -703,10 +704,7 @@ export function TaskDetail({ task }: TaskDetailProps) {
                       targetExecutionMode,
                     )
                   ) {
-                    showToast(
-                      '无法切换工作区',
-                      '成员任务不能迁移到宿主机执行工作区',
-                    );
+                    showToast('无法切换工作区', '该任务不能迁移到宿主机工作区');
                     return;
                   }
                   setEditForm({

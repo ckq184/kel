@@ -37,9 +37,6 @@ export function McpServerDetail({ server, onDeleted }: McpServerDetailProps) {
   const [editArgs, setEditArgs] = useState<string[]>([]);
   const [editUrl, setEditUrl] = useState('');
   const [editDescription, setEditDescription] = useState('');
-  const [editMemberAccess, setEditMemberAccess] = useState<
-    'admin_only' | 'shared'
-  >('admin_only');
   const [secretRows, setSecretRows] = useState<McpSecretRow[] | null>(null);
 
   useEffect(() => {
@@ -74,7 +71,6 @@ export function McpServerDetail({ server, onDeleted }: McpServerDetailProps) {
     setEditArgs(server.args ? [...server.args] : []);
     setEditUrl(server.url ?? '');
     setEditDescription(server.description ?? '');
-    setEditMemberAccess(server.memberAccess ?? 'admin_only');
     setSecretRows(null);
     setEditing(true);
   };
@@ -92,18 +88,12 @@ export function McpServerDetail({ server, onDeleted }: McpServerDetailProps) {
           ? {
               url: editUrl.trim(),
               description: editDescription.trim(),
-              ...(server.source === 'system'
-                ? { memberAccess: editMemberAccess }
-                : {}),
               ...secretPatch,
             }
           : {
               command: editCommand.trim(),
               args: editArgs,
               description: editDescription.trim(),
-              ...(server.source === 'system'
-                ? { memberAccess: editMemberAccess }
-                : {}),
               ...secretPatch,
             },
       );
@@ -179,18 +169,6 @@ export function McpServerDetail({ server, onDeleted }: McpServerDetailProps) {
               {server.description}
             </p>
           )}
-          {server.source === 'system' && (
-            <p className="mt-2 text-xs text-muted-foreground">
-              成员访问：
-              {server.memberAccess === 'shared' ? '共享给成员' : '仅管理员'}
-            </p>
-          )}
-          {server.unavailableReason === 'system_admin_only' && (
-            <p className="mt-2 rounded-lg border border-warning/20 bg-warning-bg px-3 py-2 text-xs leading-5 text-warning">
-              此系统 MCP 仅限管理员使用。普通成员的智能体
-              无法运行它，完整运行配置也不会向普通成员公开。
-            </p>
-          )}
         </div>
         <div className="flex gap-2">
           {!editing && !server.readonly && (
@@ -219,8 +197,7 @@ export function McpServerDetail({ server, onDeleted }: McpServerDetailProps) {
         <div className="space-y-5 p-5 sm:p-6">
           {server.readonly && (
             <p className="rounded-lg bg-muted px-3 py-2 text-xs leading-5 text-muted-foreground">
-              系统 MCP 由管理员统一管理，你可以查看并在智能体
-              能力中引用，但不能修改。
+              系统 MCP 统一维护，你可以查看并在智能体能力中引用，但不能修改。
             </p>
           )}
           {hasConflict && (
@@ -230,43 +207,6 @@ export function McpServerDetail({ server, onDeleted }: McpServerDetailProps) {
                 ? '当前这份配置生效。'
                 : '当前由“我的 MCP”配置覆盖。'}
             </p>
-          )}
-          {server.source === 'system' && (
-            <Field label="成员访问">
-              <div className="grid grid-cols-2 gap-2">
-                {(
-                  [
-                    ['admin_only', '仅管理员', '普通成员的智能体不可使用'],
-                    ['shared', '共享给成员', '允许普通成员的智能体使用'],
-                  ] as const
-                ).map(([value, title, description]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    disabled={saving}
-                    aria-pressed={editMemberAccess === value}
-                    onClick={() => setEditMemberAccess(value)}
-                    className={`rounded-lg border px-3 py-2 text-left transition-colors ${
-                      editMemberAccess === value
-                        ? 'border-primary bg-brand-50 ring-1 ring-primary'
-                        : 'border-border hover:bg-muted/60'
-                    }`}
-                  >
-                    <span className="block text-sm font-medium">{title}</span>
-                    <span className="mt-0.5 block text-[11px] text-muted-foreground">
-                      {description}
-                    </span>
-                  </button>
-                ))}
-              </div>
-              {editMemberAccess === 'shared' && (
-                <p className="mt-2 rounded-lg border border-warning/20 bg-warning-bg px-3 py-2 text-xs leading-5 text-warning">
-                  共享会把完整 command、args、url、env 和 headers
-                  配置交给普通成员的智能体
-                  运行。请确认其中所有凭据都允许成员使用。
-                </p>
-              )}
-            </Field>
           )}
           {isHttp ? (
             <Field label="URL">
@@ -494,7 +434,7 @@ export function McpServerDetail({ server, onDeleted }: McpServerDetailProps) {
               </div>
             ) : hasHiddenSystemSecretKeys ? (
               <p className="text-xs text-muted-foreground">
-                已由管理员配置（名称不可见）
+                已配置（名称不可见）
               </p>
             ) : (
               <p className="text-xs text-muted-foreground">未配置</p>
