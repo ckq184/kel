@@ -92,5 +92,5 @@ D-E5 选 ② 时，用户要在本包**之前**用旧版界面处理（本包会
   - issue 的「把 `/api/admin/users/:id` 夹具改为直接写库」只适用于测试前置；`tests/routes-system-settings-security.test.ts` 末尾两个用例是管理接口的**测试主体**（提升成员、重新激活管理员），接口删除后产品路径不存在，用例随接口删除。宿主模式迁移/清理覆盖由同文件其余 9 个用例保留；审计用例改为断言不再写记录。
   - `tests/api-route-caller-contract.test.ts` 路由数下界 180→160、`tests/system-settings-projection.test.ts` UI 字段下界 5→4，随删除后的基线调整并保留宽松下界。
   - `logAuthEvent` 函数、`invite_codes`/`auth_audit_log` 读写函数与 `registerUserWithoutInvite` 保留为孤儿，按 issue 非目标交 THESIS-14 删除；本包未改 `src/db.ts`。
-- **合并前置（D-E5 ②）**：用户需在合并/部署前用旧版界面「用户与访问」禁用或删除其他 `active` 账号；代理不读写 `data/`，此动作尚未书面确认。已核实删除为软删除（`users.status='deleted'`、清会话、断 IM 渠道），不删除工作区/渠道账号，重启后不会重连。
+- **合并前置（D-E5 ②）**：用户需在合并/部署前用旧版界面「用户与访问」禁用或删除其他 `active` 账号；代理不读写 `data/`，此动作尚未书面确认。已核实删除为软删除（`users.status='deleted'`、清会话、断 IM 渠道），不删除工作区/渠道账号，重启后不会重连。 **2026-11-25 结案**：经用户授权只读核实本机开发实例，`users` 表只有 1 个账号（admin、active），没有需要禁用或删除的其他账号，此前置不再阻塞；核实记录见 [issues4 README 第四节](../issues4/README.md#四部署前置与用户操作代理不能代办)。
 - **人工冒烟（用户）**：首启创建账号 → 登出后重新登录 → 设置页「管理后台」只有运行状态 → 改密后用新密码登录 → 渠道账号页正常；`/login?tab=register` 落回登录页签，`/register`、`/users` 落回工作台。

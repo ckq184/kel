@@ -1,10 +1,12 @@
 {
-  "task": "personal-slim-pool - 个人版深度裁减与巨型文件瘦身任务池（docs/issues4/）：方案 v1.0（P1 至 P7 裁决台账）、README 索引与并行矩阵、THESIS-19 至 33；同步 thesis-trim 方案台账 #9/#12/#13/#15 与 §15、THESIS-16 补注；只改文档不改代码",
-  "base": "248c7cb",
+  "task": "issues4-precheck - issues4 部署前置核实落档：README 第四节记录本机只读核实结果（单账号、无旧 IM 配置、供应商配置 V5）；D-E5 ② 在 THESIS-10/11 交付记录、issues3 README 第四节、thesis-trim 方案 §14 第 9 项补结案注并登记 §15 v0.9.1；只改文档",
+  "base": "ea5a1da",
   "allow": [
     ".gatescope.json",
-    "docs/issues4/**",
-    "docs/issues2/task-thesis-trim-plan.md",
-    "docs/issues3/THESIS-16-personal-ui-wording.md"
+    "docs/issues4/README.md",
+    "docs/issues2/THESIS-10-single-account.md",
+    "docs/issues2/THESIS-11-drop-permissions.md",
+    "docs/issues3/README.md",
+    "docs/issues2/task-thesis-trim-plan.md"
   ]
 }
