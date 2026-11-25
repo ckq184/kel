@@ -34,11 +34,7 @@ import {
 import { isMentionActivationMode } from '../feishu-conversation-policy.js';
 import { normalizeLegacyOwnerMention } from '../im-audience-policy.js';
 import { conversationBindingPolicyError } from '../channel-conversation-kind.js';
-import {
-  adminRoleMiddleware,
-  authMiddleware,
-  systemConfigMiddleware,
-} from '../middleware/auth.js';
+import { adminRoleMiddleware, authMiddleware } from '../middleware/auth.js';
 import {
   AppearanceConfigSchema,
   HostIntegrationSettingsSchema,
@@ -576,7 +572,7 @@ async function applyClaudeConfigToAllGroups(
 configRoutes.get(
   '/claude/providers',
   authMiddleware,
-  systemConfigMiddleware,
+  adminRoleMiddleware,
   (c) => {
     try {
       const providers = getProviders();
@@ -607,7 +603,7 @@ configRoutes.get(
 configRoutes.put(
   '/claude/default',
   authMiddleware,
-  systemConfigMiddleware,
+  adminRoleMiddleware,
   async (c) => {
     const body = await c.req.json().catch(() => ({}));
     const providerId =
@@ -682,7 +678,7 @@ configRoutes.put(
 configRoutes.post(
   '/claude/providers',
   authMiddleware,
-  systemConfigMiddleware,
+  adminRoleMiddleware,
   async (c) => {
     const body = await c.req.json().catch(() => ({}));
     const validation = UnifiedProviderCreateSchema.safeParse(body);
@@ -713,7 +709,7 @@ configRoutes.post(
 configRoutes.patch(
   '/claude/providers/:id',
   authMiddleware,
-  systemConfigMiddleware,
+  adminRoleMiddleware,
   async (c) => {
     const { id } = c.req.param();
     const body = await c.req.json().catch(() => ({}));
@@ -873,7 +869,7 @@ configRoutes.patch(
 configRoutes.put(
   '/claude/providers/:id/secrets',
   authMiddleware,
-  systemConfigMiddleware,
+  adminRoleMiddleware,
   async (c) => {
     const { id } = c.req.param();
     const body = await c.req.json().catch(() => ({}));
@@ -989,7 +985,7 @@ configRoutes.put(
 configRoutes.delete(
   '/claude/providers/:id',
   authMiddleware,
-  systemConfigMiddleware,
+  adminRoleMiddleware,
   async (c) => {
     const { id } = c.req.param();
     const actor = (c.get('user') as AuthUser).username;
@@ -1052,7 +1048,7 @@ configRoutes.delete(
 configRoutes.post(
   '/claude/providers/:id/toggle',
   authMiddleware,
-  systemConfigMiddleware,
+  adminRoleMiddleware,
   async (c) => {
     const { id } = c.req.param();
     const actor = (c.get('user') as AuthUser).username;
@@ -1105,7 +1101,7 @@ configRoutes.post(
 configRoutes.post(
   '/claude/providers/:id/reset-health',
   authMiddleware,
-  systemConfigMiddleware,
+  adminRoleMiddleware,
   (c) => {
     const { id } = c.req.param();
     providerPool.resetHealth(id);
@@ -1117,7 +1113,7 @@ configRoutes.post(
 configRoutes.get(
   '/claude/providers/health',
   authMiddleware,
-  systemConfigMiddleware,
+  adminRoleMiddleware,
   (c) => {
     // Refresh pool state
     const enabledProviders = getEnabledProviders();
@@ -1131,7 +1127,7 @@ configRoutes.get(
 configRoutes.put(
   '/claude/balancing',
   authMiddleware,
-  systemConfigMiddleware,
+  adminRoleMiddleware,
   async (c) => {
     const body = await c.req.json().catch(() => ({}));
     const validation = BalancingConfigSchema.safeParse(body);
@@ -1159,7 +1155,7 @@ configRoutes.put(
 configRoutes.post(
   '/claude/apply',
   authMiddleware,
-  systemConfigMiddleware,
+  adminRoleMiddleware,
   async (c) => {
     const actor = (c.get('user') as AuthUser).username;
     try {
@@ -1204,7 +1200,7 @@ function restoreDefaultChannelError(restored: { reason: string }): string {
 
 const SYSTEM_AGENT_AVATAR_PREFIX = 'system-agent-';
 
-configRoutes.get('/appearance', authMiddleware, systemConfigMiddleware, (c) => {
+configRoutes.get('/appearance', authMiddleware, adminRoleMiddleware, (c) => {
   try {
     return c.json(getAppearanceConfig());
   } catch (err) {
@@ -1216,7 +1212,7 @@ configRoutes.get('/appearance', authMiddleware, systemConfigMiddleware, (c) => {
 configRoutes.put(
   '/appearance',
   authMiddleware,
-  systemConfigMiddleware,
+  adminRoleMiddleware,
   async (c) => {
     const body = await c.req.json().catch(() => ({}));
     const validation = AppearanceConfigSchema.safeParse(body);
@@ -1310,7 +1306,7 @@ function toSystemSettingsResponse(
   };
 }
 
-configRoutes.get('/system', authMiddleware, systemConfigMiddleware, (c) => {
+configRoutes.get('/system', authMiddleware, adminRoleMiddleware, (c) => {
   try {
     return c.json(toSystemSettingsResponse(getSystemSettings()));
   } catch (err) {
@@ -1319,42 +1315,37 @@ configRoutes.get('/system', authMiddleware, systemConfigMiddleware, (c) => {
   }
 });
 
-configRoutes.put(
-  '/system',
-  authMiddleware,
-  systemConfigMiddleware,
-  async (c) => {
-    const body = await c.req.json().catch(() => ({}));
-    const validation = SystemSettingsSchema.safeParse(body);
-    if (!validation.success) {
-      return zodBadRequest(c, validation.error, 'body-format');
-    }
+configRoutes.put('/system', authMiddleware, adminRoleMiddleware, async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const validation = SystemSettingsSchema.safeParse(body);
+  if (!validation.success) {
+    return zodBadRequest(c, validation.error, 'body-format');
+  }
 
-    try {
-      // Deprecated compatibility inputs. Accept them so stale Web clients do
-      // not fail the whole request, but never persist or apply them.
-      const effectiveSettings = { ...validation.data };
-      for (const key of [
-        'maxConcurrentHostProcesses',
-        'maxConcurrentScripts',
-        'scriptTimeout',
-        'taskBackfillGraceMs',
-        'maxRepliesPerTurn',
-        'maxTasksPerUser',
-      ] as const) {
-        delete effectiveSettings[key];
-      }
-      const saved = saveSystemSettings(effectiveSettings);
-      const response = toSystemSettingsResponse(saved);
-      return c.json(response);
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Invalid system settings payload';
-      logger.warn({ err }, 'Invalid system settings payload');
-      return c.json({ error: message }, 400);
+  try {
+    // Deprecated compatibility inputs. Accept them so stale Web clients do
+    // not fail the whole request, but never persist or apply them.
+    const effectiveSettings = { ...validation.data };
+    for (const key of [
+      'maxConcurrentHostProcesses',
+      'maxConcurrentScripts',
+      'scriptTimeout',
+      'taskBackfillGraceMs',
+      'maxRepliesPerTurn',
+      'maxTasksPerUser',
+    ] as const) {
+      delete effectiveSettings[key];
     }
-  },
-);
+    const saved = saveSystemSettings(effectiveSettings);
+    const response = toSystemSettingsResponse(saved);
+    return c.json(response);
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : 'Invalid system settings payload';
+    logger.warn({ err }, 'Invalid system settings payload');
+    return c.json({ error: message }, 400);
+  }
+});
 
 // ─── Host integration settings (admin role only) ───────────────────
 
@@ -1671,7 +1662,7 @@ configRoutes.get(
 configRoutes.get(
   '/external-resources/rule',
   authMiddleware,
-  systemConfigMiddleware,
+  adminRoleMiddleware,
   (c) => {
     const user = c.get('user') as AuthUser;
     if (user.role !== 'admin') {

@@ -4,7 +4,7 @@ import { promisify } from 'util';
 
 import { Hono } from 'hono';
 import type { Variables } from '../web-context.js';
-import { authMiddleware, systemConfigMiddleware } from '../middleware/auth.js';
+import { adminRoleMiddleware, authMiddleware } from '../middleware/auth.js';
 import type { AuthUser } from '../types.js';
 import {
   isHostExecutionGroup,
@@ -353,7 +353,7 @@ monitorRoutes.get('/status', authMiddleware, async (c) => {
 monitorRoutes.post(
   '/status/groups/:folder/switch-provider',
   authMiddleware,
-  systemConfigMiddleware,
+  adminRoleMiddleware,
   (c) =>
     c.json(
       {
@@ -373,7 +373,7 @@ monitorRoutes.post(
 monitorRoutes.get(
   '/status/channel-outbox/uncertain',
   authMiddleware,
-  systemConfigMiddleware,
+  adminRoleMiddleware,
   async (c) => {
     const limitParam = Number(c.req.query('limit') ?? '100');
     const items = listUncertainChannelOutbox(
@@ -405,7 +405,7 @@ monitorRoutes.get(
 monitorRoutes.post(
   '/status/channel-outbox/:id/resolve',
   authMiddleware,
-  systemConfigMiddleware,
+  adminRoleMiddleware,
   async (c) => {
     const id = c.req.param('id');
     let body: {
@@ -501,7 +501,7 @@ monitorRoutes.post(
 monitorRoutes.post(
   '/docker/pull',
   authMiddleware,
-  systemConfigMiddleware,
+  adminRoleMiddleware,
   async (c) => {
     if (pullState.pulling) {
       return c.json(

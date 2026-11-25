@@ -12,8 +12,7 @@ import {
   verifySessionToken,
   setSessionCookie,
 } from '../auth.js';
-import type { AuthUser, Permission } from '../types.js';
-import { hasPermission } from '../permissions.js';
+import type { AuthUser } from '../types.js';
 import {
   SESSION_COOKIE_NAME_SECURE,
   SESSION_COOKIE_NAME_PLAIN,
@@ -105,7 +104,6 @@ export const authMiddleware = async (c: any, next: any) => {
     role: session.role,
     status: session.status,
     display_name: session.display_name,
-    permissions: session.permissions,
     must_change_password: session.must_change_password,
   } as AuthUser);
   c.set('sessionId', token);
@@ -148,16 +146,6 @@ export const authMiddleware = async (c: any, next: any) => {
   await next();
 };
 
-export const requirePermission =
-  (permission: Permission) => async (c: any, next: any) => {
-    const user = c.get('user') as AuthUser;
-    if (!hasPermission(user, permission)) {
-      return c.json({ error: `Forbidden: ${permission} required` }, 403);
-    }
-    await next();
-  };
-
-export const systemConfigMiddleware = requirePermission('manage_system_config');
 export const adminRoleMiddleware = async (c: any, next: any) => {
   const user = c.get('user') as AuthUser;
   if (user.role !== 'admin') {
@@ -165,6 +153,3 @@ export const adminRoleMiddleware = async (c: any, next: any) => {
   }
   await next();
 };
-export const usersManageMiddleware = requirePermission('manage_users');
-export const inviteManageMiddleware = requirePermission('manage_invites');
-export const auditViewMiddleware = requirePermission('view_audit_log');

@@ -37,7 +37,6 @@ vi.mock('../src/middleware/auth.ts', async (importOriginal) => {
         display_name: 'Settings Echo User',
         role: process.env.CKQCLAW_TEST_ROLE ?? 'member',
         status: 'active',
-        permissions: JSON.parse(process.env.CKQCLAW_TEST_PERMISSIONS ?? '[]'),
         must_change_password: false,
       });
       return next();
@@ -105,13 +104,12 @@ beforeAll(() => {
 
 afterAll(() => {
   delete process.env.CKQCLAW_TEST_ROLE;
-  delete process.env.CKQCLAW_TEST_PERMISSIONS;
   removeTmpDirRecursive(tmpDir, [db.closeDatabase]);
 });
 
 describe('system settings per-user concurrency echo (ISSUE-07 item 1)', () => {
   test('GET /api/config/system echoes maxConcurrentContainersPerUser', async () => {
-    asSystemSettingsTestUser('member', ['manage_system_config']);
+    asSystemSettingsTestUser('admin');
     const response = await app.request('/api/config/system');
     expect(response.status).toBe(200);
     const body = await response.json();
@@ -120,7 +118,7 @@ describe('system settings per-user concurrency echo (ISSUE-07 item 1)', () => {
   });
 
   test('PUT persists the per-user limit and echoes it back', async () => {
-    asSystemSettingsTestUser('member', ['manage_system_config']);
+    asSystemSettingsTestUser('admin');
     const response = await app.request('/api/config/system', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
@@ -136,7 +134,7 @@ describe('system settings per-user concurrency echo (ISSUE-07 item 1)', () => {
   });
 
   test('PUT without the field keeps the stored per-user limit (merge semantics)', async () => {
-    asSystemSettingsTestUser('member', ['manage_system_config']);
+    asSystemSettingsTestUser('admin');
     // Web 设置 UI 保存其他字段时不会带上该字段；saveSystemSettings 是
     // {...existing, ...partial} 合并语义，不得把它重置回 null。
     const response = await app.request('/api/config/system', {

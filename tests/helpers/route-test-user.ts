@@ -8,7 +8,7 @@
  *   第三参 status，仅在显式传入时设置 CKQCLAW_TEST_USER_STATUS——
  *   变体 1 原文件从不触碰该键）；
  * - asOwnerProfileRouteUser：变体 2（CKQCLAW_OWNER_PROFILE_ROUTE_*）；
- * - asSystemSettingsTestUser：变体 3（CKQCLAW_TEST_ROLE + PERMISSIONS JSON）；
+ * - asSystemSettingsTestUser：变体 3（CKQCLAW_TEST_ROLE）；
  * - asInteractionTestUser：计划外第 4 迷你变体（CKQCLAW_INTERACTION_TEST_USER，
  *   基线后新增，台账留痕）；
  * - createTestUserRow：createUser/seedUser 同体收敛（db 经参数注入——测试
@@ -33,12 +33,8 @@ export function asOwnerProfileRouteUser(
   process.env.CKQCLAW_OWNER_PROFILE_ROUTE_ROLE = role;
 }
 
-export function asSystemSettingsTestUser(
-  role: 'admin' | 'member',
-  permissions: string[] = [],
-): void {
+export function asSystemSettingsTestUser(role: 'admin' | 'member'): void {
   process.env.CKQCLAW_TEST_ROLE = role;
-  process.env.CKQCLAW_TEST_PERMISSIONS = JSON.stringify(permissions);
 }
 
 export function asInteractionTestUser(id: string): void {

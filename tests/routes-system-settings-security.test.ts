@@ -37,7 +37,6 @@ vi.mock('../src/middleware/auth.ts', async (importOriginal) => {
         display_name: 'Settings Security User',
         role: process.env.CKQCLAW_TEST_ROLE ?? 'member',
         status: 'active',
-        permissions: JSON.parse(process.env.CKQCLAW_TEST_PERMISSIONS ?? '[]'),
         must_change_password: false,
       });
       return next();
@@ -103,13 +102,12 @@ beforeAll(() => {
 
 afterAll(() => {
   delete process.env.CKQCLAW_TEST_ROLE;
-  delete process.env.CKQCLAW_TEST_PERMISSIONS;
   removeTmpDirRecursive(tmpDir, [db.closeDatabase]);
 });
 
 describe('system settings capability boundaries', () => {
   test('system config response excludes host and billing fields', async () => {
-    asSystemSettingsTestUser('member', ['manage_system_config']);
+    asSystemSettingsTestUser('admin');
     const response = await app.request('/api/config/system');
     expect(response.status).toBe(200);
     const body = await response.json();
@@ -124,7 +122,7 @@ describe('system settings capability boundaries', () => {
   });
 
   test('system config rejects billing fields instead of silently accepting them', async () => {
-    asSystemSettingsTestUser('member', ['manage_system_config']);
+    asSystemSettingsTestUser('admin');
     const response = await app.request('/api/config/system', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
@@ -134,7 +132,7 @@ describe('system settings capability boundaries', () => {
   });
 
   test('stale clients may submit retired automation fields, which are ignored', async () => {
-    asSystemSettingsTestUser('member', ['manage_system_config']);
+    asSystemSettingsTestUser('admin');
     const response = await app.request('/api/config/system', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
@@ -155,8 +153,8 @@ describe('system settings capability boundaries', () => {
     expect(body).not.toHaveProperty('maxTasksPerUser');
   });
 
-  test('member with system permission cannot read or write host integration', async () => {
-    asSystemSettingsTestUser('member', ['manage_system_config']);
+  test('member cannot read or write host integration', async () => {
+    asSystemSettingsTestUser('member');
     expect((await app.request('/api/config/host-integration')).status).toBe(
       403,
     );

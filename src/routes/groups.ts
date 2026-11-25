@@ -517,10 +517,7 @@ function toPublicContainerEnvForUser(
   user: AuthUser,
 ) {
   const base = toPublicContainerEnvConfig(config);
-  if (
-    user.role === 'admin' ||
-    (user.permissions && user.permissions.includes('manage_group_env'))
-  ) {
+  if (user.role === 'admin') {
     return base;
   }
   return {
@@ -2460,10 +2457,10 @@ groupRoutes.get('/:jid/env', authMiddleware, (c) => {
     );
   }
 
-  // Check permissions: 与 PUT 对称收紧为 owner-only。`customEnv` 含
-  // 第三方 token（GitHub / 自定义 API key 等），即使 toPublicContainerEnvForUser
+  // 与 PUT 对称收紧为 owner-only。`customEnv` 含第三方 token
+  // （GitHub / 自定义 API key 等），即使 toPublicContainerEnvForUser
   // 把 anthropic/openai 字段做了 mask，customEnv 仍是明文返回；shared
-  // workspace 中持有 manage_group_env 的非 owner 不应能读 owner 的私密 env。
+  // workspace 中的非 owner 不应能读 owner 的私密 env。
   if (
     user.role !== 'admin' &&
     !canModifyGroup({ id: user.id, role: user.role }, { ...group, jid })
@@ -2472,12 +2469,6 @@ groupRoutes.get('/:jid/env', authMiddleware, (c) => {
       { error: 'Forbidden: only the workspace owner can read env' },
       403,
     );
-  }
-  if (
-    user.role !== 'admin' &&
-    (!user.permissions || !user.permissions.includes('manage_group_env'))
-  ) {
-    return c.json({ error: 'Insufficient permissions' }, 403);
   }
 
   const config = getContainerEnvConfig(group.folder);
@@ -2501,9 +2492,9 @@ groupRoutes.put('/:jid/env', authMiddleware, async (c) => {
     );
   }
 
-  // Check permissions：owner-only。`manage_group_env` 是系统级权限但 envvar
-  // 包含 anthropicAuthToken 等会让 agent 全部流量被劫持的字段，跨用户共享
-  // 工作区里持有该权限的非 owner 不能改 owner 的 token。Admin 例外。
+  // owner-only。envvar 包含 anthropicAuthToken 等会让 agent 全部流量被
+  // 劫持的字段，跨用户共享工作区里的非 owner 不能改 owner 的 token。
+  // Admin 例外。
   if (
     envUser.role !== 'admin' &&
     !canModifyGroup({ id: envUser.id, role: envUser.role }, { ...group, jid })
@@ -2512,12 +2503,6 @@ groupRoutes.put('/:jid/env', authMiddleware, async (c) => {
       { error: 'Forbidden: only the workspace owner can modify env' },
       403,
     );
-  }
-  if (
-    envUser.role !== 'admin' &&
-    (!envUser.permissions || !envUser.permissions.includes('manage_group_env'))
-  ) {
-    return c.json({ error: 'Insufficient permissions' }, 403);
   }
 
   const body = await c.req.json().catch(() => ({}));

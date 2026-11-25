@@ -2,8 +2,6 @@
 
 import { z } from 'zod';
 import { AGENT_EFFORT_LEVELS } from './agent-effort.js';
-import { ALL_PERMISSIONS } from './permissions.js';
-import type { Permission } from './types.js';
 import { MAX_GROUP_NAME_LEN } from './web-context.js';
 
 const ChannelProviderSchema = z.enum(['feishu', 'qq', 'wechat']);
@@ -715,55 +713,6 @@ export const ProfileUpdateSchema = z.object({
     .nullable()
     .optional(),
   default_require_mention: z.boolean().optional(),
-});
-
-const PermissionValueSchema = z
-  .string()
-  .refine(
-    (value): value is Permission =>
-      (ALL_PERMISSIONS as string[]).includes(value),
-    {
-      message: 'Invalid permission',
-    },
-  );
-
-export const AdminCreateUserSchema = z.object({
-  username: z.string().min(3).max(32),
-  password: z.string().min(8).max(128),
-  display_name: z.string().max(64).optional(),
-  role: z.enum(['admin', 'member']).optional(),
-  permissions: z
-    .array(PermissionValueSchema)
-    .max(ALL_PERMISSIONS.length)
-    .optional(),
-  must_change_password: z.boolean().optional(),
-  notes: z.string().max(2000).optional(),
-});
-
-export const AdminPatchUserSchema = z.object({
-  role: z.enum(['admin', 'member']).optional(),
-  status: z.enum(['active', 'disabled', 'deleted']).optional(),
-  display_name: z.string().max(64).optional(),
-  password: z.string().min(8).max(128).optional(),
-  permissions: z
-    .array(PermissionValueSchema)
-    .max(ALL_PERMISSIONS.length)
-    .optional(),
-  disable_reason: z.string().max(256).nullable().optional(),
-  notes: z.string().max(2000).nullable().optional(),
-});
-
-export const InviteCreateSchema = z.object({
-  role: z.enum(['admin', 'member']).optional(),
-  permission_template: z
-    .enum(['admin_full', 'member_basic', 'ops_manager', 'user_admin'])
-    .optional(),
-  permissions: z
-    .array(PermissionValueSchema)
-    .max(ALL_PERMISSIONS.length)
-    .optional(),
-  max_uses: z.number().int().min(0).max(1000).optional(),
-  expires_in_hours: z.number().int().min(1).max(8760).optional(),
 });
 
 // 飞书/Lark 官方 appId 形如 `cli_xxxxxxxxxxxxxxxx`(cli_ 前缀 + 小写字母数字)。
