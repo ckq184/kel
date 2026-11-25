@@ -40,8 +40,7 @@ export function LoginPage() {
         navigate('/setup/providers');
         return;
       }
-      const mustChange = useAuthStore.getState().user?.must_change_password;
-      navigate(mustChange ? '/settings' : '/chat');
+      navigate('/chat');
     } catch (err) {
       setError(extractErrorMessage(err) || '登录失败');
     } finally {

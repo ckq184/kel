@@ -12,6 +12,7 @@
     "src/routes/auth.ts",
     "src/reset-admin.ts",
     "src/types.ts",
+    "src/db.ts",
     "web/src/components/auth/AuthGuard.tsx",
     "web/src/pages/LoginPage.tsx",
     "web/src/api/client.ts",

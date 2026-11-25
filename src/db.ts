@@ -9347,7 +9347,6 @@ function toUserPublic(user: User, lastActiveAt: string | null): UserPublic {
     display_name: user.display_name,
     role: user.role,
     status: user.status,
-    must_change_password: user.must_change_password,
     disable_reason: user.disable_reason,
     notes: user.notes,
     avatar_emoji: user.avatar_emoji,

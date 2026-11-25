@@ -85,7 +85,6 @@ interface SettingsNavProps {
   onTabChange: (tab: SettingsTab) => void;
   canAccessSystemSettings: boolean;
   isAdmin: boolean;
-  mustChangePassword: boolean;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }
@@ -95,7 +94,6 @@ export function SettingsNav({
   onTabChange,
   canAccessSystemSettings,
   isAdmin,
-  mustChangePassword,
   open,
   onOpenChange,
 }: SettingsNavProps) {
@@ -112,9 +110,6 @@ export function SettingsNav({
     ...(management.length ? [{ label: '管理后台', items: management }] : []),
   ];
 
-  const disabled = (item: NavItem) =>
-    mustChangePassword && item.key !== 'security';
-
   const navigation = (
     <>
       {sections.map((section, index) => (
@@ -127,18 +122,14 @@ export function SettingsNav({
               <button
                 key={item.key}
                 type="button"
-                disabled={disabled(item)}
                 onClick={() => {
-                  if (disabled(item)) return;
                   onTabChange(item.key);
                   onOpenChange?.(false);
                 }}
                 className={`flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                   activeTab === item.key
                     ? 'bg-brand-50 font-medium text-primary'
-                    : disabled(item)
-                      ? 'cursor-not-allowed text-muted-foreground/50'
-                      : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                 }`}
               >
                 {item.icon}
@@ -151,18 +142,14 @@ export function SettingsNav({
       <div className="mt-6 border-t border-border pt-4">
         <button
           type="button"
-          disabled={mustChangePassword}
           onClick={() => {
-            if (mustChangePassword) return;
             onTabChange(aboutItem.key);
             onOpenChange?.(false);
           }}
           className={`flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
             activeTab === aboutItem.key
               ? 'bg-brand-50 font-medium text-primary'
-              : mustChangePassword
-                ? 'cursor-not-allowed text-muted-foreground/50'
-                : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+              : 'text-muted-foreground hover:bg-muted hover:text-foreground'
           }`}
         >
           {aboutItem.icon}

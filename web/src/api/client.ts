@@ -54,12 +54,6 @@ export async function apiFetch<T>(
   }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    if (res.status === 403 && body.code === 'PASSWORD_CHANGE_REQUIRED') {
-      const currentPath = stripBasePath(window.location.pathname);
-      if (!currentPath.startsWith('/settings')) {
-        replaceInApp('/settings');
-      }
-    }
     throw {
       status: res.status,
       message: body.error || res.statusText,

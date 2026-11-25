@@ -104,7 +104,6 @@ export const authMiddleware = async (c: any, next: any) => {
     role: session.role,
     status: session.status,
     display_name: session.display_name,
-    must_change_password: session.must_change_password,
   } as AuthUser);
   c.set('sessionId', token);
 
@@ -114,20 +113,6 @@ export const authMiddleware = async (c: any, next: any) => {
     logger.info(
       'Upgraded unsigned session cookie to HMAC-signed for user %s',
       session.username,
-    );
-  }
-
-  const requestPath = c.req.path;
-  const canBypassForcedChange =
-    requestPath === '/api/auth/me' ||
-    requestPath === '/api/auth/password' ||
-    requestPath === '/api/auth/logout' ||
-    requestPath === '/api/auth/profile' ||
-    requestPath.startsWith('/api/auth/sessions');
-  if (session.must_change_password && !canBypassForcedChange) {
-    return c.json(
-      { error: 'Password change required', code: 'PASSWORD_CHANGE_REQUIRED' },
-      403,
     );
   }
 

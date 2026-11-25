@@ -651,7 +651,6 @@ export interface AuthUser {
   role: UserRole;
   status: 'active' | 'disabled' | 'deleted';
   display_name: string;
-  must_change_password: boolean;
 }
 
 export interface User {
@@ -687,7 +686,6 @@ export interface UserPublic {
   display_name: string;
   role: UserRole;
   status: UserStatus;
-  must_change_password: boolean;
   disable_reason: string | null;
   notes: string | null;
   avatar_emoji: string | null;
