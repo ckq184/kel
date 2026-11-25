@@ -7,12 +7,6 @@ import {
   Ellipsis,
   ImageDown,
 } from 'lucide-react';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 import { Message } from '../../stores/chat';
 import { useAuthStore } from '../../stores/auth';
 import { EmojiAvatar } from '../common/EmojiAvatar';
@@ -25,12 +19,7 @@ import { formatThinkingDuration } from '../../utils/thinking-duration';
 import { resolveAgentDisplayIdentity } from '../../utils/agent-identity';
 import { getPresentedMessageContent } from '../../lib/message-presentation';
 import { getMessageDisplayTimestamp } from '../../lib/message-timeline';
-import {
-  getAuthoritativeTokenBreakdown,
-  getDisplayedTokenTotal,
-  getPrimaryModelUsage,
-  parseTokenUsage,
-} from '../../lib/token-usage-presentation';
+import { parseTokenUsage } from '../../lib/token-usage-presentation';
 
 const ShareImageDialog = lazy(() =>
   import('./ShareImageDialog').then((m) => ({ default: m.ShareImageDialog })),
@@ -104,80 +93,30 @@ function ReasoningBlock({
   );
 }
 
-/** Parse and display token usage for AI messages */
-function TokenUsageDisplay({ tokenUsageJson }: { tokenUsageJson: string }) {
+/**
+ * Display the reply duration for AI messages.
+ *
+ * THESIS-09 (D-C2/D-C3): the bubble no longer shows token totals or a hover
+ * breakdown. Historical `token_usage` rows may still carry them; only
+ * `durationMs` is displayed, and zero/missing durations render nothing.
+ */
+function ReplyDuration({ tokenUsageJson }: { tokenUsageJson: string }) {
   const usage = parseTokenUsage(tokenUsageJson);
+  const durationMs = usage?.durationMs;
 
-  if (!usage) return null;
-
-  // 主模型 = 费用最高的（即用户指定的模型），内部模型不向用户展示
-  const primary = getPrimaryModelUsage(usage);
-  const breakdown = getAuthoritativeTokenBreakdown(usage);
-  const displayTotal = getDisplayedTokenTotal(usage, []);
-
-  const formatNum = (n: number): string => {
-    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-    if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-    return String(n);
-  };
-
-  const summaryContent = (
-    <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-default">
-      {displayTotal > 0 && <span>{formatNum(displayTotal)} tokens</span>}
-      {usage.durationMs ? (
-        <>
-          {displayTotal > 0 && <span className="opacity-40">·</span>}
-          <span>{(usage.durationMs / 1000).toFixed(1)}s</span>
-        </>
-      ) : null}
-    </span>
-  );
-
-  if (displayTotal === 0 && !usage.durationMs) return null;
-
-  const hasDetails = displayTotal > 0 || primary !== null;
-
-  if (!hasDetails) {
-    return <div className="mt-1.5">{summaryContent}</div>;
+  if (
+    durationMs === undefined ||
+    !Number.isFinite(durationMs) ||
+    durationMs <= 0
+  ) {
+    return null;
   }
 
   return (
     <div className="mt-1.5">
-      <TooltipProvider delayDuration={200}>
-        <Tooltip>
-          <TooltipTrigger asChild>{summaryContent}</TooltipTrigger>
-          <TooltipContent side="bottom" align="start">
-            <div className="text-xs space-y-0.5">
-              {primary && (
-                <div className="opacity-70 font-medium mb-1">
-                  主模型：{primary[0]}
-                </div>
-              )}
-              {breakdown.totalTokens > 0 && (
-                <div>
-                  输入 {formatNum(breakdown.inputTokens)} / 输出{' '}
-                  {formatNum(breakdown.outputTokens)}
-                </div>
-              )}
-              {(breakdown.cacheReadInputTokens > 0 ||
-                breakdown.cacheCreationInputTokens > 0 ||
-                breakdown.reasoningTokens > 0) && (
-                <div className="opacity-70">
-                  缓存读取 {formatNum(breakdown.cacheReadInputTokens)} /
-                  缓存写入 {formatNum(breakdown.cacheCreationInputTokens)} /
-                  推理 {formatNum(breakdown.reasoningTokens)}
-                </div>
-              )}
-              {primary && (
-                <div className="opacity-70">
-                  主模型输入 {formatNum(primary[1].inputTokens || 0)} / 输出{' '}
-                  {formatNum(primary[1].outputTokens || 0)}
-                </div>
-              )}
-            </div>
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
+      <span className="text-xs text-muted-foreground">
+        {(durationMs / 1000).toFixed(1)}s
+      </span>
     </div>
   );
 }
@@ -401,9 +340,9 @@ export const MessageBubble = memo(
             </div>
           )}
 
-          {/* Token usage (compact mode) */}
+          {/* Reply duration (compact mode) */}
           {isAI && message.token_usage && (
-            <TokenUsageDisplay tokenUsageJson={message.token_usage} />
+            <ReplyDuration tokenUsageJson={message.token_usage} />
           )}
 
           {lightboxState && (
@@ -588,9 +527,9 @@ export const MessageBubble = memo(
                 </div>
               )}
 
-              {/* Token usage */}
+              {/* Reply duration */}
               {message.is_from_me && message.token_usage && (
-                <TokenUsageDisplay tokenUsageJson={message.token_usage} />
+                <ReplyDuration tokenUsageJson={message.token_usage} />
               )}
             </div>
 

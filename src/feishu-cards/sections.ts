@@ -9,7 +9,6 @@
 import type { AgentCardInput, CardMeta, ToolCallStat } from './types.js';
 import { resolveStatusTheme } from './status-theme.js';
 import { splitIntoBodySections } from './length.js';
-import { formatFeishuTokenSummary } from '../feishu-usage-display.js';
 
 /** Element ids for both the structured streaming layout and the static terminal card.
  *
@@ -90,11 +89,6 @@ export function formatDuration(ms: number | undefined): string {
   const min = Math.floor(sec / 60);
   const restSec = Math.floor(sec % 60);
   return restSec === 0 ? `${min}m` : `${min}m ${restSec}s`;
-}
-
-export function formatTokens(n: number | undefined): string {
-  if (n === undefined || !Number.isFinite(n) || n < 0) return '-';
-  return n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n);
 }
 
 export function shortModel(model: string): string {
@@ -199,18 +193,24 @@ export function buildMetaRow(meta: CardMeta | undefined): El[] {
       text: { tag: 'lark_md', content: `**${title}**\n${value}` },
     });
   };
-  if (meta.durationMs !== undefined)
-    push('⏱ 耗时', formatDuration(meta.durationMs));
-  if (meta.model) push('🤖 模型', `\`${shortModel(meta.model)}\``);
-  if (
-    meta.inputTokens !== undefined ||
-    meta.outputTokens !== undefined ||
-    meta.cacheReadInputTokens !== undefined ||
-    meta.cacheCreationInputTokens !== undefined ||
-    meta.reasoningTokens !== undefined
-  ) {
-    push('💡 Token', formatFeishuTokenSummary(meta));
+  const duration =
+    meta.durationMs !== undefined &&
+    Number.isFinite(meta.durationMs) &&
+    meta.durationMs > 0
+      ? formatDuration(meta.durationMs)
+      : null;
+  const turns =
+    meta.numTurns !== undefined &&
+    Number.isFinite(meta.numTurns) &&
+    meta.numTurns > 1
+      ? `${meta.numTurns} 轮`
+      : null;
+  if (duration !== null) {
+    push('⏱ 耗时', turns === null ? duration : `${duration} · ${turns}`);
+  } else if (turns !== null) {
+    push('🔁 轮数', turns);
   }
+  if (meta.model) push('🤖 模型', `\`${shortModel(meta.model)}\``);
   const toolCount = meta.toolCalls?.length
     ? meta.toolCalls.reduce((s, t) => s + t.count, 0)
     : meta.toolCount;

@@ -2300,14 +2300,9 @@ export class StreamingCardController {
    * Called AFTER complete() because agent-runner emits usage after the final result.
    */
   async patchUsageNote(usage: {
-    inputTokens: number;
-    outputTokens: number;
-    costUSD: number;
     durationMs: number;
     numTurns: number;
-    cacheReadInputTokens?: number;
-    cacheCreationInputTokens?: number;
-    reasoningTokens?: number;
+    /** Used only to pick the primary model label; tokens are not displayed. */
     modelUsage?: Record<string, { outputTokens?: number }>;
   }): Promise<void> {
     if (this.state !== 'completed') return;
@@ -2326,9 +2321,9 @@ export class StreamingCardController {
       } else if (this.messageId || this.multiCard) {
         // For CardKit v1 / legacy: skip if multiCard has split content
         if (this.multiCard && this.multiCard.getCardCount() > 1) return;
-        const note = this.mergeFooterNote(formatFeishuUsageNote(usage));
+        const note = formatFeishuUsageNote(usage);
         if (!note) return;
-        await this.patchCard('completed', note);
+        await this.patchCard('completed', this.mergeFooterNote(note) ?? note);
       }
     } catch (err) {
       logger.debug(
@@ -2996,14 +2991,9 @@ export class StreamingCardController {
   private buildStructuredFinalCard(
     finalState: 'completed' | 'aborted',
     usage?: {
-      inputTokens: number;
-      outputTokens: number;
-      costUSD: number;
       durationMs: number;
       numTurns: number;
-      cacheReadInputTokens?: number;
-      cacheCreationInputTokens?: number;
-      reasoningTokens?: number;
+      /** Used only to pick the primary model label; tokens are not displayed. */
       modelUsage?: Record<string, { outputTokens?: number }>;
     },
   ): object {
@@ -3031,12 +3021,6 @@ export class StreamingCardController {
         toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
         durationMs: usage?.durationMs,
         model: pickPrimaryModel(usage?.modelUsage),
-        inputTokens: usage?.inputTokens,
-        outputTokens: usage?.outputTokens,
-        cacheReadInputTokens: usage?.cacheReadInputTokens,
-        cacheCreationInputTokens: usage?.cacheCreationInputTokens,
-        reasoningTokens: usage?.reasoningTokens,
-        costUSD: usage?.costUSD,
         numTurns: usage?.numTurns,
       },
     });

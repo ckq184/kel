@@ -16,7 +16,6 @@ import {
   CARD_ELEMENT_IDS,
   extractTitle,
   formatDuration,
-  formatTokens,
   shortModel,
   buildStatusBannerText,
   buildProgressListText,
@@ -231,13 +230,6 @@ describe('formatters', () => {
     expect(formatDuration(1500)).toBe('1.5s');
     expect(formatDuration(62_000)).toBe('1m 2s');
     expect(formatDuration(120_000)).toBe('2m');
-  });
-
-  test('formatTokens', () => {
-    expect(formatTokens(undefined)).toBe('-');
-    expect(formatTokens(42)).toBe('42');
-    expect(formatTokens(1_500)).toBe('1.5K');
-    expect(formatTokens(100_000)).toBe('100.0K');
   });
 
   test('shortModel', () => {
@@ -538,8 +530,6 @@ describe('buildAgentReplyCard', () => {
       meta: {
         durationMs: 1234,
         model: 'claude-opus-4-7',
-        inputTokens: 1200,
-        outputTokens: 800,
         toolCount: 3,
       },
     });
@@ -644,8 +634,6 @@ describe('buildAgentReplyCard', () => {
       meta: {
         durationMs: 500,
         model: 'claude-opus-4-7',
-        inputTokens: 50,
-        outputTokens: 20,
         toolCalls: [{ name: 'Read', count: 1 }],
       },
       footer: 'web',

@@ -2334,19 +2334,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // final-message handler has already cleared agentStreaming and marked the
       // Agent idle, so the generic late-event guard below would otherwise drop
       // the usage event. Patch the persisted final bubble directly before that
-      // guard so token totals appear immediately without requiring a reload.
+      // guard so the duration appears immediately without requiring a reload.
       if (event.eventType === 'usage' && event.usage) {
         const usage = event.usage;
+        // THESIS-09: keep the persisted shape aligned with the host writeback
+        // (durationMs/numTurns only); the bubble no longer shows token details.
         const tokenUsageJson = JSON.stringify({
-          inputTokens: usage.inputTokens,
-          outputTokens: usage.outputTokens,
-          cacheReadInputTokens: usage.cacheReadInputTokens,
-          cacheCreationInputTokens: usage.cacheCreationInputTokens,
-          reasoningTokens: usage.reasoningTokens,
-          costUSD: usage.costUSD,
           durationMs: usage.durationMs,
           numTurns: usage.numTurns,
-          modelUsage: usage.modelUsage,
         });
         let snapshotMessages: Message[] | null = null;
         let snapshotHasMore = false;
@@ -2628,17 +2623,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // ⑤.5 usage 事件 → 实时更新最近一条 AI 消息的 token_usage
     if (event.eventType === 'usage' && event.usage) {
       const usage = event.usage;
-      // 构造与 DB 中 token_usage JSON 一致的格式
+      // 构造与 DB 中 token_usage JSON 一致的格式（THESIS-09 只保留耗时与轮数）
       const tokenUsageJson = JSON.stringify({
-        inputTokens: usage.inputTokens,
-        outputTokens: usage.outputTokens,
-        cacheReadInputTokens: usage.cacheReadInputTokens,
-        cacheCreationInputTokens: usage.cacheCreationInputTokens,
-        reasoningTokens: usage.reasoningTokens,
-        costUSD: usage.costUSD,
         durationMs: usage.durationMs,
         numTurns: usage.numTurns,
-        modelUsage: usage.modelUsage,
       });
       set((s) => {
         const msgs = s.messages[chatJid];

@@ -286,11 +286,9 @@ describe('conversation Agent usage events', () => {
     );
 
     const updated = useChatStore.getState().agentMessages[agentId][0];
-    expect(JSON.parse(updated.token_usage ?? '{}')).toMatchObject({
-      inputTokens: 74_924,
-      outputTokens: 583,
-      cacheReadInputTokens: 147_008,
+    expect(JSON.parse(updated.token_usage ?? '{}')).toEqual({
       durationMs: 72_776,
+      numTurns: 3,
     });
     await Promise.resolve();
     expect(saveAgentMessageSnapshotMock).toHaveBeenCalledWith(
@@ -299,6 +297,62 @@ describe('conversation Agent usage events', () => {
       [expect.objectContaining({ id: finalReply.id })],
       false,
     );
+  });
+
+  it('main conversation writes only duration and turns to token_usage', () => {
+    const jid = 'web:main';
+    const turnId = 'turn-main-1';
+    const finalReply: Message = {
+      id: 'reply-main-1',
+      chat_jid: jid,
+      sender: 'ckqclaw-agent',
+      sender_name: 'CKQClaw',
+      content: 'done',
+      timestamp: '2026-07-21T15:22:58.000Z',
+      is_from_me: true,
+      turn_id: turnId,
+      source_kind: 'sdk_final',
+    };
+
+    useChatStore.setState({
+      messages: { [jid]: [finalReply] },
+      activeRuns: {
+        [jid]: {
+          chatJid: jid,
+          runId: 'run-main-1',
+          startedAt: '2026-07-21T15:22:00.000Z',
+          phase: 'running',
+        },
+      },
+      streaming: {},
+      waiting: { [jid]: false },
+    });
+
+    useChatStore.getState().handleStreamEvent(
+      jid,
+      {
+        eventType: 'usage',
+        turnId,
+        usage: {
+          inputTokens: 74_924,
+          outputTokens: 583,
+          cacheReadInputTokens: 147_008,
+          cacheCreationInputTokens: 0,
+          reasoningTokens: 0,
+          costUSD: 0,
+          durationMs: 72_776,
+          numTurns: 3,
+        },
+      },
+      undefined,
+      'run-main-1',
+    );
+
+    const updated = useChatStore.getState().messages[jid][0];
+    expect(JSON.parse(updated.token_usage ?? '{}')).toEqual({
+      durationMs: 72_776,
+      numTurns: 3,
+    });
   });
 });
 
