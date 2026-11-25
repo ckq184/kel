@@ -36,8 +36,8 @@ vi.mock('../src/logger.js', () => ({
   logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-// 不提供任何测试用户：路由真挂载时 authMiddleware 返回 401，与"未挂载"的
-// 404 可以区分，PATCH/DELETE 也不会因为 "Rule not found" 假绿。
+// 把 authMiddleware 固定为 401（不建立真实登录态）：路由真挂载时返回 401，
+// 与"未挂载"的 404 可以区分，PATCH/DELETE 也不会因为 "Rule not found" 假绿。
 vi.mock('../src/middleware/auth.js', async (importOriginal) => ({
   ...((await importOriginal()) as Record<string, unknown>),
   authMiddleware: async (c: any) => c.json({ error: 'Unauthorized' }, 401),
@@ -98,6 +98,7 @@ describe('pricing HTTP surface is removed', () => {
     expect(schemas).not.toContain('CustomPricingPatchSchema');
     expect(schemas).not.toContain('CustomPricingPreviewSchema');
     expect(schemas).not.toContain('customPricingFields');
+    expect(schemas).not.toContain('pricePerMTok');
     expect(schemas).not.toContain('Custom model pricing schemas');
   });
 });
@@ -118,7 +119,7 @@ describe('pricing settings surface is gone', () => {
     expect(nav).not.toMatch(/\bCoins\b/);
 
     const types = read('web/src/components/settings/types.ts');
-    expect(types).not.toMatch(/\|\s*'pricing'/);
+    expect(types).not.toContain("'pricing'");
 
     const page = read('web/src/pages/SettingsPage.tsx');
     expect(page).not.toContain('ModelPricingSection');
@@ -130,6 +131,17 @@ describe('pricing settings surface is gone', () => {
     const session = read('container/agent-runner/src/runtime/pi/pi-session.ts');
     expect(session).not.toContain('kaboo-pricing');
     expect(session).not.toContain('usage-service');
+  });
+});
+
+describe('superseded pricing tests are gone', () => {
+  test.each([
+    'tests/pricing-routes.test.ts',
+    'tests/custom-pricing.test.ts',
+    'tests/custom-pricing-frontend.test.ts',
+    'tests/kaboo-pricing.test.ts',
+  ])('%s is deleted', (relativePath) => {
+    expect(exists(relativePath)).toBe(false);
   });
 });
 
