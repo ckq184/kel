@@ -7,7 +7,7 @@
  * 验收锚点：
  * - `usage_records`、`usage_events`、`custom_model_pricing`、`invite_codes`、
  *   `auth_audit_log` 在 `src/` 不再有建表、ensureColumn、assertSchema 或读写函数；
- * - `src/db.ts` 不再导出方案列出的 24 个孤儿函数；
+ * - `src/db.ts` 不再导出方案列出的孤儿函数、预处理语句与相关类型；
  * - `src/types.ts` 不再保留只服务这些函数的四个类型；
  * - v78→v79 迁移显式 DROP 五张表，head 版本升到 79。
  */
@@ -61,10 +61,15 @@ const DELETED_EXPORTS = [
   'queryAuthAuditLogs',
   // 注册下线后的孤儿
   'registerUserWithoutInvite',
+  // 只服务被删函数的局部类型
+  'UsageQueryFilters',
+  'UsageEventRecordInput',
+  'UsageModelRecordInput',
+  'UsageAttributionItem',
 ] as const;
 
 describe('THESIS-14: five dead tables are removed', () => {
-  test('src/db.ts no longer names the five tables or the 24 orphan exports', () => {
+  test('src/db.ts no longer names the five tables or the deleted exports', () => {
     const source = read('src/db.ts');
     for (const table of DEAD_TABLES) {
       expect(source, table).not.toContain(table);

@@ -261,10 +261,10 @@ describe('frontend and source cleanup', () => {
     expect(schemaSource).not.toContain('RegistrationConfigSchema');
   });
 
-  test('no auth audit writes remain outside the retained db helper', () => {
+  test('no auth audit writes remain in src', () => {
     const srcRoot = path.join(root, 'src');
     const files = (fs.readdirSync(srcRoot, { recursive: true }) as string[])
-      .filter((file) => file.endsWith('.ts') && file !== 'db.ts')
+      .filter((file) => file.endsWith('.ts'))
       .map((file) => path.join('src', file));
     const offenders = files.filter((file) =>
       read(file).includes('logAuthEvent('),

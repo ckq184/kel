@@ -378,10 +378,11 @@ export function trimRetiredSchemas(ctx: DbMigrationContext): void {
   }
 
   // v78→v79 trim (THESIS-14): drop the five tables whose read/write paths
-  // were removed by THESIS-06/07/08/10. Their data survives in the
-  // pre-migration backup that enforcePreMigrationBackup writes for every
-  // upgrading database. Children are dropped before their parents; only
-  // invite_codes carries an FK (to users, which is not dropped).
+  // were removed by THESIS-06/07/08/10. Upgrading databases at v39+ keep
+  // their data in the pre-migration backup written by
+  // enforcePreMigrationBackup; older/unversioned databases follow that
+  // gate's existing threshold and get no backup. No table here is a parent
+  // of another; invite_codes' FK points at users, which is not dropped.
   const v79Check = getRouterStateInternal('schema_version');
   if (!v79Check || parseInt(v79Check, 10) < 79) {
     const dropDeadTables = db.transaction(() => {

@@ -530,11 +530,18 @@ describe('database upgrade safety gate', () => {
         kind TEXT NOT NULL DEFAULT 'pattern',
         pattern TEXT NOT NULL DEFAULT ''
       );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_pricing_fallback
+        ON custom_model_pricing (kind) WHERE kind = 'fallback';
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_pricing_pattern
+        ON custom_model_pricing (pattern) WHERE kind = 'pattern';
       CREATE TABLE IF NOT EXISTS invite_codes (
         code TEXT PRIMARY KEY,
         created_by TEXT NOT NULL,
-        created_at TEXT NOT NULL
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (created_by) REFERENCES users(id)
       );
+      CREATE INDEX IF NOT EXISTS idx_invites_created_at
+        ON invite_codes(created_at);
       CREATE TABLE IF NOT EXISTS auth_audit_log (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         event_type TEXT NOT NULL,
@@ -542,6 +549,10 @@ describe('database upgrade safety gate', () => {
         created_at TEXT NOT NULL
       );
 
+      INSERT OR IGNORE INTO users (
+        id, username, password_hash, created_at, updated_at
+      ) VALUES ('v79-user', 'v79-user', 'hash',
+        '2026-11-24T00:00:00.000Z', '2026-11-24T00:00:00.000Z');
       INSERT OR REPLACE INTO usage_records (
         id, user_id, group_folder, provider_estimated_cost_usd
       ) VALUES ('usage-v79', 'user-a', 'folder-a', 7.5);
@@ -550,7 +561,7 @@ describe('database upgrade safety gate', () => {
       INSERT OR REPLACE INTO custom_model_pricing (id, kind, pattern)
       VALUES ('cmp-v79', 'pattern', 'model-v79');
       INSERT OR REPLACE INTO invite_codes (code, created_by, created_at)
-      VALUES ('invite-v79', 'user-a', '2026-11-24T00:00:00.000Z');
+      VALUES ('invite-v79', 'v79-user', '2026-11-24T00:00:00.000Z');
       INSERT INTO auth_audit_log (event_type, username, created_at)
       VALUES ('login_success', 'legacy-user', '2026-11-24T00:00:00.000Z');
 
@@ -641,10 +652,17 @@ describe('database upgrade safety gate', () => {
     }
     migrated.close();
 
-    // 5) Reboot is idempotent and does not create a second backup.
+    // 5) Reboot is idempotent, does not create a second backup, and does not
+    //    resurrect the tables (v79 is already stamped, so a regression in the
+    //    create statements would show up here).
     db.initDatabase();
     db.closeDatabase();
     expect(fs.readdirSync(backupDir)).toHaveLength(1);
+    const reboot = new Database(dbPath, { readonly: true });
+    for (const table of deadTables) {
+      expect(tableExists(reboot, table), table).toBe(false);
+    }
+    reboot.close();
   });
 });
 
