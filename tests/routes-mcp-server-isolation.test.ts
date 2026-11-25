@@ -219,6 +219,63 @@ describe('MCP owner isolation and explicit host import', () => {
     expect(personalAccess.status).toBe(400);
   });
 
+  test('PATCH without memberAccess preserves stored shared access', async () => {
+    const headers = {
+      'content-type': 'application/json',
+      'x-test-user': 'admin-sticky',
+      'x-test-role': 'admin',
+    };
+    const create = await app.request('/api/mcp-servers', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        id: 'sticky_shared',
+        scope: 'system',
+        command: 'sticky-mcp',
+      }),
+    });
+    expect(create.status).toBe(200);
+
+    const share = await app.request(
+      '/api/mcp-servers/sticky_shared?source=system',
+      {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ memberAccess: 'shared' }),
+      },
+    );
+    expect(share.status).toBe(200);
+    expect(await share.json()).toMatchObject({
+      server: { memberAccess: 'shared' },
+    });
+
+    // THESIS-16 D-U2 ①：界面已隐藏成员访问控件，编辑其他字段时不再提交
+    // memberAccess；后端必须保留存量 shared，不能回落到默认 admin_only。
+    const edit = await app.request(
+      '/api/mcp-servers/sticky_shared?source=system',
+      {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ description: 'edited without access field' }),
+      },
+    );
+    expect(edit.status).toBe(200);
+    expect(await edit.json()).toMatchObject({
+      server: {
+        memberAccess: 'shared',
+        description: 'edited without access field',
+      },
+    });
+
+    const memberDetail = await app.request(
+      '/api/mcp-servers/sticky_shared?source=system',
+      { headers: { 'x-test-user': 'member-sticky' } },
+    );
+    expect(await memberDetail.json()).toMatchObject({
+      server: { memberAccess: 'shared', runtimeAvailable: true },
+    });
+  });
+
   test('isolates definitions and secrets by authenticated owner', async () => {
     const create = await app.request('/api/mcp-servers', {
       method: 'POST',

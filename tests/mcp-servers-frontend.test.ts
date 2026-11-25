@@ -220,8 +220,10 @@ describe('source-qualified MCP frontend behavior', () => {
       expect(source).not.toContain('成员访问');
       expect(source).not.toContain('共享给成员');
     }
-    // 系统 MCP 的徽标/只读提示仍保留，隐藏的只是成员访问控件。
-    expect(detail).toContain("server.source === 'system'");
+    // 隐藏的只是成员访问控件；系统 MCP 徽标仍保留。
+    expect(detail).toContain(
+      "{server.source === 'system' ? '系统 MCP' : '我的 MCP'}",
+    );
   });
 
   test('toggle failures preserve the loaded list and reject for row-level feedback', async () => {

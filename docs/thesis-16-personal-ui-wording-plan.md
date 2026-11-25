@@ -36,20 +36,21 @@
    - D-U2：`AddMcpServerDialog.tsx` 删除 `memberAccess` state、重置、创建载荷中的条件字段与访问选择块；`McpServerDetail.tsx` 删除 `editMemberAccess` state、只读展示、不可用提示与编辑字段，PATCH 不再发送 `memberAccess`；`McpServerCard.tsx` 的不可用预览改"当前不可用"；`McpServersPage.tsx`、`AddMcpServerDialog.tsx` 的系统 MCP 说明去掉"成员/管理员"。
    - D-U3：按功能命名改写 `SetupPage`、`SystemSettingsSection`、`CreateContainerDialog`、`HostDirectoryMountEditor`、`ContainerEnvPanel`、`CreateTaskForm`、`TaskDetail`、`MonitorPage`、`AgentSkillsPolicyEditor`（徽标也删除）、`MainAgentCapabilitiesSection`、`AgentProfilesPage`，以及 `src/agent-capability-preview.ts` 的 note。
    - 同步更新上述四个既有测试中的文案断言。
+   - 质量审查处置：在 `tests/routes-mcp-server-isolation.test.ts` 补行为用例，锁定"系统 MCP 已 `shared`，PATCH 省略 `memberAccess` 后仍为 `shared`"，防止界面隐藏控件后误覆盖存量值。
 3. **Refactor**：检查删除 `memberAccess` 后无未使用 state/常量/导入；`SkillSourceSection` 的 `badge` 仍被其他 section 使用，保留。
 4. **门禁**：`npm run format:changed`、`npm run verify` 六步、`node scripts/check-scope.mjs`。
 
 ## 3. 范围声明（`.gatescope.json` allow）
 
-`.gatescope.json`、`docs/thesis-16-personal-ui-wording-plan.md`、`docs/issues3/THESIS-16-personal-ui-wording.md`、`docs/issues3/README.md`、`docs/审查记录.md`、`src/agent-capability-preview.ts`、`web/src/components/agents/AgentSkillsPolicyEditor.tsx`、`web/src/components/chat/ContainerEnvPanel.tsx`、`web/src/components/chat/CreateContainerDialog.tsx`、`web/src/components/chat/HostDirectoryMountEditor.tsx`、`web/src/components/mcp-servers/AddMcpServerDialog.tsx`、`web/src/components/mcp-servers/McpServerCard.tsx`、`web/src/components/mcp-servers/McpServerDetail.tsx`、`web/src/components/settings/MainAgentCapabilitiesSection.tsx`、`web/src/components/settings/ProfileSection.tsx`、`web/src/components/settings/SystemSettingsSection.tsx`、`web/src/components/tasks/CreateTaskForm.tsx`、`web/src/components/tasks/TaskDetail.tsx`、`web/src/pages/AgentProfilesPage.tsx`、`web/src/pages/McpServersPage.tsx`、`web/src/pages/MonitorPage.tsx`、`web/src/pages/SetupPage.tsx`、`tests/agent-capability-preview.test.ts`、`tests/agent-profiles-page-dom.test.tsx`、`tests/frontend-settings-information-architecture.test.ts`、`tests/mcp-servers-frontend.test.ts`、`tests/thesis-16-personal-ui-wording.test.ts`。
+`.gatescope.json`、`docs/thesis-16-personal-ui-wording-plan.md`、`docs/issues3/THESIS-16-personal-ui-wording.md`、`docs/issues3/README.md`、`docs/审查记录.md`、`src/agent-capability-preview.ts`、`web/src/components/agents/AgentSkillsPolicyEditor.tsx`、`web/src/components/chat/ContainerEnvPanel.tsx`、`web/src/components/chat/CreateContainerDialog.tsx`、`web/src/components/chat/HostDirectoryMountEditor.tsx`、`web/src/components/mcp-servers/AddMcpServerDialog.tsx`、`web/src/components/mcp-servers/McpServerCard.tsx`、`web/src/components/mcp-servers/McpServerDetail.tsx`、`web/src/components/settings/MainAgentCapabilitiesSection.tsx`、`web/src/components/settings/ProfileSection.tsx`、`web/src/components/settings/SystemSettingsSection.tsx`、`web/src/components/tasks/CreateTaskForm.tsx`、`web/src/components/tasks/TaskDetail.tsx`、`web/src/pages/AgentProfilesPage.tsx`、`web/src/pages/McpServersPage.tsx`、`web/src/pages/MonitorPage.tsx`、`web/src/pages/SetupPage.tsx`、`tests/agent-capability-preview.test.ts`、`tests/agent-profiles-page-dom.test.tsx`、`tests/frontend-settings-information-architecture.test.ts`、`tests/mcp-servers-frontend.test.ts`、`tests/routes-mcp-server-isolation.test.ts`、`tests/thesis-16-personal-ui-wording.test.ts`。
 
-与 issue"预计改动路径"的差异：多出 `src/agent-capability-preview.ts`（用户可见 note，见 §1）与 `.gatescope.json`、文档本身；其余一一对应。
+与 issue"预计改动路径"的差异：多出 `src/agent-capability-preview.ts`（用户可见 note，见 §1）、`tests/routes-mcp-server-isolation.test.ts`（质量审查 Major 处置，补 PATCH 保留存量值的行为用例）与 `.gatescope.json`、文档本身；其余一一对应。
 
 ## 4. 验收条件
 
 1. 契约用例通过，且在 base `248c7cb` 上运行会失败（非空转）；IM 侧"允许成员"正控制通过。
 2. `web/src` 非测试源码去注释后无 `管理员`、`普通成员`、`成员访问`、`共享给成员`、`成员任务`。
-3. MCP 新建/编辑界面不再出现成员访问控件；新建系统 MCP 仍由后端默认 `admin_only`（既有后端用例），编辑不再覆盖存量 `memberAccess`。
+3. MCP 新建/编辑界面不再出现成员访问控件；新建系统 MCP 仍由后端默认 `admin_only`（既有后端用例），编辑不再覆盖存量 `memberAccess`（新增行为用例锁定）。
 4. `npm run verify` 六步全绿；`node scripts/check-scope.mjs` 通过。
 5. 人工冒烟（用户，交付后）：首启页、设置页"个人资料""系统配置"、MCP 新建与详情、新建工作区、新建定时任务各看一遍无"普通成员""成员访问"等字样；新建 MCP 后在 Agent 里能正常使用。
 

@@ -28,6 +28,7 @@
     "tests/agent-profiles-page-dom.test.tsx",
     "tests/frontend-settings-information-architecture.test.ts",
     "tests/mcp-servers-frontend.test.ts",
+    "tests/routes-mcp-server-isolation.test.ts",
     "tests/thesis-16-personal-ui-wording.test.ts"
   ]
 }

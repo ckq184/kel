@@ -651,7 +651,7 @@ export function TaskDetail({ task }: TaskDetailProps) {
               {editing && !isAdmin && (
                 <p className="mt-1 text-xs text-muted-foreground">
                   {editForm.execution_mode === 'host'
-                    ? '这是旧版宿主机任务；当前账号只能查看，执行模式不可修改。'
+                    ? '这是旧版宿主机任务；执行模式不可修改。'
                     : '该任务固定使用 Docker 容器；宿主机模式不可用。'}
                 </p>
               )}
@@ -704,10 +704,7 @@ export function TaskDetail({ task }: TaskDetailProps) {
                       targetExecutionMode,
                     )
                   ) {
-                    showToast(
-                      '无法切换工作区',
-                      '该任务不能迁移到宿主机执行工作区',
-                    );
+                    showToast('无法切换工作区', '该任务不能迁移到宿主机工作区');
                     return;
                   }
                   setEditForm({

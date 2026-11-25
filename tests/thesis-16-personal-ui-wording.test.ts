@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import ts from 'typescript';
 import { describe, expect, test } from 'vitest';
 
 // THESIS-16 D-U1/D-U2/D-U3 ①：单账号个人版界面不再出现多用户角色与成员访问
@@ -24,13 +25,29 @@ function listSourceFiles(directory: string): string[] {
   return files;
 }
 
-// 与 frontend-reachability-contract 相同的注释剥离口径：只在行首或空白/{ 后
-// 识别注释定界符，避免把字符串里的 https:// 或 image/* 误删。注释不参与界面
-// 文案门禁（issue 非目标允许保留 App.tsx / UncertainOutboxCard.tsx 的注释）。
+// 用 TypeScript scanner 精确剔除注释 token，避免正则启发式把字符串里的
+// https:// 或 image/* 误删，也覆盖 `{// ...}` 这类 JSX 行注释。注释不参与
+// 界面文案门禁（issue 非目标允许保留 App.tsx / UncertainOutboxCard.tsx 的注释）。
 function stripComments(source: string): string {
-  return source
-    .replace(/(^|[\s{])\/\*[\s\S]*?\*\//gm, '$1')
-    .replace(/(^|\s)\/\/.*$/gm, '$1');
+  const scanner = ts.createScanner(
+    ts.ScriptTarget.Latest,
+    false,
+    ts.LanguageVariant.JSX,
+    source,
+  );
+  let result = '';
+  let lastEnd = 0;
+  for (let token = scanner.scan(); token !== ts.SyntaxKind.EndOfFileToken; ) {
+    if (
+      token === ts.SyntaxKind.SingleLineCommentTrivia ||
+      token === ts.SyntaxKind.MultiLineCommentTrivia
+    ) {
+      result += source.slice(lastEnd, scanner.getTokenPos());
+      lastEnd = scanner.getTextPos();
+    }
+    token = scanner.scan();
+  }
+  return result + source.slice(lastEnd);
 }
 
 function read(relativePath: string): string {
