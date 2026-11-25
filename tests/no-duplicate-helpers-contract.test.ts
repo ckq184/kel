@@ -24,7 +24,8 @@ import type { RegisteredGroup } from '../src/types.js';
  *    index.ts 私有副本删除、workspace-attribution 镜像 fold 改为委托。
  * ③ 单一实现源码 grep 契约：收敛后的各 helper 全仓只有一处定义；
  *    头像校验/MIME 映射/大小常量数值只在 avatar-upload.ts；
- *    计费 pattern 归一化 pricing 路由无内联残留；
+ *    计费 pattern 归一化只在 src/db.ts 保留单一实现（定价路由已随
+ *    THESIS-08 删除）；
  *    OAuthUsageBucket 全仓 `export interface` 恰一次。
  * ④ 同步完整性：shared/ 规范源与两侧副本逐字节一致（fs 断言）。
  */
@@ -390,14 +391,11 @@ describe('each converged helper family has exactly one implementation', () => {
     ).toBe(1);
   });
 
-  test('normalizePricingPattern is exported once and pricing routes carry no inline copy', () => {
+  test('normalizePricingPattern is exported once', () => {
     expect(filesDefining('normalizePricingPattern')).toEqual(['src/db.ts']);
     expect(read('src/db.ts')).toMatch(
       /export\s+function\s+normalizePricingPattern/,
     );
-    const pricing = read('src/routes/pricing.ts');
-    expect(pricing).toContain('normalizePricingPattern');
-    expect(pricing).not.toMatch(/trim\(\)\s*\.\s*toLowerCase\(\)/);
   });
 
   test('avatar validation (size / MIME map / error text) lives only in the shared helper', () => {

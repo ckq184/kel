@@ -195,7 +195,6 @@ read-only 投影按 host-issued turn ID 精确匹配当前或已接纳的 queued
 | --------------------------------------- | ------------------------------------- |
 | Provider、系统容量、Host 集成、系统外观 | `manage_system_config`                |
 | 系统 MCP 写入                           | admin                                 |
-| `/api/pricing/*` 自定义模型单价         | `manage_system_config`                |
 | `/api/docker/pull`、运行监控管理        | `manage_system_config`                |
 | `/api/status/channel-outbox/*` 人工裁决 | `manage_system_config`                |
 | `POST /api/groups/:jid/reset-owner`     | admin break-glass，同时仍验证目标资源 |

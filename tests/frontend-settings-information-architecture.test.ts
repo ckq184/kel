@@ -20,8 +20,8 @@ describe('settings information architecture', () => {
     expect(nav).toContain("key: 'security'");
     expect(nav).toContain("key: 'main-agent'");
     expect(nav).toContain("key: 'host-integration'");
-    // v73（任务 V）：模型单价挂在系统配置分组，受 manage_system_config gating。
-    expect(nav).toContain("key: 'pricing'");
+    // THESIS-08：模型单价已下线，系统配置分组不再有 pricing 入口。
+    expect(nav).not.toContain("key: 'pricing'");
     expect(nav).toContain('min-h-0 flex-1 overflow-y-auto px-3 pb-28');
     expect(nav).toContain('SheetDescription');
     expect(nav).not.toMatch(

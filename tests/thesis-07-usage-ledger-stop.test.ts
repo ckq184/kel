@@ -96,9 +96,7 @@ describe('superseded ledger tests are gone', () => {
     expect(exists('tests/task-usage-routing.test.ts')).toBe(false);
   });
 
-  test('pricing route tests no longer import the deleted usage service', () => {
-    const source = read('tests/pricing-routes.test.ts');
-    expect(source).not.toContain('usage-service');
-    expect(source).not.toContain('recordUsageEvent');
+  test('pricing route tests are deleted with the pricing layer', () => {
+    expect(exists('tests/pricing-routes.test.ts')).toBe(false);
   });
 });
