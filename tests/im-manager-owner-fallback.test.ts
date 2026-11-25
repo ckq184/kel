@@ -37,7 +37,6 @@ describe('IM sibling routing tenant boundary', () => {
         display_name: id,
         role: 'member',
         status: 'active',
-        permissions: [],
         created_at: now,
         updated_at: now,
       });
@@ -91,7 +90,6 @@ describe('IM sibling routing tenant boundary', () => {
       display_name: 'Inbound owner',
       role: 'member',
       status: 'active',
-      permissions: [],
       created_at: now,
       updated_at: now,
     });
@@ -198,7 +196,6 @@ describe('IM sibling routing tenant boundary', () => {
       display_name: 'Multi Bot owner',
       role: 'member',
       status: 'active',
-      permissions: [],
       created_at: now,
       updated_at: now,
     });

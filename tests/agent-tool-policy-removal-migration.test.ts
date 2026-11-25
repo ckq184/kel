@@ -32,7 +32,6 @@ describe('retired Agent tool policy migration', () => {
       display_name: 'Legacy Owner',
       role: 'member',
       status: 'active',
-      permissions: [],
       must_change_password: false,
       created_at: now,
       updated_at: now,

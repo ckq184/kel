@@ -123,7 +123,6 @@ beforeAll(() => {
     display_name: OWNER_ID,
     role: 'member',
     status: 'active',
-    permissions: [],
     created_at: now,
     updated_at: now,
   });

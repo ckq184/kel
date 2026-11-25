@@ -38,7 +38,6 @@ vi.mock('../src/middleware/auth.js', async (importOriginal) => ({
       id: userId,
       username: userId,
       role: 'member',
-      permissions: [],
     });
     return next();
   },
@@ -81,7 +80,6 @@ beforeAll(() => {
     display_name: 'Avatar User',
     role: 'member',
     status: 'active',
-    permissions: [],
     must_change_password: false,
     created_at: now,
     updated_at: now,

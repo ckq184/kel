@@ -51,7 +51,6 @@ vi.mock('../src/middleware/auth.ts', () => ({
       username: 'browse-user',
       role: process.env.CKQCLAW_TEST_USER_ROLE ?? 'admin',
       status: 'active',
-      permissions: [],
     });
     return next();
   },

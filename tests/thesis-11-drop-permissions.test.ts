@@ -240,6 +240,16 @@ describe('permission system source cleanup', () => {
     expect(store).not.toContain('permissions');
   });
 
+  test('all old permission middleware mounts were replaced by admin role checks', () => {
+    const countMounts = (source: string) =>
+      (source.match(/authMiddleware,\s*adminRoleMiddleware/g) || []).length;
+
+    // config 原有 5 处 adminRole + 16 处 systemConfig 替换
+    expect(countMounts(read('src/routes/config.ts'))).toBe(21);
+    // monitor 4 处 systemConfig 替换
+    expect(countMounts(read('src/routes/monitor.ts'))).toBe(4);
+  });
+
   test('monitor route is guarded by role instead of permission', () => {
     const appSource = read('web/src/App.tsx');
     expect(appSource).not.toContain('requiredPermission');

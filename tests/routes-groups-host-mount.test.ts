@@ -43,7 +43,6 @@ vi.mock('../src/middleware/auth.ts', () => ({
       username: process.env.CKQCLAW_TEST_USER_ID ?? 'route-admin',
       role: process.env.CKQCLAW_TEST_USER_ROLE ?? 'admin',
       status: process.env.CKQCLAW_TEST_USER_STATUS ?? 'active',
-      permissions: [],
     });
     return next();
   },

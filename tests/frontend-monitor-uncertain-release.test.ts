@@ -158,7 +158,9 @@ describe('monitor page uncertain release UI', () => {
 
     expect(page).toContain('UncertainOutboxCard');
     // 与系统状态共用 10s 轮询；页面路由由 admin 角色守卫，不再按权限跳过
-    expect(page).toMatch(/loadUncertainOutbox\(\);[\s\S]*10000/);
+    expect(page).toMatch(
+      /useEffect\(\(\) => \{\s*loadUncertainOutbox\(\);[\s\S]*?setInterval\([\s\S]*?loadUncertainOutbox\(\);[\s\S]*?10000/,
+    );
     expect(page).not.toContain('canManageSystem');
   });
 

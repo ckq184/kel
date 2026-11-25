@@ -22,7 +22,6 @@ vi.mock('../src/middleware/auth.ts', () => ({
       id: 'delete-owner',
       username: 'owner',
       role: 'member',
-      permissions: [],
     });
     return next();
   },

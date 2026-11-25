@@ -512,20 +512,6 @@ function stageWorkspaceResetForGroup(folder: string): StagedWorkspaceReset {
   };
 }
 
-function toPublicContainerEnvForUser(
-  config: ReturnType<typeof getContainerEnvConfig>,
-  user: AuthUser,
-) {
-  const base = toPublicContainerEnvConfig(config);
-  if (user.role === 'admin') {
-    return base;
-  }
-  return {
-    ...base,
-    customEnv: {},
-  };
-}
-
 // --- Routes ---
 
 // GET /api/groups - 获取群组列表
@@ -2458,8 +2444,8 @@ groupRoutes.get('/:jid/env', authMiddleware, (c) => {
   }
 
   // 与 PUT 对称收紧为 owner-only。`customEnv` 含第三方 token
-  // （GitHub / 自定义 API key 等），即使 toPublicContainerEnvForUser
-  // 把 anthropic/openai 字段做了 mask，customEnv 仍是明文返回；shared
+  // （GitHub / 自定义 API key 等），toPublicContainerEnvConfig 会把
+  // anthropic/openai 字段做 mask，但 customEnv 仍是明文返回；shared
   // workspace 中的非 owner 不应能读 owner 的私密 env。
   if (
     user.role !== 'admin' &&
@@ -2472,7 +2458,7 @@ groupRoutes.get('/:jid/env', authMiddleware, (c) => {
   }
 
   const config = getContainerEnvConfig(group.folder);
-  return c.json(toPublicContainerEnvForUser(config, user));
+  return c.json(toPublicContainerEnvConfig(config));
 });
 
 // PUT /api/groups/:jid/env - 更新容器环境变量配置

@@ -18,7 +18,6 @@ vi.mock('../src/middleware/auth.ts', () => ({
       username: 'mcp-secret-user',
       role: 'member',
       status: 'active',
-      permissions: [],
       must_change_password: false,
     });
     return next();

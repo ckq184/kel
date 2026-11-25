@@ -28,7 +28,6 @@ vi.mock('../src/middleware/auth.ts', () => ({
       id: 'wechat-owner',
       username: 'owner',
       role: 'member',
-      permissions: [],
     });
     return next();
   },

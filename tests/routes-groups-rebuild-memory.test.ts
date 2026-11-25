@@ -40,7 +40,6 @@ vi.mock('../src/middleware/auth.ts', () => ({
       id: 'alice',
       username: 'alice',
       role: 'member',
-      permissions: [],
     });
     return next();
   },

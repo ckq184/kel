@@ -42,7 +42,6 @@ vi.mock('../src/middleware/auth.ts', async (importOriginal) => {
         display_name: 'Third Party Baseurl Admin',
         role: 'admin',
         status: 'active',
-        permissions: [],
         must_change_password: false,
       });
       return next();

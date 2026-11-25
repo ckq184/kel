@@ -135,8 +135,11 @@ describe('settings information architecture', () => {
       /管理员纯宿主机模式[\s\S]*关闭后不会自动把已有工作区迁回\s*Docker/,
     );
     expect(system).not.toContain('普通成员仍固定使用');
-    expect(page).toContain('const isAdmin = currentUser?.role');
-    expect(page).toContain('!isAdmin');
+    expect(page).toMatch(/const isAdmin = currentUser\?\.role/);
+    expect(page).toMatch(/raw === 'monitor' && !canAccessSystemSettings/);
+    expect(page).toMatch(
+      /SYSTEM_TABS\.includes\(raw\) && !canAccessSystemSettings/,
+    );
   });
 
   test('uses accurate channel and provider safety semantics', () => {

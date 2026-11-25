@@ -26,7 +26,6 @@ async function capabilitiesWith(
         username: 'thesis-02-admin',
         role: 'admin',
         status: 'active',
-        permissions: [],
         must_change_password: false,
       });
       return next();
