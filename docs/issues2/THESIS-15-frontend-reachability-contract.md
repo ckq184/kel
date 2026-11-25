@@ -2,7 +2,7 @@
 
 | 字段          | 值                                                                                                                 |
 | ------------- | ------------------------------------------------------------------------------------------------------------------ |
-| 状态          | 进行中                                                                                                             |
+| 状态          | 已完成                                                                                                             |
 | 领取人 / 分支 | `claude/thesis-15-frontend-reachability-contract`                                                                  |
 | 优先级        | P3                                                                                                                 |
 | 类型          | 测试工具（审核优化 O7，不在方案原有范围内）                                                                        |
@@ -36,4 +36,13 @@
 
 ## 交付记录
 
-（交付时填写）
+- **提交**：立项 `4f9b1b8`、实现 `7983d31`、审查处置 `47ed6a7`、`f898425`、交付（本提交）。
+- **验证**：`npm run verify` 6/6 全绿（366 文件，3010 通过 / 23 跳过 / 0 失败，36.5s）；`node scripts/check-scope.mjs` 6 路径全在 `.gatescope.json` 声明范围内；新增用例 1/1 通过。独立规格审查零阻塞；代码质量审查 Critical 0 / Major 0 / Minor 7，已处置 5 项、登记 2 项，详见 `docs/审查记录.md` 的 THESIS-15 节。
+- **反向验证**：临时注释 `web/src/App.tsx` 的 `MemoryPage` 懒加载后，用例失败并列出 `web/src/pages/MemoryPage.tsx` 与 `web/src/features/workspace-memory/model.ts`；已还原，未提交。
+- **与 issue 描述的偏差**：
+  1. 实际改动除测试文件外还含立项计划与流程簿记（`.gatescope.json`、issue、README 索引、`docs/issues2/task-thesis-trim-plan.md` §14 第 18 项、`docs/审查记录.md`）；issue 的「预计改动路径」只列测试文件，这些均为 README 第一节要求的簿记，已在 `.gatescope.json` 声明。
+  2. `docs/issues2/task-thesis-trim-plan.md` 仅把 §14 第 18 项「是否采纳」改为「已采纳（2026-11-25）」，不改编排与范围。
+  3. 额外在基线 `d6e04aa` 上按同一口径复核：229 个目标模块、0 个不可达，满足 issue 的「在 d6e04aa 上应当通过」约束；正式测试在任务 base `da4920b` 上执行。
+  4. 解析口径：类型位置 `typeof import('x')` 计为边（编译期可达，非运行时打包可达）；注释剥离用保守启发式；测试文件排除仅 `*.test.ts(x)`，当前树无 `*.spec.ts`/`__tests__/`。这些边界已写入 plan §6。
+- **待用户验收**：本包只新增测试与簿记，无 UI/数据/接口变更，无需人工冒烟；可复核 `npx vitest run tests/frontend-reachability-contract.test.ts` 与 `make test`。
+- **方案台账**：THESIS-15 是可选测试工具，不是方案 §2 的专题；采纳决策已随立项记入 §14 第 18 项。README 索引状态本提交同步为「已完成」。
