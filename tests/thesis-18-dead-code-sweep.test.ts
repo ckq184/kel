@@ -3,10 +3,10 @@
  *
  * 验收锚点（计划 §2.1）：
  * 1. S1/S2：`OAuthUsageBucket`、`OAuthUsageResponse`、`CachedOAuthUsage`、
- *    `parseOAuthUsageBucket` 在 `src/` 零出现；
- * 2. S3：`resolveProfileToConfig` 在 `src/` 零出现；唯一调用方消失后的
- *    孤儿 `buildOfficialClaudeProviderConfig` 按非目标保留；
- * 3. S4：`generateInviteCode` 在 `src/` 零出现；
+ *    `parseOAuthUsageBucket` 在 `src/`、`container/`、`scripts/` 零出现；
+ * 2. S3：`resolveProfileToConfig` 在 `src/`、`container/`、`scripts/` 零出现；
+ *    唯一调用方消失后的孤儿 `buildOfficialClaudeProviderConfig` 按非目标保留；
+ * 3. S4：`generateInviteCode` 在 `src/`、`container/`、`scripts/` 零出现；
  * 4. S5：`src/db.ts` 的四个空分节注释零出现，schema 版本不动；
  * 5. S6：`PiProviderResolution` 不再有 `custom` 字段与 `custom: true` 返回，
  *    `pi-runtime.ts` 无条件挂载子 Agent 继承扩展；
@@ -24,7 +24,7 @@ const root = path.resolve(import.meta.dirname, '..');
 const read = (relative: string) =>
   fs.readFileSync(path.join(root, relative), 'utf8');
 
-const PRODUCTION_DIRS = ['src', 'container/agent-runner/src'];
+const PRODUCTION_DIRS = ['src', 'container/agent-runner/src', 'scripts'];
 
 function listSourceFiles(dir: string): string[] {
   const out: string[] = [];
@@ -47,7 +47,7 @@ function filesMatching(pattern: RegExp): string[] {
 }
 
 describe('THESIS-18 S1/S2: OAuth 用量死导出', () => {
-  test('三个类型与 parseOAuthUsageBucket 在 src 零出现', () => {
+  test('三个类型与 parseOAuthUsageBucket 在 src/container/scripts 零出现', () => {
     for (const symbol of [
       'OAuthUsageBucket',
       'OAuthUsageResponse',
@@ -72,13 +72,13 @@ describe('THESIS-18 S3: resolveProfileToConfig', () => {
 });
 
 describe('THESIS-18 S4: generateInviteCode', () => {
-  test('邀请码下线后的死导出在 src 零出现', () => {
+  test('邀请码下线后的死导出在 src/container/scripts 零出现', () => {
     expect(filesMatching(/\bgenerateInviteCode\b/)).toEqual([]);
   });
 });
 
 describe('THESIS-18 S5: db.ts 空分节注释', () => {
-  test('四个空分节注释删除，代码与 schema 版本不动', () => {
+  test('四个空分节注释删除，相邻代码守卫保留', () => {
     const source = read('src/db.ts');
     for (const title of [
       'User Subscriptions',
@@ -88,8 +88,7 @@ describe('THESIS-18 S5: db.ts 空分节注释', () => {
     ]) {
       expect(source, title).not.toContain(`// --- ${title} ---`);
     }
-    // 非目标：只删注释，不碰任何代码、迁移与 CURRENT_SCHEMA_VERSION。
-    expect(source).toMatch(/export const CURRENT_SCHEMA_VERSION = 79;/);
+    // 非目标：只删注释；schema 版本由 tests/db-upgrade-safety.test.ts 的版本钉锁定。
     expect(source).toContain('export function deleteMessage(');
     expect(source).toContain('export function closeDatabase(');
   });
