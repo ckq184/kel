@@ -1,8 +1,8 @@
 import type { DbMigrationContext } from './context.js';
 
 // ISSUE-12 波 3 单元 3.5：任务表列段自 src/db.ts 原文搬运（原 db.ts
-// 1088-1177："Lightweight migrations for existing DBs"——users/invite_
-// codes/registered_groups/messages 轻量加列与 scheduled_tasks 全列段
+// 1088-1177："Lightweight migrations for existing DBs"——users/
+// registered_groups/messages 轻量加列与 scheduled_tasks 全列段
 // （含 v62→v63 delivery_route_jid 及 chat_jid 回填、v70→v71 task_runs
 // notification 六列、continuation 五列）、updated_at 幂等回填；全部
 // ensureColumn/无条件 UPDATE 无门控幂等重放。搬运体逐字节一致，唯一
@@ -19,8 +19,6 @@ export function ensureTaskTableColumns(ctx: DbMigrationContext): void {
   ensureColumn('users', 'disable_reason', 'TEXT');
   ensureColumn('users', 'notes', 'TEXT');
   ensureColumn('users', 'deleted_at', 'TEXT');
-  ensureColumn('invite_codes', 'permission_template', 'TEXT');
-  ensureColumn('invite_codes', 'permissions', "TEXT NOT NULL DEFAULT '[]'");
   ensureColumn('users', 'avatar_emoji', 'TEXT');
   ensureColumn('users', 'avatar_color', 'TEXT');
   ensureColumn(

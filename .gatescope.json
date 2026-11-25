@@ -1,5 +1,5 @@
 {
-  "task": "THESIS-14 删除五张死表（D-F1 ①/D-F2 ①/D-F3 ①；实现中）",
+  "task": "THESIS-14 删除五张死表（D-F1 ①/D-F2 ①/D-F3 ①）",
   "base": "ad09dac7884dfbf59f40630172ef74e4c0fbc4bd",
   "allow": [
     ".gatescope.json",

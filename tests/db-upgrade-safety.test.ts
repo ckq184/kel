@@ -248,9 +248,6 @@ describe('database upgrade safety gate', () => {
     const freshBoot = new Database(dbPath, { readonly: true });
     expect(tableExists(freshBoot, 'usage_daily_summary')).toBe(false);
     for (const [table, column] of [
-      ['usage_records', 'cost_usd'],
-      ['usage_records', 'billed_cost_usd'],
-      ['usage_events', 'billed_cost_usd'],
       ['registered_groups', 'selected_skills'],
       ['registered_groups', 'mcp_mode'],
       ['registered_groups', 'selected_mcps'],
@@ -292,13 +289,6 @@ describe('database upgrade safety gate', () => {
         user_id, model, date, total_cost_usd, request_count
       ) VALUES ('user-a', 'model-a', '2026-11-19', 1.25, 2);
 
-      INSERT INTO usage_records (
-        id, user_id, group_folder, model, provider_estimated_cost_usd
-      ) VALUES ('usage-v76', 'user-a', 'folder-a', 'model-a', 3.5);
-
-      INSERT INTO usage_events (event_id, user_id, group_folder)
-      VALUES ('evt-v76', 'user-a', 'folder-a');
-
       INSERT INTO registered_groups (jid, name, folder, added_at)
       VALUES ('web:legacy-v76', 'Legacy Workspace', 'legacy-folder', '2026-11-19T00:00:00.000Z');
 
@@ -318,24 +308,6 @@ describe('database upgrade safety gate', () => {
       ) VALUES ('user-v76', 'legacy-v76', 'hash', 'Legacy User',
         '2026-11-19T00:00:00.000Z', '2026-11-19T00:00:00.000Z');
     `);
-    addColumnIfMissing(
-      legacy,
-      'usage_records',
-      'cost_usd',
-      'REAL NOT NULL DEFAULT 0',
-    );
-    addColumnIfMissing(
-      legacy,
-      'usage_records',
-      'billed_cost_usd',
-      'REAL NOT NULL DEFAULT 0',
-    );
-    addColumnIfMissing(
-      legacy,
-      'usage_events',
-      'billed_cost_usd',
-      'REAL NOT NULL DEFAULT 0',
-    );
     addColumnIfMissing(legacy, 'registered_groups', 'selected_skills', 'TEXT');
     addColumnIfMissing(
       legacy,
@@ -362,8 +334,6 @@ describe('database upgrade safety gate', () => {
       "TEXT NOT NULL DEFAULT 'legacy-rec'",
     );
     legacy.exec(`
-      UPDATE usage_records SET cost_usd = 1.5, billed_cost_usd = 2.5 WHERE id = 'usage-v76';
-      UPDATE usage_events SET billed_cost_usd = 9.9 WHERE event_id = 'evt-v76';
       UPDATE registered_groups
       SET selected_skills = 'skill-x', mcp_mode = 'custom', selected_mcps = 'mcp-x'
       WHERE jid = 'web:legacy-v76';
@@ -393,9 +363,6 @@ describe('database upgrade safety gate', () => {
     ).toBe(String(db.CURRENT_SCHEMA_VERSION));
     expect(tableExists(migrated, 'usage_daily_summary')).toBe(false);
     for (const [table, column] of [
-      ['usage_records', 'cost_usd'],
-      ['usage_records', 'billed_cost_usd'],
-      ['usage_events', 'billed_cost_usd'],
       ['registered_groups', 'selected_skills'],
       ['registered_groups', 'mcp_mode'],
       ['registered_groups', 'selected_mcps'],
@@ -413,15 +380,6 @@ describe('database upgrade safety gate', () => {
       ).not.toContain(column);
     }
     // Surviving data is intact — the trim dropped columns, not rows.
-    expect(
-      (
-        migrated
-          .prepare(
-            "SELECT provider_estimated_cost_usd AS cost FROM usage_records WHERE id = 'usage-v76'",
-          )
-          .get() as { cost: number }
-      ).cost,
-    ).toBe(3.5);
     expect(
       migrated
         .prepare(
@@ -452,15 +410,6 @@ describe('database upgrade safety gate', () => {
           .get() as { name: string }
       ).name,
     ).toBe('Legacy Account');
-    expect(
-      (
-        migrated
-          .prepare(
-            "SELECT COUNT(*) AS count FROM usage_events WHERE event_id = 'evt-v76'",
-          )
-          .get() as { count: number }
-      ).count,
-    ).toBe(1);
     migrated.close();
 
     // Re-boot on the migrated database stays idempotent and does not
@@ -469,7 +418,6 @@ describe('database upgrade safety gate', () => {
     db.closeDatabase();
     const reboot = new Database(dbPath, { readonly: true });
     expect(tableExists(reboot, 'usage_daily_summary')).toBe(false);
-    expect(tableColumns(reboot, 'usage_records')).not.toContain('cost_usd');
     expect(tableColumns(reboot, 'users')).not.toContain('ai_name');
     reboot.close();
   });
@@ -542,6 +490,162 @@ describe('database upgrade safety gate', () => {
     );
     reboot.close();
   });
+
+  test('v79 drops the five dead tables on upgrade and keeps their data in the backup', () => {
+    const deadTables = [
+      'usage_records',
+      'usage_events',
+      'custom_model_pricing',
+      'invite_codes',
+      'auth_audit_log',
+    ];
+
+    // 1) A fresh head database must not create the five tables at all.
+    db.initDatabase();
+    db.closeDatabase();
+    const fresh = new Database(dbPath, { readonly: true });
+    for (const table of deadTables) {
+      expect(tableExists(fresh, table), table).toBe(false);
+    }
+    fresh.close();
+
+    // 2) Fabricate a v78 database that still carries all five tables with
+    //    sentinel rows. The minimal DDL only lists columns common with the
+    //    real v78 schema, so the inserts also run against a head-era table.
+    const legacy = new Database(dbPath);
+    legacy.exec(`
+      CREATE TABLE IF NOT EXISTS usage_records (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        group_folder TEXT NOT NULL,
+        provider_estimated_cost_usd REAL NOT NULL DEFAULT 0
+      );
+      CREATE TABLE IF NOT EXISTS usage_events (
+        event_id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        group_folder TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS custom_model_pricing (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL DEFAULT 'pattern',
+        pattern TEXT NOT NULL DEFAULT ''
+      );
+      CREATE TABLE IF NOT EXISTS invite_codes (
+        code TEXT PRIMARY KEY,
+        created_by TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS auth_audit_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_type TEXT NOT NULL,
+        username TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+
+      INSERT OR REPLACE INTO usage_records (
+        id, user_id, group_folder, provider_estimated_cost_usd
+      ) VALUES ('usage-v79', 'user-a', 'folder-a', 7.5);
+      INSERT OR REPLACE INTO usage_events (event_id, user_id, group_folder)
+      VALUES ('evt-v79', 'user-a', 'folder-a');
+      INSERT OR REPLACE INTO custom_model_pricing (id, kind, pattern)
+      VALUES ('cmp-v79', 'pattern', 'model-v79');
+      INSERT OR REPLACE INTO invite_codes (code, created_by, created_at)
+      VALUES ('invite-v79', 'user-a', '2026-11-24T00:00:00.000Z');
+      INSERT INTO auth_audit_log (event_type, username, created_at)
+      VALUES ('login_success', 'legacy-user', '2026-11-24T00:00:00.000Z');
+
+      UPDATE router_state SET value = '78' WHERE key = 'schema_version';
+    `);
+    legacy.close();
+
+    const backupDir = path.join(tmp, 'v79-backups');
+    process.env.CKQCLAW_MIGRATION_BACKUP_DIR = backupDir;
+    db.initDatabase();
+    db.closeDatabase();
+
+    // 3) The pre-migration backup exists, is healthy, and still carries all
+    //    five tables with their sentinel rows (D-F3 ①).
+    const backupNames = fs.readdirSync(backupDir);
+    expect(backupNames).toHaveLength(1);
+    const backup = new Database(path.join(backupDir, backupNames[0]), {
+      readonly: true,
+    });
+    expect(backup.pragma('quick_check', { simple: true })).toBe('ok');
+    expect(
+      (
+        backup
+          .prepare(
+            "SELECT value FROM router_state WHERE key = 'schema_version'",
+          )
+          .get() as { value: string }
+      ).value,
+    ).toBe('78');
+    expect(
+      backup
+        .prepare(
+          "SELECT provider_estimated_cost_usd AS cost FROM usage_records WHERE id = 'usage-v79'",
+        )
+        .get(),
+    ).toEqual({ cost: 7.5 });
+    expect(
+      (
+        backup
+          .prepare(
+            "SELECT COUNT(*) AS count FROM usage_events WHERE event_id = 'evt-v79'",
+          )
+          .get() as { count: number }
+      ).count,
+    ).toBe(1);
+    expect(
+      (
+        backup
+          .prepare(
+            "SELECT COUNT(*) AS count FROM custom_model_pricing WHERE id = 'cmp-v79'",
+          )
+          .get() as { count: number }
+      ).count,
+    ).toBe(1);
+    expect(
+      (
+        backup
+          .prepare(
+            "SELECT COUNT(*) AS count FROM invite_codes WHERE code = 'invite-v79'",
+          )
+          .get() as { count: number }
+      ).count,
+    ).toBe(1);
+    expect(
+      (
+        backup
+          .prepare(
+            "SELECT COUNT(*) AS count FROM auth_audit_log WHERE username = 'legacy-user'",
+          )
+          .get() as { count: number }
+      ).count,
+    ).toBe(1);
+    backup.close();
+
+    // 4) The upgraded database is at the new head and no longer has the tables.
+    const migrated = new Database(dbPath, { readonly: true });
+    expect(
+      (
+        migrated
+          .prepare(
+            "SELECT value FROM router_state WHERE key = 'schema_version'",
+          )
+          .get() as { value: string }
+      ).value,
+    ).toBe(String(db.CURRENT_SCHEMA_VERSION));
+    for (const table of deadTables) {
+      expect(tableExists(migrated, table), table).toBe(false);
+    }
+    migrated.close();
+
+    // 5) Reboot is idempotent and does not create a second backup.
+    db.initDatabase();
+    db.closeDatabase();
+    expect(fs.readdirSync(backupDir)).toHaveLength(1);
+  });
 });
 
 describe('schema version head', () => {
@@ -565,6 +669,7 @@ describe('schema version head', () => {
     // table (task U survey-module rollback).
     // v73: custom_model_pricing table + partial unique indexes, created
     // idempotently by the base schema block (task V; no data migration).
+    // The table was later dropped in v79 (THESIS-14).
     // v74: registered_groups.auto_memory_recall column (task Z; ensureColumn,
     // no data migration).
     // v75: retired Telegram/Discord/WhatsApp channel trim (task AJ; destructive
@@ -575,6 +680,10 @@ describe('schema version head', () => {
     // columns (ISSUE-09; write paths removed in the same change).
     // v78: drops scheduled_tasks.running_until / runner_id, the legacy
     // definition-level lease superseded by task_runs (ISSUE-25).
-    expect(db.CURRENT_SCHEMA_VERSION).toBe(78);
+    // v79: drops the five dead tables (usage_records, usage_events,
+    // custom_model_pricing, invite_codes, auth_audit_log) after their
+    // read/write paths were removed (THESIS-14; data survives in the
+    // pre-migration backup).
+    expect(db.CURRENT_SCHEMA_VERSION).toBe(79);
   });
 });

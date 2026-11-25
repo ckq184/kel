@@ -7,9 +7,9 @@ import {
 } from '../owner-profile-store.js';
 
 // ISSUE-12 波 3 单元 3.2：认证表族与 Owner Profile 生命周期自 src/db.ts
-// 原文搬运（原 db.ts 794-883：users/invite_codes/user_sessions/
-// auth_audit_log/user_pinned_groups 建表，及 v65→v66 CKQClaw Owner
-// Profile 的 create/bind 与 rawSchemaVersionBeforeInit < 66 门控 else 分支）。
+// 原文搬运（原 db.ts 794-883：users/user_sessions/user_pinned_groups
+// 建表，及 v65→v66 CKQClaw Owner Profile 的 create/bind 与
+// rawSchemaVersionBeforeInit < 66 门控 else 分支）。
 // 搬运体逐字节一致，唯一改写是同名解构 const { db,
 // rawSchemaVersionBeforeInit } = ctx（调用点零改动）。owner-profile 与
 // memory 两 store 的四函数为 db.ts 既有 import，本模块改自其源模块直引
@@ -41,19 +41,6 @@ export function ensureAuthTables(ctx: DbMigrationContext): void {
       deleted_at TEXT
     );
 
-    CREATE TABLE IF NOT EXISTS invite_codes (
-      code TEXT PRIMARY KEY,
-      created_by TEXT NOT NULL,
-      role TEXT NOT NULL DEFAULT 'member',
-      permission_template TEXT,
-      permissions TEXT NOT NULL DEFAULT '[]',
-      max_uses INTEGER NOT NULL DEFAULT 1,
-      used_count INTEGER NOT NULL DEFAULT 0,
-      expires_at TEXT,
-      created_at TEXT NOT NULL,
-      FOREIGN KEY (created_by) REFERENCES users(id)
-    );
-
     CREATE TABLE IF NOT EXISTS user_sessions (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
@@ -65,22 +52,10 @@ export function ensureAuthTables(ctx: DbMigrationContext): void {
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
-    CREATE TABLE IF NOT EXISTS auth_audit_log (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      event_type TEXT NOT NULL,
-      username TEXT NOT NULL,
-      actor_username TEXT,
-      ip_address TEXT,
-      user_agent TEXT,
-      details TEXT,
-      created_at TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_auth_audit_created ON auth_audit_log(created_at);
     CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id);
     CREATE INDEX IF NOT EXISTS idx_user_sessions_expires ON user_sessions(expires_at);
     CREATE INDEX IF NOT EXISTS idx_users_status_role ON users(status, role);
     CREATE INDEX IF NOT EXISTS idx_users_created_at ON users(created_at);
-    CREATE INDEX IF NOT EXISTS idx_invites_created_at ON invite_codes(created_at);
   `);
 
   // User pinned groups (per-user workspace pinning)

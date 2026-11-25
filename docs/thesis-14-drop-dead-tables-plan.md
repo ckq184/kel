@@ -1,6 +1,6 @@
 # 任务立项：THESIS-14 删除五张死表（一版前向迁移）
 
-> 立项日期：2026-11-25｜base：`da4920b`｜分支：`claude/thesis-14-drop-dead-tables`
+> 立项日期：2026-11-25｜base：`ad09dac`（THESIS-13/15 合入后的 main）｜分支：`claude/thesis-14-drop-dead-tables`
 > 来源：[docs/issues2/THESIS-14-drop-dead-tables.md](issues2/THESIS-14-drop-dead-tables.md)（方案 §9、D-F1 至 D-F3）
 
 ## 0. 需求采访结论（2026-11-25，用户拍板）
@@ -8,9 +8,9 @@
 - **D-F1 = ① 一版迁移一次删完**：其余专题已全部落地，本包是裁减专题最后一个功能包；一次迁移、一个备份、一个恢复点。
 - **D-F2 = ① 只删表**：`users.permissions`、`users.must_change_password`、`users.disable_reason`、`users.notes` 四列原样保留；本包不改 `users` 表结构，不改 `src/db.ts` 的用户映射/写入辅助，也不动 THESIS-11/12 的交付测试。已核实 `users` 表没有邀请码相关列。
 - **D-F3 = ① 可以丢弃**：`enforcePreMigrationBackup` 在旧库升级前写整库备份（默认 `data/db/migration-backups/`，没有自动清理），五张表数据仍可从备份恢复；`/api/usage` 导出端点已随 THESIS-06 删除，不做额外 CSV 导出。
-- **排期 = 先立项，实现等 THESIS-13 合入**：THESIS-13 与本包共享 `CLAUDE.md`、`AGENTS.md`、`docs/API.md`，并行矩阵为 ❌。本提交只做领取、计划和范围声明；13 合入 main 后再 rebase 开始实现，届时把 `.gatescope.json` 的 `base` 更新为新的 main HEAD 并重跑 `node scripts/check-scope.mjs`。当前 `base` 仍记开工前 HEAD `da4920b`。
+- **排期 = 先立项，实现等 THESIS-13 合入**：THESIS-13 与本包共享 `CLAUDE.md`、`AGENTS.md`、`docs/API.md`，并行矩阵为 ❌。立项提交只做领取、计划和范围声明；THESIS-13 合入 main 后已 rebase 到 `ad09dac` 并把 `.gatescope.json` 的 `base` 更新为该提交，随后开始实现。
 
-## 1. 关键事实（开工前核实，main `da4920b`）
+## 1. 关键事实（开工前核实，main `ad09dac`）
 
 ### 1.1 五张表与建表点
 
@@ -47,10 +47,12 @@
 
 - `tests/schema-v51-usage.test.ts`：整体删除（断言 v51 台账迁移）。
 - `tests/db-upgrade-safety.test.ts`：v77 用例中"伪造 v76 库并插入 usage_records/usage_events"的部分要移除或改为 v79 用例；版本号钉 `expect(...).toBe(78)` 同提交改 79，并在版本历史注释补 v79。
-- `tests/routes-system-settings-security.test.ts`：`queryAuthAuditLogs` 调用点随函数删除而移除（该用例改为源码契约或删除，行为面由 THESIS-10 的"路由不再调用 logAuthEvent"覆盖）。
+- `tests/task-continuation-scheduler.test.ts`：另一处 `CURRENT_SCHEMA_VERSION` 字面量钉（78）随版本升到 79，注释补 v79。
+- `tests/routes-system-settings-security.test.ts`：`queryAuthAuditLogs` 调用点随函数删除而移除（该用例删除，行为面由 THESIS-10 的"路由不再调用 logAuthEvent"覆盖）。
+- `tests/thesis-10-single-account.test.ts`：`audit writes stop` 用例原先用 `queryAuthAuditLogs()` 观察零写入，改为断言两个审计 API 不再导出，保留登录/登出/改密回归流程。
 - `tests/no-duplicate-helpers-contract.test.ts`：删除 `normalizePricingPattern` 单一定义契约（helper 已随本包删除）。
 - `tests/backup-restore-safety.test.ts`：不涉及五张表，无需改。
-- `tests/thesis-07` / `thesis-10` 的源码契约：只断言"db.ts 之外无调用"或排除 `db.ts`，删除函数后仍成立。
+- `tests/thesis-07` 的源码契约：只断言"db.ts 之外无调用"，删除函数后仍成立。
 
 ### 1.5 数据、备份与回滚
 
@@ -66,7 +68,7 @@
 ### 1.7 文档
 
 - `CLAUDE.md` §7 核心表族：用户与认证行删除 `invite_codes`、`auth_audit_log`；整行删除"用量"表族（同时清掉已在 v77 删除却仍列着的 `usage_daily_summary`，V-F5）。
-- `docs/API.md`、`AGENTS.md`、`docs/ACL-MATRIX.md` 在 `da4920b` 已无这五张表的描述，预计零改动；仍按 issue 声明保留在 allow 内，`npm run docs:check` 兜底。
+- `docs/API.md`、`AGENTS.md`、`docs/ACL-MATRIX.md` 在 `ad09dac` 已无这五张表的描述，预计零改动；仍按 issue 声明保留在 allow 内，`npm run docs:check` 兜底。
 - `container/agent-runner/src/runtime/pi/pi-session.ts` 的注释仍把 event id 描述为 `usage_events` 幂等键；表删除后该说法失效，随包改一行注释（仅注释，不改逻辑）。
 
 ## 2. 技术方案
@@ -87,7 +89,7 @@
 - `src/db-schema/agent-profile-tables.ts`：删 `custom_model_pricing` 建表与两个 `CREATE UNIQUE INDEX`。
 - `src/db-schema/task-tables.ts`：删两条 `invite_codes` 的 `ensureColumn`。
 - `src/db-schema/migrations-legacy-rebuilds.ts`：删 `invite_codes`、`auth_audit_log` 的 `assertSchema` 块。
-- `src/db.ts`：按 1.2 清单删函数与 `stmts().insertUsageInsert`（类型字段、prepare、调用点）；清理 import 与注释里的表名；删 `CustomModelPricing`、`UsageQueryFilters`、`UsageEventRecordInput` 等只服务被删函数的类型。
+- `src/db.ts`：按 1.2 清单删函数与 `stmts().insertUsageInsert`（类型字段、prepare、调用点）；清理 import 与注释里的表名；删 `CustomModelPricing`、`UsageQueryFilters`、`UsageEventRecordInput` 等只服务被删函数的类型；删只被审计查询使用的 `parseJsonDetails`；同步头部结构导览注释。
 - `src/types.ts`：删 1.3 第 4 条列出的四个类型。
 
 ## 3. 实现步骤（TDD）
