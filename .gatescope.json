@@ -1,13 +1,18 @@
 {
-  "task": "THESIS-15 可选：前端可达性契约测试（O7 采纳；新增 tests/frontend-reachability-contract.test.ts，不改产品代码）",
-  "base": "da4920b809f502b76a3ed24b504cde5cd8210c96",
+  "task": "THESIS-13 个人用户（四）：产品定位与访问边界文档改写（D-E6 ① 改写 ACL-MATRIX）",
+  "base": "07a2e0e27e506d52725d7b6fd354f8fb31db14be",
   "allow": [
     ".gatescope.json",
-    "docs/issues2/THESIS-15-frontend-reachability-contract.md",
+    "docs/issues2/THESIS-13-personal-docs-and-acl.md",
     "docs/issues2/README.md",
     "docs/issues2/task-thesis-trim-plan.md",
-    "docs/thesis-15-frontend-reachability-contract-plan.md",
+    "docs/thesis-13-personal-docs-and-acl-plan.md",
     "docs/审查记录.md",
-    "tests/frontend-reachability-contract.test.ts"
+    "README.md",
+    "CLAUDE.md",
+    "AGENTS.md",
+    "docs/ACL-MATRIX.md",
+    "docs/API.md",
+    "tests/thesis-13-personal-docs.test.ts"
   ]
 }

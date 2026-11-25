@@ -12,7 +12,7 @@
 <p align="center">
   <a href="https://github.com/ckq184/ckqclaw">GitHub</a> ·
   <a href="docs/API.md">API</a> ·
-  <a href="docs/ACL-MATRIX.md">权限模型</a> ·
+  <a href="docs/ACL-MATRIX.md">访问边界</a> ·
   <a href="SECURITY.md">安全策略</a>
 </p>
 
@@ -20,20 +20,20 @@
 
 ## 产品定位
 
-CKQClaw 是一个面向个人与团队的自托管 AI Agent 工作台。它不是一个只保存聊天记录的对话框，而是把以下对象放在同一个产品模型中：
+CKQClaw 是一个面向个人的自托管 AI Agent 工作台。它不是一个只保存聊天记录的对话框，而是把以下对象放在同一个产品模型中：
 
 - Agent 身份、模型策略与能力配置。
-- Workspace 文件、执行环境、权限和渠道绑定。
+- Workspace 文件、执行环境、访问边界和渠道绑定。
 - 持久化 Session、流式输出、取消、恢复和后台运行。
 - Workspace 级 Memory、Skills、MCP 与 Subagents。
 - Web、飞书、QQ、微信等入口。
 - Cron、间隔和一次性任务，以及任务运行历史、通知与恢复。
 
-CKQClaw 采用本地优先和显式集成的思路：数据库、工作区元数据、会话状态和配置由自己的服务管理；模型、消息渠道、Docker 与外部工具都作为可配置边界接入。
+CKQClaw 采用本地优先和显式集成的思路：数据库、工作区元数据、会话状态和配置由自己的服务管理；模型、消息渠道、Docker 与外部工具都作为可配置边界接入。作为个人 Agent 工作台，产品按单账号使用，不提供注册、用户管理与多人协作界面。
 
 ## 界面与体验
 
-工作台围绕 `Agent → Workspace → Runtime Session` 组织信息。左侧导航提供工作台、智能体、能力库、任务、用量、账单和设置入口；进入工作台后，可以在同一个界面中切换 Agent、Workspace 和对话上下文。
+工作台围绕 `Agent → Workspace → Runtime Session` 组织信息。左侧导航提供工作台、智能体、能力库、任务和设置入口；进入工作台后，可以在同一个界面中切换 Agent、Workspace 和对话上下文。
 
 下面是当前 Web 工作台的实际界面：
 
@@ -95,10 +95,10 @@ CKQClaw 采用本地优先和显式集成的思路：数据库、工作区元数
 
 ### 渠道与自动化
 
-- 支持将消息渠道绑定到指定 Workspace 或 Session，并按用户、群聊、话题和 owner 规则进行 ACL 判断。
+- 支持将消息渠道绑定到指定 Workspace 或 Session，并按工作区、群聊、话题和 owner 规则进行访问判断。
 - 支持飞书、QQ、微信等消息入口。
 - Scheduler 支持 Cron、固定间隔和一次性任务，提供立即运行、暂停、取消、运行历史和结果投递。
-- 后台任务、Subagent 和渠道回复都沿用同一套 Workspace、Session、owner 与权限上下文。
+- 后台任务、Subagent 和渠道回复都沿用同一套 Workspace、Session、owner 与访问上下文。
 
 ## 工作原理
 
@@ -160,7 +160,7 @@ npm start
 npm run dev:all
 ```
 
-首次进入时完成管理员初始化和 Provider 配置即可。Provider/渠道接入步骤现在可以选择“稍后设置”，跳过后仍可进入工作台，之后在设置中补齐模型和渠道配置。
+首次进入时完成账号初始化和 Provider 配置即可。Provider/渠道接入步骤现在可以选择“稍后设置”，跳过后仍可进入工作台，之后在设置中补齐模型和渠道配置。
 
 Agent 容器镜像默认使用 `ckq184/ckqclaw-agent:latest`，可以通过 `CKQCLAW_CONTAINER_IMAGE` 或 `CONTAINER_IMAGE` 覆盖。
 
@@ -190,13 +190,13 @@ Agent 容器镜像默认使用 `ckq184/ckqclaw-agent:latest`，可以通过 `CKQ
 
 ## 执行与安全边界
 
-- Backend 由 Node.js 运行，负责认证、API、WebSocket、队列、调度、渠道连接、Provider、用量和 SQLite 持久化。
+- Backend 由 Node.js 运行，负责认证、API、WebSocket、队列、调度、渠道连接、Provider 和 SQLite 持久化。
 - Docker 只隔离 Agent 执行环境，不替代 Backend 的授权层。
 - Web Client 不直接读取文件、数据库或凭据；文件与宿主能力一律经 Backend API 提供。
-- Workspace ACL、owner、用户角色、系统权限和 Host 执行策略在服务端共同判定，不能因为拥有某一层权限就自动越过其他边界。
-- Memory、Skills、MCP 和 Scheduler 任务都继承用户、Agent、Workspace 与 Session 上下文。
+- 登录会话、工作区归属、admin 角色和 Host 执行策略在服务端共同判定，不能因为已登录就自动越过执行边界。
+- Memory、Skills、MCP 和 Scheduler 任务都继承 Agent、Workspace 与 Session 上下文。
 
-更多权限约束见 [`docs/ACL-MATRIX.md`](docs/ACL-MATRIX.md)，安全问题请参考 [`SECURITY.md`](SECURITY.md)。
+更多访问边界见 [`docs/ACL-MATRIX.md`](docs/ACL-MATRIX.md)，安全问题请参考 [`SECURITY.md`](SECURITY.md)。
 
 ## 项目状态
 
@@ -205,7 +205,7 @@ CKQClaw 当前处于持续开发阶段。仓库已经包含：
 - Pi Agent Runtime 生产执行路径与 runtime-neutral contract。
 - Web Client。
 - Agent Profile、Workspace、Session、Memory、Skills、MCP 和 Subagents。
-- 多用户认证、ACL、owner 生命周期、调度任务、用量和渠道接入。
+- 个人 Agent 工作台的单账号登录、访问边界、owner 生命周期、调度任务和渠道接入。
 - Host/Docker 双执行边界。
 
 真实模型调用、Docker 执行、渠道连接和远程部署仍然依赖本地凭证、服务配置与运行环境；没有外部 Provider 时，可以先启动 UI、完成本地初始化，并在设置中稍后补齐配置。
@@ -226,7 +226,7 @@ CKQClaw 当前处于持续开发阶段。仓库已经包含：
 ## 文档
 
 - [`docs/API.md`](docs/API.md) — HTTP API、认证和主要资源接口
-- [`docs/ACL-MATRIX.md`](docs/ACL-MATRIX.md) — 用户、Workspace、Channel、Host 与任务权限矩阵
+- [`docs/ACL-MATRIX.md`](docs/ACL-MATRIX.md) — 个人版访问边界：登录会话与 IM 侧访问控制
 - [`docs/workspace-memory-v2.md`](docs/workspace-memory-v2.md) — Workspace Memory 的数据模型、版本与交互边界
 - [`docs/runtime-migration.md`](docs/runtime-migration.md) — 从旧运行时到 Pi Agent Runtime 的迁移记录
 - [`docs/PROMPT-SKILL-RUNTIME-TEST-PLAN.md`](docs/PROMPT-SKILL-RUNTIME-TEST-PLAN.md) — Prompt、Skill、Runtime 与 Agent Builder 验证计划
