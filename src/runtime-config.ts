@@ -230,24 +230,6 @@ export interface ClaudeOAuthCredentials {
   subscriptionType?: string; // storage-compat only; no runtime writer since THESIS-05
 }
 
-export interface OAuthUsageBucket {
-  utilization: number; // 0-100
-  resets_at: string; // ISO 8601
-}
-
-export interface OAuthUsageResponse {
-  five_hour: OAuthUsageBucket | null;
-  seven_day: OAuthUsageBucket | null;
-  seven_day_opus: OAuthUsageBucket | null;
-  seven_day_sonnet: OAuthUsageBucket | null;
-}
-
-export interface CachedOAuthUsage {
-  data: OAuthUsageResponse;
-  fetchedAt: number; // Unix timestamp ms
-  error?: string;
-}
-
 /** 任务AL：provider 级上下文窗口预设档位（合法声明值）。 */
 const CONTEXT_WINDOW_PRESETS = [128_000, 256_000, 512_000, 1_000_000] as const;
 type DeclaredContextWindow = (typeof CONTEXT_WINDOW_PRESETS)[number];
@@ -1876,46 +1858,6 @@ export function getActiveProfileCustomEnv(): Record<string, string> {
 }
 
 /**
- * Resolve any profileId to a full ClaudeProviderConfig.
- * Used by ProviderPool to build env for a non-active profile.
- */
-function resolveProfileToConfig(profileId: string): ClaudeProviderConfig {
-  const state = readStoredState();
-  if (!state) return defaultsFromEnv();
-
-  if (isOfficialClaudeMode(profileId)) {
-    return buildOfficialClaudeProviderConfig(
-      state.officialSecrets,
-      state.officialUpdatedAt,
-    );
-  }
-
-  const stored = state.profiles.find((p) => p.id === profileId);
-  if (!stored) {
-    // Profile not found — fallback to current active config
-    logger.warn(
-      { profileId },
-      'resolveProfileToConfig: profile not found, falling back to active',
-    );
-    return getClaudeProviderConfig();
-  }
-
-  const profile = fromStoredProfile(stored);
-  return buildConfig(
-    {
-      anthropicBaseUrl: profile.anthropicBaseUrl,
-      anthropicAuthToken: profile.anthropicAuthToken,
-      anthropicApiKey: state.officialSecrets.anthropicApiKey,
-      // 官方 OAuth 凭据不再进入运行时配置（THESIS-05）；字段仅为存储类型占位。
-      claudeCodeOauthToken: '',
-      claudeOAuthCredentials: null,
-      anthropicModel: profile.anthropicModel,
-    },
-    profile.updatedAt || state.officialUpdatedAt,
-  );
-}
-
-/**
  * Resolve config AND customEnv for a profileId in a single disk read.
  * Used by container-runner to avoid double readStoredState() calls.
  */
@@ -2967,20 +2909,4 @@ export function createUserContainerConcurrencyChecker(
     }
     return { allowed: userActive < limit };
   };
-}
-
-// ─── OAuth Usage Types ─────────────────────────────────────────────────────
-// OAuthUsageBucket 本段曾重复声明一次（接口合并掩盖冗余）；ISSUE-11 B7 删此份，
-// 保留文件前部带注释的唯一声明。
-
-/**
- * 解析 OAuth usage bucket 对象
- * 运行时类型守卫，验证 API 响应结构
- */
-export function parseOAuthUsageBucket(v: unknown): OAuthUsageBucket | null {
-  if (!v || typeof v !== 'object') return null;
-  const obj = v as Record<string, unknown>;
-  if (typeof obj.utilization !== 'number' || typeof obj.resets_at !== 'string')
-    return null;
-  return { utilization: obj.utilization, resets_at: obj.resets_at };
 }

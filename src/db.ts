@@ -9486,14 +9486,6 @@ export function deleteMessage(chatJid: string, messageId: string): boolean {
   return result.changes > 0;
 }
 
-// --- User Subscriptions ---
-
-// --- User Balances ---
-
-// --- Monthly Usage ---
-
-// --- Redeem Codes ---
-
 /**
  * Close the database connection.
  * Should be called during graceful shutdown.

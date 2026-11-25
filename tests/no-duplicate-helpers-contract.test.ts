@@ -26,7 +26,7 @@ import type { RegisteredGroup } from '../src/types.js';
  *    头像校验/MIME 映射/大小常量数值只在 avatar-upload.ts；
  *    计费 pattern 归一化只在 src/db.ts 保留单一实现（定价路由已随
  *    THESIS-08 删除）；
- *    OAuthUsageBucket 全仓 `export interface` 恰一次。
+ *    OAuthUsageBucket 经 THESIS-18 清扫后全仓零声明。
  * ④ 同步完整性：shared/ 规范源与两侧副本逐字节一致（fs 断言）。
  */
 
@@ -57,10 +57,6 @@ const ALL_SOURCE_FILES = SOURCE_DIRS.flatMap(listSourceFiles);
 function filesDefining(name: string, files: string[] = ALL_SOURCE_FILES) {
   const pattern = new RegExp(`function\\s+${name}\\s*(?:<[^>]*>)?\\s*\\(`);
   return files.filter((file) => pattern.test(read(file)));
-}
-
-function countOccurrences(pattern: RegExp, file: string): number {
-  return (read(file).match(new RegExp(pattern.source, 'g')) ?? []).length;
 }
 
 // ───────────────────────────────────── ① B1 折叠行为（拍板 #6：取 config 折叠版）
@@ -378,17 +374,12 @@ describe('each converged helper family has exactly one implementation', () => {
     expect(new Date(iso).toISOString()).toBe(iso);
   });
 
-  test('OAuthUsageBucket is declared exactly once repo-wide', () => {
+  test('OAuthUsageBucket is not declared anywhere repo-wide', () => {
+    // THESIS-18：OAuth 用量接口下线后，该类型不再有任何声明。
     const files = ALL_SOURCE_FILES.filter((file) =>
-      /export\s+interface\s+OAuthUsageBucket/.test(read(file)),
+      /\bOAuthUsageBucket\b/.test(read(file)),
     );
-    expect(files).toEqual(['src/runtime-config.ts']);
-    expect(
-      countOccurrences(
-        /export\s+interface\s+OAuthUsageBucket/,
-        'src/runtime-config.ts',
-      ),
-    ).toBe(1);
+    expect(files).toEqual([]);
   });
 
   test('avatar validation (size / MIME map / error text) lives only in the shared helper', () => {
