@@ -1,5 +1,4 @@
 import {
-  Coins,
   Gauge,
   Info,
   MessageSquare,
@@ -68,11 +67,6 @@ const systemItems: NavItem[] = [
     key: 'host-integration',
     label: '宿主机集成',
     icon: <ServerCog className="size-4" />,
-  },
-  {
-    key: 'pricing',
-    label: '模型单价',
-    icon: <Coins className="size-4" />,
   },
 ];
 

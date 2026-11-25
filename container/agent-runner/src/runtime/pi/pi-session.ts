@@ -5,7 +5,7 @@
  * 子代理生命周期事件（同一监听器集合分发）。
  *
  * 计量核心在 aggregatePiTurnUsage（见其头注释）：回合级 usage 聚合 +
- * 幂等 eventId，语义必须与宿主账本（usage-service / kaboo-pricing）对齐。
+ * 幂等 eventId，语义必须与宿主对用量事件的消费契约对齐。
  */
 import type {
   AgentSession,
@@ -49,8 +49,7 @@ function nonNegative(value: unknown): number {
  *
  * Pi attaches a per-API-call usage snapshot to each assistant message, so a
  * tool-using turn spans several snapshots; the last message alone undercounts.
- * Semantics that must stay aligned with the host ledger (usage-service /
- * kaboo-pricing, see the Claude path in assistant-usage.ts):
+ * Semantics that must stay aligned with the host usage-event contract:
  * - `reasoning` is a subset of Pi's `output` → carve it out so output and
  *   reasoning stay disjoint token classes.
  * - `cacheWrite1h` is a subset of `cacheWrite` (a retention split, not an

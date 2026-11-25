@@ -18,7 +18,6 @@ import {
   SystemSettingsSection,
 } from '../components/settings/SystemSettingsSection';
 import { UserChannelsSection } from '../components/settings/UserChannelsSection';
-import { ModelPricingSection } from '../components/settings/ModelPricingSection';
 import { MonitorPage } from './MonitorPage';
 import type { SettingsTab } from '../components/settings/types';
 
@@ -28,7 +27,6 @@ const VALID_TABS: SettingsTab[] = [
   'system',
   'main-agent',
   'host-integration',
-  'pricing',
   'profile',
   'preferences',
   'my-channels',
@@ -48,7 +46,6 @@ const SYSTEM_TABS: SettingsTab[] = [
   'system',
   'main-agent',
   'host-integration',
-  'pricing',
 ];
 const FULLPAGE_TABS: SettingsTab[] = ['monitor'];
 
@@ -119,7 +116,6 @@ export function SettingsPage() {
     system: '运行与容量',
     'main-agent': '主 CKQClaw',
     'host-integration': '宿主机集成',
-    pricing: '模型单价',
     profile: '个人资料',
     preferences: '常规',
     'my-channels': '消息渠道',
@@ -224,7 +220,6 @@ export function SettingsPage() {
                     </div>
                   )}
                   {activeTab === 'appearance' && <AppearanceSection />}
-                  {activeTab === 'pricing' && <ModelPricingSection />}
                   {activeTab === 'profile' && <ProfileSection />}
                   {activeTab === 'preferences' && <PreferencesSection />}
                   {activeTab === 'my-channels' && <UserChannelsSection />}

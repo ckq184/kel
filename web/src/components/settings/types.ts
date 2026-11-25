@@ -87,7 +87,6 @@ export type SettingsTab =
   | 'system'
   | 'main-agent'
   | 'host-integration'
-  | 'pricing'
   | 'profile'
   | 'preferences'
   | 'my-channels'
