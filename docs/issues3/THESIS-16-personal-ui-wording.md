@@ -45,6 +45,8 @@
 
 D-U2 ① 的依据：后端在缺省时把 `memberAccess` 归一为 `admin_only`（`src/mcp-utils.ts:332-338`），唯一账号是 admin，取值对行为没有影响。选 ① 时要确认隐藏后不留下无引用的组件或常量（方案 §11.4，THESIS-15 的可达性契约会兜底文件级孤儿）。
 
+> **2026-11-25 补注（issues4 立项）**：第三轮已拍板去掉角色（[personal-slim](../issues4/task-personal-slim-plan.md) P1）。MCP"成员访问"控件与 `memberAccess` 将由 [THESIS-21](../issues4/THESIS-21-drop-role-frontend.md) 连同后端整体删除，资料页角色标签也在其范围内。本包领取时若尚未做 D-U1、D-U2，可以直接把这两项交给 THESIS-21，只做 D-U3 的文案改写，避免先隐藏再删除的重复劳动。
+
 ## 执行前核实
 
 - 逐个打开上面列出的测试，区分"断言文案"与"断言行为"：前者随改写更新；后者（例如 MCP 访问控制、宿主机模式迁移）不动。
