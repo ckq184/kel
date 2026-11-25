@@ -15,7 +15,7 @@
 - `web/src` 共 218 个 `.ts`/`.tsx` 文件：4 个测试文件、1 个 `.d.ts`、1 个 `make sync-types` 同步副本、212 个目标模块。
 - 入口 `web/src/main.tsx` 静态导入 `./App`、`./styles/globals.css`、`./utils/url`、`./utils/legacyPwaCleanup`。
 - 页面入口集中在 `web/src/App.tsx` 的 `React.lazy(() => import('./pages/...'))`；其余动态导入（`ChatView`、`MessageBubble`、`AppLayout`、`MermaidDiagram`）均为字面量说明符。
-- 全树无 `.js`/`.jsx`/`.mjs`，无带查询串的 import，无 `import.meta.glob`，无 `require()`；CSS 只有 `main.tsx` 的副作用导入，JSON 无导入。因此按 `.ts`/`.tsx` 遍历即可覆盖全部模块边。
+- 全树无 `.js`/`.jsx`/`.mjs`，无带查询串的 import，无 `import.meta.glob`，无 `require()`；CSS 副作用导入出现在 `main.tsx` 与 `components/chat/TerminalPanel.tsx`、`MarkdownRenderer.tsx` 等包内组件，JSON 无导入。非 TS 资源不参与遍历，按 `.ts`/`.tsx` 即可覆盖全部模块边。
 - 路径别名 `@/*` → `web/src/*` 定义在 `web/tsconfig.json`，测试需同步解析。
 - 同步副本为 `web/src/stream-event.types.ts`，由 `scripts/sync-stream-event.sh` 从 `shared/stream-event.ts` 拷贝，按方案 §11.1 排除。
 - 根 `vitest.config.ts` 默认发现 `**/*.test.ts`，`make test` 即 `npx vitest run`；新测试放在 `tests/` 下可被自动执行。
@@ -24,7 +24,7 @@
 ## 2. 实现步骤（TDD）
 
 1. **新增测试**：`tests/frontend-reachability-contract.test.ts`
-   - 先剥离行注释与块注释，再用正则收集说明符：静态 `import … from`、副作用 `import`、`export … from`、字面量动态 `import()`。
+   - 按保守启发式剥离行注释与块注释，再用正则收集说明符：静态 `import … from`、副作用 `import`、`export … from`、字面量动态 `import()`。
    - 从 `web/src/main.tsx` 做 BFS；相对路径按 `.ts`、`.tsx`、`/index.ts`、`/index.tsx` 解析，`@/` 映射到 `web/src`。
    - 目标集合排除 `*.test.ts`/`*.test.tsx`、`*.d.ts` 与 `web/src/stream-event.types.ts`。
    - 断言语义：`unreachable` 数组为空，失败时输出相对路径；同时断言目标集合非空，避免入口或目录写错时假通过。
@@ -57,7 +57,9 @@
 ## 6. 风险与回滚
 
 - **反向验证已通过**：临时把 `web/src/App.tsx` 的 `MemoryPage` 懒加载 import 注释掉后，用例失败并列出 `web/src/pages/MemoryPage.tsx` 与 `web/src/features/workspace-memory/model.ts`；随后已还原，临时改动未提交。
-- **正则解析的边界**：注释会先剥离，注释掉的 import 不会造成假边；字符串中形如 import 的文本仍可能产生假边，只会让测试偏宽（漏报孤儿），不会误报。若未来出现模板字符串动态导入，需同步扩展解析口径。
+- **正则解析的边界**：注释剥离用启发式（行首/空白/`{` 后的 `/*` 与行首/空白后的 `//`），避免把 `image/*`、`${protocol}//` 误判为注释；字符串内容不做词法解析。注释或字符串中恰好出现 import 文本时仍可能产生假边或假红；独立审查用 TypeScript AST 对比当前树边集合为 0 差异。若未来出现模板字符串动态导入，需同步扩展解析口径。
+- **测试文件口径**：当前 `web/src` 只有 `*.test.ts`/`*.test.tsx` 四份测试文件；若未来引入 `*.spec.ts` 或 `__tests__/` 辅助文件，需同步扩展排除规则。
+- **同步副本排除**：`web/src/stream-event.types.ts` 当前经 `stores/chat.ts` 可达，排除规则本身未被失败场景单独覆盖；保留是为符合 §11.1 口径，并防止该文件未来失去消费者时被误报。
 - **路径写死风险**：入口与同步副本路径是方案约定的固定值；目标文件数不写死，新增/删除模块自动适配。
 - **假通过风险**：目标集合非空断言兜底入口或目录拼错。
 - **回滚**：单个提交，`git revert <提交号>`；不涉及数据与 schema。

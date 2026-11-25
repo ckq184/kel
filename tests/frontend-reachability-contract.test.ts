@@ -46,12 +46,13 @@ function listModuleFiles(directory: string): string[] {
 
 function importedSpecifiers(source: string): string[] {
   // Strip comments first so a commented-out import does not keep its module
-  // falsely reachable. The `[^:]` guard keeps `https://` inside strings intact;
+  // falsely reachable. Delimiters are only recognized at line start or after
+  // whitespace/{ so literals like `image/*` and `${protocol}//` are left alone;
   // string contents are not parsed further because the contract only needs
   // module edges, not a full JavaScript AST.
   const withoutComments = source
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/(^|[^:])\/\/.*$/gm, '$1');
+    .replace(/(^|[\s{])\/\*[\s\S]*?\*\//gm, '$1')
+    .replace(/(^|\s)\/\/.*$/gm, '$1');
   const specifiers: string[] = [];
   for (const match of withoutComments.matchAll(specifierPattern)) {
     specifiers.push(match[1] ?? match[2]);
@@ -106,6 +107,8 @@ describe('frontend reachability contract', () => {
 
     // Guards against a moved entry or source root silently passing the test.
     expect(targetFiles.length).toBeGreaterThan(0);
+    expect(targetFiles).toContain(entryFile);
+    expect(reached.has(entryFile)).toBe(true);
 
     const unreachable = targetFiles
       .filter((file) => !reached.has(file))
