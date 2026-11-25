@@ -1,5 +1,12 @@
 {
-  "task": "issues4-precheck - issues4 部署前置核实落档：README 第四节记录本机只读核实结果（单账号、无旧 IM 配置、供应商配置 V5）；只改文档",
+  "task": "issues4-precheck - issues4 部署前置核实落档：README 第四节记录本机只读核实结果（单账号、无旧 IM 配置、供应商配置 V5）；D-E5 ② 在 THESIS-10/11 交付记录、issues3 README 第四节、thesis-trim 方案 §14 第 9 项补结案注并登记 §15 v0.9.1；只改文档",
   "base": "ea5a1da",
-  "allow": [".gatescope.json", "docs/issues4/README.md"]
+  "allow": [
+    ".gatescope.json",
+    "docs/issues4/README.md",
+    "docs/issues2/THESIS-10-single-account.md",
+    "docs/issues2/THESIS-11-drop-permissions.md",
+    "docs/issues3/README.md",
+    "docs/issues2/task-thesis-trim-plan.md"
+  ]
 }
