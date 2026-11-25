@@ -10,12 +10,6 @@ export type PiProviderResolution = {
   providerId: string;
   modelId: string;
   model: Model<any>;
-  /**
-   * True when the model is served by a registered custom endpoint. D-2 ②
-   * (THESIS-04): always true — official endpoints are rejected, so every
-   * resolution registers a `ckqclaw-*` provider.
-   */
-  custom: boolean;
 };
 
 export type CustomHeaderWarning = { line: number; message: string };
@@ -205,6 +199,5 @@ export async function resolvePiProvider(
     providerId,
     modelId: split.modelId,
     model,
-    custom: true,
   };
 }

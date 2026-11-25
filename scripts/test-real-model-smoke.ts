@@ -21,10 +21,7 @@ async function main(): Promise<void> {
     `${JSON.stringify(
       {
         providerConfigured: Boolean(
-          config.anthropicApiKey ||
-          config.anthropicAuthToken ||
-          config.claudeCodeOauthToken ||
-          config.claudeOAuthCredentials,
+          config.anthropicApiKey || config.anthropicAuthToken,
         ),
         baseUrlPresent: Boolean(config.anthropicBaseUrl),
         modelPresent: Boolean(config.anthropicModel),

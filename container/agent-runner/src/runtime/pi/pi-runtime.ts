@@ -96,13 +96,12 @@ export class PiRuntimeAdapter implements AgentRuntime {
     if (subagentsExtension && !extensionPaths.includes(subagentsExtension)) {
       extensionPaths.push(subagentsExtension);
     }
-    // ISSUE-22: custom endpoints pin every subagent to the parent model.
-    // A builder, not a shared array: each loader gets fresh factory closures.
+    // ISSUE-22: every endpoint is custom, so pin every subagent to the parent
+    // model. A builder, not a shared array: each loader gets fresh factory
+    // closures.
     const extensionFactories = () => [
       createCkqclawMcpExtension(),
-      ...(modelResolution.custom
-        ? [createSubagentInheritModelExtension()]
-        : []),
+      createSubagentInheritModelExtension(),
     ];
     let resourceLoader = new DefaultResourceLoader({
       cwd: options.cwd,

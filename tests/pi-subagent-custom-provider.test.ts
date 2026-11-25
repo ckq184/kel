@@ -70,7 +70,7 @@ const EXPLORE_MODEL = 'anthropic/claude-haiku-4-5';
 describe('ISSUE-22 T1 custom endpoint narrows subagent model availability', () => {
   test('custom endpoint: only the ckqclaw provider is available and Explore cannot resolve to Anthropic', async () => {
     const runtime = await createModelRuntime();
-    const resolution = await resolvePiProvider(runtime, {
+    await resolvePiProvider(runtime, {
       model: 'test-model',
       endpointKind: 'custom',
       baseUrl: 'https://proxy.invalid',
@@ -93,7 +93,6 @@ describe('ISSUE-22 T1 custom endpoint narrows subagent model availability', () =
     if (typeof sonnet !== 'string') {
       expect(sonnet.provider).toBe('ckqclaw-anthropic');
     }
-    expect(resolution.custom).toBe(true);
   });
 
   test('official endpoints are rejected instead of exposing the built-in catalog (D-2 ②)', async () => {
@@ -165,7 +164,7 @@ describe('ISSUE-22 T2 explicit Agent model is dropped under a custom endpoint', 
     expect(input).toEqual({ command: 'ls', model: 'keep-me' });
   });
 
-  test('pi-runtime loads the extension only for custom endpoints', () => {
+  test('pi-runtime always loads the subagent inherit extension', () => {
     const source = fs.readFileSync(
       path.resolve(
         __dirname,
@@ -173,9 +172,17 @@ describe('ISSUE-22 T2 explicit Agent model is dropped under a custom endpoint', 
       ),
       'utf-8',
     );
-    expect(source).toMatch(
-      /modelResolution\.custom\s*\?\s*\[createSubagentInheritModelExtension\(\)\]/,
-    );
+    // D-S1 ① (THESIS-18): every endpoint is custom, so the inherit extension
+    // is mounted unconditionally and the `custom` branch is gone.
+    expect(source).not.toMatch(/modelResolution\.custom/);
+    const marker = 'const extensionFactories = () => [';
+    const start = source.indexOf(marker);
+    expect(start).toBeGreaterThan(-1);
+    const end = source.indexOf('];', start);
+    expect(end).toBeGreaterThan(start);
+    const factories = source.slice(start, end);
+    expect(factories).toContain('createSubagentInheritModelExtension()');
+    expect(factories).not.toContain('...');
     // Both loader constructions (with and without the subagent extension)
     // share the same factory list.
     const factoryUses = source.match(

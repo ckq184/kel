@@ -2,8 +2,8 @@
 
 | 字段          | 值                                                                                                                                                                                                                                                                                                                               |
 | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 状态          | 待领取                                                                                                                                                                                                                                                                                                                           |
-| 领取人 / 分支 | —                                                                                                                                                                                                                                                                                                                                |
+| 状态          | 已完成                                                                                                                                                                                                                                                                                                                           |
+| 领取人 / 分支 | claude/thesis-18-dead-code-sweep                                                                                                                                                                                                                                                                                                 |
 | 优先级        | P2                                                                                                                                                                                                                                                                                                                               |
 | 类型          | 死代码                                                                                                                                                                                                                                                                                                                           |
 | 依赖          | 无                                                                                                                                                                                                                                                                                                                               |
@@ -70,4 +70,9 @@
 
 ## 交付记录
 
-（待填）
+- **提交**：`a18c6c8`（立项）、`60ad4a2`（实现）、`b1440bc`（规格审查处置），审查记录与交付随本提交（分支 `claude/thesis-18-dead-code-sweep`，基于 main `248c7cb`）。
+- **实现**：S1/S2 删除 `OAuthUsageBucket`、`OAuthUsageResponse`、`CachedOAuthUsage`、`parseOAuthUsageBucket` 及 “OAuth Usage Types” 分节注释；S3 删除无调用方 `resolveProfileToConfig`；S4 删除 `generateInviteCode`；S5 只删 `src/db.ts` 四个空分节注释，代码、迁移与 `CURRENT_SCHEMA_VERSION` 未动；S6 删除 `PiProviderResolution.custom` 与 `modelResolution.custom` 分支，`createSubagentInheritModelExtension()` 改为无条件挂载（D-S1 ①）；S7 冒烟脚本 `providerConfigured` 只留 `anthropicApiKey || anthropicAuthToken`，`baseUrlPresent` 保持独立。
+- **验证**：`npm run verify` 六步全绿（369 文件，3031 通过 / 23 跳过 / 0 失败）；`node scripts/check-scope.mjs` 14 个路径全在声明范围内；`npm run docs:check` 135 个 Markdown；定向 4 文件 46 例、shuffle 两轮、S6 相邻 36 例全绿；`make typecheck` 三侧通过。
+- **偏差**：无。规格审查建议 2/3 已由 `b1440bc` 处置；质量审查 Minor 1–3 延后（见审查记录）。
+- **范围外登记**：S3 删除后 `buildOfficialClaudeProviderConfig`（`src/runtime-config.ts:811`）失去唯一调用方，按非目标不删；Container 模式需等镜像下次重建才带上 S6 改动，无行为变化，不单独重建。
+- **未实机验收**：无界面/行为变化，不需要人工冒烟；`npm run test:real-model` 不作为验收项。

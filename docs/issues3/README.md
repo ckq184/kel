@@ -21,7 +21,7 @@
 | ---------------------------------------------------- | ------------------------------------------------------ | ------ | ---- | ---------------- | -------------------------- | ------ |
 | [THESIS-16](THESIS-16-personal-ui-wording.md)        | 个人版界面表面收口：角色标签、MCP 成员访问、管理员措辞 | P2     | 无   | 17、18、ISSUE-26 | **已拍板：D-U1 至 D-U3 ①** | 已完成 |
 | [THESIS-17](THESIS-17-sdk-query-third-party-only.md) | 一次性模型调用 `sdkQuery` 只剩第三方路径               | P1     | 无   | 16、ISSUE-26     | **是**（D-Q1）             | 已完成 |
-| [THESIS-18](THESIS-18-dead-code-sweep.md)            | 裁减遗留死代码清扫（宿主、Runner、脚本）               | P2     | 无   | 16、ISSUE-26     | **是**（D-S1）             | 待领取 |
+| [THESIS-18](THESIS-18-dead-code-sweep.md)            | 裁减遗留死代码清扫（宿主、Runner、脚本）               | P2     | 无   | 16、ISSUE-26     | **是**（D-S1）             | 已完成 |
 
 池外相关待办：[ISSUE-26](../issues/ISSUE-26-scheduler-legacy-finalize-and-manual-reservation.md)（R2 任务池，调度器旧收尾残留，待领取，P3）。它不属于裁减遗留，留在原任务池领取；改动集中在 `src/task-scheduler.ts`，与本池三个包互不冲突。
 
