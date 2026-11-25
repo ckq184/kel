@@ -160,9 +160,9 @@ Host 模式没有 `maxConcurrentHostProcesses`。旧客户端提交该字段时�
 
 ### 6.1 多账号
 
-- 每个用户可以为同一 Provider 创建多个 `channel_accounts`。
+- 同一账号可以为同一 Provider 创建多个 `channel_accounts`。
 - 每个渠道 JID 和 mount 都携带 `channel_account_id`，发送时使用绑定账号的机器人身份。
-- 账号可以设置默认工作区；恢复默认绑定时先解析账号归属，不能跨用户或跨账号回退。
+- 账号可以设置默认工作区；恢复默认绑定时先解析账号归属，不能跨账号回退。
 - 同一工作区可以绑定多个机器人账号和多个群聊。
 
 ### 6.2 绑定边界

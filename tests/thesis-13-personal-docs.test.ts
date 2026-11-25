@@ -23,14 +23,14 @@ describe('THESIS-13 personal product positioning', () => {
   test('README and docs/API.md link to the personal access-boundary document', () => {
     const readme = read('README.md');
     expect(readme).toContain('个人版访问边界');
-    expect(readme).not.toContain('权限模型');
-    expect(readme).not.toContain('权限矩阵');
+    expect(readme).toMatch(/\[[^\]]*\]\(docs\/ACL-MATRIX\.md\)/);
     expect(readme).not.toContain(
       '用户、Workspace、Channel、Host 与任务权限矩阵',
     );
 
     const api = read('docs/API.md');
-    expect(api).toContain('[个人版访问边界](ACL-MATRIX.md)');
+    expect(api).toContain('个人版访问边界');
+    expect(api).toMatch(/\[[^\]]*\]\(ACL-MATRIX\.md\)/);
     expect(api).not.toContain('[ACL 权限矩阵](ACL-MATRIX.md)');
   });
 });
@@ -39,12 +39,12 @@ describe('THESIS-13 personal access-boundary document', () => {
   const acl = read('docs/ACL-MATRIX.md');
 
   test('is retitled and keeps the two retained layers', () => {
-    expect(acl).toContain('# CKQClaw 个人版访问边界');
-    expect(acl).toContain('## 1. 第一层：登录会话');
-    expect(acl).toContain('## 2. 第二层：IM 侧访问控制');
+    expect(acl).toMatch(/^# CKQClaw 个人版访问边界$/m);
+    expect(acl).toContain('第一层：登录会话');
+    expect(acl).toContain('第二层：IM 侧访问控制');
   });
 
-  test('drops removed permission layers, routes and surfaces', () => {
+  test('drops removed permission identifiers, routes and surfaces', () => {
     for (const token of [
       'manage_system_config',
       'manage_users',
@@ -61,12 +61,12 @@ describe('THESIS-13 personal access-boundary document', () => {
       '/api/usage',
       '/api/pricing',
       '模型单价',
-      '用户管理',
-      '邀请码',
-      '审计',
     ]) {
       expect(acl, token).not.toContain(token);
     }
+
+    // 不保留这些层的章节；正文里说明“已下线”仍允许。
+    expect(acl).not.toMatch(/^##+ .*(用户管理|邀请|审计)/m);
   });
 
   test('documents the retained session, ownership and IM boundaries', () => {
@@ -74,13 +74,27 @@ describe('THESIS-13 personal access-boundary document', () => {
       'authMiddleware',
       'adminRoleMiddleware',
       'hasHostExecutionPermission',
+      'canExecuteOnHost',
       'canAccessGroup',
+      'canModifyGroup',
+      'canDeleteGroup',
+      'task-acl',
       'owner_im_id',
       'audience_mode',
       'activation_mode',
       'im-audience-policy',
       'im-command-utils',
       'Origin',
+    ]) {
+      expect(acl, token).toContain(token);
+    }
+  });
+
+  test('keeps the retained deep-defense boundaries', () => {
+    for (const token of [
+      'Workspace Memory',
+      'delete-impact',
+      'adminHostOnlyMode',
     ]) {
       expect(acl, token).toContain(token);
     }

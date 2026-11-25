@@ -14,11 +14,11 @@
 ## 1. 关键事实（开工前核实，main `da4920b`）
 
 - **产品定位写在三处**：`README.md:23`（"面向个人与团队"）、`CLAUDE.md:21`（"多用户 Agent 工作台"）、`AGENTS.md:47`（同）。另有 `README.md:208` 的"多用户认证、ACL……"与 `CLAUDE.md:58` 的"多用户、多账号渠道连接池"两处残留。
-- **`docs/ACL-MATRIX.md` 当前 322 行、11 节**：THESIS-11 已把权限层改为 admin 角色，但仍保留"访问层次"表、`created_by` 多账号隔离、member 表述与旧权限中间件名（`systemConfigMiddleware` 等已不存在）。
+- **`docs/ACL-MATRIX.md` 当前 322 行、11 节**：THESIS-11 已把权限层改为 admin 角色，但仍保留"访问层次"表、`created_by` 多账号隔离、member 表述与旧权限层次描述。
 - **代码现状（改写依据）**：
   - 公开接口：`GET /api/auth/status`、`POST /api/auth/setup`（仅用户表为空）、`POST /api/auth/login`、`GET /api/auth/avatars/:filename`、`GET /api/config/appearance/public`、`GET /api/health`；`/ws` 要求 Cookie Session + Origin 校验。
   - 会话：`authMiddleware` 校验 HMAC 签名 Cookie，拒绝禁用/已删除账号；登录限流按 `username:ip` 与 `username` 两级计数（默认 5 次 / 15 分钟，全局窗口 1 小时）。
-  - 管理面：`adminRoleMiddleware` 仍挂在 `src/routes/config.ts`（16 处）与 `src/routes/monitor.ts`（4 处）；唯一账号恒为 admin。
+  - 管理面：`adminRoleMiddleware` 仍挂在 `src/routes/config.ts` 与 `src/routes/monitor.ts` 的管理路由上；唯一账号恒为 admin。
   - Host 执行：`hasHostExecutionPermission()`（admin 角色）与 `canExecuteOnHost()`（执行时复查 active admin）。
   - 数据归属：`canAccessGroup()` / `canModifyGroup()` / `canDeleteGroup()`（`src/web-context.ts`）按 `created_by` 隔离，admin 无全局旁路；E2a 未删除归属逻辑。
   - IM 侧：`src/im-command-utils.ts` 的主人命令闸门、`src/im-audience-policy.ts` 的响应对象/激活策略；`owner_im_id`、allowlist、owner claim/release 均保留。
@@ -40,7 +40,7 @@
    - 先跑该用例，确认因文档仍是旧口径而失败。
 2. **Green 文档**：
    - `docs/ACL-MATRIX.md` 整体改写为个人版两层次结构（公开接口/登录会话/WebSocket/数据归属 + IM 主人/白名单/响应对象/激活/命令约束 + 验证要求）。
-   - `README.md`：产品定位段、执行与安全边界、项目状态、文档索引与链接标签。
+   - `README.md`：产品定位段、执行与安全边界、项目状态、文档索引与链接标签，以及顺带校正的界面导航、首次初始化与渠道措辞（原文仍写"用量、账单""管理员初始化"，与 THESIS-06/08/10 后的实际界面不符）。
    - `CLAUDE.md`：§2 产品定位、§8 认证与访问边界；`im-manager` 行去掉"多用户"。
    - `AGENTS.md`：`- **产品**` 行。
    - `docs/API.md`：ACL 链接措辞与两处"普通成员/普通用户"的访问说明。
@@ -49,9 +49,9 @@
 
 ## 3. 范围声明（`.gatescope.json` allow）
 
-`.gatescope.json`、`docs/issues2/THESIS-13-personal-docs-and-acl.md`、`docs/issues2/README.md`、`docs/thesis-13-personal-docs-and-acl-plan.md`、`docs/审查记录.md`、`README.md`、`CLAUDE.md`、`AGENTS.md`、`docs/ACL-MATRIX.md`、`docs/API.md`、`tests/thesis-13-personal-docs.test.ts`。
+`.gatescope.json`、`docs/issues2/THESIS-13-personal-docs-and-acl.md`、`docs/issues2/README.md`、`docs/issues2/task-thesis-trim-plan.md`、`docs/thesis-13-personal-docs-and-acl-plan.md`、`docs/审查记录.md`、`README.md`、`CLAUDE.md`、`AGENTS.md`、`docs/ACL-MATRIX.md`、`docs/API.md`、`tests/thesis-13-personal-docs.test.ts`。
 
-`tests/thesis-13-personal-docs.test.ts` 超出 issue 的"预计改动路径"（原文未列 `tests/`）：新增该契约用例把验收条件 1、2 变成机审，避免文档口径再次漂移；按"扩宽范围只能改声明"登记。
+`tests/thesis-13-personal-docs.test.ts` 超出 issue 的"预计改动路径"（原文未列 `tests/`）：新增该契约用例把验收条件 1、2 变成机审，避免文档口径再次漂移；按"扩宽范围只能改声明"登记。`docs/issues2/task-thesis-trim-plan.md` 是 README 第一节第 6 步要求交付时同步的方案台账，立项时漏列，交付时补入声明。
 
 ## 4. 验收条件
 
