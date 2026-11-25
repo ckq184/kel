@@ -87,19 +87,40 @@ afterEach(() => {
 });
 
 describe('sdkQuery only uses the third-party path', () => {
-  test('no base URL: returns null without the official runtime key or model catalog', async () => {
-    vi.mocked(runtimeConfig.getClaudeProviderConfig).mockReturnValue(
-      providerConfig({ anthropicApiKey: 'sk-official' }),
-    );
+  test.each([
+    [
+      'api key, empty model (catalog fallback)',
+      { anthropicApiKey: 'sk-official' },
+    ],
+    [
+      'auth token, model ref (built-in catalog lookup)',
+      {
+        anthropicAuthToken: 'gateway-token',
+        anthropicModel: 'claude-sonnet-4',
+      },
+    ],
+  ])(
+    'no base URL (%s): returns null without the official runtime key or model catalog',
+    async (_label, overrides) => {
+      vi.mocked(runtimeConfig.getClaudeProviderConfig).mockReturnValue(
+        providerConfig(overrides),
+      );
 
-    await expect(sdkQuery('summarize this')).resolves.toBeNull();
+      await expect(sdkQuery('summarize this')).resolves.toBeNull();
 
-    expect(pi.setRuntimeApiKey).not.toHaveBeenCalled();
-    expect(pi.getModels).not.toHaveBeenCalled();
-    expect(pi.registerProvider).not.toHaveBeenCalled();
-    expect(pi.createAgentSession).not.toHaveBeenCalled();
-    expect(logger.warn).toHaveBeenCalled();
-  });
+      expect(pi.setRuntimeApiKey).not.toHaveBeenCalled();
+      expect(pi.getModels).not.toHaveBeenCalled();
+      expect(pi.getModel).not.toHaveBeenCalled();
+      expect(pi.registerProvider).not.toHaveBeenCalled();
+      expect(pi.createAgentSession).not.toHaveBeenCalled();
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          err: expect.stringContaining('Base URL'),
+        }),
+        'Pi helper query failed',
+      );
+    },
+  );
 
   test('base URL: still registers the ckqclaw provider and runs the query', async () => {
     vi.mocked(runtimeConfig.getClaudeProviderConfig).mockReturnValue(
@@ -121,11 +142,21 @@ describe('sdkQuery only uses the third-party path', () => {
         apiKey: 'sk-third-party',
       }),
     );
+    expect(pi.getModel).toHaveBeenCalledTimes(1);
     expect(pi.getModel).toHaveBeenCalledWith('ckqclaw-zai', 'glm-4.6');
     expect(logger.warn).not.toHaveBeenCalled();
     expect(pi.createAgentSession).toHaveBeenCalledOnce();
     expect(pi.session.prompt).toHaveBeenCalledWith('hello');
     expect(pi.setRuntimeApiKey).not.toHaveBeenCalled();
     expect(pi.getModels).not.toHaveBeenCalled();
+  });
+
+  test('source contract: no official-path calls remain', () => {
+    const source = fs.readFileSync(
+      new URL('../src/sdk-query.ts', import.meta.url),
+      'utf8',
+    );
+    expect(source).not.toMatch(/setRuntimeApiKey/);
+    expect(source).not.toMatch(/getModels\(\s*['"]anthropic['"]/);
   });
 });
