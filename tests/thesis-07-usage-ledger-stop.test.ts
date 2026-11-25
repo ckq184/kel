@@ -95,8 +95,4 @@ describe('superseded ledger tests are gone', () => {
     expect(exists('tests/usage-accounting.test.ts')).toBe(false);
     expect(exists('tests/task-usage-routing.test.ts')).toBe(false);
   });
-
-  test('pricing route tests are deleted with the pricing layer', () => {
-    expect(exists('tests/pricing-routes.test.ts')).toBe(false);
-  });
 });

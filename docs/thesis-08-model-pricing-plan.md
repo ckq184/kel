@@ -16,7 +16,7 @@
 
 - **后端定价层**：`src/routes/pricing.ts`（166 行，五个接口：`GET /rules`、`POST /rules`、`PATCH /rules/:id`、`DELETE /rules/:id`、`POST /preview`，全部挂 `authMiddleware` + `systemConfigMiddleware`）；`src/kaboo-pricing.ts`（396 行，内置价格表与计价函数）；`src/custom-pricing-store.ts`（53 行，自定义规则缓存）。
 - **挂载点**：`src/web.ts:79` 导入、`:230` `app.route('/api/pricing', pricingRoutes)`。
-- **调用方核实**：`git grep -E "kaboo|KabooModelPricing|getEffectiveCustomPricing|ModelPricing|/api/pricing"` 覆盖 `src/ tests/ web/ docs/ container/`。THESIS-07 之后，`kaboo-pricing.ts`、`custom-pricing-store.ts` 的生产调用方只有 `src/routes/pricing.ts`；`src/db.ts` 的 `custom_model_pricing` 读写函数与 `normalizePricingPattern` 已无调用方，**留给 THESIS-14**（issue 非目标）。
+- **调用方核实**：`git grep -E "kaboo|KabooModelPricing|getEffectiveCustomPricing|ModelPricing|/api/pricing"` 覆盖 `src/ tests/ web/ docs/ container/`。THESIS-07 之后，`kaboo-pricing.ts`、`custom-pricing-store.ts` 的生产调用方只有 `src/routes/pricing.ts`；`src/db.ts` 的 `custom_model_pricing` 读写函数已无外部调用方（`normalizePricingPattern` 仍被 `db.ts` 内部 create/update 使用），**留给 THESIS-14**（issue 非目标）。
 - **schema 孤儿（用户已拍板删除）**：`src/schemas.ts:977-1027` 的 `CustomPricingCreateSchema`、`CustomPricingPatchSchema`、`CustomPricingPreviewSchema`、`customPricingFields`、`pricePerMTok` 仅被 `src/routes/pricing.ts` 导入，全仓无其他引用。
 - **前端定价层**：`ModelPricingSection.tsx`（242）、`ModelPricingDialog.tsx`（318）、`stores/model-pricing.ts`（129）；入口为 `SettingsNav.tsx:73-75`（`key/label/icon`，`Coins` 仅此处使用）、`settings/types.ts:90`（`'pricing'`）、`SettingsPage.tsx:21`（导入）、`:31`/`:51`（`VALID_TABS`/`SYSTEM_TABS`）、`:122`（标签）、`:227`（渲染）。无其他前端文件引用这些模块（`auth.ts` 不重置定价 store）。
 - **注释**：`container/agent-runner/src/runtime/pi/pi-session.ts:8`、`:53` 提到已删除或即将删除的 `usage-service`/`kaboo-pricing`，改为不指向具体已删模块的描述。
@@ -39,8 +39,8 @@
    - `docs/API.md`、`docs/ACL-MATRIX.md` 不再出现 `/api/pricing` 或"模型单价"。
    - 先在未修改的源码上跑该文件，确认因接口存在/文件存在而红。
 2. **Green**：删除后端 3 文件与 `src/web.ts` 两处引用；删除 `src/schemas.ts` 定价 schema 段；删除前端 3 文件并清掉 `SettingsNav`/`types`/`SettingsPage` 的入口；改写 `pi-session.ts` 两处注释；删除 `docs/API.md` 路由行与整节、`docs/ACL-MATRIX.md` 一行。
-3. **测试同步**：删除 4 个定价测试文件；改写 `no-duplicate-helpers-contract`、`frontend-settings-information-architecture`、`thesis-07-usage-ledger-stop` 三处；保留 `tests/db-upgrade-safety.test.ts` 的 v73 钉。
-4. **前端清扫（方案 §11.4）**：可达性（删除后全仓无 `ModelPricing`/`model-pricing`/`/api/pricing` 引用）、死导出、入口、权限/事件、依赖、文案与测试、图标（`Coins` 仅删除处使用）逐项核对。
+3. **测试同步**：删除 4 个定价测试文件；改写 `no-duplicate-helpers-contract`；`frontend-settings-information-architecture` 与 `thesis-07` 中涉及定价的断言删除，由 `thesis-08` 契约独占；保留 `tests/db-upgrade-safety.test.ts` 的 v73 钉。
+4. **前端清扫（方案 §11.4）**：可达性（删除后生产源码无 `ModelPricing`/`model-pricing`/`/api/pricing` 引用；历史任务文档与契约测试除外）、死导出、入口、权限/事件、依赖、文案与测试、图标（`Coins` 仅删除处使用）逐项核对。
 5. **验证**：`make typecheck`、`make build`、`npm run verify` 六步、`node scripts/check-scope.mjs`。
 6. **独立审查**：规格符合性与代码质量两轮由独立代理执行，结论落 `docs/审查记录.md`。
 7. **交付**：issue 与 README 索引改"已完成"，写交付记录；专题 §6 的 06/07/08 已完成但 09 未完成，**方案 §2 裁决台账不改**，留待 09 交付时统一更新。

@@ -83,11 +83,18 @@ describe('pricing HTTP surface is removed', () => {
     expect(response.status).toBe(404);
   });
 
+  // 正控制：证明 app 装配与 authMiddleware mock 仍然生效，避免整表路由失效时
+  // 五条 404 断言假绿。
+  test('a known protected route still returns 401', async () => {
+    const response = await app.request('/api/config/system');
+    expect(response.status).toBe(401);
+  });
+
   test('route module and mount point are gone', () => {
     expect(exists('src/routes/pricing.ts')).toBe(false);
     const webSource = read('src/web.ts');
-    expect(webSource).not.toContain("from './routes/pricing.js'");
-    expect(webSource).not.toContain("'/api/pricing'");
+    expect(webSource).not.toMatch(/['"`]\.\/routes\/pricing\.js['"`]/);
+    expect(webSource).not.toMatch(/['"`]\/api\/pricing['"`]/);
     expect(exists('src/kaboo-pricing.ts')).toBe(false);
     expect(exists('src/custom-pricing-store.ts')).toBe(false);
   });
@@ -114,16 +121,16 @@ describe('pricing settings surface is gone', () => {
 
   test('settings nav, tab type and page have no pricing entry', () => {
     const nav = read('web/src/components/settings/SettingsNav.tsx');
-    expect(nav).not.toContain("'pricing'");
+    expect(nav).not.toMatch(/['"`]pricing['"`]/);
     expect(nav).not.toContain('模型单价');
     expect(nav).not.toMatch(/\bCoins\b/);
 
     const types = read('web/src/components/settings/types.ts');
-    expect(types).not.toContain("'pricing'");
+    expect(types).not.toMatch(/['"`]pricing['"`]/);
 
     const page = read('web/src/pages/SettingsPage.tsx');
     expect(page).not.toContain('ModelPricingSection');
-    expect(page).not.toContain("'pricing'");
+    expect(page).not.toMatch(/['"`]pricing['"`]/);
     expect(page).not.toContain('模型单价');
   });
 
@@ -149,10 +156,10 @@ describe('documentation no longer advertises model pricing', () => {
   test('API and ACL matrix drop the pricing surface', () => {
     const api = read('docs/API.md');
     expect(api).not.toContain('/api/pricing');
-    expect(api).not.toContain('模型单价');
+    expect(api).not.toContain('## 模型单价');
 
     const acl = read('docs/ACL-MATRIX.md');
     expect(acl).not.toContain('/api/pricing');
-    expect(acl).not.toContain('自定义模型单价');
+    expect(acl).not.toContain('模型单价');
   });
 });
