@@ -1,11 +1,5 @@
 {
-  "task": "docs-discipline-trim - 纪律文档瘦身：删除 AGENTS.md、docs/constitution.md、docs/workflow.md 中的变更史、重复说明、不存在的 speckit 命令表与本机 remote/代理记录，规则本身不变；随同删除根目录《personal agent 综述.pdf》（用户确认有意删除）",
-  "base": "147d07f",
-  "allow": [
-    ".gatescope.json",
-    "AGENTS.md",
-    "docs/constitution.md",
-    "docs/workflow.md",
-    "personal agent 综述.pdf"
-  ]
+  "task": "thesis-closeout-pool - 毕设裁减收尾任务池（docs/issues3/）：README 索引、并行关系、部署前置与已核实不纳入清单，THESIS-16 至 18；只改文档不改代码",
+  "base": "68a57de",
+  "allow": [".gatescope.json", "docs/issues3/**"]
 }
