@@ -27,7 +27,7 @@
    - 按保守启发式剥离行注释与块注释，再用正则收集说明符：静态 `import … from`、副作用 `import`、`export … from`、字面量动态 `import()`。
    - 从 `web/src/main.tsx` 做 BFS；相对路径按 `.ts`、`.tsx`、`/index.ts`、`/index.tsx` 解析，`@/` 映射到 `web/src`。
    - 目标集合排除 `*.test.ts`/`*.test.tsx`、`*.d.ts` 与 `web/src/stream-event.types.ts`。
-   - 断言语义：`unreachable` 数组为空，失败时输出相对路径；同时断言目标集合非空，避免入口或目录写错时假通过。
+   - 断言语义：`unreachable` 数组为空，失败时输出相对路径；先断言入口存在、目标集合包含入口，避免入口或目录写错时假通过。
 2. **先跑用例**：`npx vitest run tests/frontend-reachability-contract.test.ts`，当前代码预期通过（当前无不可达文件）。
 3. **反向验证（验收条件 2）**：临时注释 `web/src/App.tsx` 中 `MemoryPage` 的懒加载 `import('./pages/MemoryPage')`，重跑该用例，确认失败并指出 `web/src/pages/MemoryPage.tsx`；随后 `git checkout -- web/src/App.tsx` 还原，确认工作树无残留。该临时改动不提交。
 4. **格式与门禁**：`npm run format:changed`；`npm run verify` 六步全绿；`node scripts/check-scope.mjs` 通过。
@@ -58,8 +58,11 @@
 
 - **反向验证已通过**：临时把 `web/src/App.tsx` 的 `MemoryPage` 懒加载 import 注释掉后，用例失败并列出 `web/src/pages/MemoryPage.tsx` 与 `web/src/features/workspace-memory/model.ts`；随后已还原，临时改动未提交。
 - **正则解析的边界**：注释剥离用启发式（行首/空白/`{` 后的 `/*` 与行首/空白后的 `//`），避免把 `image/*`、`${protocol}//` 误判为注释；字符串内容不做词法解析。注释或字符串中恰好出现 import 文本时仍可能产生假边或假红；独立审查用 TypeScript AST 对比当前树边集合为 0 差异。若未来出现模板字符串动态导入，需同步扩展解析口径。
+- **编译期口径**：类型位置的 `typeof import('x')` 也计为边，测试衡量的是编译期可达性，不等同于运行时打包可达性；这是 §11.1"按 import 关系"的口径。
 - **测试文件口径**：当前 `web/src` 只有 `*.test.ts`/`*.test.tsx` 四份测试文件；若未来引入 `*.spec.ts` 或 `__tests__/` 辅助文件，需同步扩展排除规则。
 - **同步副本排除**：`web/src/stream-event.types.ts` 当前经 `stores/chat.ts` 可达，排除规则本身未被失败场景单独覆盖；保留是为符合 §11.1 口径，并防止该文件未来失去消费者时被误报。
-- **路径写死风险**：入口与同步副本路径是方案约定的固定值；目标文件数不写死，新增/删除模块自动适配。
-- **假通过风险**：目标集合非空断言兜底入口或目录拼错。
-- **回滚**：单个提交，`git revert <提交号>`；不涉及数据与 schema。
+- **路径写死风险**：入口、`@/` 别名与同步副本路径是方案约定值，测试内已注明与 `web/tsconfig.json`、`scripts/sync-stream-event.sh` 的耦合；目标文件数不写死，新增/删除模块自动适配。
+- **宿主 FS 语义**：大小写与 symlink 依赖宿主文件系统；当前 `web/src` 无 symlink 且大小写一致，若未来引入需同步调整。
+- **未来语法**：`import.meta.glob`、`?raw`/`?url` 查询串、import attributes 当前未使用；出现时需扩展解析口径。
+- **假通过风险**：入口存在断言与目标集合包含入口的断言兜底入口或目录拼错。
+- **回滚**：三个提交（`4f9b1b8`、`7983d31`、`47ed6a7`），可逐个 `git revert` 或按区间回滚；不涉及数据与 schema。

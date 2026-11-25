@@ -6,9 +6,14 @@ import { describe, expect, test } from 'vitest';
 // reachable from the frontend entry along static imports, re-exports and
 // literal dynamic imports. Test files, declaration files and the copy produced
 // by `make sync-types` are not part of the reachable set by design.
+//
+// This is compile-time reachability, not runtime bundle reachability: type-only
+// references (including `typeof import('x')`) count as edges.
 const projectRoot = process.cwd();
 const sourceRoot = path.join(projectRoot, 'web/src');
 const entryFile = path.join(sourceRoot, 'main.tsx');
+// Mirrors web/tsconfig.json (`@/*`), the entry, and the copies listed in
+// scripts/sync-stream-event.sh; update here when those definitions move.
 const syncedTypeCopies = new Set([
   path.join(sourceRoot, 'stream-event.types.ts'),
 ]);
@@ -100,15 +105,17 @@ function collectReachableModules(): Set<string> {
 
 describe('frontend reachability contract', () => {
   test('every non-test module under web/src is reachable from main.tsx', () => {
+    // A missing entry would otherwise fail inside the traversal with a less
+    // specific ENOENT.
+    expect(fs.existsSync(entryFile)).toBe(true);
+
     const reached = collectReachableModules();
     const targetFiles = listModuleFiles(sourceRoot).filter(
       (file) => !isExcludedFromTargets(file),
     );
 
-    // Guards against a moved entry or source root silently passing the test.
-    expect(targetFiles.length).toBeGreaterThan(0);
+    // Guards against a moved source root or an entry excluded by accident.
     expect(targetFiles).toContain(entryFile);
-    expect(reached.has(entryFile)).toBe(true);
 
     const unreachable = targetFiles
       .filter((file) => !reached.has(file))
