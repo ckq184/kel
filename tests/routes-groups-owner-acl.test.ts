@@ -60,7 +60,6 @@ vi.mock('../src/middleware/auth.ts', () => ({
       username: 'alice',
       role: process.env.CKQCLAW_TEST_USER_ROLE ?? 'member',
       status: 'active',
-      permissions: [],
     });
     return next();
   },
@@ -1327,5 +1326,71 @@ describe('POST / workspace Agent membership publication lock', () => {
         (group) => group.name === 'Archived Target Workspace',
       ),
     ).toBe(false);
+  });
+});
+
+describe('GET/PUT /:jid/env owner boundary', () => {
+  const JID = 'web:env-owner-group';
+  const FOLDER = 'env-owner-group';
+
+  beforeEach(() => {
+    webContext.setWebDeps({
+      getRegisteredGroups: () => webDepsCache,
+      queue: { restartGroup: vi.fn(async () => {}) },
+    } as unknown as Parameters<typeof webContext.setWebDeps>[0]);
+    db.setRegisteredGroup(JID, {
+      name: 'Env Owner Group',
+      folder: FOLDER,
+      added_at: new Date().toISOString(),
+      executionMode: 'container',
+      created_by: OWNER_ID,
+      is_home: false,
+    } as any);
+  });
+
+  afterEach(() => {
+    try {
+      db.deleteRegisteredGroup(JID);
+    } catch {
+      /* ignore */
+    }
+  });
+
+  test('member owner can read and write own customEnv without a permission grant', async () => {
+    asRouteTestUser(OWNER_ID, 'member');
+
+    const put = await groupRoutes.request(`/${encodeURIComponent(JID)}/env`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        customEnv: { PROJECT_FLAG: 'owner-visible' },
+      }),
+    });
+    expect(put.status).toBe(200);
+
+    const get = await groupRoutes.request(`/${encodeURIComponent(JID)}/env`);
+    expect(get.status).toBe(200);
+    const body = (await get.json()) as {
+      customEnv?: Record<string, string>;
+    };
+    expect(body.customEnv).toMatchObject({
+      PROJECT_FLAG: 'owner-visible',
+    });
+  });
+
+  test('non-owner member cannot read or write the env', async () => {
+    asRouteTestUser('bob', 'member');
+
+    const get = await groupRoutes.request(`/${encodeURIComponent(JID)}/env`);
+    expect(get.status).toBe(404);
+
+    const put = await groupRoutes.request(`/${encodeURIComponent(JID)}/env`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        customEnv: { PROJECT_FLAG: 'not-owner' },
+      }),
+    });
+    expect(put.status).toBe(404);
   });
 });

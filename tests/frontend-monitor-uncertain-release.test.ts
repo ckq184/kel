@@ -153,14 +153,15 @@ describe('monitor store uncertain channel outbox manual release', () => {
 });
 
 describe('monitor page uncertain release UI', () => {
-  test('mounts the release card and polls it for manage_system_config users', () => {
+  test('mounts the release card and polls it on the admin-only monitor page', () => {
     const page = read('web/src/pages/MonitorPage.tsx');
 
     expect(page).toContain('UncertainOutboxCard');
-    // 与系统状态共用 10s 轮询，且仅对有 manage_system_config 权限的用户请求
+    // 与系统状态共用 10s 轮询；页面路由由 admin 角色守卫，不再按权限跳过
     expect(page).toMatch(
-      /if \(!canManageSystem\) return;[\s\S]*loadUncertainOutbox\(\);[\s\S]*10000/,
+      /useEffect\(\(\) => \{\s*loadUncertainOutbox\(\);[\s\S]*?setInterval\([\s\S]*?loadUncertainOutbox\(\);[\s\S]*?10000/,
     );
+    expect(page).not.toContain('canManageSystem');
   });
 
   test('renders per-row release actions and hides the card when the list is empty', () => {

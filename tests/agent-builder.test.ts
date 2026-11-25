@@ -59,7 +59,6 @@ beforeAll(() => {
     display_name: 'Builder Owner',
     role: 'admin',
     status: 'active',
-    permissions: [],
     must_change_password: false,
     created_at: now,
     updated_at: now,

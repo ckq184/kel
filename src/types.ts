@@ -651,22 +651,8 @@ export interface AuthUser {
   role: UserRole;
   status: 'active' | 'disabled' | 'deleted';
   display_name: string;
-  permissions: Permission[];
   must_change_password: boolean;
 }
-
-export type Permission =
-  | 'manage_system_config'
-  | 'manage_group_env'
-  | 'manage_users'
-  | 'manage_invites'
-  | 'view_audit_log';
-
-export type PermissionTemplateKey =
-  | 'admin_full'
-  | 'member_basic'
-  | 'ops_manager'
-  | 'user_admin';
 
 export interface User {
   id: string;
@@ -675,7 +661,6 @@ export interface User {
   display_name: string;
   role: UserRole;
   status: UserStatus;
-  permissions: Permission[];
   must_change_password: boolean;
   disable_reason: string | null;
   notes: string | null;
@@ -702,7 +687,6 @@ export interface UserPublic {
   display_name: string;
   role: UserRole;
   status: UserStatus;
-  permissions: Permission[];
   must_change_password: boolean;
   disable_reason: string | null;
   notes: string | null;
@@ -731,7 +715,6 @@ export interface UserSessionWithUser extends UserSession {
   role: UserRole;
   status: UserStatus;
   display_name: string;
-  permissions: Permission[];
   must_change_password: boolean;
 }
 
@@ -739,8 +722,6 @@ export interface InviteCode {
   code: string;
   created_by: string;
   role: UserRole;
-  permission_template: PermissionTemplateKey | null;
-  permissions: Permission[];
   max_uses: number;
   used_count: number;
   expires_at: string | null;

@@ -78,7 +78,6 @@ export function toUserPublic(u: User): UserPublic {
     display_name: u.display_name,
     role: u.role,
     status: u.status,
-    permissions: u.permissions,
     must_change_password: u.must_change_password,
     disable_reason: u.disable_reason,
     notes: u.notes,

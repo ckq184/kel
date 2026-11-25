@@ -56,7 +56,6 @@ vi.mock('../src/middleware/auth.js', async (importOriginal) => ({
       display_name: userId,
       role: 'admin',
       status: 'active',
-      permissions: [],
       must_change_password: false,
     });
     return next();
@@ -124,7 +123,6 @@ beforeAll(() => {
     display_name: 'Thesis 02 Admin',
     role: 'admin',
     status: 'active',
-    permissions: [],
     must_change_password: false,
     created_at: now,
     updated_at: now,

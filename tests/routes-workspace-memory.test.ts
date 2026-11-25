@@ -35,7 +35,6 @@ vi.mock('../src/middleware/auth.ts', () => ({
       display_name: '',
       role: process.env.CKQCLAW_MEMORY_TEST_ROLE ?? 'member',
       status: 'active',
-      permissions: [],
       must_change_password: false,
     });
     return next();

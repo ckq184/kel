@@ -48,7 +48,6 @@ vi.mock('../src/middleware/auth.ts', () => ({
       id: 'routes-agent-user',
       username: 'routes-agent-user',
       role: c.req.header('x-test-role') === 'admin' ? 'admin' : 'member',
-      permissions: [],
     });
     return next();
   },

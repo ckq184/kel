@@ -34,7 +34,6 @@ const user: UserPublic = {
   display_name: '测试者',
   role: 'admin',
   status: 'active',
-  permissions: [],
   must_change_password: false,
   disable_reason: null,
   notes: null,

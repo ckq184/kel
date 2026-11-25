@@ -18,7 +18,6 @@ const user: UserPublic = {
   display_name: role === 'admin' ? '管理员' : '成员',
   role,
   status: 'active',
-  permissions: [],
   must_change_password: false,
   disable_reason: null,
   notes: null,

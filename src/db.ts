@@ -74,10 +74,7 @@ import {
   UserSession,
   UserSessionWithUser,
   WorkspaceAgentProfileBinding,
-  Permission,
-  PermissionTemplateKey,
 } from './types.js';
-import { getDefaultPermissions, normalizePermissions } from './permissions.js';
 import { channelConversationJid } from './channel-address.js';
 import { getChannelFromJid } from './channel-prefixes.js';
 import { parseAudienceMode } from './im-audience-policy.js';
@@ -182,7 +179,7 @@ function stmts() {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ),
       getSessionWithUser: db.prepare(
-        `SELECT s.*, u.username, u.role, u.status, u.display_name, u.permissions, u.must_change_password
+        `SELECT s.*, u.username, u.role, u.status, u.display_name, u.must_change_password
          FROM user_sessions s
          JOIN users u ON s.user_id = u.id
          WHERE s.id = ?`,
@@ -9303,18 +9300,6 @@ function parseUserStatus(value: unknown): UserStatus {
   return 'active';
 }
 
-function parsePermissionsFromDb(raw: unknown, role: UserRole): Permission[] {
-  if (typeof raw === 'string') {
-    try {
-      const parsed = normalizePermissions(JSON.parse(raw));
-      if (parsed.length > 0) return parsed;
-    } catch {
-      // ignore and fall back to role defaults
-    }
-  }
-  return getDefaultPermissions(role);
-}
-
 function parseJsonDetails(raw: unknown): Record<string, unknown> | null {
   if (typeof raw !== 'string' || !raw.trim()) return null;
   try {
@@ -9337,7 +9322,6 @@ function mapUserRow(row: Record<string, unknown>): User {
     display_name: String(row.display_name ?? ''),
     role,
     status,
-    permissions: parsePermissionsFromDb(row.permissions, role),
     must_change_password: !!row.must_change_password,
     disable_reason:
       typeof row.disable_reason === 'string' ? row.disable_reason : null,
@@ -9363,7 +9347,6 @@ function toUserPublic(user: User, lastActiveAt: string | null): UserPublic {
     display_name: user.display_name,
     role: user.role,
     status: user.status,
-    permissions: user.permissions,
     must_change_password: user.must_change_password,
     disable_reason: user.disable_reason,
     notes: user.notes,
@@ -9389,7 +9372,6 @@ interface CreateUserInput {
   status: UserStatus;
   created_at: string;
   updated_at: string;
-  permissions?: Permission[];
   must_change_password?: boolean;
   disable_reason?: string | null;
   notes?: string | null;
@@ -9398,14 +9380,11 @@ interface CreateUserInput {
 }
 
 export function createUser(user: CreateUserInput): void {
-  const permissions = normalizePermissions(
-    user.permissions ?? getDefaultPermissions(user.role),
-  );
   db.prepare(
     `INSERT INTO users (
-      id, username, password_hash, display_name, role, status, permissions, must_change_password,
+      id, username, password_hash, display_name, role, status, must_change_password,
       disable_reason, notes, created_at, updated_at, last_login_at, deleted_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     user.id,
     user.username,
@@ -9413,7 +9392,6 @@ export function createUser(user: CreateUserInput): void {
     user.display_name,
     user.role,
     user.status,
-    JSON.stringify(permissions),
     user.must_change_password ? 1 : 0,
     user.disable_reason ?? null,
     user.notes ?? null,
@@ -9593,7 +9571,6 @@ type UserFieldUpdates = Partial<
     | 'status'
     | 'password_hash'
     | 'last_login_at'
-    | 'permissions'
     | 'must_change_password'
     | 'disable_reason'
     | 'notes'
@@ -9632,10 +9609,6 @@ export function updateUserFields(id: string, updates: UserFieldUpdates): void {
   if (updates.last_login_at !== undefined) {
     fields.push('last_login_at = ?');
     values.push(updates.last_login_at);
-  }
-  if (updates.permissions !== undefined) {
-    fields.push('permissions = ?');
-    values.push(JSON.stringify(normalizePermissions(updates.permissions)));
   }
   if (updates.must_change_password !== undefined) {
     fields.push('must_change_password = ?');
@@ -9766,7 +9739,6 @@ export function getSessionWithUser(
     role,
     status: parseUserStatus(row.status),
     display_name: String(row.display_name ?? ''),
-    permissions: parsePermissionsFromDb(row.permissions, role),
     must_change_password: !!row.must_change_password,
   };
 }
@@ -9809,16 +9781,13 @@ export function deleteExpiredSessions(): number {
 // --- Invite Codes ---
 
 export function createInviteCode(invite: InviteCode): void {
-  const permissions = normalizePermissions(invite.permissions);
   db.prepare(
-    `INSERT INTO invite_codes (code, created_by, role, permission_template, permissions, max_uses, used_count, expires_at, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO invite_codes (code, created_by, role, max_uses, used_count, expires_at, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     invite.code,
     invite.created_by,
     invite.role,
-    invite.permission_template ?? null,
-    JSON.stringify(permissions),
     invite.max_uses,
     invite.used_count,
     invite.expires_at,
@@ -9836,11 +9805,6 @@ export function getInviteCode(code: string): InviteCode | undefined {
     code: String(row.code),
     created_by: String(row.created_by),
     role,
-    permission_template:
-      typeof row.permission_template === 'string'
-        ? (row.permission_template as PermissionTemplateKey)
-        : null,
-    permissions: parsePermissionsFromDb(row.permissions, role),
     max_uses: Number(row.max_uses),
     used_count: Number(row.used_count),
     expires_at: typeof row.expires_at === 'string' ? row.expires_at : null,
@@ -9849,7 +9813,7 @@ export function getInviteCode(code: string): InviteCode | undefined {
 }
 
 type RegisterUserWithInviteResult =
-  | { ok: true; role: UserRole; permissions: Permission[] }
+  | { ok: true; role: UserRole }
   | {
       ok: false;
       reason:
@@ -9871,7 +9835,7 @@ export function registerUserWithInvite(input: {
     (params: typeof input): RegisterUserWithInviteResult => {
       const inviteRow = db
         .prepare(
-          `SELECT code, role, permissions, max_uses, expires_at
+          `SELECT code, role, max_uses, expires_at
          FROM invite_codes
          WHERE code = ?`,
         )
@@ -9879,10 +9843,6 @@ export function registerUserWithInvite(input: {
 
       if (!inviteRow) return { ok: false, reason: 'invalid_or_expired_invite' };
       const inviteRole = parseUserRole(inviteRow.role);
-      const invitePermissions = parsePermissionsFromDb(
-        inviteRow.permissions,
-        inviteRole,
-      );
       const inviteExpiresAt =
         typeof inviteRow.expires_at === 'string' ? inviteRow.expires_at : null;
 
@@ -9910,12 +9870,11 @@ export function registerUserWithInvite(input: {
         return { ok: false, reason: 'invite_exhausted' };
       }
 
-      const permissions = normalizePermissions(invitePermissions);
       db.prepare(
         `INSERT INTO users (
-        id, username, password_hash, display_name, role, status, permissions, must_change_password,
+        id, username, password_hash, display_name, role, status, must_change_password,
         disable_reason, notes, created_at, updated_at, last_login_at, deleted_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         params.id,
         params.username,
@@ -9923,7 +9882,6 @@ export function registerUserWithInvite(input: {
         params.display_name,
         inviteRole,
         'active',
-        JSON.stringify(permissions),
         0,
         null,
         null,
@@ -9934,7 +9892,7 @@ export function registerUserWithInvite(input: {
       );
       getOrCreateDefaultAgentProfile(params.id);
 
-      return { ok: true, role: inviteRole, permissions };
+      return { ok: true, role: inviteRole };
     },
   );
 
@@ -9952,7 +9910,7 @@ export function registerUserWithInvite(input: {
 }
 
 type RegisterUserWithoutInviteResult =
-  | { ok: true; role: UserRole; permissions: Permission[] }
+  | { ok: true; role: UserRole }
   | { ok: false; reason: 'username_taken' };
 
 export function registerUserWithoutInvite(input: {
@@ -9964,14 +9922,13 @@ export function registerUserWithoutInvite(input: {
   updated_at: string;
 }): RegisterUserWithoutInviteResult {
   const role: UserRole = 'member';
-  const permissions: Permission[] = [];
 
   try {
     db.prepare(
       `INSERT INTO users (
-        id, username, password_hash, display_name, role, status, permissions, must_change_password,
+        id, username, password_hash, display_name, role, status, must_change_password,
         disable_reason, notes, created_at, updated_at, last_login_at, deleted_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       input.id,
       input.username,
@@ -9979,7 +9936,6 @@ export function registerUserWithoutInvite(input: {
       input.display_name,
       role,
       'active',
-      JSON.stringify(permissions),
       0,
       null,
       null,
@@ -9989,7 +9945,7 @@ export function registerUserWithoutInvite(input: {
       null,
     );
     getOrCreateDefaultAgentProfile(input.id);
-    return { ok: true, role, permissions };
+    return { ok: true, role };
   } catch (err) {
     if (
       err instanceof Error &&
@@ -10017,11 +9973,6 @@ export function getAllInviteCodes(): InviteCodeWithCreator[] {
       created_by: String(row.created_by),
       creator_username: String(row.creator_username),
       role,
-      permission_template:
-        typeof row.permission_template === 'string'
-          ? (row.permission_template as PermissionTemplateKey)
-          : null,
-      permissions: parsePermissionsFromDb(row.permissions, role),
       max_uses: Number(row.max_uses),
       used_count: Number(row.used_count),
       expires_at: typeof row.expires_at === 'string' ? row.expires_at : null,

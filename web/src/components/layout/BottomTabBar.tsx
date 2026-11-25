@@ -1,20 +1,12 @@
-import { useMemo } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { useAuthStore } from '../../stores/auth';
 import { useScrollDirection } from '../../hooks/useScrollDirection';
 import { lightTap } from '../../hooks/useHaptic';
-import { filterNavItems } from './nav-items';
+import { navItems } from './nav-items';
 
 export function BottomTabBar() {
   const location = useLocation();
   const scrollDir = useScrollDirection();
   const isCompact = scrollDir === 'down';
-  const hasPermission = useAuthStore((s) => s.hasPermission);
-
-  const navItems = useMemo(
-    () => filterNavItems(hasPermission),
-    [hasPermission],
-  );
 
   return (
     <>

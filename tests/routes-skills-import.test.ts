@@ -13,7 +13,7 @@ vi.mock('../src/runtime-config.js', () => ({
 }));
 vi.mock('../src/middleware/auth.js', () => ({
   authMiddleware: async (c: any, next: () => Promise<void>) => {
-    c.set('user', { id: 'skill-user', role: 'member', permissions: [] });
+    c.set('user', { id: 'skill-user', role: 'member' });
     return next();
   },
 }));

@@ -12,19 +12,11 @@ import { SettingsCard as Section } from './SettingsCard';
 import type { AppearanceConfig } from '../../stores/auth';
 
 export function AppearanceSection() {
-  const { hasPermission } = useAuthStore();
-
   const [appName, setAppName] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  const canManage = hasPermission('manage_system_config');
-
   useEffect(() => {
-    if (!canManage) {
-      setLoading(false);
-      return;
-    }
     (async () => {
       setLoading(true);
       try {
@@ -36,7 +28,7 @@ export function AppearanceSection() {
         setLoading(false);
       }
     })();
-  }, [canManage]);
+  }, []);
 
   const handleSave = async () => {
     setSaving(true);
@@ -58,14 +50,6 @@ export function AppearanceSection() {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
-  if (!canManage) {
-    return (
-      <div className="text-sm text-muted-foreground">
-        需要系统配置权限才能修改全局外观设置。
       </div>
     );
   }

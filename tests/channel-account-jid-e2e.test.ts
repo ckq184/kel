@@ -35,7 +35,6 @@ beforeAll(() => {
     display_name: 'JID owner',
     role: 'member',
     status: 'active',
-    permissions: [],
     created_at: now,
     updated_at: now,
   });

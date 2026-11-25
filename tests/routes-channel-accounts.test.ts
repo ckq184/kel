@@ -22,7 +22,6 @@ vi.mock('../src/middleware/auth.ts', () => ({
       id: process.env.CHANNEL_TEST_USER || 'owner-a',
       username: 'test',
       role: 'member',
-      permissions: [],
     });
     return next();
   },

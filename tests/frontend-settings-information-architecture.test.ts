@@ -49,7 +49,7 @@ describe('settings information architecture', () => {
 
     expect(app).toContain('path="/capabilities/:section?"');
     expect(app).not.toContain('path="/usage"');
-    expect(app).toContain('requiredPermission="manage_system_config"');
+    expect(app).toContain('<AuthGuard requireAdmin>');
     expect(settings).toContain("skills: '/capabilities/skills'");
     expect(settings).toContain("'mcp-servers': '/capabilities/mcp'");
     expect(settings).not.toContain("plugins: '/capabilities/plugins'");
@@ -135,7 +135,11 @@ describe('settings information architecture', () => {
       /管理员纯宿主机模式[\s\S]*关闭后不会自动把已有工作区迁回\s*Docker/,
     );
     expect(system).not.toContain('普通成员仍固定使用');
-    expect(page).toContain("currentUser?.role !== 'admin'");
+    expect(page).toMatch(/const isAdmin = currentUser\?\.role/);
+    expect(page).toMatch(/raw === 'monitor' && !canAccessSystemSettings/);
+    expect(page).toMatch(
+      /SYSTEM_TABS\.includes\(raw\) && !canAccessSystemSettings/,
+    );
   });
 
   test('uses accurate channel and provider safety semantics', () => {

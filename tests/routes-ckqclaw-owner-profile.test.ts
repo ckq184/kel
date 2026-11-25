@@ -47,7 +47,6 @@ vi.mock('../src/middleware/auth.ts', () => ({
           ? 'admin'
           : 'member',
       status: 'active',
-      permissions: [],
       must_change_password: false,
     });
     return next();

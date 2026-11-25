@@ -6,7 +6,7 @@
 
 - 产品介绍、安装和常用操作：`README.md`
 - 路由族与主要 Web API：`docs/API.md`
-- 权限边界：`docs/ACL-MATRIX.md`
+- 访问边界：`docs/ACL-MATRIX.md`
 - 运行时 Prompt：`container/agent-runner/prompts/`
 - 数据库 Schema：`src/db.ts` 中的 `CURRENT_SCHEMA_VERSION` 与建表/迁移代码
 - Web 路由：`web/src/App.tsx`
@@ -72,19 +72,19 @@ HTTP 路由位于 `src/routes/`，完整模块索引见 `docs/API.md`。
 Web 位于 `web/`，使用 React 19、Vite、Tailwind CSS 4、React Router、Zustand 和
 Radix UI。路由以 `web/src/App.tsx` 为准：
 
-| 路径                      | 用途                                  |
-| ------------------------- | ------------------------------------- |
-| `/setup`                  | 首个管理员初始化                      |
-| `/setup/providers`        | Provider 引导                         |
-| `/setup/channels`         | 用户渠道引导                          |
-| `/login`                  | 登录                                  |
-| `/chat/:groupFolder?`     | 工作台与会话                          |
-| `/agent-profiles`         | Agent 管理                            |
-| `/capabilities/:section?` | Skills、MCP                           |
-| `/tasks`                  | 定时任务                              |
-| `/memory`                 | 记忆管理                              |
-| `/settings`               | 账户和系统设置                        |
-| `/monitor`                | 运行状态，需要 `manage_system_config` |
+| 路径                      | 用途                    |
+| ------------------------- | ----------------------- |
+| `/setup`                  | 首个管理员初始化        |
+| `/setup/providers`        | Provider 引导           |
+| `/setup/channels`         | 用户渠道引导            |
+| `/login`                  | 登录                    |
+| `/chat/:groupFolder?`     | 工作台与会话            |
+| `/agent-profiles`         | Agent 管理              |
+| `/capabilities/:section?` | Skills、MCP             |
+| `/tasks`                  | 定时任务                |
+| `/memory`                 | 记忆管理                |
+| `/settings`               | 账户和系统设置          |
+| `/monitor`                | 运行状态，仅 admin 角色 |
 
 兼容重定向不应新增独立页面，共两层：路由级（`web/src/App.tsx`）`/groups`→`/chat`、
 `/skills`→`/capabilities/skills`、`/mcp-servers`→`/capabilities/mcp`；`/settings` 旧
@@ -253,13 +253,13 @@ data/
 Channel Reliability 的 Inbox/Turn/Outbox/Card 表由
 `src/channel-reliability-store.ts` 在同一数据库连接上创建。
 
-## 8. 认证与权限
+## 8. 认证与访问边界
 
 - Cookie 会话使用 HMAC 签名，密钥来自环境变量、持久文件或首次自动生成。
 - `canAccessGroup`、`canModifyGroup` 和 `canDeleteGroup` 不提供 admin 全局旁路；
   工作区和渠道资源按 `created_by` 隔离。
 - Host 工作区额外要求 admin 角色。
-- 系统配置、用户、邀请和审计使用独立 Permission Middleware。
+- 系统配置与运行状态的管理操作使用 `adminRoleMiddleware`（admin 角色）；只读的 `GET /api/status` 仍对已登录账号开放。用户、邀请与审计界面已随单账号收口下线。
 - 敏感写操作必须先停止或暂停相关 Runner，并在提交失败时恢复队列。
 - API 返回资源不存在时通常使用 404 隐藏其他用户资源是否存在。
 

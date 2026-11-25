@@ -26,7 +26,7 @@ import { CreateContainerDialog } from '../chat/CreateContainerDialog';
 import { RenameDialog } from '../chat/RenameDialog';
 import { SkeletonCardList } from '@/components/common/Skeletons';
 import { cn } from '@/lib/utils';
-import { filterNavItems } from './nav-items';
+import { navItems } from './nav-items';
 import { compareByLastActivity } from '../../utils/group-utils';
 import {
   buildAgentCapabilitiesHref,
@@ -54,16 +54,10 @@ export function UnifiedSidebar({
 
   const user = useAuthStore((s) => s.user);
   const appearance = useAuthStore((s) => s.appearance);
-  const hasPermission = useAuthStore((s) => s.hasPermission);
   const [showBugReport, setShowBugReport] = useState(false);
   const userInitial = (user?.display_name ||
     user?.username ||
     '?')[0].toUpperCase();
-
-  const navItems = useMemo(
-    () => filterNavItems(hasPermission),
-    [hasPermission],
-  );
 
   const [createOpen, setCreateOpen] = useState(false);
   const [renameState, setRenameState] = useState({

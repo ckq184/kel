@@ -46,7 +46,6 @@ vi.mock('../src/middleware/auth.js', async (importOriginal) => ({
       display_name: userId,
       role: 'admin',
       status: 'active',
-      permissions: [],
       must_change_password: false,
     });
     return next();
