@@ -261,16 +261,14 @@ describe('StreamingCardController Feishu thread reply', () => {
     await vi.waitFor(() => expect(create).toHaveBeenCalledTimes(1));
     await controller.complete('hello');
     await controller.patchUsageNote({
-      inputTokens: 10,
-      outputTokens: 5,
-      costUSD: 0.01,
       durationMs: 1000,
-      numTurns: 1,
+      numTurns: 3,
     });
 
     const finalContent = patch.mock.calls.at(-1)?.[0]?.data?.content;
     expect(finalContent).toContain('查看完整运行轨迹');
     expect(finalContent).toContain('happy.example/chat/main');
-    expect(finalContent).toContain('15 tokens（输入 10 · 输出 5）');
+    expect(finalContent).toContain('⏱ 1.0s · 3 轮');
+    expect(finalContent).not.toMatch(/tokens/i);
   });
 });

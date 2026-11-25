@@ -19,14 +19,6 @@ export interface CardMeta {
   model?: string;
   /** Total wall-clock duration, in milliseconds. */
   durationMs?: number;
-  inputTokens?: number;
-  outputTokens?: number;
-  /** Cached prompt tokens read this turn — surfaced so真实成本 isn't underestimated. */
-  cacheReadInputTokens?: number;
-  /** Prompt tokens written to cache this turn. */
-  cacheCreationInputTokens?: number;
-  reasoningTokens?: number;
-  costUSD?: number;
   numTurns?: number;
   /** Per-tool aggregated counts. Takes precedence over `toolCount`. */
   toolCalls?: ToolCallStat[];
@@ -45,7 +37,7 @@ export interface AgentCardInput {
   titlePrefix?: string;
   /** Optional header subtitle (short summary shown under title). */
   subtitle?: string;
-  /** Optional metadata block (duration / model / tokens / tools). */
+  /** Optional metadata block (duration / model / turns / tools). */
   meta?: CardMeta;
   /** Optional thinking / reasoning dump (rendered as a collapsed panel). */
   thinking?: string;

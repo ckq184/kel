@@ -399,4 +399,34 @@ describe('Feishu CardKit streaming controller', () => {
       controller.dispose();
     },
   );
+
+  test('usage patch keeps the model label and turns but no token or cost fields', async () => {
+    const mock = makeClient();
+    const controller = new StreamingCardController({
+      client: mock.client as any,
+      chatId: 'oc_usage',
+    });
+    controller.append('hello');
+    await vi.waitFor(() => expect(controller.currentState).toBe('streaming'));
+    await controller.complete('hello');
+    mock.cardUpdate.mockClear();
+
+    await controller.patchUsageNote({
+      durationMs: 2_500,
+      numTurns: 3,
+      modelUsage: { 'claude-opus-4-7': { outputTokens: 120 } },
+    });
+
+    expect(mock.cardUpdate).toHaveBeenCalled();
+    const cardJson = JSON.parse(
+      mock.cardUpdate.mock.calls.at(-1)![0].data.card.data,
+    );
+    const serialized = JSON.stringify(cardJson);
+    expect(serialized).toContain('2.5s');
+    expect(serialized).toContain('3 轮');
+    expect(serialized).toContain('opus-4.7');
+    expect(serialized).not.toMatch(/token/i);
+    expect(serialized).not.toContain('$');
+    controller.dispose();
+  });
 });
