@@ -79,8 +79,8 @@
   4. v2 meta row 在「耗时缺失但轮数 > 1」时用独立 `🔁 轮数` 字段，而不是把轮数追加到 `⏱ 耗时`；行为符合「只显示耗时与轮数」，与 plan §0 的字面写法略有差异。
   5. 空 usage note 时 legacy 路径提前返回，不再用 trace-only 整卡 patch 覆盖已有摘要；`complete()` 已定稿 trace footer，不丢 trace。
   6. 宿主无 `lastReplyMsgId` 的兜底分支仍 `JSON.stringify(se.usage)` 写入完整 usage（THESIS-07 行为，本包非目标不改）；气泡只读 `durationMs`，多余字段被忽略。
-  7. 方案 `docs/issues2/task-thesis-trim-plan.md` 的 D-C3 行仍保留选项描述与「选 ①」风险措辞；最终拍板 ② 记录在本 issue、README 索引与交付记录，未扩宽方案文件。
-  8. 用量专题（06/07/08/09）尚未全部完成（08 进行中），方案 §2 裁决台账不更新。
+  7. 方案 `docs/issues2/task-thesis-trim-plan.md` 的 D-C3 行原保留选项描述与「选 ①」风险措辞；合入后已在收口提交同步为「已定 ②」，并更新 §6.9 风险与 §15 待决策表。
+  8. 用量专题（06/07/08/09）已全部完成：08 合入 `974d0bc`、09 合入 `8866a8f`；方案 §2 裁决台账 row 4 与 §6 状态已在收口提交同步为已完成。
 - **审查**：规格符合性审查通过（零阻塞）；代码质量审查初轮 1 个 Major（`patchUsageNote` 丢失 `modelUsage` 类型契约）、6 个 Minor；Major 与 5 个 Minor 已修复（补 `modelUsage`、补主对话/流式卡片用例、finite 防护、数组排除、空 note 提前返回、组件改名），复核通过（Critical 0 / Major 0 / Minor 3，剩余为非阻塞的源码契约脆弱性与窄 trace 边界）。详见 `docs/审查记录.md`。
 - **已知限制**：飞书 v2 路径的模型标签仍依赖 `modelUsage`（只用于选主模型，不显示 token）；无 `modelUsage` 时模型字段省略，属既有行为。
 - **人工验收（用户）**：流式回复过程中与刷新页面后，气泡都只显示耗时；飞书卡片摘要只有耗时与轮数、无 token/费用；历史消息气泡不回显 token 明细。

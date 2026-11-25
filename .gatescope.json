@@ -6,6 +6,7 @@
     "docs/issues2/THESIS-09-bubble-duration-only.md",
     "docs/issues2/README.md",
     "docs/thesis-09-bubble-duration-only-plan.md",
+    "docs/issues2/task-thesis-trim-plan.md",
     "docs/审查记录.md",
     "web/src/components/chat/MessageBubble.tsx",
     "web/src/lib/token-usage-presentation.ts",
