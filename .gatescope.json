@@ -1,25 +1,11 @@
 {
-  "task": "THESIS-14 删除五张死表（D-F1 ①/D-F2 ①/D-F3 ①）",
-  "base": "ad09dac7884dfbf59f40630172ef74e4c0fbc4bd",
+  "task": "docs-discipline-trim - 纪律文档瘦身：删除 AGENTS.md、docs/constitution.md、docs/workflow.md 中的变更史、重复说明、不存在的 speckit 命令表与本机 remote/代理记录，规则本身不变；随同删除根目录《personal agent 综述.pdf》（用户确认有意删除）",
+  "base": "147d07f",
   "allow": [
     ".gatescope.json",
-    "docs/issues2/THESIS-14-drop-dead-tables.md",
-    "docs/issues2/README.md",
-    "docs/issues2/task-thesis-trim-plan.md",
-    "docs/thesis-14-drop-dead-tables-plan.md",
-    "docs/审查记录.md",
-    "CLAUDE.md",
     "AGENTS.md",
-    "docs/API.md",
-    "src/db.ts",
-    "src/types.ts",
-    "src/db-schema/usage-tables.ts",
-    "src/db-schema/agent-profile-tables.ts",
-    "src/db-schema/auth-tables.ts",
-    "src/db-schema/task-tables.ts",
-    "src/db-schema/migrations-channel-trims.ts",
-    "src/db-schema/migrations-legacy-rebuilds.ts",
-    "container/agent-runner/src/runtime/pi/pi-session.ts",
-    "tests/**"
+    "docs/constitution.md",
+    "docs/workflow.md",
+    "personal agent 综述.pdf"
   ]
 }
