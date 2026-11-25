@@ -2,7 +2,7 @@
 
 | 字段          | 值                                                                                                                                                                                                                                                                                                             |
 | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 状态          | 进行中                                                                                                                                                                                                                                                                                                         |
+| 状态          | 已完成                                                                                                                                                                                                                                                                                                         |
 | 领取人 / 分支 | `claude/thesis-14-drop-dead-tables`                                                                                                                                                                                                                                                                            |
 | 优先级        | P2                                                                                                                                                                                                                                                                                                             |
 | 类型          | 数据库（破坏性变更，删表）                                                                                                                                                                                                                                                                                     |
@@ -77,4 +77,24 @@
 
 ## 交付记录
 
-（交付时填写）
+- **提交**：`355b91f`（立项）、`b62bbd3`（实现）、`721cbfe`（审查处置）；本提交为交付（三处状态、方案台账与记录）。
+- **分支 / base**：`claude/thesis-14-drop-dead-tables`，base `ad09dac`（THESIS-13/15 合入后的 main）。
+- **改动**：
+  - `src/db-schema/migrations-channel-trims.ts`：新增 v78→v79，事务内 `DROP TABLE IF EXISTS` 五表，存在性日志；`CURRENT_SCHEMA_VERSION` 78→79。
+  - 删除建表与启动期触碰：`src/db-schema/usage-tables.ts` 整文件（含 v27→v28、v50→v51 两段以被删表为目标的迁移）、`auth-tables.ts` 的 `invite_codes`/`auth_audit_log`、`agent-profile-tables.ts` 的 `custom_model_pricing`、`task-tables.ts` 的两条 invite_codes `ensureColumn`、`migrations-legacy-rebuilds.ts` 的两个 `assertSchema`。
+  - `src/db.ts`：删除方案列出的孤儿函数与 `insertUsageInsert`、相关局部类型及 `parseJsonDetails`（约 1,150 行），保留 `updateLatestMessageTokenUsage`；`src/types.ts` 删除 `InviteCode`、`InviteCodeWithCreator`、`AuthEventType`、`AuthAuditLog`。
+  - 测试：新增 `tests/thesis-14-drop-dead-tables.test.ts`（源码契约）；`tests/db-upgrade-safety.test.ts` 新增 v79 用例（新库、伪造 v78 升级、备份可打开且五表哨兵行齐全、重启幂等）并把版本钉改 79；删除 `tests/schema-v51-usage.test.ts`；同步 thesis-10 审计契约、routes-system-settings-security、no-duplicate-helpers、task-continuation-scheduler。
+  - 文档：`CLAUDE.md` §7 表族删除邀请码/审计与用量行（含 v77 已删的 `usage_daily_summary`）；runner 注释去掉 `usage_events` 幂等键说法；`AGENTS.md`/`docs/API.md` 实测无表结构描述，零改动。
+- **验证**：`npm run verify` 6/6 全绿（367 文件，3020 通过 / 23 跳过 / 0 失败）；`node scripts/check-scope.mjs` 通过（22 个路径全在声明范围内）；`npm run docs:check` 通过（129 个 Markdown）。
+- **审查**：规格符合性审查通过（零阻塞）；代码质量审查通过（Critical 0 / Major 0 / Minor 9），9 项已逐项处置或登记。详见 `docs/审查记录.md`。
+- **偏差 / 计划外**：
+  - 新增 `src/db-schema/migrations-legacy-rebuilds.ts`、`src/types.ts`、runner 注释、`tests/task-continuation-scheduler.test.ts`、`tests/thesis-10-single-account.test.ts` 等 issue 未列路径，均已进 `.gatescope.json` 与 plan §1.3/§1.4。
+  - 实现把"新库/旧库/备份"三类断言合并在一个 v79 用例中（issue 原文写"补三个用例"）；覆盖等价，粒度差异登记。
+  - `usage-tables.ts` 整文件删除连带 v27→v28、v50→v51 两段迁移；与 issue 非目标"各版迁移步骤原样保留"字面有出入，属 plan §1.3 第 3 条已批准例外（不删会导致新库启动失败）。
+- **未做 / 已知边界**：
+  - 未实机验收：需用户用升级前数据库副本启动，确认自动迁移备份、登录/对话/定时任务/渠道/记忆正常。
+  - v39 以下/无版本库沿用 `enforcePreMigrationBackup` 既有阈值，不生成升级备份。
+  - v<77 老库的 v77→v79 链无专项 fixture（v79 为终态；v77 列删除不影响终态）。
+  - 超大 `usage_records` 在 FK=ON 下 DROP 有启动耗时/内存峰值。
+  - `src/auth.ts` 的 `generateInviteCode` 为 THESIS-10 遗留死代码，不在本包 allow，建议后续清理。
+- **后续建议**：可另立小包清理 `generateInviteCode` 与 `src/db.ts` 的 v76 空分节横幅。
