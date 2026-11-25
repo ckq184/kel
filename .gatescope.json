@@ -1,25 +1,5 @@
 {
-  "task": "THESIS-14 删除五张死表（D-F1 ①/D-F2 ①/D-F3 ①）",
-  "base": "ad09dac7884dfbf59f40630172ef74e4c0fbc4bd",
-  "allow": [
-    ".gatescope.json",
-    "docs/issues2/THESIS-14-drop-dead-tables.md",
-    "docs/issues2/README.md",
-    "docs/issues2/task-thesis-trim-plan.md",
-    "docs/thesis-14-drop-dead-tables-plan.md",
-    "docs/审查记录.md",
-    "CLAUDE.md",
-    "AGENTS.md",
-    "docs/API.md",
-    "src/db.ts",
-    "src/types.ts",
-    "src/db-schema/usage-tables.ts",
-    "src/db-schema/agent-profile-tables.ts",
-    "src/db-schema/auth-tables.ts",
-    "src/db-schema/task-tables.ts",
-    "src/db-schema/migrations-channel-trims.ts",
-    "src/db-schema/migrations-legacy-rebuilds.ts",
-    "container/agent-runner/src/runtime/pi/pi-session.ts",
-    "tests/**"
-  ]
+  "task": "thesis-closeout-pool - 毕设裁减收尾任务池（docs/issues3/）：README 索引、并行关系、部署前置与已核实不纳入清单，THESIS-16 至 18；只改文档不改代码",
+  "base": "68a57de",
+  "allow": [".gatescope.json", "docs/issues3/**"]
 }

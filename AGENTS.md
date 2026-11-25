@@ -1,17 +1,14 @@
 # AGENTS.md
 
-> **文件定位**：本项目 AI 编码代理的入口手册。Agent 每次会话必须先读本文件，再按需读取链接的详细规则。
-> **优先级**：本文件及其链接的 `docs/constitution.md` 规则，优先级高于任何单次会话的临时指令。冲突时以本文件与宪法为准。
-> **核心目标**：落地 Disciplined Vibe Coding 工作法，用结构化流水线约束 AI 编码，降低需求偏离、代码失控、返工风险。
-> **工程真相源**：架构导航、数据目录、开发命令与提交前门槛以 `CLAUDE.md` 为准（本文件负责 AI 代理纪律与入口索引）；命令以 `package.json` / `Makefile` 实际脚本为准。
+> **文件定位**：本项目 AI 编码代理的入口手册。每次会话先读本文件，再按需读取链接的详细规则。
+> **优先级**：本文件与 `docs/constitution.md` 的规则高于任何单次会话的临时指令，冲突时以二者为准。
+> **工程真相源**：架构、产品模型、数据目录、配置、开发命令与提交前门槛以 `CLAUDE.md` 为准；命令以 `package.json` / `Makefile` 实际脚本为准。本文件只管 AI 代理纪律与入口索引。
 
 ---
 
 ## 0. 角色定义
 
-你是本仓库的**受约束开发 Agent**，默认角色是流程执行者与代码实现者，不是规则制定者、不是验收主体。
-
-你必须：
+你是本仓库的**受约束开发 Agent**：流程执行者与代码实现者，不是规则制定者，也不是验收主体。
 
 - 只在允许范围内行动；越界时停止并请求用户确认。
 - 遵守 `docs/constitution.md` 全部强制条款。
@@ -21,53 +18,58 @@
 
 ## 1. Quick Commands
 
-> 以下为本仓库真实命令（2026-10-24 与 `package.json` / `Makefile` 核对）。**提交前门槛已机审化为 `npm run verify` 一键命令（2026-10-24 任务 L 批次 1；由用户手动发起）；git hooks 已按宪法第 6 条获用户显式批准引入（2026-10-24 任务 L 批次 2：pre-commit secret 扫描+格式检查、commit-msg 提交规范、pre-push 仅提醒；安装 `node scripts/install-githooks.mjs`）——hooks 只是第二道防线，verify 仍是唯一强制门禁**。
-
-| 用途                                 | 命令                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| :----------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 测试（单测+集成，vitest）            | `npm test -- --run`（注意 `npm test` 默认 watch，门禁用 `--run` 或 `make test`）                                                                                                                                                                                                                                                                                                                                                                             |
-| 类型检查（三侧全量）                 | `make typecheck`（root + `web/` + `container/agent-runner`）；仅宿主侧 `npm run typecheck`                                                                                                                                                                                                                                                                                                                                                                   |
-| 构建 / 编译（前后端 + runner）       | `make build`；仅后端 `npm run build`                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| Lint                                 | 未配置（引入 lint 属 CI/lint 配置变更，需用户单独批准）                                                                                                                                                                                                                                                                                                                                                                                                      |
-| 格式化（改动文件）                   | `npm run format:changed`                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| 文档一致性检查                       | `npm run docs:check`                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| **提交前门槛（六步全跑，缺一不可）** | 一键 `npm run verify`；分步即 `npm run format:changed` → `npm run docs:check` → `make typecheck` → `make test` → `make build` → `git diff --check`（真相源 `CLAUDE.md` §10；无 make 环境的六步等价链已内置于 verify）                                                                                                                                                                                                                                        |
-| 一键质量门禁 verify                  | `npm run verify`：六步顺序执行、失败即停、逐步打印耗时；`--step n` 单步排障、`--list` 列步骤。契约测试 `tests/verify-gate-contract.test.ts` 锁定与 CLAUDE.md §10 的同步                                                                                                                                                                                                                                                                                      |
-| git hooks（提交格式 + secret 扫描）  | 已引入（2026-10-24 任务 L 批次 2，用户按宪法第 6 条显式批准）：`.githooks/` 三 hook + `node scripts/install-githooks.mjs`（写 `core.hooksPath .githooks`，每仓库一次，幂等并归一 CRLF）；pre-commit=暂存新增行 secret 扫描（模式真相源=仓库 redact 实现，命中零回显）+格式检查（秒级）；commit-msg=Conventional Commits 白名单+「 - 」house style；pre-push=仅提醒不强制。契约测试 `tests/githooks-contract.test.ts`（19 用例）。**verify 仍是唯一强制门禁** |
-| 范围核对（宪法 1.5）                 | `node scripts/check-scope.mjs`：`.gatescope.json`（task/base/allow）声明 vs base→工作树全量 diff（含未跟踪）；范围外即拦；声明文件自身自动允许——**扩宽范围只能改声明**，扩宽 diff 由立项批准者复核（审计轨迹型防线，任务 L 批次 3 原型）。约定声明随立项提交落档                                                                                                                                                                                             |
-| 本地运行                             | `make dev`（前后端，首次自动装依赖拉镜像）/ `make start`（生产前台阻塞）                                                                                                                                                                                                                                                                                                                                                                                     |
-| agent-runner 单侧类型检查            | `cd container/agent-runner && npx tsc --noEmit`                                                                                                                                                                                                                                                                                                                                                                                                              |
+| 用途                           | 命令                                                                                                                                                                                          |
+| :----------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **提交前门槛（唯一强制门禁）** | `npm run verify`：按 `CLAUDE.md` §10 六步顺序执行（format:changed → docs:check → make typecheck → make test → make build → git diff --check），失败即停；`--step n` 单步排障，`--list` 列步骤 |
+| 范围核对                       | `node scripts/check-scope.mjs`：把 `.gatescope.json`（task/base/allow）声明与 base→工作树全量 diff（含未跟踪、删除）比对，范围外即拦；扩宽范围只能改声明                                      |
+| git hooks（第二道防线）        | `node scripts/install-githooks.mjs`（每个克隆装一次）：pre-commit 扫描暂存新增行的密钥并检查格式，commit-msg 校验提交格式，pre-push 只提醒                                                    |
+| 测试（vitest）                 | `npm test -- --run` 或 `make test`（`npm test` 默认 watch）                                                                                                                                   |
+| 类型检查                       | `make typecheck`（根 + `web/` + `container/agent-runner/`）；仅宿主侧 `npm run typecheck`；仅 runner `cd container/agent-runner && npx tsc --noEmit`                                          |
+| 构建                           | `make build`；仅后端 `npm run build`                                                                                                                                                          |
+| 格式化（改动文件）             | `npm run format:changed`                                                                                                                                                                      |
+| 文档检查                       | `npm run docs:check`                                                                                                                                                                          |
+| Lint                           | 未配置；引入需用户单独批准（宪法第 6 条）                                                                                                                                                     |
+| 本地运行                       | `make dev`（前后端开发）/ `make start`（生产，前台阻塞）                                                                                                                                      |
 
 ---
 
 ## 2. 项目速览
 
-> 以下为真实信息（2026-10-21 填实，经 `git ls-tree` / `package.json` 取证，替换早期误从其他仓库带入的描述）；架构 / 命令变化时按本文件维护规则同步更新。
-
-- **产品**：CKQClaw——基于 Pi Agent Runtime 的自托管、个人 Agent 工作台，支持 Web 与飞书/QQ/微信三渠道。产品模型与命名边界见 `CLAUDE.md` §2。
-- **技术栈**：TypeScript ^5.9.3（strict / ES2022 / NodeNext，typecheck `noEmit`）+ Node.js ≥20（`engines`）。后端 Hono ^4.12 + @hono/node-server ^2.0（WebSocket 走 `ws`，Bun 下握手失败——只用 Node 工具链）；存储 SQLite（better-sqlite3 ^12.10，`data/db/messages.db`，schema 演进真相源 = `src/db.ts` 的 `CURRENT_SCHEMA_VERSION`，迁移必须带备份、前向升级与拒绝降级）；bcryptjs ^3.0.3。Agent 侧 = Pi Agent SDK（`@earendil-works/pi-coding-agent` 1.3.0）。测试 vitest ^4.1（单测+集成；连续高负载全量下少数边缘预算用例可能轮换翻红，冷却复测再定性）。前端 `web/` = React 19 + Vite + Tailwind 4 + React Router + Zustand + Radix UI。三个 Node 子项目（根 / `web/` / `container/agent-runner/`）各自 `npm ci` + 提交 lockfile。运行时依赖冻结零新增，新增依赖须按宪法第 4 条说明理由。
-- **目录结构**：`src/`（Hono 主服务：`index.ts` 启动/渠道路由/调度编排、`web.ts`、`db.ts`、`container-runner.ts`（Host/Container Runner 与挂载）、`task-scheduler.ts`、`routes/`、`feishu.ts`/`qq.ts`/`wechat.ts` 三渠道实现）｜`web/`（React 前端，路由真相源 `web/src/App.tsx`）｜`container/agent-runner/`（Pi Runner：stdin `ContainerInput`、`mcp-tools.ts` 原生工具、`prompts/`）｜`shared/stream-event.ts`（三侧同步类型，改后必跑 `make sync-types`）｜`scripts/`（check-docs、verify 一键门禁、gate-pre-commit/gate-commit-msg/install-githooks hooks 三件、check-scope 范围核对、builtin-skill-catalog、install-host-tools、smoke-agent-image、sync-stream-event 等）｜`.githooks/`（pre-commit/commit-msg/pre-push shim，由 `install-githooks.mjs` 挂载，不写 `.git/hooks`）｜`.gatesecretsignore`（密钥扫描白名单，仅限假 key fixture 与 redact 实现文件）｜`.gatescope.json`（任务范围声明：task/base/allow，随立项提交落档，check-scope 消费）｜`.gitattributes`（行尾轻量策略：`.githooks/*` 与 `*.sh` 检出锁定 eol=lf；其余文件维持 autocrlf）｜`tests/`（vitest）｜`docs/`（宪法、工作流、API、ACL-MATRIX 等长期文档）｜`deploy/`、`config/`。`dist/`、`.build-sentinel`、`data/` 均 gitignored。
-- **敏感区域（禁止自动修改；任务明确要求时也须先获用户单独批准）**：① `data/` 运行时数据目录（`db/messages.db`、`config/` 下含明文 key 的 `claude-provider.json` 及 `session-secret.key` / `claude-provider.key`、`groups/` 工作区数据、`sessions/` 会话数据、`ipc/` 文件协议目录）；② 一切密钥与环境变量值（`WEB_SESSION_SECRET`、Provider/渠道凭据等）——禁止写入代码/日志/文档/事件；③ `dist/` 等构建产物仅由脚本生成，不手改；④ CI / lint / git hooks 配置的引入或变更需用户单独批准（宪法第 6 条；本仓库现行门禁 = CLAUDE.md §10 提交前门槛，已机审化为 `npm run verify` 一键命令（任务 L 批次 1）；git hooks 已于任务 L 批次 2 获用户显式批准引入，为第二道防线——verify 仍是唯一强制门禁）；⑤ DB schema 变更须保持原地升级向后兼容（宪法第 2 条）。
-- **Golden Path（标准执行路径）**（remote 已配置：`origin = https://github.com/ckq184/Personnal-agent.git`（2026-10-24 用户显式指示推送时配置，本地分支已统一 `main`）；**push 一律由用户显式发起——agent 不得自行推送**；本机走 repo 级代理 `http.https://github.com/.proxy`（127.0.0.1:7897，仅 github 域，存于 .git/config 不入库））：
-
-  ```bash
-  git pull --ff-only        # 若配置了远程
-  make install              # 首次或 lockfile 变更后（三侧 npm ci）
-  # 任务立项提交：写 docs/<task>-plan.md 与 .gatescope.json（base pin 开工前 HEAD）
-  # …任务实现（TDD；scope = .gatescope.json 声明范围，base = 声明的回滚点）
-  npm run verify            # 提交前门槛（六步一键机审，任务 L 批次 1 起；步骤真相源 CLAUDE.md §10）
-  node scripts/check-scope.mjs   # 范围核对（diff 全量路径 vs 声明；任务 L 批次 3 起）
-  git add <范围内文件>
-  git commit -m "type: 范围 - 摘要"   # Conventional Commits（类型白名单见宪法第 8 条），每任务一提交
-  ```
-
-  提交信息建议 `type: 范围 - 摘要` 的" - "分隔 house style（任务 L 批次 2 起 commit-msg hook 机审——装 hooks 后 `node scripts/install-githooks.mjs`；未装时人工遵守同一规则）；**禁止 `git commit --no-verify`**（hooks 已引入，该绕过即属违规——hook 层无防御手段，明示取舍，违者由代码质量审查核对 diff 追责）；hooks 只拦 secret 与提交格式，**完整门禁仍须 `npm run verify`**，不得跳步或以跳过测试/关闭类型检查等方式变通。
+- **产品**：CKQClaw——基于 Pi Agent Runtime 的自托管、个人 Agent 工作台，支持 Web 与飞书/QQ/微信三渠道。产品模型、模块、Web 技术栈、数据目录见 `CLAUDE.md` §2、§3、§7；依赖版本以各 `package.json` 为准。
+- **工具链**：只用 Node.js ≥20 / npm（Bun 下 WebSocket 握手失败）。三个子项目（根、`web/`、`container/agent-runner/`）各自 `npm ci` 并提交 lockfile。运行时依赖冻结，新增依赖须按宪法第 4 条说明理由。
+- **测试**：连续高负载跑全量时，少数负载敏感用例可能偶发翻红，先冷却复测再定性；其预算由 `tests/load-sensitive-budget-contract.test.ts` 锁定。
+- **门禁相关文件**：`.gatescope.json`（任务范围声明，随立项提交）、`.githooks/`（hook 入口，由安装脚本挂载，不写 `.git/hooks`）、`.gatesecretsignore`（密钥扫描白名单，只放假 key fixture 与 redact 实现）、`.gitattributes`（`.githooks/*` 与 `*.sh` 锁定 LF）。
+- **敏感区域（禁止自动修改；任务明确要求时也须先获用户单独批准）**：
+  1. `data/` 运行时数据：数据库、含明文 key 的 `config/`（`claude-provider.json`、`session-secret.key`、`claude-provider.key`）、`groups/`、`sessions/`、`ipc/`。
+  2. 一切密钥与环境变量值（`WEB_SESSION_SECRET`、Provider/渠道凭据等），禁止写入代码、日志、文档或事件。
+  3. `dist/` 等构建产物，只由脚本生成，不手改。
+  4. CI / lint / git hooks 配置的引入或变更（宪法第 6 条）。
+  5. DB schema 变更须保持原地升级、向后兼容（宪法第 2 条）。
 
 ---
 
-## 3. 核心纪律速览
+## 3. Golden Path
 
-完整定义见 `docs/constitution.md`。以下为不可跳过的硬约束：
+```bash
+git pull --ff-only
+make install                      # 首次或 lockfile 变更后（三侧 npm ci）
+# 立项提交：写 docs/<task>-plan.md 与 .gatescope.json（base = 开工前 HEAD，即回滚点）
+# 实现：TDD，只改 .gatescope.json 声明范围内的文件
+npm run verify                    # 提交前门槛
+node scripts/check-scope.mjs      # 范围核对
+git add <范围内文件>
+git commit -m "type: 范围 - 摘要"   # 每任务一提交
+```
+
+- 提交信息用 Conventional Commits（类型白名单见宪法第 8 条）加「 - 」分隔的 house style；装了 hooks 由 commit-msg 校验，没装也要遵守。
+- 禁止 `git commit --no-verify`。hooks 只拦密钥和提交格式，完整门禁仍是 `npm run verify`，不得以跳过测试、关闭类型检查等方式变通。
+- push 一律由用户发起，agent 不得自行推送。
+
+---
+
+## 4. 核心纪律速览
+
+完整定义见 `docs/constitution.md`，禁止行为清单见其第五节。
 
 1. **先规划，后编码**：禁止接到需求直接生成代码。
 2. **上下文隔离**：不同任务使用独立会话。
@@ -78,15 +80,7 @@
 7. **禁止绕过**：不得通过关闭类型检查、跳过测试、屏蔽 Lint 等方式绕过问题。
 8. **规范代码化**：可被机器校验的规则必须优先落地为门禁。
 
----
-
-## 4. 边界与禁令
-
-- 禁止行为完整清单见 `docs/constitution.md` 第五节。
-- 敏感区域操作前必须先获用户单独批准。
-- CI / lint 配置变更需用户单独批准。
-- 不得代替用户做验收结论。
-- `node_modules/` 属 npm 产物，禁止手改或插排障探针（不入 git，一次 `npm ci` 即静默还原）；三方库行为疑点以官方同版本 tarball 为真相源（`npm pack <pkg>@<ver>` 后逐文件比对，先归一行尾再比内容），引用仅限其公开导出（任务 J2 取证范式，2026-10-23）。
+另：`node_modules/` 是 npm 产物，禁止手改或插排障探针。三方库行为有疑点时，以 `npm pack <pkg>@<ver>` 取得的同版本官方 tarball 为准逐文件比对（先归一行尾再比内容），只引用其公开导出。
 
 ---
 
@@ -94,15 +88,12 @@
 
 | 文档                   | 内容                                                                                       |
 | :--------------------- | :----------------------------------------------------------------------------------------- |
-| `docs/constitution.md` | 核心工作原则、项目宪法、TDD 规范、失败分层回退、禁止行为清单、维护规则                     |
-| `docs/workflow.md`     | 9 阶段标准开发工作流、内置快捷命令、任务自检清单、交付模板、跨会话交接                     |
+| `docs/constitution.md` | 核心工作原则、项目宪法与门禁落地表、TDD 规范、失败分层回退、禁止行为清单、维护规则与常见坑 |
+| `docs/workflow.md`     | 9 阶段标准开发工作流、任务自检清单、交付模板                                               |
 | `CLAUDE.md`            | 工程协作指南（人类与 AI 共用）：架构导航、产品模型、数据目录、配置、开发与验证、提交前门槛 |
 
 ---
 
 ## 6. 维护规则
 
-- 本文件为活文档。同一种错误出现两次时必须更新规则并写入常见坑表。
-- 项目架构、技术栈发生重大变更时，同步更新本文件、`docs/constitution.md` 与 `docs/workflow.md`。
-- 任何功能 / 命令 / 配置 / 目录 / 工作流变化，必须同步更新本文件与对应 docs。
-- 不确定的内容用 TODO 标注，不允许猜测。
+维护规则见 `docs/constitution.md` 第六节。命令、配置、目录或工作流有变化时，同步更新本文件与对应文档。
