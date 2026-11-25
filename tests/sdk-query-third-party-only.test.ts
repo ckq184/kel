@@ -78,6 +78,8 @@ let mkdirSpy: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // 配置 mock 用后即弃，避免新增用例漏设时继承上一个用例的返回值。
+  vi.mocked(runtimeConfig.getClaudeProviderConfig).mockReset();
   mkdirSpy = vi.spyOn(fs, 'mkdirSync').mockImplementation(() => undefined);
 });
 
@@ -146,7 +148,10 @@ describe('sdkQuery only uses the third-party path', () => {
     expect(pi.getModel).toHaveBeenCalledWith('ckqclaw-zai', 'glm-4.6');
     expect(logger.warn).not.toHaveBeenCalled();
     expect(pi.createAgentSession).toHaveBeenCalledOnce();
+    expect(pi.session.bindExtensions).toHaveBeenCalledOnce();
+    expect(pi.session.subscribe).toHaveBeenCalledOnce();
     expect(pi.session.prompt).toHaveBeenCalledWith('hello');
+    expect(pi.session.dispose).toHaveBeenCalledOnce();
     expect(pi.setRuntimeApiKey).not.toHaveBeenCalled();
     expect(pi.getModels).not.toHaveBeenCalled();
   });

@@ -36,7 +36,9 @@ async function resolveModel(
   const baseUrl = config.anthropicBaseUrl.trim();
   if (!baseUrl) {
     // THESIS-17：与 D-2 ② 对齐，一次性调用只走第三方供应商。
-    throw new Error('sdkQuery requires a third-party provider with a Base URL');
+    throw new Error(
+      'sdkQuery requires a Base URL on the selected third-party provider',
+    );
   }
   const modelRef = override?.trim() || config.anthropicModel.trim();
   if (!modelRef) throw new Error('Custom provider requires a model');
