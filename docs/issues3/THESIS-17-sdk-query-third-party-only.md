@@ -2,14 +2,14 @@
 
 | 字段          | 值                                                                                                                                                           |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 状态          | 待领取                                                                                                                                                       |
-| 领取人 / 分支 | —                                                                                                                                                            |
+| 状态          | 已完成                                                                                                                                                       |
+| 领取人 / 分支 | `claude/thesis-17-sdk-query-third-party-only`                                                                                                                |
 | 优先级        | P1                                                                                                                                                           |
 | 类型          | 裁减收尾（被裁路径的残留分支）                                                                                                                               |
 | 依赖          | 无                                                                                                                                                           |
 | 可并行        | ✅ 16、ISSUE-26。⚠️ 18（D-Q1 选 ② 时同改 `src/runtime-config.ts`）（口径见 [README 第三节](README.md#三并行关系)）                                           |
 | 预计改动路径  | `src/sdk-query.ts`、`tests/**`；D-Q1 选 ② 时另加 `src/runtime-config.ts`、`src/routes/auth.ts`、`src/routes/bug-report.ts`、`src/agent-profile-generator.ts` |
-| 需用户决策    | **是**：D-Q1                                                                                                                                                 |
+| 需用户决策    | 已拍板：D-Q1 ①（2026-11-25）                                                                                                                                 |
 | 来源          | THESIS-04 交付记录"`sdkQuery` 残留官方路径"；THESIS-02 交付记录"三处判断的聚合口径"                                                                          |
 
 ## 目标
@@ -43,6 +43,8 @@ THESIS-04 按 D-2 ② 让 Agent 主路径只剩第三方：宿主要求必须有
 
 选 ② 会改变 `GET /api/auth/me` 里 `setupStatus.claudeConfigured` 的语义（从"任一启用的供应商可用"变为"默认供应商可用"），需要同步 `docs/API.md` 并补用例。
 
+**拍板（2026-11-25）**：D-Q1 ①。三处判断保持现状，差异写入交付记录。
+
 ## 执行前核实
 
 - 重新确认上面三处调用方对 `null` 的降级（回落原始消息、跳过标题、任务置为 `paused`）在领取时仍然成立。不成立就停下报告，不在本包里改调用方。
@@ -67,4 +69,10 @@ THESIS-04 按 D-2 ② 让 Agent 主路径只剩第三方：宿主要求必须有
 
 ## 交付记录
 
-（待填）
+- **提交**：`47515f8`（立项）、`5ab1ec3`（实现）、`cfafdc0`（规格审查处置）、质量审查处置与交付随本提交（分支 `claude/thesis-17-sdk-query-third-party-only`，基于 main `5a47254`）。
+- **实现**：`resolveModel` 先检查 `anthropicBaseUrl`，为空直接抛 `sdkQuery requires a Base URL on the selected third-party provider`，由 `sdkQuery` 的 catch 转 `null` 并记日志；删除 `setRuntimeApiKey('anthropic', …)` 与内置 `anthropic` 模型目录回退（`getModels`/`getModel`）。第三方分支的 `ckqclaw-*` 注册、`splitModelRef` 约定与调用方 `null` 降级未变。
+- **D-Q1 ①**：不统一"已配置"聚合口径。`src/routes/auth.ts` 继续扫描全部启用供应商；`bug-report.ts` / `agent-profile-generator.ts` 继续按 `getClaudeProviderConfig()`（默认供应商）判。差异仅在"多个第三方供应商、默认那个缺凭据"时出现：`setupStatus.claudeConfigured` 可能为 true，而 `sdkQuery` 使用默认供应商并因缺 Base URL 返回 `null`。`docs/API.md` 未改。
+- **验证**：`npm run verify` 六步全绿（368 文件，3024 通过 / 23 跳过 / 0 失败）；`node scripts/check-scope.mjs` 7 个路径全在声明范围内；`git grep -n "setRuntimeApiKey" -- src` 无结果，源码契约用例同步锁定。
+- **偏差**：无。规格审查建议 6、质量审查 Minor 1/2/3/7 属既有代码或可选优化，未在本包扩范围。
+- **范围外登记**：`scripts/test-real-model-smoke.ts:23-30` 的 `providerConfigured` 仍把官方凭据算作已配置，纯官方配置会显示已配置但 `sdkQuery` 返回 `null`；留待后续触碰该脚本时对齐。
+- **未实机验收**：需用户在第三方供应商下冒烟 `/recall`、AI 解析定时任务、对话标题生成。

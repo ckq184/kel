@@ -33,44 +33,38 @@ async function resolveModel(
   config: ReturnType<typeof getClaudeProviderConfig>,
   override?: string,
 ) {
-  const modelRef = override?.trim() || config.anthropicModel.trim();
-  const custom = !!config.anthropicBaseUrl.trim();
-  if (custom) {
-    if (!modelRef) throw new Error('Custom provider requires a model');
-    const split = splitModelRef(modelRef);
-    const providerId = `ckqclaw-${split.providerId}`;
-    runtime.registerProvider(providerId, {
-      name: `CKQClaw ${split.providerId} compatible provider`,
-      baseUrl: config.anthropicBaseUrl.trim(),
-      api: 'anthropic-messages',
-      ...(config.anthropicApiKey || config.anthropicAuthToken
-        ? { apiKey: config.anthropicApiKey || config.anthropicAuthToken }
-        : {}),
-      models: [
-        {
-          id: split.modelId,
-          name: split.modelId,
-          api: 'anthropic-messages',
-          reasoning: true,
-          input: ['text', 'image'],
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-          contextWindow: 200_000,
-          maxTokens: 32_000,
-        },
-      ],
-    });
-    return runtime.getModel(providerId, split.modelId);
-  }
-
-  if (config.anthropicApiKey || config.anthropicAuthToken) {
-    await runtime.setRuntimeApiKey(
-      'anthropic',
-      config.anthropicApiKey || config.anthropicAuthToken,
+  const baseUrl = config.anthropicBaseUrl.trim();
+  if (!baseUrl) {
+    // THESIS-17：与 D-2 ② 对齐，一次性调用只走第三方供应商。
+    throw new Error(
+      'sdkQuery requires a Base URL on the selected third-party provider',
     );
   }
-  if (!modelRef) return runtime.getModels('anthropic')[0];
+  const modelRef = override?.trim() || config.anthropicModel.trim();
+  if (!modelRef) throw new Error('Custom provider requires a model');
   const split = splitModelRef(modelRef);
-  return runtime.getModel(split.providerId, split.modelId);
+  const providerId = `ckqclaw-${split.providerId}`;
+  runtime.registerProvider(providerId, {
+    name: `CKQClaw ${split.providerId} compatible provider`,
+    baseUrl,
+    api: 'anthropic-messages',
+    ...(config.anthropicApiKey || config.anthropicAuthToken
+      ? { apiKey: config.anthropicApiKey || config.anthropicAuthToken }
+      : {}),
+    models: [
+      {
+        id: split.modelId,
+        name: split.modelId,
+        api: 'anthropic-messages',
+        reasoning: true,
+        input: ['text', 'image'],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 200_000,
+        maxTokens: 32_000,
+      },
+    ],
+  });
+  return runtime.getModel(providerId, split.modelId);
 }
 
 function textFromMessage(message: unknown): string {
