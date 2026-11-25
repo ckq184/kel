@@ -2,13 +2,13 @@
 
 本文档描述当前授权边界。具体中间件和条件分支以代码为准：
 
-- Cookie 与 Permission Middleware：`src/web-context.ts`
+- Cookie 会话与 admin 角色中间件：`src/middleware/auth.ts`
 - 资源级工作区判断：`canAccessGroup()`、`canModifyGroup()`、`canDeleteGroup()`
 - IM Owner 命令：`src/im-command-utils.ts`
 - 渠道响应对象：`src/im-audience-policy.ts`
 - 路由实现：`src/routes/` 与 `src/web.ts`
 
-## 1. 权限层次
+## 1. 访问层次
 
 | 层次     | 代码入口                     | 含义                                   |
 | -------- | ---------------------------- | -------------------------------------- |
@@ -18,7 +18,7 @@
 | Modify   | `canModifyGroup`             | 当前用户是工作区 owner                 |
 | Delete   | `canDeleteGroup`             | 当前用户是 owner 且不是 Home Workspace |
 | Host     | `hasHostExecutionPermission` | admin 角色                             |
-| System   | `systemConfigMiddleware`     | `manage_system_config`                 |
+| System   | `adminRoleMiddleware`        | admin 角色                             |
 | IM Owner | `owner_im_id` 比对           | 当前渠道原生 sender 是记录的主人       |
 
 核心原则：
@@ -26,8 +26,7 @@
 - admin 不自动绕过工作区所有权。Home、Web Workspace 和 IM Chat 均按
   `created_by` 隔离。
 - Host 是额外边界：有工作区权限不代表可以执行 Host 操作。
-- 非 owner 的用户即使拥有系统级 Permission，也不能读取或修改其他用户工作区中的
-  Secret、环境变量和运行能力。
+- 非 owner 的账号不能读取或修改其他账号工作区中的 Secret、环境变量和运行能力。
 - 查不到资源和无权访问资源通常都返回 `404`，避免跨用户枚举。
 
 ## 2. Public 接口
@@ -120,7 +119,7 @@ Memory 随 Workspace 保留，不跨 Workspace 复制。
 
 - 必须 Access。
 - Host Workspace 必须 admin。
-- 非 admin 必须同时是 owner 且拥有 `manage_group_env`。
+- 非 admin 必须是 owner。
 - admin 仍需先通过工作区 Access，不能借 admin 角色读取其他用户工作区。
 
 ### 4.5 Workspace Memory v2
@@ -189,14 +188,14 @@ read-only 投影按 host-issued turn ID 精确匹配当前或已接纳的 queued
 - 原生话题容器使用 `thread_map`，不能绑定到一个固定 Session 后吞并所有话题。
 - Unbind 必须原子恢复该 Bot 的默认工作区；无法解析默认目标时保留旧绑定并报错。
 
-## 6. 系统权限
+## 6. 系统配置与运行状态
 
-| 路由族/操作                             | 权限                                  |
+| 路由族/操作                             | 要求                                  |
 | --------------------------------------- | ------------------------------------- |
-| Provider、系统容量、Host 集成、系统外观 | `manage_system_config`                |
-| 系统 MCP 写入                           | admin                                 |
-| `/api/docker/pull`、运行监控管理        | `manage_system_config`                |
-| `/api/status/channel-outbox/*` 人工裁决 | `manage_system_config`                |
+| Provider、系统容量、Host 集成、系统外观 | admin 角色                            |
+| 系统 MCP 写入                           | admin 角色                            |
+| `/api/docker/pull`、运行监控管理        | admin 角色                            |
+| `/api/status/channel-outbox/*` 人工裁决 | admin 角色                            |
 | `POST /api/groups/:jid/reset-owner`     | admin break-glass，同时仍验证目标资源 |
 
 系统 MCP 默认仅 admin 可用；只有显式设置为 shared 后，普通成员的 Agent 才能进入
@@ -204,14 +203,14 @@ read-only 投影按 host-issued turn ID 精确匹配当前或已接纳的 queued
 
 ## 7. WebSocket
 
-连接建立时把认证用户 ID、角色和 Permission 固定到 Session；每个操作仍重新检查
+连接建立时把认证用户 ID 与角色固定到 Session；每个操作仍重新检查
 目标资源。
 
-| 操作                             | 权限                               |
+| 操作                             | 要求                               |
 | -------------------------------- | ---------------------------------- |
 | `terminal_start`                 | Access；只支持 Container Workspace |
 | `terminal_input` / resize / stop | 必须是当前 WebSocket 已拥有的终端  |
-| Docker Build 流                  | 对应系统管理权限                   |
+| Docker Build 流                  | admin 角色                         |
 
 不能仅依赖 `terminal_start` 的历史授权；终端 owner 映射和连接关闭清理是协议的一部分。
 

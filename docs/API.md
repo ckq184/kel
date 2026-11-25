@@ -7,7 +7,7 @@
 
 - API 默认前缀为 `/api`，WebSocket 为 `/ws`。
 - 除明确标记 Public 的接口外，均需要有效的 CKQClaw Cookie Session。
-- 资源接口还会执行 owner、角色、Permission、Host 执行权限等检查，见
+- 资源接口还会执行 owner、admin 角色、Host 执行权限等检查，见
   [ACL 权限矩阵](ACL-MATRIX.md)。
 - 其他用户的资源通常以 `404` 返回，避免泄漏资源是否存在。
 - Secret 写入后加密保存；读取 API 只返回脱敏值或“是否已配置”状态。
