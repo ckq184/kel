@@ -1,5 +1,13 @@
 {
-  "task": "thesis-closeout-pool - 毕设裁减收尾任务池（docs/issues3/）：README 索引、并行关系、部署前置与已核实不纳入清单，THESIS-16 至 18；只改文档不改代码",
-  "base": "68a57de",
-  "allow": [".gatescope.json", "docs/issues3/**"]
+  "task": "THESIS-17 - sdkQuery 只剩第三方路径（D-Q1 ① 不统一已配置口径）",
+  "base": "5a47254",
+  "allow": [
+    ".gatescope.json",
+    "docs/thesis-17-sdk-query-third-party-only-plan.md",
+    "docs/issues3/THESIS-17-sdk-query-third-party-only.md",
+    "docs/issues3/README.md",
+    "docs/审查记录.md",
+    "src/sdk-query.ts",
+    "tests/sdk-query-third-party-only.test.ts"
+  ]
 }
