@@ -2,7 +2,7 @@
 
 > 立项日期：2026-11-25｜base：`479e2fd`（开工前 main HEAD，回滚点）｜分支：`claude/thesis-08-model-pricing`
 > 来源：[docs/issues2/THESIS-08-model-pricing.md](issues2/THESIS-08-model-pricing.md)（方案 §6 L3/T3、§11.2）
-> **状态：立项（仅领取与范围声明）。实现、验证与交付记录在实现提交与交付提交里补齐。**
+> **状态：已实现并交付（实现 `7ede632`、契约补强 `63988a8`、审查处置 `99f6d49`），等待用户人工冒烟。**
 
 ## 0. 需求采访结论（2026-11-25）
 
