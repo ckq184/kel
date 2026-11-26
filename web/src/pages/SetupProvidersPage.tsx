@@ -81,6 +81,7 @@ export function SetupProvidersPage() {
       setError('第三方渠道必须填写 ANTHROPIC_AUTH_TOKEN');
       return;
     }
+    // 本页不传 options（不启用第三方默认键拦截），校验行为与原 Setup 版一致。
     const envResult = buildCustomEnv(envRowsToText(customEnvRows));
     if (envResult.error) {
       setError(envResult.error);

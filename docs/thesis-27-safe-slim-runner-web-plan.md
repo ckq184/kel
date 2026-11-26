@@ -28,7 +28,7 @@
 
 ## 2. 方案（TDD）
 
-本任务是行为不变的重构，Red 阶段以"表征测试先通过"为准：新增用例在 base 上即通过，重构后必须继续通过；不制造人为失败断言。
+本任务是行为不变的重构。R1、W1 与 R2 的回执/成功用例在 base 上即通过（表征用例）；W2 的"唯一实现/共享导出"断言与 W3 的共享组件结构断言在 base 上按预期失败（真实 Red），实现后转绿。
 
 ### 2.1 Red（表征用例，base 上通过）
 
@@ -38,8 +38,8 @@
    - host 返回 `success:false` 时（分别模拟修订冲突文案与 "Task not found."）返回 `isError` 且文本含 host error；
    - 成功文案与超时文案按工具逐字断言。
 2. 新增 `tests/emoji-picker-contract.test.tsx`（happy-dom）：渲染 `EmojiPicker`，断言六个分类标签、每类网格按钮数量（119/32/43/24/48/41）与每类首尾表情，锁定顺序与重复项。
-3. 新增 `tests/ipc-task-ops-revision.test.ts`：mock `src/db.js` 等依赖，驱动 `processIpcTaskOps` 的 pause/resume/cancel/update/restore，断言 expected_revision 缺失、修订冲突、not_found 三类回执的 `writeTaskResult` 负载（含 restore 冲突文案的差异）。
-4. `tests/issue11-compat-and-duplicate-convergence.test.ts` 增加 `envRowsToText` 用例：空占位行序列化为空行、KEY=value 保留、仅空 key 或仅空 value 仍序列化（行为与现实现一致）。
+3. 新增 `tests/ipc-task-ops-revision.test.ts`：mock `src/db.js` 等依赖，驱动 `processIpcTaskOps` 的 pause/resume/cancel/update/restore，断言 expected_revision 缺失、修订冲突、not_found/active_run 回执的 `writeTaskResult` 负载（含 restore 冲突文案的差异），以及五个 case 的成功负载、日志与调度器通知。
+4. `tests/issue11-compat-and-duplicate-convergence.test.ts` 增加 `envRowsToText` 用例：空占位行序列化为空行、KEY=value 保留、仅空 key 或仅空 value 仍序列化；另断言该函数只在共享模块定义一次。该用例在 base 上因函数尚未移入共享模块而红。
 5. `tests/frontend-agent-identity.test.ts` 的用户头像断言改为：`UserMenuPopover.tsx` 含 `imageUrl={user?.avatar_url}`，且侧栏与聊天页都渲染 `UserMenuPopover`；该断言在 base 上失败（组件尚不存在），属结构 Red。
 
 ### 2.2 Green
@@ -48,7 +48,7 @@
 2. **R2**：在 `processIpcTaskOps` 内新增 `revisionFailurePayload(mutation, options)` 与 expected_revision 校验 helper；五个 case 复用之，回执字段与文案逐字保留，日志与 `failUpdate` 的 warn 行为不变。
 3. **W1**：`EMOJI_CATEGORIES` 每类改为一个空白分隔字符串，模块加载时 `split(/\s+/)` 展开；分类名、顺序、重复项不变。
 4. **W2**：`envRowsToText` 移入 `web/src/utils/custom-env.ts`（结构化入参），两处调用点改为 import。
-5. **W3**：新增 `web/src/components/common/UserMenuPopover.tsx`（props：`side`、`ariaLabel`），侧栏与聊天页改为渲染它；删除两处内联块与不再使用的 `EmojiAvatar`/图标/Popover import。
+5. **W3**：新增 `web/src/components/common/UserMenuPopover.tsx`（props：`side`、`ariaLabel`），侧栏与聊天页改为渲染它；删除两处内联块与不再使用的 `EmojiAvatar`/图标/Popover import。两页重复的"按 Agent 分组工作区"计算一并收进 `web/src/hooks/useAgentWorkspaceSections.ts`（同属 W3 的重复片段；实现中发现，已扩 allow）。
 
 ### 2.3 Refactor / 门禁
 
@@ -59,13 +59,13 @@
 
 ## 3. 任务拆解
 
-| #   | 任务       | 主要文件                                                                                        | 独立验收                                        |
-| --- | ---------- | ----------------------------------------------------------------------------------------------- | ----------------------------------------------- |
-| T1  | 立项与 Red | plan、`.gatescope.json`、issue/README 状态、新增/扩充测试                                       | 表征用例在 base 全绿；W3 结构用例按预期红       |
-| T2  | R1/R2      | `container/agent-runner/src/mcp-tools.ts`、`src/ipc/task-ops.ts`                                | 参数化与修订冲突用例通过；IPC 类型契约通过      |
-| T3  | W1         | `web/src/components/common/EmojiPicker.tsx`、`tests/emoji-picker-contract.test.tsx`             | 分类数/顺序/数量不变                            |
-| T4  | W2/W3      | `web/src/utils/custom-env.ts`、Provider 两页、`UserMenuPopover.tsx`、侧栏与聊天页、相关契约测试 | envRowsToText 唯一实现；用户菜单两处行为一致    |
-| T5  | 门禁与交付 | 全范围                                                                                          | verify 六步全绿；check-scope 通过；三处状态同步 |
+| #   | 任务       | 主要文件                                                                                                                        | 独立验收                                              |
+| --- | ---------- | ------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| T1  | 立项与 Red | plan、`.gatescope.json`、issue/README 状态、新增/扩充测试                                                                       | 表征用例在 base 全绿；W3 结构用例按预期红             |
+| T2  | R1/R2      | `container/agent-runner/src/mcp-tools.ts`、`src/ipc/task-ops.ts`                                                                | 参数化与修订冲突用例通过；IPC 类型契约通过            |
+| T3  | W1         | `web/src/components/common/EmojiPicker.tsx`、`tests/emoji-picker-contract.test.tsx`                                             | 分类数/顺序/数量不变                                  |
+| T4  | W2/W3      | `web/src/utils/custom-env.ts`、Provider 两页、`UserMenuPopover.tsx`、`useAgentWorkspaceSections.ts`、侧栏与聊天页、相关契约测试 | envRowsToText 唯一实现；用户菜单/分组计算两处行为一致 |
+| T5  | 门禁与交付 | 全范围                                                                                                                          | verify 六步全绿；check-scope 通过；三处状态同步       |
 
 回滚点：base `5f0db61`；每个提交可单独 `git revert`。
 
@@ -79,8 +79,8 @@
 
 1. 五项重复代码各只剩一份实现；R1 五个工具对外契约逐字不变；W1 表情分类名/顺序/每类数量不变。
 2. `npm run verify` 六步全绿；`node scripts/check-scope.mjs` 通过。
-3. 新增表征/契约用例在 base 上通过（W3 结构用例除外，按计划先红后绿），重构后全部通过。
-4. 五项重复代码各只剩一份实现；生产代码净减行数如实写入交付记录（issue 的 ~650 为估算，不设为通过条件，偏差原因见 §8）。
+3. 新增表征/契约用例在 base 上通过；W2 唯一实现断言与 W3 共享组件结构断言在 base 上按预期红、实现后全部转绿。
+4. 生产代码净减行数如实写入交付记录（issue 的 ~650 为估算，不设为通过条件，偏差原因见 §8）。
 5. **人工冒烟（用户）**：在对话里让 Agent 暂停、恢复、取消一个定时任务；聊天输入框表情选择器显示正常。
 
 ## 6. 非目标
@@ -103,9 +103,10 @@
 
 - **净减行数**：生产代码实测 `+462 / −900`，净减 **438 行**（不含测试新增）。issue 估算 ~650：
   - R1 实测 −120（issue ~200）：工厂保留类型安全的通用配置与共享 schema，未把五个工具压成无类型的单行表。
-  - R2 实测 −3（issue ~80）：宿主回执去重同时引入 `revisionFailurePayload` / `writeRevisionOutcome` / 缺失 revision 校验共约 140 行公共骨架，抵掉了 144 行重复块。issue 的估算没有计入骨架本身。
+  - R2 实测 −3（issue ~80）：宿主回执去重同时引入 `revisionFailurePayload` / `writeRevisionOutcome` / 缺失 revision 校验共约 140 行公共骨架，抵掉了 144 行重复块。issue 的估算没有计入骨架本身。update 的缺失 revision 守卫仍单列以保留 `failUpdate` 的 warn 日志，未强行并入 helper。
   - W1 实测 −296（issue ~300），一致。
-  - W2 实测 −7（issue ~15）：函数体只有 7 行，移入共享模块后净值受限。
-  - W3 实测 −12（issue ~35）：Popover 共享组件 77 行 + 分组 hook 41 行，抵掉两页各约 70 行内联实现。
+  - W2 实测 −5（issue ~15）：custom-env +15、ProviderEditor −7、SetupProvidersPage −13。函数体只有 7 行，移入共享模块后净值受限。
+  - W3 实测 −14（issue ~35）：Popover 共享组件 +77、分组 hook +41、两页净减 −132（侧栏 −67、聊天页 −65）。issue 的估算没有计入两个共享实现本身的骨架。
 - **处理**：不改回为刻意压行数的写法（可读性与类型安全优先）；验收条件 4 改为如实记录，行数不作为通过条件。issue 原本的验收条件（verify + check-scope + 人工冒烟）不受影响。
-- **W1 拆分方式**：issue 建议 `Array.from`，实测会按码点拆坏 ZWJ 表情，改为空白分隔 + `split(/\s+/)`；用例锁定每类数量与首尾项。
+- **W1 拆分方式**：issue 建议 `Array.from`，实测会按码点拆坏 ZWJ 表情，改为空白分隔 + `split(/\s+/)`；用例以 hash 锁定每类完整顺序，并锁定类内重复 🌈 与跨类重复 🎵。
+- **范围扩宽**：实现中新增 `web/src/hooks/useAgentWorkspaceSections.ts`（W3 的分组计算重复片段），`.gatescope.json` allow 与 §2.2/§3/§4 已同步；实现提交信息已说明。

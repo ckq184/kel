@@ -272,7 +272,12 @@ describe('scheduled-task MCP V2 contract', () => {
 interface TaskToolCase {
   toolName: string;
   requestType: string;
+  description: string;
+  idField: 'task_id' | 'run_id';
+  idDescription?: string;
+  revisionDescription?: string;
   hasWorkspaceContext: boolean;
+  hasExpectedRevision: boolean;
   args: Record<string, unknown>;
   requestTarget: Record<string, unknown>;
   successResult: Record<string, unknown>;
@@ -289,7 +294,13 @@ const TASK_TOOL_CASES: TaskToolCase[] = [
   {
     toolName: 'pause_task',
     requestType: 'pause_task',
+    description:
+      'Pause future scheduled occurrences. A currently running occurrence continues; use stop_task_run to stop it.',
+    idField: 'task_id',
+    idDescription: 'The task ID to pause',
+    revisionDescription: 'Revision returned by list_tasks',
     hasWorkspaceContext: true,
+    hasExpectedRevision: true,
     args: { task_id: 'task-1', expected_revision: 3 },
     requestTarget: { taskId: 'task-1', expectedRevision: 3 },
     successResult: { success: true, revision: 4 },
@@ -300,7 +311,12 @@ const TASK_TOOL_CASES: TaskToolCase[] = [
   {
     toolName: 'resume_task',
     requestType: 'resume_task',
+    description: 'Resume a paused task.',
+    idField: 'task_id',
+    idDescription: 'The task ID to resume',
+    revisionDescription: 'Revision returned by list_tasks',
     hasWorkspaceContext: true,
+    hasExpectedRevision: true,
     args: { task_id: 'task-1', expected_revision: 3 },
     requestTarget: { taskId: 'task-1', expectedRevision: 3 },
     successResult: { success: true, revision: 4 },
@@ -311,7 +327,13 @@ const TASK_TOOL_CASES: TaskToolCase[] = [
   {
     toolName: 'cancel_task',
     requestType: 'cancel_task',
+    description:
+      'Soft-delete a scheduled task. Future runs stop, but run history is retained.',
+    idField: 'task_id',
+    idDescription: 'The task ID to delete',
+    revisionDescription: 'Revision returned by list_tasks',
     hasWorkspaceContext: true,
+    hasExpectedRevision: true,
     args: { task_id: 'task-1', expected_revision: 3 },
     requestTarget: { taskId: 'task-1', expectedRevision: 3 },
     successResult: { success: true, revision: 4 },
@@ -322,7 +344,12 @@ const TASK_TOOL_CASES: TaskToolCase[] = [
   {
     toolName: 'stop_task_run',
     requestType: 'stop_task_run',
+    description:
+      'Stop one queued or running occurrence. This does not pause future scheduled runs.',
+    idField: 'run_id',
+    idDescription: 'Run ID returned by run_task_now/list_task_runs',
     hasWorkspaceContext: false,
+    hasExpectedRevision: false,
     args: { run_id: 'run-1' },
     requestTarget: { runId: 'run-1' },
     successResult: { success: true },
@@ -333,7 +360,11 @@ const TASK_TOOL_CASES: TaskToolCase[] = [
   {
     toolName: 'restore_task',
     requestType: 'restore_task',
+    description:
+      'Restore a soft-deleted task as paused. It will not run until explicitly resumed.',
+    idField: 'task_id',
     hasWorkspaceContext: false,
+    hasExpectedRevision: true,
     args: { task_id: 'task-1', expected_revision: 3 },
     requestTarget: { taskId: 'task-1', expectedRevision: 3 },
     successResult: { success: true, revision: 4 },
@@ -350,10 +381,19 @@ describe.each(TASK_TOOL_CASES)(
       const { root, tools } = setup();
       const taskTool = tools.find((tool) => tool.name === contract.toolName);
       expect(taskTool).toBeDefined();
+      expect(taskTool!.description).toBe(contract.description);
+      const shape = taskTool!.inputSchema as Record<
+        string,
+        { description?: string } | undefined
+      >;
+      expect(shape[contract.idField]?.description).toBe(contract.idDescription);
+      expect(shape.expected_revision?.description).toBe(
+        contract.revisionDescription,
+      );
 
       const schema = z.object(taskTool!.inputSchema);
       expect(schema.safeParse(contract.args).success).toBe(true);
-      if (contract.hasWorkspaceContext) {
+      if (contract.hasExpectedRevision) {
         expect(
           schema.safeParse({ task_id: 'task-1', expected_revision: 0 }).success,
         ).toBe(false);

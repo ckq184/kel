@@ -98,20 +98,23 @@ function revisionFailurePayload(
   mutation: RevisionMutationLike,
   options: { conflictHint?: boolean; notFoundError?: string } = {},
 ): RevisionFailurePayload | null {
-  if (mutation.status === 'conflict' && mutation.task) {
+  // db 的返回类型保证 conflict 必带 task、active_run 必带 run；用非空断言
+  // 表达该不变量，避免缺字段时被误判为"无失败"而静默不写回执。
+  if (mutation.status === 'conflict') {
+    const task = mutation.task!;
     const hint =
       options.conflictHint === false ? '' : ' Call list_tasks and retry.';
     return {
       code: 'TASK_REVISION_CONFLICT',
-      error: `Task changed; current revision is ${mutation.task.revision}.${hint}`,
-      task: mutation.task,
+      error: `Task changed; current revision is ${task.revision}.${hint}`,
+      task,
     };
   }
-  if (mutation.status === 'active_run' && mutation.run) {
+  if (mutation.status === 'active_run') {
     return {
       code: 'TASK_HAS_ACTIVE_RUN',
       error: 'Task is running. Stop the current run before deleting.',
-      runId: mutation.run.id,
+      runId: mutation.run!.id,
     };
   }
   if (mutation.status === 'not_found') {
