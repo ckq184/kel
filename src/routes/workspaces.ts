@@ -4,26 +4,19 @@
  * 路由一览：
  * - GET  /                        可见工作区摘要列表
  * - GET  /mounts                  可见工作区的渠道挂载聚合
- * - GET  /:jid                    单工作区详情（治理视角含运行时会话/挂载明细）
- * - GET  /:jid/runtime-sessions   运行时会话清单（仅 owner/管理员）
- * - GET  /:jid/channel-mounts     渠道挂载清单（仅 owner/管理员）
+ * - GET  /:jid                    单工作区详情（含运行时会话/挂载明细）
+ * - GET  /:jid/runtime-sessions   运行时会话清单（需工作区访问权）
+ * - GET  /:jid/channel-mounts     渠道挂载清单（需工作区访问权）
  * - GET/PATCH /:jid/owner-profile 主 CKQClaw 的 Owner Profile 读写
  *   （仅 home 工作区创建者；revision 乐观锁 → 409）
  *
- * 权限模型：resolveWorkspaceAccess 统一收敛——host 执行组要求管理员
- * （home 组创建者例外）+ canAccessGroup；不可见一律 404 不暴露存在性。
- * canInspectGovernance（owner/管理员）之外的字段（owner_user_id、
- * execution_mode、运行时会话、挂载明细）从响应中剔除而非报错。
+ * 权限模型：resolveWorkspaceAccess 统一收敛——canAccessGroup；不可见一律
+ * 404 不暴露存在性。细分治理字段随工作区详情返回。
  */
 import { Hono, type Context } from 'hono';
 import { zodBadRequest } from '../validation-response.js';
 import type { Variables } from '../web-context.js';
-import {
-  canAccessGroup,
-  canModifyGroup,
-  hasHostExecutionPermission,
-  isHostExecutionGroup,
-} from '../web-context.js';
+import { canAccessGroup, canModifyGroup } from '../web-context.js';
 import { authMiddleware } from '../middleware/auth.js';
 import type { AuthUser, RegisteredGroup } from '../types.js';
 import {
@@ -61,24 +54,8 @@ function resolveWorkspaceAccess(
   if (!group || !workspace.jid.startsWith('web:')) return null;
 
   const groupWithJid = { ...group, jid: workspace.jid };
-  const isAdmin = hasHostExecutionPermission(user);
-  if (
-    isHostExecutionGroup(group) &&
-    !isAdmin &&
-    !(group.is_home && group.created_by === user.id)
-  ) {
-    return null;
-  }
-
   if (!canAccessGroup(user, groupWithJid)) return null;
   return { workspace, group: groupWithJid };
-}
-
-function canInspectGovernance(
-  user: AuthUser,
-  access: ResolvedWorkspaceAccess,
-): boolean {
-  return hasHostExecutionPermission(user) || canModifyGroup(user, access.group);
 }
 
 function getAgentProfileSnapshot(
@@ -123,31 +100,23 @@ function serializeWorkspaceSummary(
   access: ResolvedWorkspaceAccess,
 ) {
   const { workspace, group } = access;
-  const inspectGovernance = canInspectGovernance(user, access);
-  const runtimeSessions = inspectGovernance
-    ? listWorkspaceRuntimeSessionsByWorkspace(workspace.jid)
-    : [];
-  const channelMounts = inspectGovernance
-    ? listAgentChannelMountsByWorkspace(workspace.jid)
-    : [];
-  const isAdmin = hasHostExecutionPermission(user);
+  const runtimeSessions = listWorkspaceRuntimeSessionsByWorkspace(
+    workspace.jid,
+  );
+  const channelMounts = listAgentChannelMountsByWorkspace(workspace.jid);
   return {
     jid: workspace.jid,
     folder: workspace.folder,
-    owner_user_id: inspectGovernance ? workspace.owner_user_id : undefined,
+    owner_user_id: workspace.owner_user_id,
     name: workspace.name,
     status: workspace.status,
     is_home: workspace.is_home,
-    execution_mode: inspectGovernance
-      ? (group.executionMode ?? 'container')
-      : undefined,
+    execution_mode: group.executionMode ?? 'container',
     interaction_mode: getWorkspaceInteractionMode(workspace.folder),
-    custom_cwd: isAdmin ? (group.customCwd ?? null) : undefined,
-    agent_profile: getAgentProfileSnapshot(workspace, inspectGovernance),
-    runtime_session_count: inspectGovernance
-      ? runtimeSessions.length
-      : undefined,
-    channel_mount_count: inspectGovernance ? channelMounts.length : undefined,
+    custom_cwd: group.customCwd ?? null,
+    agent_profile: getAgentProfileSnapshot(workspace, true),
+    runtime_session_count: runtimeSessions.length,
+    channel_mount_count: channelMounts.length,
     can_modify: canModifyGroup(user, group),
     created_at: workspace.created_at,
     updated_at: workspace.updated_at,
@@ -208,13 +177,9 @@ workspaceRoutes.get('/', authMiddleware, (c) => {
 
 workspaceRoutes.get('/mounts', authMiddleware, (c) => {
   const user = c.get('user') as AuthUser;
-  const channelMounts = listVisibleWorkspaces(user)
-    .filter((access) => canInspectGovernance(user, access))
-    .flatMap((access) =>
-      listAgentChannelMountsByWorkspace(access.workspace.jid).map(
-        serializeMount,
-      ),
-    );
+  const channelMounts = listVisibleWorkspaces(user).flatMap((access) =>
+    listAgentChannelMountsByWorkspace(access.workspace.jid).map(serializeMount),
+  );
   return c.json({ channel_mounts: channelMounts });
 });
 
@@ -289,24 +254,23 @@ workspaceRoutes.get('/:jid', authMiddleware, (c) => {
   const access = resolveWorkspaceAccess(user, workspace);
   if (!access) return c.json({ error: 'Workspace not found' }, 404);
 
-  const inspectGovernance = canInspectGovernance(user, access);
-  const runtimeSessions = inspectGovernance
-    ? listWorkspaceRuntimeSessionsByWorkspace(workspace.jid).map((session) => ({
-        group_folder: session.group_folder,
-        runtime_agent_id: session.runtime_agent_id,
-        workspace_jid: session.workspace_jid,
-        sdk_session_id: session.sdk_session_id,
-        provider_id: session.provider_id,
-        agent_profile_id: session.agent_profile_id,
-        agent_profile_version: session.agent_profile_version,
-        identity_hash: session.identity_hash,
-        created_at: session.created_at,
-        updated_at: session.updated_at,
-      }))
-    : undefined;
-  const channelMounts = inspectGovernance
-    ? listAgentChannelMountsByWorkspace(workspace.jid).map(serializeMount)
-    : undefined;
+  const runtimeSessions = listWorkspaceRuntimeSessionsByWorkspace(
+    workspace.jid,
+  ).map((session) => ({
+    group_folder: session.group_folder,
+    runtime_agent_id: session.runtime_agent_id,
+    workspace_jid: session.workspace_jid,
+    sdk_session_id: session.sdk_session_id,
+    provider_id: session.provider_id,
+    agent_profile_id: session.agent_profile_id,
+    agent_profile_version: session.agent_profile_version,
+    identity_hash: session.identity_hash,
+    created_at: session.created_at,
+    updated_at: session.updated_at,
+  }));
+  const channelMounts = listAgentChannelMountsByWorkspace(workspace.jid).map(
+    serializeMount,
+  );
 
   return c.json({
     workspace: serializeWorkspaceSummary(user, access),
@@ -324,12 +288,6 @@ workspaceRoutes.get('/:jid/runtime-sessions', authMiddleware, (c) => {
   if (!access) {
     return c.json({ error: 'Workspace not found' }, 404);
   }
-  if (!canInspectGovernance(user, access)) {
-    return c.json(
-      { error: 'Only the workspace owner can inspect runtime sessions' },
-      403,
-    );
-  }
   return c.json({
     runtime_sessions: listWorkspaceRuntimeSessionsByWorkspace(jid),
   });
@@ -343,12 +301,6 @@ workspaceRoutes.get('/:jid/channel-mounts', authMiddleware, (c) => {
   const access = resolveWorkspaceAccess(user, workspace);
   if (!access) {
     return c.json({ error: 'Workspace not found' }, 404);
-  }
-  if (!canInspectGovernance(user, access)) {
-    return c.json(
-      { error: 'Only the workspace owner can inspect channel mounts' },
-      403,
-    );
   }
   const channelMounts =
     listAgentChannelMountsByWorkspace(jid).map(serializeMount);

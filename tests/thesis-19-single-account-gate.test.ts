@@ -68,7 +68,7 @@ beforeAll(async () => {
     username: existingUsername,
     password_hash: await auth.hashPassword(originalLoginPhrase),
     display_name: 'THESIS-19 User',
-    role: 'member',
+    role: 'admin',
     status: 'disabled',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),

@@ -35,7 +35,7 @@ vi.mock('../src/middleware/auth.ts', async (importOriginal) => {
         id: 'settings-security-user',
         username: 'settings-security-user',
         display_name: 'Settings Security User',
-        role: process.env.CKQCLAW_TEST_ROLE ?? 'member',
+        role: process.env.CKQCLAW_TEST_ROLE ?? 'admin',
         status: 'active',
         must_change_password: false,
       });
@@ -107,7 +107,7 @@ afterAll(() => {
 
 describe('system settings capability boundaries', () => {
   test('system config response excludes host and billing fields', async () => {
-    asSystemSettingsTestUser('admin');
+    asSystemSettingsTestUser();
     const response = await app.request('/api/config/system');
     expect(response.status).toBe(200);
     const body = await response.json();
@@ -122,7 +122,7 @@ describe('system settings capability boundaries', () => {
   });
 
   test('system config rejects billing fields instead of silently accepting them', async () => {
-    asSystemSettingsTestUser('admin');
+    asSystemSettingsTestUser();
     const response = await app.request('/api/config/system', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
@@ -132,7 +132,7 @@ describe('system settings capability boundaries', () => {
   });
 
   test('stale clients may submit retired automation fields, which are ignored', async () => {
-    asSystemSettingsTestUser('admin');
+    asSystemSettingsTestUser();
     const response = await app.request('/api/config/system', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
@@ -153,10 +153,10 @@ describe('system settings capability boundaries', () => {
     expect(body).not.toHaveProperty('maxTasksPerUser');
   });
 
-  test('member cannot read or write host integration', async () => {
-    asSystemSettingsTestUser('member');
+  test('the single account can read and write host integration', async () => {
+    asSystemSettingsTestUser();
     expect((await app.request('/api/config/host-integration')).status).toBe(
-      403,
+      200,
     );
     expect(
       (
@@ -166,7 +166,7 @@ describe('system settings capability boundaries', () => {
           body: JSON.stringify({ externalClaudeDir: tmpDir }),
         })
       ).status,
-    ).toBe(403);
+    ).toBe(200);
   });
 
   test('combined host and compact update quiesces admin custom and member default workspaces without discarding work', async () => {
@@ -221,7 +221,7 @@ describe('system settings capability boundaries', () => {
     const nextClaudeDir = path.join(tmpDir, 'next-claude');
     fs.mkdirSync(nextClaudeDir);
     stopGroup.mockClear();
-    asSystemSettingsTestUser('admin');
+    asSystemSettingsTestUser();
     const response = await app.request('/api/config/host-integration', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
@@ -263,7 +263,7 @@ describe('system settings capability boundaries', () => {
     ).toEqual([]);
   });
 
-  test('admin host-only mode migrates only active-admin runtimes and preserves member isolation', async () => {
+  test('host-only mode migrates every active owner runtime', async () => {
     const now = new Date().toISOString();
     db.setRegisteredGroup('web:settings-admin-container', {
       name: 'Admin container before policy',
@@ -313,7 +313,7 @@ describe('system settings capability boundaries', () => {
     });
 
     stopGroup.mockClear();
-    asSystemSettingsTestUser('admin');
+    asSystemSettingsTestUser();
     const response = await app.request('/api/config/host-integration', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
@@ -329,10 +329,10 @@ describe('system settings capability boundaries', () => {
     ).toBe('host');
     expect(
       db.getRegisteredGroup('web:settings-member-container')?.executionMode,
-    ).toBe('container');
+    ).toBe('host');
     expect(
       db.getTaskById('settings-member-container-task')?.execution_mode,
-    ).toBe('container');
+    ).toBe('host');
     expect(stopGroup).toHaveBeenCalledWith(
       'web:settings-admin-container',
       expect.objectContaining({ force: true, preserveQueuedWork: true }),
@@ -350,7 +350,7 @@ describe('system settings capability boundaries', () => {
   });
 
   test('an exact retry repairs a persisted host-integration cleanup failure', async () => {
-    asSystemSettingsTestUser('admin');
+    asSystemSettingsTestUser();
     await app.request('/api/config/host-integration', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
@@ -415,7 +415,7 @@ describe('system settings capability boundaries', () => {
   });
 
   test('host-only enable serializes with workspace publication and prewarm', async () => {
-    asSystemSettingsTestUser('admin');
+    asSystemSettingsTestUser();
     await app.request('/api/config/host-integration', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },

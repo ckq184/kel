@@ -56,7 +56,7 @@ export interface IpcTaskOpsInput {
   /** processTaskIpc 解析出的 IPC 请求 JSON（结构类型同壳层，any 语义保留）。 */
   data: any;
   sourceGroup: string;
-  isAdminHome: boolean;
+  isHome: boolean;
   sourceGroupEntry: RegisteredGroup | undefined;
   tasksDir: string;
   ipcAgentId: string | null;
@@ -80,7 +80,7 @@ export async function processIpcTaskOps(input: IpcTaskOpsInput): Promise<void> {
   const {
     data,
     sourceGroup,
-    isAdminHome,
+    isHome,
     sourceGroupEntry,
     tasksDir,
     ipcAgentId,
@@ -139,10 +139,10 @@ export async function processIpcTaskOps(input: IpcTaskOpsInput): Promise<void> {
           break;
         }
 
-        // Only admin home can create script tasks
-        if (execType === 'script' && !isAdminHome) {
+        // Only the Home workspace can create script tasks
+        if (execType === 'script' && !isHome) {
           failSchedule(
-            'Only the admin home container can create script tasks.',
+            'Only the Home workspace Agent can create script tasks.',
           );
           break;
         }
@@ -371,10 +371,10 @@ export async function processIpcTaskOps(input: IpcTaskOpsInput): Promise<void> {
             break;
           }
           if (task.execution_type === 'script') {
-            if (!isAdminHome) {
+            if (!isHome) {
               writeTaskResult(tasksDir, 'resume_task', data.requestId, {
                 success: false,
-                error: 'Only the admin home container can resume script tasks.',
+                error: 'Only the Home workspace can resume script tasks.',
               });
               break;
             }
@@ -475,10 +475,10 @@ export async function processIpcTaskOps(input: IpcTaskOpsInput): Promise<void> {
       if (data.taskId) {
         const task = getTaskById(data.taskId);
         if (task && ipcActorCanManageTask(task)) {
-          if (task.execution_type === 'script' && !isAdminHome) {
+          if (task.execution_type === 'script' && !isHome) {
             writeTaskResult(tasksDir, 'cancel_task', data.requestId, {
               success: false,
-              error: 'Only the admin home container can delete script tasks.',
+              error: 'Only the Home workspace can delete script tasks.',
             });
             break;
           }
@@ -584,7 +584,7 @@ export async function processIpcTaskOps(input: IpcTaskOpsInput): Promise<void> {
         break;
       }
       // 授权：本组，或本工作区属主同样拥有的组。与 pause/cancel 同款，
-      // 走 REST 面同一套 canAccessGroup，admin home 不再是全局旁路。
+      // 走 REST 面同一套 canAccessGroup，Home 不再是全局旁路。
       if (!ipcActorCanManageTask(task)) {
         failUpdate('Not authorized to update this task.');
         break;
@@ -600,8 +600,8 @@ export async function processIpcTaskOps(input: IpcTaskOpsInput): Promise<void> {
       const forceHostOnly = isAdminHostOnlyOwner(targetOwnerId);
       const patch: Parameters<typeof updateTask>[1] = {};
       if (data.execution_type !== undefined) {
-        if (data.execution_type === 'script' && !isAdminHome) {
-          failUpdate('Only the admin home container can set script execution.');
+        if (data.execution_type === 'script' && !isHome) {
+          failUpdate('Only the Home workspace can set script execution.');
           break;
         }
         patch.execution_type =
@@ -614,10 +614,8 @@ export async function processIpcTaskOps(input: IpcTaskOpsInput): Promise<void> {
           );
           break;
         }
-        if (data.execution_mode === 'host' && !isAdminHome) {
-          failUpdate(
-            'Only the admin home container can set host execution mode.',
-          );
+        if (data.execution_mode === 'host' && !isHome) {
+          failUpdate('Only the Home workspace can set host execution mode.');
           break;
         }
         patch.execution_mode =
@@ -757,10 +755,10 @@ export async function processIpcTaskOps(input: IpcTaskOpsInput): Promise<void> {
         });
         break;
       }
-      if (task.execution_type === 'script' && !isAdminHome) {
+      if (task.execution_type === 'script' && !isHome) {
         writeTaskResult(tasksDir, 'run_task_now', data.requestId, {
           success: false,
-          error: 'Only the admin home container can run script tasks.',
+          error: 'Only the Home workspace can run script tasks.',
         });
         break;
       }
@@ -820,10 +818,10 @@ export async function processIpcTaskOps(input: IpcTaskOpsInput): Promise<void> {
         });
         break;
       }
-      if (task.execution_type === 'script' && !isAdminHome) {
+      if (task.execution_type === 'script' && !isHome) {
         writeTaskResult(tasksDir, 'stop_task_run', data.requestId, {
           success: false,
-          error: 'Only the admin home container can stop script task runs.',
+          error: 'Only the Home workspace can stop script task runs.',
         });
         break;
       }
@@ -867,10 +865,10 @@ export async function processIpcTaskOps(input: IpcTaskOpsInput): Promise<void> {
         });
         break;
       }
-      if (task.execution_type === 'script' && !isAdminHome) {
+      if (task.execution_type === 'script' && !isHome) {
         writeTaskResult(tasksDir, 'restore_task', data.requestId, {
           success: false,
-          error: 'Only the admin home container can restore script tasks.',
+          error: 'Only the Home workspace can restore script tasks.',
         });
         break;
       }
@@ -964,7 +962,7 @@ export async function processIpcTaskOps(input: IpcTaskOpsInput): Promise<void> {
             : getAllTasks();
           // Visibility follows the same ACL as mutation: own workspace plus
           // groups this workspace's owner also owns. A task's `prompt` is user
-          // content, so admin home must not enumerate other tenants' rows.
+          // content, so Home must not enumerate other tenants' rows.
           const filteredTasks = allTasks.filter((t) =>
             ipcActorCanManageTask(t),
           );

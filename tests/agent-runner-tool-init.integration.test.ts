@@ -28,7 +28,6 @@ function toolNames(
     chatJid: 'web:tool-init',
     groupFolder: 'tool-init',
     isHome,
-    isAdminHome: true,
     agentBuilderEnabled: options.agentBuilderEnabled ?? isHome,
     isScheduledTask: options.isScheduledTask ?? false,
     currentTaskId: options.currentTaskId ?? null,

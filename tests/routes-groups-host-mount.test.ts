@@ -111,43 +111,16 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
-  asRouteTestUser('route-admin', 'admin', 'active');
+  asRouteTestUser('route-admin', 'active');
   ensureTerminalContainerStarted.mockClear();
 });
 
 describe('POST /api/groups additional_mounts authorization', () => {
-  test('rejects a member before probing a nonexistent host path', async () => {
-    const name = uniqueName('member-denied');
-    const secretPath = path.join(
-      outsideRoot,
-      `definitely-missing-${Math.random().toString(36).slice(2)}`,
-    );
-    asRouteTestUser('route-member', 'member', 'active');
-
-    const { response, body } = await createWorkspace({
-      name,
-      execution_mode: 'container',
-      additional_mounts: [
-        {
-          host_path: secretPath,
-          container_path: 'member-secret',
-          readonly: true,
-        },
-      ],
-    });
-
-    expect(response.status).toBe(403);
-    expect(body.code).toBe('HOST_MOUNT_ADMIN_REQUIRED');
-    expect(JSON.stringify(body)).not.toContain(secretPath);
-    expect(JSON.stringify(body).toLowerCase()).not.toContain('does not exist');
-    expect(groupsNamed(name)).toHaveLength(0);
-  });
-
   test('rejects mounts for an inactive admin', async () => {
     const source = path.join(allowedRoot, uniqueName('inactive-source'));
     fs.mkdirSync(source);
     const name = uniqueName('inactive-admin');
-    asRouteTestUser('inactive-admin', 'admin', 'disabled');
+    asRouteTestUser('inactive-admin', 'disabled');
 
     const { response, body } = await createWorkspace({
       name,
@@ -161,7 +134,7 @@ describe('POST /api/groups additional_mounts authorization', () => {
     });
 
     expect(response.status).toBe(403);
-    expect(body.code).toBe('HOST_MOUNT_ADMIN_REQUIRED');
+    expect(body.code).toBe('HOST_MOUNT_ACCOUNT_INACTIVE');
     expect(groupsNamed(name)).toHaveLength(0);
   });
 

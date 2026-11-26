@@ -36,7 +36,6 @@ import {
 } from './memory-store.js';
 import { getRegisteredGroup, getWorkspaceRecord } from './db.js';
 import { canAccessGroup, canModifyGroup } from './web-context.js';
-import type { UserRole } from './types.js';
 
 const MAX_CONTENT_LENGTH = 32_768;
 const MAX_TITLE_LENGTH = 500;
@@ -75,7 +74,6 @@ const SOURCE_TYPES = new Set<WorkspaceMemorySourceType>([
 
 export interface WorkspaceMemoryActor {
   id: string;
-  role: UserRole;
 }
 
 interface WorkspaceMemoryProvenanceInput {

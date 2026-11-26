@@ -37,7 +37,7 @@ vi.mock('../src/middleware/auth.ts', () => ({
     c.set('user', {
       id: process.env.CKQCLAW_TEST_USER_ID ?? 'routes-workspace-owner',
       username: process.env.CKQCLAW_TEST_USER_ID ?? 'routes-workspace-owner',
-      role: process.env.CKQCLAW_TEST_USER_ROLE ?? 'member',
+      role: process.env.CKQCLAW_TEST_USER_ROLE ?? 'admin',
     });
     return next();
   },

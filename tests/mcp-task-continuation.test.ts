@@ -27,7 +27,6 @@ function makeContext(overrides: Partial<McpContext> = {}): {
     chatJid: 'web:workspace',
     groupFolder: 'workspace',
     isHome: false,
-    isAdminHome: false,
     agentBuilderEnabled: false,
     ownerProfileEnabled: false,
     isScheduledTask: true,

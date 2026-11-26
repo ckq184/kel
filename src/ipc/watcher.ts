@@ -231,7 +231,6 @@ export interface IpcWatcherDeps {
   processTaskIpc: (
     data: any,
     sourceGroup: string,
-    isAdminHome: boolean,
     isHome: boolean,
     sourceGroupEntry: RegisteredGroup | undefined,
     tasksDir: string,
@@ -252,7 +251,6 @@ export interface IpcWatcherDeps {
   REPLY_LIMIT_REACHED_ERROR: string;
   activeImReplyRoutes: Map<string, string | null>;
   canSendCrossGroupMessage: (
-    isAdminHome: boolean,
     isHome: boolean,
     sourceFolder: string,
     sourceGroupEntry: RegisteredGroup | undefined,
@@ -419,7 +417,7 @@ export function runIpcWatcher(deps: IpcWatcherDeps): void {
 
   const processGroupIpc = async (sourceGroup: string) => {
     if (isShuttingDown()) return;
-    // Determine if this IPC directory belongs to an admin home group
+    // Determine if this IPC directory belongs to a Home workspace
     const sourceFolderEntries = Object.values(getRegisteredGroups()).filter(
       (group) => group.folder === sourceGroup,
     );
@@ -429,11 +427,6 @@ export function runIpcWatcher(deps: IpcWatcherDeps): void {
     const sourceGroupEntry =
       sourceFolderEntries.find((group) => group.is_home) ??
       sourceFolderEntries[0];
-    const sourceOwner = sourceGroupEntry?.created_by
-      ? getUserById(sourceGroupEntry.created_by)
-      : undefined;
-    const isAdminHome =
-      !!sourceGroupEntry?.is_home && sourceOwner?.role === 'admin';
     const isHome = !!sourceGroupEntry?.is_home;
 
     // Collect all IPC roots: main group dir + agents/*/ + tasks-run/*/
@@ -572,7 +565,6 @@ export function runIpcWatcher(deps: IpcWatcherDeps): void {
                 ipcTaskId,
                 durableTaskRunId,
                 isHome,
-                isAdminHome,
                 broadcastFolder,
                 ...ipcMessageDeliveryDeps,
               });
@@ -595,7 +587,6 @@ export function runIpcWatcher(deps: IpcWatcherDeps): void {
                 ipcTaskId,
                 durableTaskRunId,
                 isHome,
-                isAdminHome,
                 broadcastFolder,
                 ...ipcImageDeliveryDeps,
               });
@@ -727,7 +718,6 @@ export function runIpcWatcher(deps: IpcWatcherDeps): void {
             await processTaskIpc(
               data,
               sourceGroup,
-              isAdminHome,
               isHome,
               sourceGroupEntry,
               tasksDir,

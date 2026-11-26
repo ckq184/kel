@@ -62,11 +62,9 @@ export interface IpcSendImageInput {
   ipcTaskId: string | null;
   durableTaskRunId: string | null;
   isHome: boolean;
-  isAdminHome: boolean;
   broadcastFolder: string;
   REPLY_LIMIT_REACHED_ERROR: string;
   canSendCrossGroupMessage: (
-    isAdminHome: boolean,
     isHome: boolean,
     sourceFolder: string,
     sourceGroupEntry: RegisteredGroup | undefined,
@@ -138,7 +136,6 @@ export async function processIpcSendImage(
     ipcTaskId,
     durableTaskRunId,
     isHome,
-    isAdminHome,
     broadcastFolder,
     REPLY_LIMIT_REACHED_ERROR,
     canSendCrossGroupMessage,
@@ -160,13 +157,7 @@ export async function processIpcSendImage(
   let taskImageDeliverySettled = false;
   let isTaskIpcImage = false;
   if (
-    canSendCrossGroupMessage(
-      isAdminHome,
-      isHome,
-      sourceGroup,
-      sourceGroupEntry,
-      targetGroup,
-    )
+    canSendCrossGroupMessage(isHome, sourceGroup, sourceGroupEntry, targetGroup)
   ) {
     try {
       const imageBuffer = Buffer.from(data.imageBase64, 'base64');

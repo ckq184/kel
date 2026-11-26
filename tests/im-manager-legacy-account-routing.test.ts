@@ -58,7 +58,7 @@ test('switching the UI default never reroutes an unscoped legacy JID', async () 
     username: 'legacy-user',
     password_hash: 'test',
     display_name: 'Legacy user',
-    role: 'member',
+    role: 'admin',
     status: 'active',
     created_at: now,
     updated_at: now,

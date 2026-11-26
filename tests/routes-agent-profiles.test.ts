@@ -43,13 +43,14 @@ const routes = routeModule.default;
 
 beforeAll(() => {
   db.initDatabase();
+  runtimeConfig.saveSystemSettings({ mainAgentContextSource: 'managed' });
   const now = new Date().toISOString();
   db.createUser({
     id: 'routes-agent-user',
     username: 'routes-agent-user',
     password_hash: 'hash',
     display_name: 'Routes Agent User',
-    role: 'member',
+    role: 'admin',
     status: 'active',
     created_at: now,
     updated_at: now,
@@ -587,71 +588,6 @@ describe('/api/agent-profiles routes', () => {
     });
   });
 
-  test('rejects host context for members on create and patch', async () => {
-    const createRes = await routes.request('/', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        name: 'Unauthorized Host Agent',
-        runtime_policy: { context: { source: 'host_claude' } },
-      }),
-    });
-    expect(createRes.status).toBe(403);
-    expect(await createRes.json()).toEqual({
-      error: 'host_claude context requires an admin role',
-    });
-
-    const profile = db.createAgentProfile({
-      ownerUserId: 'routes-agent-user',
-      name: 'Managed Agent',
-    });
-    const patchRes = await routes.request(`/${profile.id}`, {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        runtime_policy: { context: { source: 'host_claude' } },
-      }),
-    });
-    expect(patchRes.status).toBe(403);
-    expect(await patchRes.json()).toEqual({
-      error: 'host_claude context requires an admin role',
-    });
-    expect(
-      db.getAgentProfileForUser(profile.id, 'routes-agent-user')?.runtime_policy
-        .context.source,
-    ).toBe('managed');
-  });
-
-  test('rejects member partial patches that would mutate enabled host Skills', async () => {
-    const profile = db.createAgentProfile({
-      ownerUserId: 'routes-agent-user',
-      name: 'Downgraded Host Skills Agent',
-      runtimePolicy: {
-        skills: {
-          mode: 'inherit',
-          ids: [],
-          host: { mode: 'custom', ids: ['existing-host-skill'] },
-        },
-      },
-    });
-
-    const patchRes = await routes.request(`/${profile.id}`, {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        runtime_policy: { skills: { host: { ids: ['replacement-skill'] } } },
-      }),
-    });
-    expect(patchRes.status).toBe(403);
-    expect(await patchRes.json()).toEqual({
-      error: 'host skills require an admin role',
-    });
-    expect(
-      db.getAgentProfileForUser(profile.id, 'routes-agent-user')?.runtime_policy
-        .skills.host,
-    ).toEqual({ mode: 'custom', ids: ['existing-host-skill'] });
-  });
-
   test('rejects empty custom host Skill selections on create and patch', async () => {
     const createRes = await routes.request('/', {
       method: 'POST',
@@ -752,30 +688,7 @@ describe('/api/agent-profiles routes', () => {
     ).toEqual({ mode: 'inherit', ids: [] });
   });
 
-  test('rejects member attempts to enable inherited host Skills', async () => {
-    const profile = db.createAgentProfile({
-      ownerUserId: 'routes-agent-user',
-      name: 'Member Host Skills Agent',
-    });
-    const patchRes = await routes.request(`/${profile.id}`, {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        runtime_policy: {
-          skills: {
-            host: { mode: 'inherit', ids: [] },
-          },
-        },
-      }),
-    });
-
-    expect(patchRes.status).toBe(403);
-    expect(await patchRes.json()).toEqual({
-      error: 'host skills require an admin role',
-    });
-  });
-
-  test('allows admins to create host agents and patch the default CKQClaw profile', async () => {
+  test('allows the account to create host agents and patch the default CKQClaw profile', async () => {
     const createRes = await routes.request('/', {
       method: 'POST',
       headers: {

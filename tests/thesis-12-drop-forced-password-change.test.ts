@@ -59,7 +59,7 @@ beforeAll(async () => {
     username: secondUsername,
     password_hash: await hashPassword(secondPhrase),
     display_name: 'THESIS-12 Password',
-    role: 'member',
+    role: 'admin',
     status: 'active',
     created_at: now,
     updated_at: now,

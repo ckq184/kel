@@ -26,7 +26,7 @@ export function ensureAuthTables(ctx: DbMigrationContext): void {
       username TEXT NOT NULL UNIQUE,
       password_hash TEXT NOT NULL,
       display_name TEXT NOT NULL DEFAULT '',
-      role TEXT NOT NULL DEFAULT 'member',
+      role TEXT NOT NULL DEFAULT 'admin',
       status TEXT NOT NULL DEFAULT 'active',
       permissions TEXT NOT NULL DEFAULT '[]',
       must_change_password INTEGER NOT NULL DEFAULT 0,

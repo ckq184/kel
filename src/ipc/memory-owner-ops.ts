@@ -451,7 +451,7 @@ export async function processIpcMemoryOwnerOps(
           );
         }
         const base = {
-          actor: { id: actor.id, role: actor.role },
+          actor: { id: actor.id },
           workspaceJid,
         };
         const hostTurnKind = ipcTaskId

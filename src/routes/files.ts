@@ -1,12 +1,7 @@
 import { Hono } from 'hono';
 import type { Variables } from '../web-context.js';
 import { authMiddleware } from '../middleware/auth.js';
-import {
-  isHostExecutionGroup,
-  hasHostExecutionPermission,
-  canAccessGroup,
-  groupAccessDeniedResponse,
-} from '../web-context.js';
+import { canAccessGroup, groupAccessDeniedResponse } from '../web-context.js';
 import type { AuthUser } from '../types.js';
 import type { RegisteredGroup } from '../types.js';
 import { getRegisteredGroup } from '../db.js';
@@ -251,14 +246,8 @@ fileRoutes.get('/:jid/files', authMiddleware, (c) => {
   }
 
   const authUser = c.get('user') as AuthUser;
-  if (!canAccessGroup({ id: authUser.id, role: authUser.role }, group)) {
+  if (!canAccessGroup({ id: authUser.id }, group)) {
     return groupAccessDeniedResponse(c, 'Group not found');
-  }
-  if (isHostExecutionGroup(group) && !hasHostExecutionPermission(authUser)) {
-    return c.json(
-      { error: 'Insufficient permissions for host execution mode' },
-      403,
-    );
   }
 
   try {
@@ -284,14 +273,8 @@ fileRoutes.post('/:jid/files', authMiddleware, async (c) => {
   }
 
   const authUser = c.get('user') as AuthUser;
-  if (!canAccessGroup({ id: authUser.id, role: authUser.role }, group)) {
+  if (!canAccessGroup({ id: authUser.id }, group)) {
     return groupAccessDeniedResponse(c, 'Group not found');
-  }
-  if (isHostExecutionGroup(group) && !hasHostExecutionPermission(authUser)) {
-    return c.json(
-      { error: 'Insufficient permissions for host execution mode' },
-      403,
-    );
   }
 
   const rootOverride = getFileRootOverride(group);
@@ -399,17 +382,9 @@ fileRoutes.post('/:jid/files/open-directory', authMiddleware, async (c) => {
   }
 
   const authUser = c.get('user') as AuthUser;
-  if (!canAccessGroup({ id: authUser.id, role: authUser.role }, group)) {
+  if (!canAccessGroup({ id: authUser.id }, group)) {
     return groupAccessDeniedResponse(c, 'Group not found');
   }
-  // 打开本地目录属于宿主机操作，限制为有宿主机权限的用户
-  if (!hasHostExecutionPermission(authUser)) {
-    return c.json(
-      { error: 'Insufficient permissions to open local directory' },
-      403,
-    );
-  }
-
   try {
     const body = await c.req.json().catch(() => ({}));
     const targetPath = typeof body.path === 'string' ? body.path : '';
@@ -460,14 +435,8 @@ fileRoutes.get('/:jid/files/download/:path', authMiddleware, (c) => {
   }
 
   const authUser = c.get('user') as AuthUser;
-  if (!canAccessGroup({ id: authUser.id, role: authUser.role }, group)) {
+  if (!canAccessGroup({ id: authUser.id }, group)) {
     return groupAccessDeniedResponse(c, 'Group not found');
-  }
-  if (isHostExecutionGroup(group) && !hasHostExecutionPermission(authUser)) {
-    return c.json(
-      { error: 'Insufficient permissions for host execution mode' },
-      403,
-    );
   }
 
   try {
@@ -561,14 +530,8 @@ fileRoutes.get('/:jid/files/preview/:path', authMiddleware, (c) => {
   }
 
   const authUser = c.get('user') as AuthUser;
-  if (!canAccessGroup({ id: authUser.id, role: authUser.role }, group)) {
+  if (!canAccessGroup({ id: authUser.id }, group)) {
     return groupAccessDeniedResponse(c, 'Group not found');
-  }
-  if (isHostExecutionGroup(group) && !hasHostExecutionPermission(authUser)) {
-    return c.json(
-      { error: 'Insufficient permissions for host execution mode' },
-      403,
-    );
   }
 
   try {
@@ -702,14 +665,8 @@ fileRoutes.get('/:jid/files/content/:path', authMiddleware, (c) => {
   }
 
   const authUser = c.get('user') as AuthUser;
-  if (!canAccessGroup({ id: authUser.id, role: authUser.role }, group)) {
+  if (!canAccessGroup({ id: authUser.id }, group)) {
     return groupAccessDeniedResponse(c, 'Group not found');
-  }
-  if (isHostExecutionGroup(group) && !hasHostExecutionPermission(authUser)) {
-    return c.json(
-      { error: 'Insufficient permissions for host execution mode' },
-      403,
-    );
   }
 
   try {
@@ -765,14 +722,8 @@ fileRoutes.put('/:jid/files/content/:path', authMiddleware, async (c) => {
   }
 
   const authUser = c.get('user') as AuthUser;
-  if (!canAccessGroup({ id: authUser.id, role: authUser.role }, group)) {
+  if (!canAccessGroup({ id: authUser.id }, group)) {
     return groupAccessDeniedResponse(c, 'Group not found');
-  }
-  if (isHostExecutionGroup(group) && !hasHostExecutionPermission(authUser)) {
-    return c.json(
-      { error: 'Insufficient permissions for host execution mode' },
-      403,
-    );
   }
 
   try {
@@ -912,14 +863,8 @@ fileRoutes.delete('/:jid/files/:path', authMiddleware, (c) => {
   }
 
   const authUser = c.get('user') as AuthUser;
-  if (!canAccessGroup({ id: authUser.id, role: authUser.role }, group)) {
+  if (!canAccessGroup({ id: authUser.id }, group)) {
     return groupAccessDeniedResponse(c, 'Group not found');
-  }
-  if (isHostExecutionGroup(group) && !hasHostExecutionPermission(authUser)) {
-    return c.json(
-      { error: 'Insufficient permissions for host execution mode' },
-      403,
-    );
   }
 
   try {
@@ -959,14 +904,8 @@ fileRoutes.post('/:jid/directories', authMiddleware, async (c) => {
   }
 
   const authUser = c.get('user') as AuthUser;
-  if (!canAccessGroup({ id: authUser.id, role: authUser.role }, group)) {
+  if (!canAccessGroup({ id: authUser.id }, group)) {
     return groupAccessDeniedResponse(c, 'Group not found');
-  }
-  if (isHostExecutionGroup(group) && !hasHostExecutionPermission(authUser)) {
-    return c.json(
-      { error: 'Insufficient permissions for host execution mode' },
-      403,
-    );
   }
 
   try {

@@ -44,13 +44,14 @@ describe('AgentProfile runtime invalidation', () => {
       username: userId,
       password_hash: 'hash',
       display_name: userId,
-      role: 'member',
+      role: 'admin',
       status: 'active',
       created_at: now,
       updated_at: now,
       must_change_password: false,
     });
     runtimeConfig.saveSystemSettings({
+      mainAgentContextSource: 'managed',
       mainAgentAutoCompactWindow: 0,
       mainAgentAutoCompactPercentage: 80,
     });
@@ -79,7 +80,7 @@ describe('AgentProfile runtime invalidation', () => {
       username: userId,
       password_hash: 'hash',
       display_name: userId,
-      role: 'member',
+      role: 'admin',
       status: 'active',
       created_at: now,
       updated_at: now,
@@ -104,7 +105,7 @@ describe('AgentProfile runtime invalidation', () => {
     );
   });
 
-  test('role downgrade forces persisted host context back to managed', () => {
+  test('disabling the owner forces persisted host context back to managed', () => {
     const userId = 'agent-profile-runtime-role-downgrade';
     const now = new Date().toISOString();
     db.createUser({
@@ -135,14 +136,14 @@ describe('AgentProfile runtime invalidation', () => {
     const adminEffectiveHash =
       runtime.resolveEffectiveAgentProfile(profile)?.identity_hash;
 
-    db.updateUserFields(userId, { role: 'member' });
-    const memberEffective = runtime.resolveEffectiveAgentProfile(profile);
-    expect(memberEffective?.runtime_policy.context.source).toBe('managed');
-    expect(memberEffective?.runtime_policy.skills.host).toEqual({
+    db.updateUserFields(userId, { status: 'disabled' });
+    const disabledEffective = runtime.resolveEffectiveAgentProfile(profile);
+    expect(disabledEffective?.runtime_policy.context.source).toBe('managed');
+    expect(disabledEffective?.runtime_policy.skills.host).toEqual({
       mode: 'disabled',
       ids: ['native-review'],
     });
-    expect(memberEffective?.identity_hash).not.toBe(adminEffectiveHash);
+    expect(disabledEffective?.identity_hash).not.toBe(adminEffectiveHash);
   });
 
   test('legacy missing host Skill policy follows the effective context source', () => {

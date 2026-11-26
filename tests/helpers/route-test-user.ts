@@ -3,9 +3,12 @@
  * 内联的 asUser/createUser/seedUser 变体 → 单点具名导出）。
  * 各文件的 afterEach env 清理保留在原文件（各自删的键集不同）。
  *
+ * THESIS-20：系统只剩管理员一个角色，helper 不再接受 role 参数，注入的
+ * 角色恒为 admin。
+ *
  * 变体对应（立项计划三变体 + 实测补充）：
  * - asRouteTestUser：变体 1（CKQCLAW_TEST_USER_ID/ROLE；host-mount 扩展
- *   第三参 status，仅在显式传入时设置 CKQCLAW_TEST_USER_STATUS——
+ *   第二参 status，仅在显式传入时设置 CKQCLAW_TEST_USER_STATUS——
  *   变体 1 原文件从不触碰该键）；
  * - asOwnerProfileRouteUser：变体 2（CKQCLAW_OWNER_PROFILE_ROUTE_*）；
  * - asSystemSettingsTestUser：变体 3（CKQCLAW_TEST_ROLE）；
@@ -17,36 +20,29 @@
 
 export function asRouteTestUser(
   userId: string,
-  role: 'admin' | 'member' = 'member',
   status?: 'active' | 'disabled',
 ): void {
   process.env.CKQCLAW_TEST_USER_ID = userId;
-  process.env.CKQCLAW_TEST_USER_ROLE = role;
+  process.env.CKQCLAW_TEST_USER_ROLE = 'admin';
   if (status !== undefined) process.env.CKQCLAW_TEST_USER_STATUS = status;
 }
 
-export function asOwnerProfileRouteUser(
-  id: string,
-  role: 'member' | 'admin' = 'member',
-): void {
+export function asOwnerProfileRouteUser(id: string): void {
   process.env.CKQCLAW_OWNER_PROFILE_ROUTE_USER = id;
-  process.env.CKQCLAW_OWNER_PROFILE_ROUTE_ROLE = role;
+  process.env.CKQCLAW_OWNER_PROFILE_ROUTE_ROLE = 'admin';
 }
 
-export function asSystemSettingsTestUser(role: 'admin' | 'member'): void {
-  process.env.CKQCLAW_TEST_ROLE = role;
+export function asSystemSettingsTestUser(): void {
+  process.env.CKQCLAW_TEST_ROLE = 'admin';
 }
 
 export function asInteractionTestUser(id: string): void {
   process.env.CKQCLAW_INTERACTION_TEST_USER = id;
 }
 
-export function asMemoryRouteTestUser(
-  id: string,
-  role: 'member' | 'admin' = 'member',
-): void {
+export function asMemoryRouteTestUser(id: string): void {
   process.env.CKQCLAW_MEMORY_TEST_USER = id;
-  process.env.CKQCLAW_MEMORY_TEST_ROLE = role;
+  process.env.CKQCLAW_MEMORY_TEST_ROLE = 'admin';
 }
 
 interface TestUserDb {
@@ -55,7 +51,7 @@ interface TestUserDb {
     username: string;
     password_hash: string;
     display_name: string;
-    role: 'admin' | 'member';
+    role: 'admin';
     status: string;
     created_at: string;
     updated_at: string;
@@ -63,18 +59,14 @@ interface TestUserDb {
   }): unknown;
 }
 
-export function createTestUserRow(
-  db: TestUserDb,
-  id: string,
-  role: 'admin' | 'member' = 'member',
-): void {
+export function createTestUserRow(db: TestUserDb, id: string): void {
   const now = new Date().toISOString();
   db.createUser({
     id,
     username: id,
     password_hash: 'hash',
     display_name: id,
-    role,
+    role: 'admin',
     status: 'active',
     created_at: now,
     updated_at: now,

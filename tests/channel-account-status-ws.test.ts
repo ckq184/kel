@@ -37,7 +37,7 @@ function addClient(sessionId: string, userId: string) {
     id: sessionId,
     user_id: userId,
     username: userId,
-    role: 'member',
+    role: 'admin',
     status: 'active',
     expires_at: new Date(Date.now() + 60_000).toISOString(),
   });

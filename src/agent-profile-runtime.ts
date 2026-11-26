@@ -49,8 +49,7 @@ export function resolveEffectiveAgentProfile(
 ): AgentProfile | undefined {
   if (!profile) return undefined;
   const owner = getUserById(profile.owner_user_id);
-  const canUseHostResources =
-    owner?.role === 'admin' && owner.status === 'active';
+  const canUseHostResources = owner?.status === 'active';
   const contextSource = !canUseHostResources
     ? 'managed'
     : profile.is_default

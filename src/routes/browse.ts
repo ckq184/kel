@@ -2,9 +2,7 @@ import { Hono } from 'hono';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Variables } from '../web-context.js';
-import { hasHostExecutionPermission } from '../web-context.js';
 import { authMiddleware } from '../middleware/auth.js';
-import type { AuthUser } from '../types.js';
 import { logger } from '../logger.js';
 import {
   loadMountAllowlist,
@@ -104,7 +102,6 @@ function listSubdirectories(
 
 // GET /api/browse/directories?path=xxx
 browseRoutes.get('/directories', authMiddleware, (c) => {
-  const authUser = c.get('user') as AuthUser;
   const purpose = c.req.query('purpose');
   if (purpose !== undefined && purpose !== 'mount') {
     return c.json(
@@ -112,22 +109,6 @@ browseRoutes.get('/directories', authMiddleware, (c) => {
       400,
     );
   }
-  if (
-    purpose === 'mount' &&
-    (authUser.role !== 'admin' || authUser.status !== 'active')
-  ) {
-    return c.json(
-      {
-        error: 'Only an active administrator can browse host mount paths',
-        code: 'HOST_MOUNT_ADMIN_REQUIRED',
-      },
-      403,
-    );
-  }
-  if (purpose !== 'mount' && !hasHostExecutionPermission(authUser)) {
-    return c.json({ error: 'Insufficient permissions' }, 403);
-  }
-
   const requestedPath = c.req.query('path');
   const allowlist = loadMountAllowlist();
   const blockedPatterns = allowlist?.blockedPatterns ?? [];
@@ -299,7 +280,6 @@ browseRoutes.get('/directories', authMiddleware, (c) => {
 
 // POST /api/browse/directories — create a new folder
 browseRoutes.post('/directories', authMiddleware, async (c) => {
-  const authUser = c.get('user') as AuthUser;
   const purpose = c.req.query('purpose');
   if (purpose !== undefined && purpose !== 'mount') {
     return c.json(
@@ -307,22 +287,6 @@ browseRoutes.post('/directories', authMiddleware, async (c) => {
       400,
     );
   }
-  if (
-    purpose === 'mount' &&
-    (authUser.role !== 'admin' || authUser.status !== 'active')
-  ) {
-    return c.json(
-      {
-        error: 'Only an active administrator can create host mount paths',
-        code: 'HOST_MOUNT_ADMIN_REQUIRED',
-      },
-      403,
-    );
-  }
-  if (purpose !== 'mount' && !hasHostExecutionPermission(authUser)) {
-    return c.json({ error: 'Insufficient permissions' }, 403);
-  }
-
   const body = await c.req.json().catch(() => ({}));
   const { parentPath, name } = body;
 

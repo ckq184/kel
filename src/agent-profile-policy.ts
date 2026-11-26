@@ -5,7 +5,7 @@ import { DATA_DIR } from './config.js';
 import { loadManagedMcpLayers, resolveManagedMcpPolicy } from './mcp-utils.js';
 import { getEffectiveExternalDir } from './runtime-config.js';
 import { validateSkillId, validateSkillPath } from './skill-utils.js';
-import type { AgentProfileRuntimePolicy, AuthUser } from './types.js';
+import type { AgentProfileRuntimePolicy } from './types.js';
 
 export type HostSkillPolicy = NonNullable<
   AgentProfileRuntimePolicy['skills']['host']
@@ -26,33 +26,6 @@ export function resolveHostSkillPolicy(runtimePolicy: {
       ? { mode: 'inherit', ids: [] }
       : { mode: 'disabled', ids: [] })
   );
-}
-
-function requestsHostClaudeContext(
-  runtimePolicy: { context?: { source?: string } } | undefined,
-): boolean {
-  return runtimePolicy?.context?.source === 'host_claude';
-}
-
-export function isUnauthorizedHostClaudeContext(
-  user: Pick<AuthUser, 'role'>,
-  runtimePolicy: { context?: { source?: string } } | undefined,
-): boolean {
-  return user.role !== 'admin' && requestsHostClaudeContext(runtimePolicy);
-}
-
-function requestsHostSkills(
-  runtimePolicy: { skills?: { host?: { mode?: string } } } | undefined,
-): boolean {
-  const mode = runtimePolicy?.skills?.host?.mode;
-  return mode === 'inherit' || mode === 'custom';
-}
-
-export function isUnauthorizedHostSkills(
-  user: Pick<AuthUser, 'role'>,
-  runtimePolicy: { skills?: { host?: { mode?: string } } } | undefined,
-): boolean {
-  return user.role !== 'admin' && requestsHostSkills(runtimePolicy);
 }
 
 export function hasEmptyCustomHostSkillSelection(

@@ -2207,7 +2207,7 @@ async function sendImWithRetry(
 }
 
 const CHANNEL_MANUAL_RECONCILIATION_NOTICE =
-  '⚠️ 上一次回复在部分内容已送达后异常中断。为避免重复发送，系统已停止自动重放；可能仍有附件或结论未送达，请重新发起请求或联系管理员核对。';
+  '⚠️ 上一次回复在部分内容已送达后异常中断。为避免重复发送，系统已停止自动重放；可能仍有附件或结论未送达，请重新发起请求并核对附件与结论是否送达。';
 
 /**
  * Surface a crash-after-delivery fence to the exact native route. The notice
@@ -3250,9 +3250,9 @@ async function handleNewCommand(
     name,
     folder,
     added_at: now,
-    executionMode: isAdminHostOnlyOwner(userId)
-      ? 'host'
-      : getUserById(userId)?.role === 'admin' && !(await isDockerAvailable())
+    executionMode:
+      isAdminHostOnlyOwner(userId) ||
+      (getUserById(userId) && !(await isDockerAvailable()))
         ? 'host'
         : 'container',
     created_by: userId,
@@ -4243,8 +4243,7 @@ function loadState(): void {
   // Ensure every active user has an owner-specific home group (is_home=true).
   try {
     // Paginate through all active users
-    const activeUsers: Array<{ id: string; role: string; username: string }> =
-      [];
+    const activeUsers: Array<{ id: string; username: string }> = [];
     {
       let page = 1;
       while (true) {
@@ -4255,11 +4254,7 @@ function loadState(): void {
       }
     }
     for (const user of activeUsers) {
-      const homeJid = ensureUserHomeGroup(
-        user.id,
-        user.role as 'admin' | 'member',
-        user.username,
-      );
+      const homeJid = ensureUserHomeGroup(user.id, user.username);
       // Always refresh this entry from DB to pick up any patches (is_home, executionMode, etc.)
       const freshGroup = getRegisteredGroup(homeJid);
       if (freshGroup) {
@@ -4272,14 +4267,11 @@ function loadState(): void {
     logger.warn({ err }, 'Failed to ensure user home groups');
   }
 
-  // Enforce execution mode on all is_home groups:
-  // - admin home → host mode
-  // - member home → container mode
+  // Enforce execution mode on all is_home groups: Home always runs on host.
   for (const [jid, group] of Object.entries(registeredGroups)) {
     if (!group.is_home) continue;
 
-    const owner = group.created_by ? getUserById(group.created_by) : undefined;
-    const expectedMode = owner?.role === 'admin' ? 'host' : 'container';
+    const expectedMode = 'host';
 
     if (group.executionMode !== expectedMode) {
       group.executionMode = expectedMode;
@@ -4405,7 +4397,7 @@ function registerGroup(jid: string, group: RegisteredGroup): void {
       : undefined;
     if (!canExecuteOnHost(currentOwner)) {
       throw new Error(
-        'registerGroup: host directory mounts require a currently active administrator owner',
+        'registerGroup: host directory mounts require a currently active owner',
       );
     }
     const validated = validateAdditionalMountsStrict(
@@ -8062,8 +8054,6 @@ async function runAgent(
 ): Promise<RunAgentOutcome> {
   const agentId = turnOptions?.agentId;
   const isHome = !!group.is_home;
-  const owner = group.created_by ? getUserById(group.created_by) : undefined;
-  const isAdminHome = isHome && owner?.role === 'admin';
   const resolvedAgentProfile = resolveEffectiveAgentProfile(
     agentProfile ?? getAgentProfileForWorkspace(group.folder, group.created_by),
   );
@@ -8110,7 +8100,7 @@ async function runAgent(
   const tasks = getAllTasks();
   writeTasksSnapshot(
     group.folder,
-    isAdminHome,
+    isHome,
     tasks.map((t) => ({
       id: t.id,
       groupFolder: t.group_folder,
@@ -8122,11 +8112,11 @@ async function runAgent(
     })),
   );
 
-  // Update available groups snapshot (admin home only can see all groups)
+  // Update available groups snapshot (only Home can see all groups)
   const availableGroups = getAvailableGroups();
   writeGroupsSnapshot(
     group.folder,
-    isAdminHome,
+    isHome,
     availableGroups,
     new Set(Object.keys(registeredGroups)),
   );
@@ -8186,9 +8176,8 @@ async function runAgent(
     interactionMode,
     currentSourceJid,
     channelContext,
-    isMain: isAdminHome,
+    isMain: isHome,
     isHome,
-    isAdminHome,
     ckqclawOwnerProfileEnabled,
     agentBuilderEnabled,
     images,
@@ -8230,7 +8219,7 @@ async function runAgent(
     if (executionMode === 'host') {
       // Re-read the owner at the last possible point before spawning a host
       // process. A persisted host workspace is not an authorization grant:
-      // role/status changes take effect immediately without rewriting it.
+      // account status changes take effect immediately without rewriting it.
       const currentOwner = group.created_by
         ? getUserById(group.created_by)
         : undefined;
@@ -8244,13 +8233,13 @@ async function runAgent(
               groupFolder: group.folder,
               ownerId: group.created_by,
             },
-            'Blocked host conversation execution for non-admin owner',
+            'Blocked host conversation execution for inactive owner',
           );
           throw new Error(HOST_EXECUTION_FORBIDDEN_ERROR);
         }
         logger.warn(
           { chatJid, groupFolder: group.folder, ownerId: group.created_by },
-          'Blocked host workspace execution for non-admin owner',
+          'Blocked host workspace execution for inactive owner',
         );
         return { status: 'error', error: HOST_EXECUTION_FORBIDDEN_ERROR };
       }
@@ -8620,14 +8609,12 @@ function stopStreamingBuffer(): void {
 // Thin production wrapper around the pure helper in ./cross-group-acl.ts so
 // the helper can be unit-tested without booting all of index.ts.
 function canSendCrossGroupMessage(
-  isAdminHome: boolean,
   isHome: boolean,
   sourceFolder: string,
   sourceGroupEntry: RegisteredGroup | undefined,
   targetGroup: RegisteredGroup | undefined,
 ): boolean {
   return canSendCrossGroupMessagePure(
-    isAdminHome,
     isHome,
     sourceFolder,
     sourceGroupEntry,
@@ -8922,8 +8909,7 @@ const ipcFeishuCapabilityDeps = {
 async function processTaskIpc(
   data: IpcTaskRequest,
   sourceGroup: string, // Verified identity from IPC directory
-  isAdminHome: boolean, // Whether source is admin home container
-  isHome: boolean, // Whether source is a home container
+  isHome: boolean, // Whether source is a Home workspace
   sourceGroupEntry: RegisteredGroup | undefined, // Source group's registered entry
   tasksDir: string, // The exact ipcRoot/tasks dir the request was read from (for result write-back)
   ipcAgentId: string | null = null, // Non-null when IPC comes from a conversation agent
@@ -8935,7 +8921,6 @@ async function processTaskIpc(
   await processTaskIpcImpl({
     data,
     sourceGroup,
-    isAdminHome,
     isHome,
     sourceGroupEntry,
     tasksDir,
@@ -9037,10 +9022,6 @@ async function processAgentConversation(
   }
 
   const isHome = !!effectiveGroup.is_home;
-  const effectiveOwner = effectiveGroup.created_by
-    ? getUserById(effectiveGroup.created_by)
-    : undefined;
-  const isAdminHome = isHome && effectiveOwner?.role === 'admin';
 
   // The batch runtime id is needed before the rest of the conversation setup.
   // Keep this declaration above startBatch so startup recovery cannot hit the
@@ -14398,7 +14379,7 @@ async function main(): Promise<void> {
       const userQQ = getUserQQConfig(user.id);
       const userWeChat = getUserWeChatConfig(user.id);
 
-      // Determine effective Feishu config: per-user > global (admin only)
+      // Determine effective Feishu config: per-user > global fallback
       let effectiveFeishu: FeishuConnectConfig | null = null;
       if (userFeishu && userFeishu.appId && userFeishu.appSecret) {
         effectiveFeishu = {
@@ -14406,10 +14387,7 @@ async function main(): Promise<void> {
           appSecret: userFeishu.appSecret,
           enabled: userFeishu.enabled,
         };
-      } else if (
-        user.role === 'admin' &&
-        globalFeishuConfig.source !== 'none'
-      ) {
+      } else if (globalFeishuConfig.source !== 'none') {
         const gc = globalFeishuConfig.config;
         effectiveFeishu = {
           appId: gc.appId,

@@ -81,12 +81,10 @@ export interface IpcSendMessageInput {
   ipcTaskId: string | null;
   durableTaskRunId: string | null;
   isHome: boolean;
-  isAdminHome: boolean;
   broadcastFolder: string;
   REPLY_LIMIT_REACHED_ERROR: string;
   activeImReplyRoutes: Map<string, string | null>;
   canSendCrossGroupMessage: (
-    isAdminHome: boolean,
     isHome: boolean,
     sourceFolder: string,
     sourceGroupEntry: RegisteredGroup | undefined,
@@ -195,7 +193,6 @@ export async function processIpcSendMessage(
     ipcTaskId,
     durableTaskRunId,
     isHome,
-    isAdminHome,
     broadcastFolder,
     REPLY_LIMIT_REACHED_ERROR,
     activeImReplyRoutes,
@@ -244,7 +241,6 @@ export async function processIpcSendMessage(
   }
   const ipcInteractionMode = frozenIpcMode.mode;
   const authorized = canSendCrossGroupMessage(
-    isAdminHome,
     isHome,
     sourceGroup,
     sourceGroupEntry,

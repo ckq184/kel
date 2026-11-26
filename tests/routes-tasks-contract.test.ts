@@ -52,7 +52,7 @@ vi.mock('../src/middleware/auth.ts', async (importOriginal) => {
       c.set('user', {
         id: process.env.CKQCLAW_TEST_USER_ID ?? 'alice',
         username: process.env.CKQCLAW_TEST_USER_ID ?? 'alice',
-        role: process.env.CKQCLAW_TEST_USER_ROLE ?? 'member',
+        role: process.env.CKQCLAW_TEST_USER_ROLE ?? 'admin',
         status: 'active',
       });
       return next();
@@ -216,7 +216,7 @@ afterAll(() => {
 describe('tasks route ownership and cleanup contract', () => {
   test('admin host-only mode rejects explicit Docker task creation', async () => {
     runtimeConfig.saveSystemSettings({ adminHostOnlyMode: true });
-    asRouteTestUser(OWNER_ID, 'admin');
+    asRouteTestUser(OWNER_ID);
     try {
       const response = await tasksRoutes.request('/', {
         method: 'POST',
@@ -544,7 +544,7 @@ describe('tasks route ownership and cleanup contract', () => {
 
   test('PATCH rejects final agent/script definitions that cannot execute', async () => {
     createTask('final-agent-definition-task', OWNER_ID);
-    asRouteTestUser(OWNER_ID, 'admin');
+    asRouteTestUser(OWNER_ID);
 
     const missingCommand = await patchTask('final-agent-definition-task', {
       execution_type: 'script',
@@ -585,7 +585,7 @@ describe('tasks route ownership and cleanup contract', () => {
   });
 
   test('script create/run/restore require an administrator host workspace', async () => {
-    asRouteTestUser(OWNER_ID, 'admin');
+    asRouteTestUser(OWNER_ID);
     let response = await tasksRoutes.request('/', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -1100,7 +1100,7 @@ describe('tasks route ownership and cleanup contract', () => {
     expect(listed.permissions).toMatchObject({
       can_run: false,
       can_stop: false,
-      can_delete: false,
+      can_delete: true,
       can_restore: false,
       can_purge: false,
     });
@@ -1112,7 +1112,7 @@ describe('tasks route ownership and cleanup contract', () => {
           body: '{}',
         })
       ).status,
-    ).toBe(403);
+    ).toBe(400);
 
     const cancel = await tasksRoutes.request(`/runs/${queued.run.id}/cancel`, {
       method: 'POST',

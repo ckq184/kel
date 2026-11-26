@@ -193,7 +193,7 @@ Agent 容器镜像默认使用 `ckq184/ckqclaw-agent:latest`，可以通过 `CKQ
 - Backend 由 Node.js 运行，负责认证、API、WebSocket、队列、调度、渠道连接、Provider 和 SQLite 持久化。
 - Docker 只隔离 Agent 执行环境，不替代 Backend 的授权层。
 - Web Client 不直接读取文件、数据库或凭据；文件与宿主能力一律经 Backend API 提供。
-- 登录会话、工作区归属、admin 角色和 Host 执行策略在服务端共同判定，不能因为已登录就自动越过执行边界。
+- 登录会话、工作区归属和 Host 执行策略在服务端共同判定，不能因为已登录就自动越过执行边界。
 - Memory、Skills、MCP 和 Scheduler 任务都继承 Agent、Workspace 与 Session 上下文。
 
 更多访问边界见 [`docs/ACL-MATRIX.md`](docs/ACL-MATRIX.md)，安全问题请参考 [`SECURITY.md`](SECURITY.md)。

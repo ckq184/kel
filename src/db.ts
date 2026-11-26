@@ -7612,7 +7612,7 @@ function forceRuntimesToHostForFolderQuery(
 
 /**
  * Persist the admin host-only policy across every runtime record owned by an
- * active administrator. Folder matching intentionally includes legacy IM rows
+ * active owner. Folder matching intentionally includes legacy IM rows
  * without created_by when they share an administrator-owned Workspace folder.
  *
  * The setting itself lives in system-settings.json; callers must quiesce the
@@ -7626,7 +7626,7 @@ export function forceActiveAdminRuntimesToHost(): AdminHostOnlyMigrationResult {
         SELECT DISTINCT rg.folder
         FROM registered_groups rg
         JOIN users u ON u.id = rg.created_by
-        WHERE u.role = 'admin' AND u.status = 'active'
+        WHERE u.status = 'active'
       `;
       return forceRuntimesToHostForFolderQuery(adminFolderSql);
     })
@@ -8017,16 +8017,11 @@ export function getUserHomeGroup(
 
 /**
  * Ensure a user has a home group. If not, create one.
- * The first admin keeps the legacy web:main home. Every other account gets an
- * owner-specific home workspace. Admin homes use host execution; member homes
- * use container execution.
+ * The first account keeps the legacy web:main home. Every other account gets an
+ * owner-specific home workspace. Home workspaces use host execution.
  * Returns the JID of the home group.
  */
-export function ensureUserHomeGroup(
-  userId: string,
-  role: 'admin' | 'member',
-  username?: string,
-): string {
+export function ensureUserHomeGroup(userId: string, username?: string): string {
   const existing = getUserHomeGroup(userId);
   if (existing) {
     assignWorkspaceAgentProfile(
@@ -8037,19 +8032,18 @@ export function ensureUserHomeGroup(
   }
 
   const now = new Date().toISOString();
-  const isAdmin = role === 'admin';
-  const existingMain = isAdmin ? getRegisteredGroup('web:main') : undefined;
-  const useLegacyMain = isAdmin && (!existingMain || !existingMain.created_by);
+  const existingMain = getRegisteredGroup('web:main');
+  const useLegacyMain = !existingMain || !existingMain.created_by;
   const jid = useLegacyMain ? 'web:main' : `web:home-${userId}`;
   const folder = useLegacyMain ? 'main' : `home-${userId}`;
 
-  const name = username ? `${username} Home` : isAdmin ? 'Main' : 'Home';
+  const name = username ? `${username} Home` : 'Main';
 
   const group: RegisteredGroup = {
     name,
     folder,
     added_at: now,
-    executionMode: isAdmin ? 'host' : 'container',
+    executionMode: 'host',
     created_by: userId,
     is_home: true,
   };
@@ -8660,8 +8654,10 @@ export function getGroupsByOwner(
 
 // ===================== Auth CRUD =====================
 
-function parseUserRole(value: unknown): UserRole {
-  return value === 'admin' ? 'admin' : 'member';
+function parseUserRole(_value: unknown): UserRole {
+  // Single-role install: legacy non-admin rows (if any) are interpreted as
+  // admin. The role column stays for upgrade compatibility.
+  return 'admin';
 }
 
 function parseUserStatus(value: unknown): UserStatus {

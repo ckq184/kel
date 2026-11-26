@@ -33,7 +33,6 @@ import type { AuthUser, ScheduledTask } from '../types.js';
 import { TIMEZONE } from '../config.js';
 import {
   isHostExecutionGroup,
-  hasHostExecutionPermission,
   canAccessGroup,
   getWebDeps,
   groupAccessDeniedResponse,
@@ -54,23 +53,14 @@ import { getSystemSettings } from '../runtime-config.js';
 const tasksRoutes = new Hono<{ Variables: Variables }>();
 
 function canViewTask(task: ScheduledTask, authUser: AuthUser): boolean {
-  if (task.execution_mode === 'host' && authUser.role !== 'admin') return false;
   const group = getRegisteredGroup(task.chat_jid);
-  if (!group) return authUser.role === 'admin';
-  return (
-    canAccessGroup(
-      { id: authUser.id, role: authUser.role },
-      { ...group, jid: task.chat_jid },
-    ) &&
-    (!isHostExecutionGroup(group) || hasHostExecutionPermission(authUser))
-  );
+  if (!group) return true;
+  return canAccessGroup({ id: authUser.id }, { ...group, jid: task.chat_jid });
 }
 
 function taskPermissions(task: ScheduledTask, authUser: AuthUser) {
-  const isAdmin = authUser.role === 'admin';
   const canManage = canViewTask(task, authUser);
-  const canOperateExecution =
-    canManage && (task.execution_type !== 'script' || isAdmin);
+  const canOperateExecution = canManage;
   const executionBlockedReason = getScriptTaskHostExecutionError(
     task,
     getAllRegisteredGroups(),
@@ -98,7 +88,6 @@ function taskPermissions(task: ScheduledTask, authUser: AuthUser) {
         ? ('high' as const)
         : ('normal' as const),
     execution_blocked_reason: executionBlockedReason,
-    is_admin: isAdmin,
   };
 }
 
@@ -141,21 +130,13 @@ tasksRoutes.get('/', authMiddleware, async (c) => {
 
   // Build jid → name mapping for all registered groups (including IM channels).
   // Mirror the visibility rule used by GET /api/groups (src/routes/groups.ts:190-192):
-  // non-admins must not see host workspaces in the task-target dropdown, even
+  // the task-target dropdown must stay consistent with workspace visibility, even
   // though POST /api/tasks would reject them with 403 — rendering them here
   // would be a misleading UI affordance. Authorization is still enforced on
   // write; this filter is purely for surface consistency.
   const groupNames: Record<string, string> = {};
   for (const [jid, group] of Object.entries(allGroups)) {
-    if (
-      !canAccessGroup(
-        { id: authUser.id, role: authUser.role },
-        { ...group, jid },
-      )
-    )
-      continue;
-    if (isHostExecutionGroup(group) && !hasHostExecutionPermission(authUser))
-      continue;
+    if (!canAccessGroup({ id: authUser.id }, { ...group, jid })) continue;
     groupNames[jid] = group.name || jid;
   }
 
@@ -222,32 +203,17 @@ tasksRoutes.post('/', authMiddleware, async (c) => {
     );
   }
 
-  if (!canAccessGroup({ id: authUser.id, role: authUser.role }, group)) {
+  if (!canAccessGroup({ id: authUser.id }, group)) {
     return groupAccessDeniedResponse(c, 'Group not found');
   }
-  if (isHostExecutionGroup(group) && !hasHostExecutionPermission(authUser)) {
-    return c.json(
-      { error: 'Insufficient permissions for host execution mode' },
-      403,
-    );
-  }
-
-  // Only admin can create script tasks
   const execType = execution_type || 'agent';
-  if (execType === 'script' && authUser.role !== 'admin') {
-    return c.json({ error: '只有管理员可以创建脚本类型任务' }, 403);
-  }
 
   // Determine execution_mode by inheriting from the source workspace.
-  // - Source is host: default host (admin-only via hasHostExecutionPermission
-  //   check above), allow explicit container downgrade.
+  // - Source is host: default host, allow explicit container downgrade.
   // - Source is container: default container; explicit host request rejected
   //   even for admins, to keep task execution consistent with its workspace.
   const sourceIsHost = isHostExecutionGroup(group);
-  const adminHostOnlyMode =
-    authUser.role === 'admin' &&
-    authUser.status === 'active' &&
-    getSystemSettings().adminHostOnlyMode;
+  const adminHostOnlyMode = getSystemSettings().adminHostOnlyMode;
   if (adminHostOnlyMode && validation.data.execution_mode === 'container') {
     return c.json(
       {
@@ -267,7 +233,6 @@ tasksRoutes.post('/', authMiddleware, async (c) => {
         400,
       );
     }
-    // Non-admin already blocked above by isHostExecutionGroup + hasHostExecutionPermission check
     taskExecutionMode = 'host';
   } else if (validation.data.execution_mode === 'container') {
     taskExecutionMode = 'container';
@@ -341,9 +306,6 @@ tasksRoutes.post('/purge', authMiddleware, async (c) => {
         409,
       );
     }
-    if (task.execution_type === 'script' && authUser.role !== 'admin') {
-      return c.json({ error: '只有管理员可以永久删除脚本类型任务' }, 403);
-    }
   }
 
   const mutation = permanentlyDeleteTasksWithRevisions(
@@ -392,18 +354,9 @@ tasksRoutes.patch('/:id', authMiddleware, async (c) => {
   if (!existing) return c.json({ error: 'Task not found' }, 404);
   const authUser = c.get('user') as AuthUser;
   const group = getRegisteredGroup(existing.chat_jid);
-  if (!group) {
-    if (authUser.role !== 'admin')
-      return c.json({ error: 'Task not found' }, 404);
-  } else {
-    if (!canAccessGroup({ id: authUser.id, role: authUser.role }, group)) {
+  if (group) {
+    if (!canAccessGroup({ id: authUser.id }, group)) {
       return groupAccessDeniedResponse(c, 'Task not found');
-    }
-    if (isHostExecutionGroup(group) && !hasHostExecutionPermission(authUser)) {
-      return c.json(
-        { error: 'Insufficient permissions for host execution mode' },
-        403,
-      );
     }
   }
   const body = await c.req.json().catch(() => ({}));
@@ -475,18 +428,6 @@ tasksRoutes.patch('/:id', authMiddleware, async (c) => {
     }
   }
 
-  // Only admin can create/modify script tasks
-  const isScriptTask =
-    (validation.data.execution_type ?? existing.execution_type) === 'script';
-  if (isScriptTask && authUser.role !== 'admin') {
-    return c.json({ error: '只有管理员可以创建或修改脚本类型任务' }, 403);
-  }
-
-  // Only admin can set execution_mode to 'host'
-  if (validation.data.execution_mode === 'host' && authUser.role !== 'admin') {
-    return c.json({ error: '只有管理员可以设置宿主机执行模式' }, 403);
-  }
-
   // Validate chat_jid if being changed
   const patchData = { ...validation.data } as typeof validation.data & {
     group_folder?: string;
@@ -498,9 +439,7 @@ tasksRoutes.patch('/:id', authMiddleware, async (c) => {
     if (!targetGroup) {
       return c.json({ error: '目标群组不存在' }, 404);
     }
-    if (
-      !canAccessGroup({ id: authUser.id, role: authUser.role }, targetGroup)
-    ) {
+    if (!canAccessGroup({ id: authUser.id }, targetGroup)) {
       return c.json({ error: '无权访问目标群组' }, 403);
     }
     // Keep group_folder in sync with chat_jid
@@ -519,7 +458,6 @@ tasksRoutes.patch('/:id', authMiddleware, async (c) => {
     patchData.execution_mode ?? existing.execution_mode;
   if (
     finalExecutionMode === 'container' &&
-    authUser.role === 'admin' &&
     authUser.status === 'active' &&
     getSystemSettings().adminHostOnlyMode
   ) {
@@ -649,24 +587,12 @@ tasksRoutes.delete('/:id', authMiddleware, (c) => {
   if (!existing) return c.json({ error: 'Task not found' }, 404);
   const authUser = c.get('user') as AuthUser;
   const group = getRegisteredGroup(existing.chat_jid);
-  if (!group) {
-    if (authUser.role !== 'admin')
-      return c.json({ error: 'Task not found' }, 404);
-  } else {
-    if (!canAccessGroup({ id: authUser.id, role: authUser.role }, group)) {
+  if (group) {
+    if (!canAccessGroup({ id: authUser.id }, group)) {
       return groupAccessDeniedResponse(c, 'Task not found');
-    }
-    if (isHostExecutionGroup(group) && !hasHostExecutionPermission(authUser)) {
-      return c.json(
-        { error: 'Insufficient permissions for host execution mode' },
-        403,
-      );
     }
   }
   // Only admin can delete script tasks
-  if (existing.execution_type === 'script' && authUser.role !== 'admin') {
-    return c.json({ error: '只有管理员可以删除脚本类型任务' }, 403);
-  }
 
   const activeRun = getActiveTaskRunForTask(id);
   if (!activeRun && getRunningTaskIds().includes(id)) {
@@ -724,9 +650,6 @@ tasksRoutes.post('/:id/restore', authMiddleware, async (c) => {
   if (!canViewTask(existing, authUser)) {
     return c.json({ error: 'Task not found' }, 404);
   }
-  if (existing.execution_type === 'script' && authUser.role !== 'admin') {
-    return c.json({ error: '只有管理员可以恢复脚本类型任务' }, 403);
-  }
   const restorePolicyError = getScriptTaskHostExecutionError(
     existing,
     getAllRegisteredGroups(),
@@ -775,9 +698,6 @@ tasksRoutes.post('/:id/runs', authMiddleware, async (c) => {
   const authUser = c.get('user') as AuthUser;
   if (!canViewTask(existing, authUser)) {
     return c.json({ error: 'Task not found' }, 404);
-  }
-  if (existing.execution_type === 'script' && authUser.role !== 'admin') {
-    return c.json({ error: '只有管理员可以运行脚本类型任务' }, 403);
   }
   const runPolicyError = getScriptTaskHostExecutionError(
     existing,
@@ -845,9 +765,6 @@ tasksRoutes.post('/runs/:runId/cancel', authMiddleware, (c) => {
   const authUser = c.get('user') as AuthUser;
   if (!task || !canViewTask(task, authUser)) {
     return c.json({ error: 'Task run not found' }, 404);
-  }
-  if (task.execution_type === 'script' && authUser.role !== 'admin') {
-    return c.json({ error: '只有管理员可以停止脚本任务' }, 403);
   }
   const deps = getWebDeps();
   if (!deps?.cancelTaskRun) {
@@ -963,14 +880,8 @@ tasksRoutes.post('/ai', authMiddleware, async (c) => {
     // so the AI path cannot be used to bypass group-access / host-exec checks.
     const group = getRegisteredGroup(requestedChatJid);
     if (!group) return c.json({ error: 'Group not found' }, 404);
-    if (!canAccessGroup({ id: authUser.id, role: authUser.role }, group)) {
+    if (!canAccessGroup({ id: authUser.id }, group)) {
       return groupAccessDeniedResponse(c, 'Group not found');
-    }
-    if (isHostExecutionGroup(group) && !hasHostExecutionPermission(authUser)) {
-      return c.json(
-        { error: 'Insufficient permissions for host execution mode' },
-        403,
-      );
     }
     groupFolder = group.folder;
     chatJid = requestedChatJid;
@@ -986,10 +897,7 @@ tasksRoutes.post('/ai', authMiddleware, async (c) => {
 
   const taskId = crypto.randomUUID();
   const now = new Date().toISOString();
-  const adminHostOnlyMode =
-    authUser.role === 'admin' &&
-    authUser.status === 'active' &&
-    getSystemSettings().adminHostOnlyMode;
+  const adminHostOnlyMode = getSystemSettings().adminHostOnlyMode;
   if (adminHostOnlyMode && !sourceIsHost) {
     return c.json(
       {

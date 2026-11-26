@@ -129,7 +129,7 @@ function mcpIds(filePath: string): string[] {
 export function buildAgentCapabilityPreview(options: {
   profile: AgentProfile;
   workspace?: { jid: string; group: RegisteredGroup };
-  ownerRole?: 'admin' | 'member';
+  ownerRole?: 'admin';
 }): AgentCapabilityPreview {
   const { profile, workspace } = options;
   const policy = profile.runtime_policy;

@@ -42,10 +42,7 @@ vi.mock('../src/middleware/auth.ts', () => ({
       id,
       username: id,
       display_name: id,
-      role:
-        process.env.CKQCLAW_OWNER_PROFILE_ROUTE_ROLE === 'admin'
-          ? 'admin'
-          : 'member',
+      role: 'admin',
       status: 'active',
       must_change_password: false,
     });
@@ -113,8 +110,8 @@ beforeAll(() => {
   db.initDatabase();
   createTestUserRow(db, OWNER_ID);
   createTestUserRow(db, OTHER_ID);
-  createTestUserRow(db, ADMIN_ID, 'admin');
-  homeJid = db.ensureUserHomeGroup(OWNER_ID, 'member', OWNER_ID);
+  createTestUserRow(db, ADMIN_ID);
+  homeJid = db.ensureUserHomeGroup(OWNER_ID, OWNER_ID);
 
   skipHomeJid = 'web:route-owner-skip-home';
   db.setRegisteredGroup(skipHomeJid, {
@@ -265,11 +262,8 @@ describe('/api/workspaces/:jid/owner-profile', () => {
   });
 
   test('other users and admin-as-non-owner receive indistinguishable 404s', async () => {
-    for (const [id, role] of [
-      [OTHER_ID, 'member'],
-      [ADMIN_ID, 'admin'],
-    ] as const) {
-      asOwnerProfileRouteUser(id, role);
+    for (const id of [OTHER_ID, ADMIN_ID]) {
+      asOwnerProfileRouteUser(id);
       expect((await ownerProfileRequest(homeJid)).status).toBe(404);
       expect(
         (

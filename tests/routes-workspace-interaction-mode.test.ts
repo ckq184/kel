@@ -45,7 +45,7 @@ vi.mock('../src/middleware/auth.ts', () => ({
     c.set('user', {
       id,
       username: id,
-      role: 'member',
+      role: 'admin',
     });
     return next();
   },

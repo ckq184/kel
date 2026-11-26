@@ -92,7 +92,7 @@ beforeAll(() => {
     username: OWNER_ID,
     password_hash: 'hash',
     display_name: 'Profile owner',
-    role: 'member',
+    role: 'admin',
     status: 'active',
     created_at: now,
     updated_at: now,
@@ -951,7 +951,7 @@ describe('v66 owner-profile migration boundary', () => {
 describe('reserved canonical-key integrity', () => {
   test('generic memory mutations fail closed for the owner-profile key', () => {
     const workspaceJid = createWorkspace('reserved-deny');
-    const actor = { id: OWNER_ID, role: 'member' as const };
+    const actor = { id: OWNER_ID, role: 'admin' as const };
 
     expect(() =>
       memoryService.createWorkspaceMemory({
@@ -1043,7 +1043,7 @@ describe('reserved canonical-key integrity', () => {
 
   test('legacy duplicates are reconciled before a partial unique index is enforced', () => {
     const workspaceJid = createWorkspace('legacy-reconcile');
-    const actor = { id: OWNER_ID, role: 'member' as const };
+    const actor = { id: OWNER_ID, role: 'admin' as const };
     ownerProfile.setCkqclawOwnerPreferredAddress({
       workspaceJid,
       preferredAddress: '当前称呼',
@@ -1424,7 +1424,7 @@ describe('reserved canonical-key integrity', () => {
       );
     }
 
-    const actor = { id: OWNER_ID, role: 'member' as const };
+    const actor = { id: OWNER_ID, role: 'admin' as const };
     const serviceOperations = [
       () =>
         memoryService.createWorkspaceMemory({

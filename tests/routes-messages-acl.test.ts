@@ -76,9 +76,7 @@ vi.mock('../src/middleware/auth.ts', async (importOriginal) => {
         id: process.env.CKQCLAW_TEST_USER_ID ?? 'alice',
         username: 'alice',
         display_name: 'Alice',
-        role: (process.env.CKQCLAW_TEST_USER_ROLE ?? 'member') as
-          | 'admin'
-          | 'member',
+        role: (process.env.CKQCLAW_TEST_USER_ROLE ?? 'admin') as 'admin',
       });
       return next();
     },

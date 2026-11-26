@@ -27,7 +27,7 @@ import type { AuthUser } from '../types.js';
 const memoryRoutes = new Hono<{ Variables: Variables }>();
 
 function actor(user: AuthUser) {
-  return { id: user.id, role: user.role };
+  return { id: user.id };
 }
 
 function validationError(c: Context, details: unknown) {

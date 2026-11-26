@@ -44,7 +44,6 @@ export interface IpcSendFileInput {
   /** processTaskIpc 解析出的 IPC 请求 JSON（结构类型同壳层，any 语义保留）。 */
   data: any;
   sourceGroup: string;
-  isAdminHome: boolean;
   isHome: boolean;
   sourceGroupEntry: RegisteredGroup | undefined;
   tasksDir: string;
@@ -61,7 +60,6 @@ export interface IpcSendFileInput {
   taskRunAcceptsLateIpcOutput: (runId: string | null) => boolean;
   getIpcDeliveryTargetGroup: (chatJid: string) => RegisteredGroup | undefined;
   canSendCrossGroupMessage: (
-    isAdminHome: boolean,
     isHome: boolean,
     sourceFolder: string,
     sourceGroupEntry: RegisteredGroup | undefined,
@@ -116,7 +114,6 @@ export async function processIpcSendFile(
   const {
     data,
     sourceGroup,
-    isAdminHome,
     isHome,
     sourceGroupEntry,
     tasksDir,
@@ -144,7 +141,7 @@ export async function processIpcSendFile(
     });
   };
   logger.debug(
-    { data, sourceGroup, isAdminHome, isHome },
+    { data, sourceGroup, isHome },
     'processTaskIpc send_file reached',
   );
   if (data.chatJid && data.filePath && data.fileName) {
@@ -156,7 +153,6 @@ export async function processIpcSendFile(
     const targetGroup = getIpcDeliveryTargetGroup(data.chatJid);
     if (
       !canSendCrossGroupMessage(
-        isAdminHome,
         isHome,
         sourceGroup,
         sourceGroupEntry,

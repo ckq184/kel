@@ -907,12 +907,12 @@ async function runTaskInner(
   const taskOwnerId = task.created_by || workspaceGroup.created_by || null;
   // The task's creator (taskOwnerId) can legitimately differ from the
   // workspace's actual owner for admin-initiated cross-group tasks
-  // (hasCrossGroupAccess in mcp-tools.ts lets an admin home target another
+  // (hasCrossGroupAccess in mcp-tools.ts lets Home target another
   // user's workspace via target_group_jid). Every check that decides what
   // privileges/mounts/gates apply to the *execution context* must be scoped
   // to the workspace being executed in, not to whoever scheduled the task —
   // otherwise an admin-created task targeting a member's workspace would
-  // inherit admin privileges (isAdminHome mount, owner-active bypass,
+  // inherit Home privileges (Home mount, owner-active bypass,
   // billing bypass) inside that member's own container. taskOwnerId is kept
   // only for display/audit attribution (who scheduled this run).
   const workspaceOwnerId = workspaceGroup.created_by || null;
@@ -967,14 +967,10 @@ async function runTaskInner(
 
   // Update tasks snapshot for container to read (filtered by group)
   const isHome = !!workspaceGroup.is_home;
-  const workspaceOwner = workspaceOwnerId
-    ? getUserById(workspaceOwnerId)
-    : null;
-  const isAdminHome = isHome && workspaceOwner?.role === 'admin';
   const tasks = getAllTasks();
   writeTasksSnapshot(
     workspace.folder,
-    isAdminHome,
+    isHome,
     tasks.map((t) => ({
       id: t.id,
       groupFolder: t.group_folder,
@@ -1166,9 +1162,8 @@ async function runTaskInner(
         sessionId,
         groupFolder: workspace.folder,
         chatJid: workspace.jid,
-        isMain: isAdminHome,
+        isMain: isHome,
         isHome,
-        isAdminHome,
         isScheduledTask: true,
         taskRunId: options?.taskRunId,
         // The run ID is only an IPC/session namespace.  Routing must use the

@@ -121,7 +121,7 @@ beforeAll(() => {
     username: OWNER_ID,
     password_hash: 'test',
     display_name: OWNER_ID,
-    role: 'member',
+    role: 'admin',
     status: 'active',
     created_at: now,
     updated_at: now,

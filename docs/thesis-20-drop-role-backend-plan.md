@@ -148,3 +148,17 @@
 - `isAdminHome` 与 `isHome` 合并会改变 runner IPC 字段名；host 与 runner 同仓同版本，无跨版本兼容需求。
 - MCP 可见性仍按现有 admin 语义保留，待 THESIS-37 统一删除。
 - 回滚：`git revert` 任务提交区间。
+
+## 8. 执行偏差（实现后补记）
+
+1. **MCP 可见性未动**：`src/routes/mcp-servers.ts`、`agent-builder.ts` / `container-runner.ts` / `routes/agent-profiles.ts` 的 `allowAdminOnlySystemMcp`、`agent-capability-preview.ts` 的 `ownerRole`（类型收为 `'admin'`）保留，归 THESIS-37 统一删除。
+2. **宿主机额外挂载保留 active 检查**：角色门删除后，`POST /api/groups` 的 `additional_mounts` 用新错误码 `HOST_MOUNT_ACCOUNT_INACTIVE` 拒绝非 active 账号；不再有 `HOST_MOUNT_ADMIN_REQUIRED`。
+3. **工作区治理字段不再按角色裁剪**：`src/routes/workspaces.ts` 的 `owner_user_id`、`execution_mode`、运行时会话与挂载明细在通过 `canAccessGroup` 后恒返回；单账号下与先前 admin 视角等价。
+4. **env 与消息删除走管理员分支**：`GET|PUT /api/groups/:jid/env` 去掉 admin bypass、保留工作区访问 + owner-only；删除消息去掉“非 admin 只能删自己的”限制（可访问群组内均可删）。
+5. **Home 能力边界**：`isAdminHome` 全仓删除，`isHome` 成为唯一标记；`isMain` 兼容字段保留并取 `isHome` 值。非 Home 工作区仍由 IPC/runner 拒绝脚本任务与跨组投递。
+6. **签名变更**：`ensureUserHomeGroup(userId, username?)`；`canExecuteOnHost` 只接收 `{ status }`；`canAccessGroup/canModifyGroup/canDeleteGroup` 只接收 `{ id }`；`canSendCrossGroupMessage(isHome, ...)`。
+7. **测试夹具**：去掉 role 参数（`asRouteTestUser(userId, status?)`、`asSystemSettingsTestUser()` 等）。保留 `'member'` 的测试分三类白名单：
+   - 历史 schema fixture（`channel-mounts-db`、`db-upgrade-safety`、`schema-v46-migration`、`schema-v69-agent-effort`）模拟旧库列默认值与旧行；
+   - MCP 可见性契约（`mcp-runtime-secret-boundary`、`routes-mcp-server-isolation`、`routes-mcp-server-secrets`、`routes-agent-profiles` 的 `x-test-role` mock）待 THESIS-37 删除；
+   - 前端角色契约（`frontend-agent-product-contract`、`agent-profiles-page-dom`）待 THESIS-21 删除。
+8. **提示语**：容器镜像、供应商失败与中断提示不再让用户“联系管理员”，改为直接给出可执行操作。

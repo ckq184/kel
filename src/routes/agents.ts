@@ -85,7 +85,7 @@ function isNativeManagedSession(
 }
 
 async function restoreBindingDefault(
-  user: Pick<AuthUser, 'id' | 'role'>,
+  user: Pick<AuthUser, 'id'>,
   imJid: string,
   imGroup: RegisteredGroup,
 ): Promise<

@@ -25,7 +25,6 @@ function setup() {
     chatJid: 'web:workspace',
     groupFolder: 'workspace',
     isHome: true,
-    isAdminHome: true,
     agentBuilderEnabled: true,
     workspaceIpc: root,
     workspaceGroup: root,
@@ -247,13 +246,13 @@ describe('scheduled-task MCP V2 contract', () => {
     expect(hostSource).toContain('targetGroupEntry.executionMode');
     expect(hostSource).toContain('resolveTaskExecutionModeForTarget(');
     expect(hostSource).toContain(
-      'Only the admin home container can run script tasks.',
+      'Only the Home workspace can run script tasks.',
     );
     expect(hostSource).toContain(
-      'Only the admin home container can stop script task runs.',
+      'Only the Home workspace can stop script task runs.',
     );
     expect(hostSource).toContain(
-      'Only the admin home container can delete script tasks.',
+      'Only the Home workspace can delete script tasks.',
     );
     expect(hostSource).toContain(
       'Target workspace runs in container mode; host execution is not allowed.',

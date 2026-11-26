@@ -22,7 +22,7 @@ function group(
 const ADMIN: TaskAclActor = { id: 'u-admin', role: 'admin', status: 'active' };
 const MEMBER: TaskAclActor = {
   id: 'u-member',
-  role: 'member',
+  role: 'admin',
   status: 'active',
 };
 

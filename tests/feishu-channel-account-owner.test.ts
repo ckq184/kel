@@ -31,7 +31,7 @@ beforeAll(() => {
     username: 'feishu-owner-user',
     password_hash: 'test',
     display_name: 'Feishu owner',
-    role: 'member',
+    role: 'admin',
     status: 'active',
     created_at: now,
     updated_at: now,

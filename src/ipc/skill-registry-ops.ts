@@ -23,7 +23,7 @@ export interface IpcSkillRegistryInput {
   /** processTaskIpc 解析出的 IPC 请求 JSON（结构类型同壳层，any 语义保留）。 */
   data: any;
   sourceGroup: string;
-  isAdminHome?: boolean;
+  isHome?: boolean;
   getRegisteredGroups: () => Record<string, RegisteredGroup>;
   isAdminHostOnlyOwner: (ownerId: string | null | undefined) => boolean;
   registerGroup: (jid: string, group: RegisteredGroup) => void;
@@ -34,13 +34,13 @@ export function processIpcRegisterGroup(input: IpcSkillRegistryInput): void {
   const {
     data,
     sourceGroup,
-    isAdminHome,
+    isHome,
     getRegisteredGroups,
     isAdminHostOnlyOwner,
     registerGroup,
   } = input;
-  // Only admin home group can register new groups
-  if (!isAdminHome) {
+  // Only the Home workspace can register new groups
+  if (!isHome) {
     logger.warn({ sourceGroup }, 'Unauthorized register_group attempt blocked');
     return;
   }

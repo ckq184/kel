@@ -209,12 +209,10 @@ export interface ContainerInput {
    * current turn. This value is mutable on a warm runner and must be replaced
    * whenever a new IPC input becomes current. */
   channelContext?: ChannelTurnContext;
-  /** @deprecated Use isHome + isAdminHome instead. Kept for backward compatibility with older host processes. */
+  /** @deprecated Use isHome instead. Kept for backward compatibility with older host processes. */
   isMain?: boolean;
-  /** Whether this is the user's home container (admin or member). */
+  /** Whether this is the workspace owner's Home workspace. */
   isHome?: boolean;
-  /** Whether this is the admin's home container (full privileges). */
-  isAdminHome?: boolean;
   isScheduledTask?: boolean;
   /**
    * Internal HMAC secret delivered only in the stdin bootstrap. It must remain

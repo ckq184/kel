@@ -10,7 +10,6 @@ function baseCtx(overrides: Partial<McpContext> = {}): McpContext {
     chatJid: 'web:ws-x',
     groupFolder: 'ws-x',
     isHome: false,
-    isAdminHome: false,
     agentBuilderEnabled: false,
     isScheduledTask: false,
     currentTaskId: null,

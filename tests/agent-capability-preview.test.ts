@@ -340,22 +340,6 @@ describe('buildAgentCapabilityPreview', () => {
       },
     };
 
-    const memberPreview = buildAgentCapabilityPreview({
-      profile,
-      ownerRole: 'member',
-    });
-    expect(memberPreview.mcp.entries).toContainEqual(
-      expect.objectContaining({
-        id: 'platform',
-        source: 'system',
-        available: false,
-        unavailableReason: 'system_admin_only',
-      }),
-    );
-    expect(memberPreview.notes).toContain(
-      '有 1 个系统 MCP 当前不可用，智能体不会继承。',
-    );
-
     const adminPreview = buildAgentCapabilityPreview({
       profile,
       ownerRole: 'admin',

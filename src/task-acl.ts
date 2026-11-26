@@ -1,4 +1,4 @@
-import type { RegisteredGroup, UserRole, UserStatus } from './types.js';
+import type { RegisteredGroup, UserStatus } from './types.js';
 
 /**
  * Scheduled-task authorization for the IPC/MCP surface.
@@ -9,7 +9,7 @@ import type { RegisteredGroup, UserRole, UserStatus } from './types.js';
  * `created_by`. This surface must reach the same verdict for the same row,
  * otherwise one rule contradicts itself depending on which entrypoint asks.
  *
- * `isAdminHome` intentionally does not appear here. An admin home Agent is an
+ * `isHome` intentionally does not appear here. A Home workspace Agent is an
  * LLM exposed to untrusted content, and a schedule's `prompt` is replayed on a
  * timer under the Bot's identity in the target chat and billed to the target
  * workspace. A global bypass would let injected content plant, rewrite or
@@ -22,7 +22,6 @@ import type { RegisteredGroup, UserRole, UserStatus } from './types.js';
 
 export interface TaskAclActor {
   id: string;
-  role: UserRole;
   status: UserStatus;
 }
 
@@ -33,7 +32,7 @@ export interface TaskAclDeps {
   resolveActor: () => TaskAclActor | undefined;
   /** Injected so this module stays pure and unit-testable. */
   canAccessGroup: (
-    user: { id: string; role: UserRole },
+    user: { id: string },
     group: RegisteredGroup & { jid: string },
   ) => boolean;
 }
@@ -55,7 +54,7 @@ export function canIpcActorAccessGroup(
   const actor = deps.resolveActor();
   if (!actor || actor.status !== 'active') return false;
   return deps.canAccessGroup(
-    { id: actor.id, role: actor.role },
+    { id: actor.id },
     { ...targetGroup, jid: targetJid },
   );
 }

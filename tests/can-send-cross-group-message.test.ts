@@ -7,11 +7,10 @@ import type { RegisteredGroup } from '../src/types.js';
 /**
  * Regression tests for the cross-group ACL helper in src/cross-group-acl.ts.
  *
- * The 4 branches:
- *  1. admin home → always allowed
+ * The branches:
+ *  1. Home workspace → always allowed
  *  2. target.folder === sourceFolder (same workspace)
- *  3. member home + same created_by (cross-workspace, same user)
- *  4. target.target_main_jid → bound workspace folder === sourceFolder
+ *  3. target.target_main_jid → bound workspace folder === sourceFolder
  *     (added in f93d922 — without this, agent in non-home sub-workspaces
  *      could not reply to its IM channel after agent-runner started
  *      rewriting ctx.chatJid to the IM source jid)
@@ -36,7 +35,6 @@ describe('canSendCrossGroupMessage', () => {
     expect(
       canSendCrossGroupMessage(
         true,
-        true,
         'main',
         undefined,
         target,
@@ -51,23 +49,7 @@ describe('canSendCrossGroupMessage', () => {
     expect(
       canSendCrossGroupMessage(
         false,
-        false,
         'flow-x',
-        source,
-        target,
-        () => undefined,
-      ),
-    ).toBe(true);
-  });
-
-  test('member home can send to a target created by the same user', () => {
-    const source = makeGroup({ folder: 'home-u1', created_by: 'u1' });
-    const target = makeGroup({ folder: 'flow-x', created_by: 'u1' });
-    expect(
-      canSendCrossGroupMessage(
-        false,
-        true,
-        'home-u1',
         source,
         target,
         () => undefined,
@@ -80,7 +62,6 @@ describe('canSendCrossGroupMessage', () => {
     const target = makeGroup({ folder: 'flow-y', created_by: 'u2' });
     expect(
       canSendCrossGroupMessage(
-        false,
         false,
         'flow-x',
         source,
@@ -107,14 +88,7 @@ describe('canSendCrossGroupMessage', () => {
         : undefined,
     );
     expect(
-      canSendCrossGroupMessage(
-        false,
-        false,
-        'flow-x',
-        source,
-        imTarget,
-        lookupGroup,
-      ),
+      canSendCrossGroupMessage(false, 'flow-x', source, imTarget, lookupGroup),
     ).toBe(true);
     expect(lookupGroup).toHaveBeenCalledWith('web:flow-x');
   });
@@ -142,7 +116,6 @@ describe('canSendCrossGroupMessage', () => {
     expect(
       canSendCrossGroupMessage(
         false,
-        false,
         'flow-x',
         source,
         resolvedTarget,
@@ -164,14 +137,7 @@ describe('canSendCrossGroupMessage', () => {
         : undefined,
     );
     expect(
-      canSendCrossGroupMessage(
-        false,
-        false,
-        'flow-x',
-        source,
-        imTarget,
-        lookupGroup,
-      ),
+      canSendCrossGroupMessage(false, 'flow-x', source, imTarget, lookupGroup),
     ).toBe(false);
   });
 
@@ -183,21 +149,13 @@ describe('canSendCrossGroupMessage', () => {
     });
     const lookupGroup = vi.fn(() => undefined);
     expect(
-      canSendCrossGroupMessage(
-        false,
-        false,
-        'flow-x',
-        source,
-        imTarget,
-        lookupGroup,
-      ),
+      canSendCrossGroupMessage(false, 'flow-x', source, imTarget, lookupGroup),
     ).toBe(false);
   });
 
   test('undefined target → denied (regardless of source flags)', () => {
     expect(
       canSendCrossGroupMessage(
-        false,
         false,
         'flow-x',
         undefined,
