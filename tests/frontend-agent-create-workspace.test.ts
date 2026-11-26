@@ -45,14 +45,26 @@ describe('Agent creation workspace', () => {
   });
 
   test('?create=1 routes to the same blank-draft entry flow', () => {
-    // THESIS-25：?create=1 不再打开描述面板，而是请求空白草稿。
+    // THESIS-25：?create=1 不再打开描述面板，而是请求空白草稿；
+    // 页面必须消费该请求，否则参数移除后入口会静默失效。
     const guard = read('web/src/hooks/useUnsavedNavigationGuard.ts');
+    const page = read('web/src/pages/AgentProfilesPage.tsx');
     const createRouteEffect = guard.slice(
       guard.indexOf("if (searchParams.get('create') !== '1') return;"),
     );
 
     expect(createRouteEffect).toContain('requestBlankDraft()');
     expect(createRouteEffect).not.toContain('setCreatePanelOpen');
+
+    const consumeStart = page.indexOf('if (!blankDraftRequested) return;');
+    expect(consumeStart).toBeGreaterThan(-1);
+    const consumeEffect = page.slice(
+      consumeStart,
+      page.indexOf('}, [blankDraftRequested]);', consumeStart),
+    );
+    expect(consumeEffect).toContain('setBlankDraftRequested(false)');
+    expect(consumeEffect).toContain('confirmDiscardEditorChanges()');
+    expect(consumeEffect).toContain('beginBlankDraft()');
   });
 
   test('manual four-part prompt editing remains available', () => {

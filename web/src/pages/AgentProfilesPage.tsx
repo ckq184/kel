@@ -9,7 +9,7 @@
  * 主 CKQClaw 不可自改）；dirty 状态经 useBlocker + beforeunload 拦截
  * 误触导航离开（createUnsavedNavigationGuard）。
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import {
   ArrowRight,
@@ -159,10 +159,11 @@ export function AgentProfilesPage() {
   // ../hooks/useUnsavedNavigationGuard.ts（原文搬运，getter 惰性取值）。
   // 调用点必须在下方 selection 效应（消费 setAllowedSearchParams）之前；
   // getHasUnsavedChanges 惰性取值打破其晚于本行的声明顺序。
+  const requestBlankDraft = useCallback(() => setBlankDraftRequested(true), []);
   const { setAllowedSearchParams } = useUnsavedNavigationGuard({
     getHasUnsavedChanges: () => hasUnsavedChanges,
     searchParams,
-    requestBlankDraft: () => setBlankDraftRequested(true),
+    requestBlankDraft,
   });
 
   useEffect(() => {
