@@ -31,6 +31,21 @@ export const DEFAULTED_THIRD_PARTY_ENV_KEYS = new Set(
   buildDefaultProviderEnv('', 'auto').map((row) => row.key),
 );
 
+/**
+ * THESIS-27 W2：EnvRow 行编辑器 → KEY=value 逐行文本（key/value 均空的
+ * 占位行序列化为空行，交给 buildCustomEnv 的空行跳过逻辑）。原先
+ * ProviderEditor 与 SetupProvidersPage 各有一份逐字相同的实现。
+ */
+export function envRowsToText(
+  rows: ReadonlyArray<{ key: string; value: string }>,
+): string {
+  return rows
+    .map((row) =>
+      row.key === '' && row.value === '' ? '' : `${row.key}=${row.value}`,
+    )
+    .join('\n');
+}
+
 interface BuildCustomEnvOptions {
   manageThirdPartyDefaults?: boolean;
   /** ISSUE-24：请求头由专用「自定义请求头」字段管理时拦截该键。 */

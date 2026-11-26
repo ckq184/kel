@@ -21,20 +21,7 @@ import type {
 } from '../components/settings/types';
 import { getErrorMessage } from '../components/settings/types';
 import { useAuthStore } from '../stores/auth';
-import { buildCustomEnv } from '../utils/custom-env';
-
-/**
- * ISSUE-11 B5：EnvRow 行编辑器 → KEY=value 逐行文本（key/value 均空的占位
- * 行序列化为空行，交给共享 buildCustomEnv 的空行跳过逻辑）。本页不传
- * options（不启用第三方默认键拦截），校验行为与原 Setup 版一致。
- */
-function envRowsToText(rows: EnvRow[]): string {
-  return rows
-    .map((row) =>
-      row.key === '' && row.value === '' ? '' : `${row.key}=${row.value}`,
-    )
-    .join('\n');
-}
+import { buildCustomEnv, envRowsToText } from '../utils/custom-env';
 
 export function SetupProvidersPage() {
   const navigate = useNavigate();
@@ -94,6 +81,7 @@ export function SetupProvidersPage() {
       setError('第三方渠道必须填写 ANTHROPIC_AUTH_TOKEN');
       return;
     }
+    // 本页不传 options（不启用第三方默认键拦截），校验行为与原 Setup 版一致。
     const envResult = buildCustomEnv(envRowsToText(customEnvRows));
     if (envResult.error) {
       setError(envResult.error);

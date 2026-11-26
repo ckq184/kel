@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { UserCog, LogOut, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { useChatStore } from '../stores/chat';
 import { useAuthStore } from '../stores/auth';
 import { useGroupsStore } from '../stores/groups';
@@ -9,23 +9,16 @@ import { ChatGroupItem } from '../components/chat/ChatGroupItem';
 import { DeleteWorkspaceDialog } from '../components/chat/DeleteWorkspaceDialog';
 import { AgentWorkspaceGroup } from '../components/layout/AgentWorkspaceGroup';
 import { ConfirmDialog } from '../components/common';
+import { UserMenuPopover } from '../components/common/UserMenuPopover';
 import { CreateContainerDialog } from '../components/chat/CreateContainerDialog';
 import { RenameDialog } from '../components/chat/RenameDialog';
-import { EmojiAvatar } from '../components/common/EmojiAvatar';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
 import { useSwipeBack } from '../hooks/useSwipeBack';
 import { useClearWorkspace } from '../hooks/useClearWorkspace';
-import { type GroupEntry, compareByLastActivity } from '../utils/group-utils';
+import { useAgentWorkspaceSections } from '../hooks/useAgentWorkspaceSections';
 import {
   getAgentNavigationTargets,
   getPrimaryAgentWorkspaceRows,
-  groupWorkspacesByAgent,
   isAgentSectionCollapsible,
-  partitionAgentWorkspaceSections,
 } from '../utils/agent-product';
 import { useDeleteWorkspace } from '../hooks/useDeleteWorkspace';
 
@@ -60,11 +53,7 @@ export function ChatPage() {
   } = useDeleteWorkspace({
     onDeleted: () => navigate('/chat', { replace: true }),
   });
-  const user = useAuthStore((s) => s.user);
   const appearance = useAuthStore((s) => s.appearance);
-  const userInitial = (user?.display_name ||
-    user?.username ||
-    '?')[0].toUpperCase();
 
   const routeGroupJid = useMemo(() => {
     if (!groupFolder) return null;
@@ -92,25 +81,7 @@ export function ChatPage() {
   }, [loadGroups]);
 
   // Mobile and desktop share the same Agent-first navigation contract.
-  const agentSections = useMemo(() => {
-    const entries: GroupEntry[] = Object.entries(groups).map(([jid, info]) => ({
-      jid,
-      ...info,
-    }));
-    entries.sort(compareByLastActivity);
-    const home = entries.find((entry) => entry.is_my_home);
-    const defaultAgentId = home?.agent_profile_id || '__default__';
-    const prioritized = [...entries].sort((a, b) => {
-      if (a.is_my_home) return -1;
-      if (b.is_my_home) return 1;
-      return Number(!!b.pinned_at) - Number(!!a.pinned_at);
-    });
-    return groupWorkspacesByAgent(prioritized, defaultAgentId);
-  }, [groups]);
-  const agentPartitions = useMemo(
-    () => partitionAgentWorkspaceSections(agentSections),
-    [agentSections],
-  );
+  const { agentSections, agentPartitions } = useAgentWorkspaceSections(groups);
   const hasAnyGroup = agentSections.length > 0;
 
   // Sync URL param to store selection. No auto-redirect to home container —
@@ -268,43 +239,7 @@ export function ChatPage() {
             >
               <Plus className="h-5 w-5" />
             </button>
-            <Popover>
-              <PopoverTrigger asChild>
-                <button
-                  className="rounded-full hover:ring-2 hover:ring-brand-200 transition-all cursor-pointer"
-                  aria-label="用户菜单"
-                >
-                  <EmojiAvatar
-                    imageUrl={user?.avatar_url}
-                    emoji={user?.avatar_emoji}
-                    color={user?.avatar_color}
-                    fallbackChar={userInitial}
-                    size="md"
-                    className="w-8 h-8"
-                  />
-                </button>
-              </PopoverTrigger>
-              <PopoverContent side="bottom" align="end" className="w-44 p-1">
-                <div className="px-3 py-2 text-xs font-medium text-muted-foreground truncate border-b border-border mb-1">
-                  {user?.display_name || user?.username}
-                </div>
-                <button
-                  onClick={() => navigate('/settings?tab=profile')}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md hover:bg-accent text-foreground cursor-pointer"
-                >
-                  <UserCog className="w-4 h-4" /> 个人设置
-                </button>
-                <button
-                  onClick={async () => {
-                    await useAuthStore.getState().logout();
-                    navigate('/login');
-                  }}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md hover:bg-destructive/10 text-destructive cursor-pointer"
-                >
-                  <LogOut className="w-4 h-4" /> 退出登录
-                </button>
-              </PopoverContent>
-            </Popover>
+            <UserMenuPopover side="bottom" ariaLabel="用户菜单" />
           </div>
           {hasAnyGroup ? (
             <div className="px-2 pb-nav-safe">
