@@ -26,7 +26,7 @@
 | [THESIS-19](THESIS-19-single-account-gate.md)      | 单账号收口：多用户死代码与 reset:admin       | P1、P2     | P1     | 无                           | −600 / −450           | 否（v1.1 已定） | 已完成 |
 | [THESIS-20](THESIS-20-drop-role-backend.md)        | 角色只留管理员（后端）                       | P1         | P1     | 19                           | −600~800 / 改 400–700 | 否              | 已完成 |
 | [THESIS-21](THESIS-21-drop-role-frontend.md)       | 角色只留管理员（前端）与公开用户字段         | P1         | P1     | 19                           | −150~250 / 小         | 否              | 已完成 |
-| [THESIS-22](THESIS-22-im-config-single-source.md)  | IM 配置单一真源：删旧配置与迁移              | P3、P8     | P2     | 19                           | −1,100 / −450         | 否（v1.1 已定） | 待领取 |
+| [THESIS-22](THESIS-22-im-config-single-source.md)  | IM 配置单一真源：删旧配置与迁移              | P3、P8     | P2     | 19                           | −1,100 / −450         | 否（v1.1 已定） | 进行中 |
 | [THESIS-23](THESIS-23-compat-leftovers.md)         | 兼容残留收口与 pre-V5 供应商配置迁移         | P3         | P2     | 20、22                       | −600 / −150           | **是**（D-K1）  | 待领取 |
 | [THESIS-24](THESIS-24-drop-bug-report.md)          | 裁 Bug 报告                                  | P4         | P2     | 无                           | −1,080 / −200         | 否（已定）      | 已完成 |
 | [THESIS-25](THESIS-25-drop-profile-generator.md)   | 裁 Agent 档案生成与润色                      | P5         | P2     | 无                           | −780 / −200           | 否（已定）      | 已完成 |
