@@ -24,7 +24,7 @@
 | `ownerHomeFolder` 转发链 | `claude-context-resolver.ts:42` 声明未读；`container-runner.ts` 9 处逐层透传；`index.ts` 计算 + 2 处实参；`task-scheduler.ts` 计算 + 实参。以上全部删除。`task-routing.ts` 见证参数按用户裁决保留（见 §0），因此全仓仍会看到 3 行注释。                                                                                                              |
 | 按用户并发上限           | `runtime-config.ts` 接口/默认值/normalize/env 回退 + `nullableLimitField` + `createUserContainerConcurrencyChecker`；`index.ts:14293-14310` 接线；`group-queue.ts` 字段/setter/`hasCapacityFor`；`schemas.ts:629`；`routes/config.ts:1301`。                                                                                                         |
 | 额外受影响测试           | `channel-account-startup-contract`（2 条断言待删函数）、`group-queue-host-session-concurrency`（1 行 checker）、`routes-provider-runtime-apply`（用 checker 制造容量排队，需改用全局容器容量）、`im-manager-channel-accounts`（调用待删 `disconnectUserFeishu`）、`claude-context-resolver`（8 处待删字段）、`owner-gate`（注释提及 `deleteUser`）。 |
-| 文档                     | `docs/API.md` 只列 `GET / PUT /api/config/system`，未列任何系统设置字段；无可删字段说明（交付记录说明）。`CLAUDE.md` 只提全局 `maxConcurrentContainers`，不动。                                                                                                                                                                                      |
+| 文档                     | `docs/API.md` 的系统设置条目补“`maxConcurrentContainersPerUser` 已删除、PUT 严格拒绝”说明；`CLAUDE.md` 只提全局 `maxConcurrentContainers`，不动。                                                                                                                                                                                                    |
 
 与 issue 的差异：
 
@@ -76,7 +76,7 @@
 6. **host-execution-policy**：删除 revocation 集合与 begin/end；`canExecuteOnHost` 只查 role/status。
 7. **ownerHomeFolder 转发链**：删除 `ClaudeContextPlanArgs` 字段、`buildVolumeMounts`/`runContainerAgent`/`runHostAgent`/`runAgentWithModelFallback` 参数与 `buildClaudeContextPlan`/`runFn` 实参；`index.ts`/`task-scheduler.ts` 删除计算。
 8. **按用户并发**：删 `runtime-config` 字段/默认值/normalize/env/helper/checker 与 `stripVirtualJidSuffix` import；删 `schemas`、`routes/config`、`group-queue` 对应字段/setter/判定；`index.ts` 删接线。
-9. 同步 §2.1 测试与 `docs/API.md`（实际无字段可删，交付记录说明）。
+9. 同步 §2.1 测试与 `docs/API.md`（补字段删除说明）。
 
 ### 2.3 Refactor / 门禁
 
@@ -100,9 +100,9 @@
 
 ## 4. 范围声明（`.gatescope.json` allow）
 
-`.gatescope.json`、`docs/thesis-19-single-account-gate-plan.md`、`docs/issues4/THESIS-19-single-account-gate.md`、`docs/issues4/README.md`、`docs/issues4/task-personal-slim-plan.md`、`docs/审查记录.md`、`src/index.ts`、`src/im-manager.ts`、`src/web-context.ts`、`src/db.ts`、`src/host-execution-policy.ts`、`src/claude-context-resolver.ts`、`src/container-runner.ts`、`src/task-scheduler.ts`、`src/runtime-config.ts`、`src/schemas.ts`、`src/routes/config.ts`、`src/group-queue.ts`、`src/reset-admin.ts`、`tests/thesis-19-single-account-gate.test.ts`、`tests/channel-account-startup-contract.test.ts`、`tests/group-queue-host-session-concurrency.test.ts`、`tests/routes-provider-runtime-apply.test.ts`、`tests/host-execution-policy.test.ts`、`tests/im-manager-channel-accounts.test.ts`、`tests/claude-context-resolver.test.ts`、`tests/owner-gate.test.ts`、`tests/mcp-runtime-secret-boundary.test.ts`、`tests/system-settings-per-user-echo.test.ts`、`tests/group-queue-user-concurrency.test.ts`。
+`.gatescope.json`、`docs/thesis-19-single-account-gate-plan.md`、`docs/issues4/THESIS-19-single-account-gate.md`、`docs/issues4/README.md`、`docs/issues4/task-personal-slim-plan.md`、`docs/审查记录.md`、`docs/API.md`、`src/index.ts`、`src/im-manager.ts`、`src/web-context.ts`、`src/db.ts`、`src/host-execution-policy.ts`、`src/claude-context-resolver.ts`、`src/container-runner.ts`、`src/task-scheduler.ts`、`src/runtime-config.ts`、`src/schemas.ts`、`src/routes/config.ts`、`src/group-queue.ts`、`src/reset-admin.ts`、`tests/thesis-19-single-account-gate.test.ts`、`tests/channel-account-startup-contract.test.ts`、`tests/group-queue-host-session-concurrency.test.ts`、`tests/routes-provider-runtime-apply.test.ts`、`tests/host-execution-policy.test.ts`、`tests/im-manager-channel-accounts.test.ts`、`tests/claude-context-resolver.test.ts`、`tests/owner-gate.test.ts`、`tests/mcp-runtime-secret-boundary.test.ts`、`tests/system-settings-per-user-echo.test.ts`、`tests/group-queue-user-concurrency.test.ts`。
 
-与 issue“预计改动路径”的差异：不含 `src/task-routing.ts`（见证参数保留），不含 `docs/API.md`（无字段可删）。
+与 issue“预计改动路径”的差异：不含 `src/task-routing.ts`（见证参数保留）；`docs/API.md` 只补“该字段已删除、PUT 严格拒绝”的说明（原文件无字段清单可删）。
 
 ## 5. 验收条件
 

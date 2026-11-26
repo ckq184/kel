@@ -293,7 +293,9 @@ Provider：
 
 系统：
 
-- `GET|PUT /api/config/system`
+- `GET|PUT /api/config/system`；按用户容器并发上限
+  `maxConcurrentContainersPerUser` 已随单账号收口删除，`PUT` 带该字段按
+  strict schema 返回 400（升级后旧客户端需刷新页面；前端从未提交该字段）
 - `GET|PUT /api/config/host-integration`，仅 admin；包含
   `adminHostOnlyMode`。从 `false` 切到 `true` 时会停稳管理员工作区运行器，并把
   active admin 拥有的工作区和定时任务持久迁移为 Host；其他账号的数据不变

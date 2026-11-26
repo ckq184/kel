@@ -252,6 +252,7 @@ describe('provider runtime apply is a lossless configuration mutation', () => {
     const group = registerWorkspace(jid, folder);
     const previousSettings = runtimeConfig.getSystemSettings();
     runtimeConfig.saveSystemSettings({ maxConcurrentContainers: 1 });
+    let releaseBlocker: (() => void) | undefined;
     try {
       const queue = new GroupQueue();
       liveQueue = queue;
@@ -265,10 +266,11 @@ describe('provider runtime apply is a lossless configuration mutation', () => {
 
       // Occupy the single global container slot so the descendant task below
       // is genuinely capacity-queued (the per-user limit no longer exists).
-      let releaseBlocker!: () => void;
+      let release!: () => void;
       const blockerDone = new Promise<void>((resolve) => {
-        releaseBlocker = resolve;
+        release = resolve;
       });
+      releaseBlocker = release;
       const blockerJid = `web:${unique('capacity-blocker')}`;
       expect(
         queue.enqueueTask(blockerJid, 'blocker', async () => {
@@ -314,13 +316,11 @@ describe('provider runtime apply is a lossless configuration mutation', () => {
       expect(queue.listDescendantJids(jid)).toEqual([descendantJid]);
       expect(runs).toBe(0);
 
-      releaseBlocker();
-      for (let i = 0; i < 100 && runs === 0; i += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 5));
-      }
-      expect(runs).toBe(1);
+      releaseBlocker?.();
+      await vi.waitFor(() => expect(runs).toBe(1), { timeout: 2000 });
       expect(dropped).toBe(0);
     } finally {
+      releaseBlocker?.();
       runtimeConfig.saveSystemSettings({
         maxConcurrentContainers: previousSettings.maxConcurrentContainers,
       });

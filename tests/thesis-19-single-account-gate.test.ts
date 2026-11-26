@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -126,6 +127,26 @@ describe('reset:admin only resets the existing account', () => {
   });
 });
 
+describe('reset:admin CLI entrypoint', () => {
+  test('unknown username exits non-zero with a clear error', () => {
+    const cliRoot = fs.mkdtempSync(path.join(tmpDir, 'cli-'));
+    const result = spawnSync(
+      process.execPath,
+      [
+        path.join(root, 'node_modules', 'tsx', 'dist', 'cli.mjs'),
+        path.join(root, 'src', 'reset-admin.ts'),
+        'thesis19-cli-ghost',
+        nextLoginPhrase,
+      ],
+      { cwd: cliRoot, encoding: 'utf8', timeout: 30_000 },
+    );
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      'User not found: thesis19-cli-ghost. reset:admin only resets the existing account.',
+    );
+  }, 30_000);
+});
+
 describe('system settings no longer expose the per-user container limit', () => {
   test('GET /api/config/system omits maxConcurrentContainersPerUser', async () => {
     const response = await app.request('/api/config/system');
@@ -134,7 +155,16 @@ describe('system settings no longer expose the per-user container limit', () => 
     expect(body).not.toHaveProperty('maxConcurrentContainersPerUser');
   });
 
-  test('PUT rejects the retired field and never persists it', async () => {
+  test('PUT rejects the retired field and does not persist it', async () => {
+    // Create the settings file with a valid write first, so the check below is
+    // about persistence and not merely "the file never existed".
+    const valid = await app.request('/api/config/system', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ containerTimeout: 120000 }),
+    });
+    expect(valid.status).toBe(200);
+
     const response = await app.request('/api/config/system', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
@@ -143,6 +173,14 @@ describe('system settings no longer expose the per-user container limit', () => 
     // The system settings schema is strict: a field removed from the backend
     // is not silently accepted and persisted.
     expect(response.status).toBe(400);
+
+    const persisted = JSON.parse(
+      fs.readFileSync(
+        path.join(tmpDir, 'config', 'system-settings.json'),
+        'utf8',
+      ),
+    ) as Record<string, unknown>;
+    expect(persisted).not.toHaveProperty('maxConcurrentContainersPerUser');
 
     const getResponse = await app.request('/api/config/system');
     const getBody = (await getResponse.json()) as Record<string, unknown>;
@@ -264,5 +302,15 @@ describe('multi-user dead code is removed from src', () => {
     expect(read('src/runtime-config.ts').includes('nullableLimitField')).toBe(
       false,
     );
+    expect(
+      read('src/runtime-config.ts').includes(
+        'MAX_CONCURRENT_CONTAINERS_PER_USER',
+      ),
+    ).toBe(false);
+    expect(
+      read('src/runtime-config.ts').includes(
+        'createUserContainerConcurrencyChecker',
+      ),
+    ).toBe(false);
   });
 });

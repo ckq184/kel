@@ -8,6 +8,7 @@
     "docs/issues4/README.md",
     "docs/issues4/task-personal-slim-plan.md",
     "docs/审查记录.md",
+    "docs/API.md",
     "src/index.ts",
     "src/im-manager.ts",
     "src/web-context.ts",

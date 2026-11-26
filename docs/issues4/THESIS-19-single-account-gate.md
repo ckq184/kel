@@ -2,7 +2,7 @@
 
 | 字段          | 值                                                                                                                                                                                                                                                                                                                                                                                         |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 状态          | 进行中                                                                                                                                                                                                                                                                                                                                                                                     |
+| 状态          | 已完成                                                                                                                                                                                                                                                                                                                                                                                     |
 | 领取人 / 分支 | claude/thesis-19-single-account-gate                                                                                                                                                                                                                                                                                                                                                       |
 | 优先级        | P1                                                                                                                                                                                                                                                                                                                                                                                         |
 | 类型          | 裁减（死代码与第二账号入口）                                                                                                                                                                                                                                                                                                                                                               |
@@ -66,4 +66,19 @@
 
 ## 交付记录
 
-（待填）
+- **提交**：`6683962`（立项）、`0f60415`（实现），审查记录、交付记录与文档收口随本提交（分支 `claude/thesis-19-single-account-gate`，基于 main `48903d0`；合入 main 时取本包 gatescope 并把 base 重置为合并前 main tip）。
+- **实现**：
+  - `reset:admin` 抽出 `resetAdminAccount`，用户名不存在时抛 `ResetAdminError('User not found: …')` 并退出码 1，不再 `createUser`；CLI 入口用 realpath 判定，测试导入不会执行 `main()`。
+  - 删除 `src/index.ts` 的 `reloadFeishuConnection`、`reloadUserIMConfig`、`reconnectUserIMChannels` 与 `startWebServer` 接线、`isUser*Connected`/`isFeishuConnected` 接线、`registerAdminUser` 循环、按用户并发 checker 接线。
+  - `src/im-manager.ts` 删除 `adminUserIds`、`sealedUsers`/`userLocks`/`withUserLock`、`disconnectAllUserChannels`、`markUserReconnectable`、`disconnectUser{Feishu,QQ,WeChat}`、`is{Feishu,QQ,WeChat}Connected`；`connectChannel` 只保留 channel 锁。
+  - `src/db.ts` 删除 `getActiveAdminCount`、`updateUserFieldsAndForceRuntimesToHost`、`deleteUser`、`restoreUser`；`src/host-execution-policy.ts` 删除 test-only revocation 窗口，`canExecuteOnHost` 只查 role/status。
+  - 删除 `ownerHomeFolder` 转发链（`claude-context-resolver` 声明、`container-runner` 透传、`index`/`task-scheduler` 计算与实参）。
+  - 删除 `maxConcurrentContainersPerUser` 全链路（runtime-config 字段/默认值/normalize/env/helper/checker、schemas、routes/config、group-queue、index 接线），系统设置接口不再回显；`docs/API.md` 补删除与严格拒绝说明。
+  - 删除两个专属测试文件；新增 `tests/thesis-19-single-account-gate.test.ts`（行为 4 例、系统设置 2 例、源码契约 7 例）。
+- **验证**：`npm run verify` 六步全绿（369 文件，3035 通过 / 23 跳过 / 0 失败）；`node scripts/check-scope.mjs` 30 路径全在声明范围内；`npm run docs:check` 158 个 Markdown；受影响测试文件 shuffle seed 1337 全绿；CLI 在临时 cwd 冒烟：未知用户名 exit 1、不建号，现有账号重置 exit 0。
+- **偏差**：
+  1. `src/task-routing.ts` 的 `resolveBroadcastFolder(sourceFolder, _ownerHomeFolder)` 见证参数及其 4 条 fix-F 用例按 2026-11-26 用户裁决保留；`src/task-routing.ts`、`src/ipc/task-dispatch.ts`、`src/ipc/watcher.ts` 未改。
+  2. `PUT /api/config/system` 带 `maxConcurrentContainersPerUser` 由旧行为 200 改为 strict schema 400（该字段已删除且 `web/` 全仓无引用）；已写入 `docs/API.md`。
+  3. `tests/mcp-runtime-secret-boundary.test.ts` 因 `buildVolumeMounts` 删除第 5 个位置参数，去掉一个 `undefined` 占位；`tests/routes-provider-runtime-apply.test.ts` 的容量排队改用全局 `maxConcurrentContainers`；`tests/group-queue-host-session-concurrency.test.ts`、`tests/im-manager-channel-accounts.test.ts`、`tests/claude-context-resolver.test.ts`、`tests/owner-gate.test.ts` 同步适配。
+- **范围外登记**：`GroupQueue.hasDirectActiveRunner` / `countActiveTaskRunners` 因删除 checker 接线成为零调用，按非目标不删（归 THESIS-26）；`syncLegacyConfigToDefaultChannelAccount` 归 THESIS-22；`tests/provider-model-fallback-contract.test.ts:25` 的 `ownerHomeFolder` 否定断言已无实际防回归意义；`src/index.ts` 的 `resolveBroadcastFolder` 未用 import 归 THESIS-28；`src/channel-admission.ts:85` 注释仍提 sealed（IM 侧访问控制非目标）。
+- **未实机验收**：用户需重启服务后正常登录、保存系统设置、执行 `npm run reset:admin` 验证未知用户名报错。Container 镜像无需重建（未改 runner/容器）。

@@ -876,10 +876,9 @@ export class GroupQueue {
     // by the operating system instead of an application-level capacity pool.
     if (this.isHostMode(groupJid)) return true;
 
-    const systemCapacity =
-      this.activeContainerCount < getSystemSettings().maxConcurrentContainers;
-    if (!systemCapacity) return false;
-    return true;
+    return (
+      this.activeContainerCount < getSystemSettings().maxConcurrentContainers
+    );
   }
 
   private resolveActiveState(groupJid: string): ActiveGroupState | null {
