@@ -1,9 +1,28 @@
 {
-  "task": "personal-slim-v1.1 - issues4 方案升 v1.1：只保留管理员一个角色、多用户代码全部裁减（去归属、按用户存储改单一位置不搬迁、MCP 合并为一个作用域、归属列保留不读）；改 THESIS-19 至 33，新增 THESIS-34 至 37，README 重生成并行矩阵；thesis-trim 台账 #12 与 §15 v0.9.2；只改文档",
-  "base": "607d1b6",
+  "task": "THESIS-25 裁 Agent 档案生成与润色：删除 /api/agent-profiles/generate 与 /:id/refine-prompt、生成器、AI 提示词助手与一句话生成入口；保留手写四段 Prompt、版本历史与对话式 Agent Builder",
+  "base": "48903d0",
   "allow": [
     ".gatescope.json",
-    "docs/issues4/**",
-    "docs/issues2/task-thesis-trim-plan.md"
+    "CLAUDE.md",
+    "docs/API.md",
+    "docs/ACL-MATRIX.md",
+    "docs/issues4/README.md",
+    "docs/issues4/THESIS-25-drop-profile-generator.md",
+    "docs/issues4/task-personal-slim-plan.md",
+    "docs/thesis-25-drop-profile-generator-plan.md",
+    "docs/审查记录.md",
+    "src/agent-profile-generator.ts",
+    "src/routes/agent-profiles.ts",
+    "src/schemas.ts",
+    "web/src/components/agents/AgentCreatePanel.tsx",
+    "web/src/components/agents/AgentProfilesSidebar.tsx",
+    "web/src/components/agents/AgentPromptAssistant.tsx",
+    "web/src/components/agents/AgentPromptEditor.tsx",
+    "web/src/hooks/useAgentProfileForm.ts",
+    "web/src/hooks/useUnsavedNavigationGuard.ts",
+    "web/src/pages/AgentProfilesPage.tsx",
+    "web/src/stores/agent-profiles.ts",
+    "tests/**",
+    "web/tests/**"
   ]
 }

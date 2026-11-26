@@ -4,7 +4,6 @@ import type {
   AgentProfile,
   AgentProfileGovernance,
   AgentProfilePromptMode,
-  AgentProfilePrompts,
   AgentProfilePromptVersion,
   AgentProfileRuntimePolicy,
   AgentProfileRuntimePolicyPatch,
@@ -17,22 +16,6 @@ import {
   buildWorkspaceAgentProfilePatch,
   getAgentProfileDisplayName,
 } from '../utils/agent-product';
-
-interface AgentProfileDraft extends AgentProfilePrompts {
-  name: string;
-}
-
-export interface AgentPromptChatMessage {
-  role: 'user' | 'assistant';
-  content: string;
-}
-
-interface AgentPromptRefinement extends Omit<
-  AgentProfilePrompts,
-  'prompt_mode'
-> {
-  reply: string;
-}
 
 interface AgentProfilesState {
   profiles: AgentProfile[];
@@ -53,16 +36,6 @@ interface AgentProfilesState {
   retryRuntimeCleanup: (id: string) => Promise<void>;
   loadPromptVersions: (id: string) => Promise<AgentProfilePromptVersion[]>;
   restorePromptVersion: (id: string, version: number) => Promise<AgentProfile>;
-  generateProfileDraft: (description: string) => Promise<AgentProfileDraft>;
-  refineProfilePrompt: (
-    id: string,
-    data: {
-      section: 'identity' | 'soul' | 'agents' | 'tools';
-      message: string;
-      current_prompts: Omit<AgentProfilePrompts, 'prompt_mode'>;
-      history: AgentPromptChatMessage[];
-    },
-  ) => Promise<AgentPromptRefinement>;
   createProfile: (data: {
     prompt_schema_version?: 2;
     name: string;
@@ -237,24 +210,6 @@ export const useAgentProfilesStore = create<AgentProfilesState>((set, get) => ({
     }));
     await get().loadPromptVersions(id);
     return data.profile;
-  },
-
-  generateProfileDraft: async (description) => {
-    const res = await api.post<{ draft: AgentProfileDraft }>(
-      '/api/agent-profiles/generate',
-      { description },
-      60_000,
-    );
-    return res.draft;
-  },
-
-  refineProfilePrompt: async (id, data) => {
-    const res = await api.post<{ refinement: AgentPromptRefinement }>(
-      `/api/agent-profiles/${encodeURIComponent(id)}/refine-prompt`,
-      data,
-      60_000,
-    );
-    return res.refinement;
   },
 
   createProfile: async (data) => {

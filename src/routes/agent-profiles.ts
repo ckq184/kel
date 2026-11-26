@@ -5,16 +5,10 @@ import { getWebDeps } from '../web-context.js';
 import { authMiddleware } from '../middleware/auth.js';
 import {
   AgentProfileCreateSchema,
-  AgentProfileGenerateSchema,
   AgentProfilePatchSchema,
-  AgentProfileRefinePromptSchema,
   AgentProfileRuntimePolicySchema,
 } from '../schemas.js';
 import type { AuthUser } from '../types.js';
-import {
-  generateAgentProfileDraft,
-  refineAgentProfilePrompt,
-} from '../agent-profile-generator.js';
 import { logger } from '../logger.js';
 import { buildAgentCapabilityPreview } from '../agent-capability-preview.js';
 import { avatarUploadBodyLimit } from '../http-upload-policy.js';
@@ -48,10 +42,7 @@ import {
   userCapabilityLockKey,
   withCapabilityScopeLocks,
 } from '../capability-lock.js';
-import {
-  agentProfilePromptsFromLegacy,
-  promptModeFromLegacyPreset,
-} from '../agent-profile-prompts.js';
+import { promptModeFromLegacyPreset } from '../agent-profile-prompts.js';
 import {
   hasEmptyCustomHostSkillSelection,
   hasInvalidRuntimePolicyReferences,
@@ -188,27 +179,6 @@ agentProfileRoutes.post('/', authMiddleware, async (c) => {
       return c.json({ profile }, 201);
     },
   );
-});
-
-agentProfileRoutes.post('/generate', authMiddleware, async (c) => {
-  const body = await c.req.json().catch(() => ({}));
-  const parsed = AgentProfileGenerateSchema.safeParse(body);
-  if (!parsed.success) {
-    return zodBadRequest(c, parsed.error, 'body-plain');
-  }
-
-  try {
-    const draft = await generateAgentProfileDraft(parsed.data.description);
-    return c.json({ draft });
-  } catch (err) {
-    const message =
-      err instanceof Error ? err.message : 'AI 解析失败，请重试或手动填写';
-    logger.warn(
-      { err, descriptionLen: parsed.data.description.length },
-      'Failed to generate Agent profile draft',
-    );
-    return c.json({ error: message }, message.includes('未配置') ? 503 : 502);
-  }
 });
 
 agentProfileRoutes.post(
@@ -359,54 +329,6 @@ agentProfileRoutes.delete('/:id/avatar', authMiddleware, (c) => {
   const updated = updateAgentProfile(id, user.id, { avatarUrl: null });
   reapAvatarFiles({ prefix: AVATAR_PROFILE_PREFIX(id) });
   return c.json({ profile: updated });
-});
-
-agentProfileRoutes.post('/:id/refine-prompt', authMiddleware, async (c) => {
-  const user = c.get('user') as AuthUser;
-  const id = c.req.param('id');
-  const profile = getAgentProfileForUser(id, user.id);
-  if (!profile) return c.json({ error: '智能体配置不存在' }, 404);
-
-  const body = await c.req.json().catch(() => ({}));
-  const parsed = AgentProfileRefinePromptSchema.safeParse(body);
-  if (!parsed.success) {
-    return zodBadRequest(c, parsed.error, 'body-plain');
-  }
-
-  try {
-    const currentPrompts = parsed.data.current_prompts
-      ? {
-          ...parsed.data.current_prompts,
-          prompt_mode: profile.prompt_mode,
-        }
-      : agentProfilePromptsFromLegacy(
-          parsed.data.current_prompt,
-          profile.include_claude_preset,
-        );
-    const refinement = await refineAgentProfilePrompt({
-      agentName: profile.name,
-      currentPrompts,
-      currentPrompt:
-        parsed.data.current_prompt ??
-        parsed.data.current_prompts?.agents_prompt,
-      section: parsed.data.section,
-      message: parsed.data.message,
-      history: parsed.data.history,
-    });
-    return c.json({ refinement });
-  } catch (err) {
-    const message =
-      err instanceof Error ? err.message : 'AI 调整失败，请重试或手动修改';
-    logger.warn(
-      {
-        err,
-        agentProfileId: id,
-        messageLen: parsed.data.message.length,
-      },
-      'Failed to refine Agent profile prompt',
-    );
-    return c.json({ error: message }, message.includes('未配置') ? 503 : 502);
-  }
 });
 
 agentProfileRoutes.patch('/:id', authMiddleware, async (c) => {
