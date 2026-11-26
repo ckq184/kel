@@ -87,11 +87,16 @@ describe('frontend identity ownership', () => {
   });
 
   test('renders uploaded user images in desktop and mobile account menus', () => {
-    expect(read('web/src/components/layout/UnifiedSidebar.tsx')).toContain(
+    // THESIS-27 W3：两处账号菜单收敛为 UserMenuPopover，头像渲染断言
+    // 随之改读共享组件，并锁定侧栏（右侧）与移动端（下方）都使用它。
+    expect(read('web/src/components/common/UserMenuPopover.tsx')).toContain(
       'imageUrl={user?.avatar_url}',
     );
+    expect(read('web/src/components/layout/UnifiedSidebar.tsx')).toContain(
+      '<UserMenuPopover side="right"',
+    );
     expect(read('web/src/pages/ChatPage.tsx')).toContain(
-      'imageUrl={user?.avatar_url}',
+      '<UserMenuPopover side="bottom"',
     );
   });
 });

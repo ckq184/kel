@@ -504,6 +504,19 @@ describe('buildCustomEnv strict synthesis (ISSUE-11 B5, user decision #7)', () =
     expect(voided.customEnv).toEqual({});
     expect(voided.error).toContain('格式无效');
   });
+
+  test('envRowsToText serializes empty placeholder rows and partial rows', async () => {
+    const { envRowsToText } = await import('../web/src/utils/custom-env');
+    expect(
+      envRowsToText([
+        { key: '', value: '' },
+        { key: 'FOO', value: 'bar' },
+        { key: 'BAZ', value: '' },
+        { key: '', value: 'qux' },
+      ]),
+    ).toBe('\nFOO=bar\nBAZ=\n=qux');
+    expect(envRowsToText([])).toBe('');
+  });
 });
 
 describe('shared storage helpers (ISSUE-11 B5)', () => {
@@ -538,7 +551,7 @@ describe('shared storage helpers (ISSUE-11 B5)', () => {
 describe('frontend helper uniqueness contracts (ISSUE-11 B)', () => {
   const webSources = listWebSources();
 
-  test('safeStorage / buildCustomEnv are each defined exactly once', () => {
+  test('safeStorage / buildCustomEnv / envRowsToText are each defined exactly once', () => {
     const defineSites = (pattern: RegExp) =>
       webSources.filter((file) => pattern.test(read(file)));
 
@@ -547,6 +560,9 @@ describe('frontend helper uniqueness contracts (ISSUE-11 B)', () => {
     );
     expect(
       defineSites(/function buildCustomEnv\(|const buildCustomEnv\s*=/),
+    ).toEqual(['web/src/utils/custom-env.ts']);
+    expect(
+      defineSites(/function envRowsToText\(|const envRowsToText\s*=/),
     ).toEqual(['web/src/utils/custom-env.ts']);
   });
 
