@@ -304,7 +304,8 @@ Web 持久设置 > 环境变量 > 代码默认值
 Provider 与渠道账号统一通过 Web 配置；渠道凭据只存在
 `channel_accounts` 的加密 secret。旧的按用户 IM 配置
 （`data/config/user-im/*`）与全局飞书配置（`feishu-provider.json`、
-`FEISHU_APP_ID`/`FEISHU_APP_SECRET` 回落）已删除，不再读取。
+`FEISHU_APP_ID`/`FEISHU_APP_SECRET` 回落）的读写代码已删除，旧文件不再读取
+（磁盘文件保留）。
 
 ## 10. 开发与验证
 

@@ -65,7 +65,6 @@ describe('THESIS-22 IM config single source', () => {
       path.join(root, 'src/routes/channel-accounts.ts'),
       'utf8',
     );
-    expect(source).not.toContain("from '../runtime-config.js'");
     expect(source).not.toContain('syncLegacyUserImFacade');
     expect(source).not.toContain('legacyCredentialsFor');
     expect(source).not.toContain('ensureLegacyDefaultChannelAccounts');

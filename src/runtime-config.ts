@@ -646,34 +646,6 @@ function decryptSecrets(secrets: EncryptedSecrets): SecretPayload {
   return result;
 }
 
-function encryptChannelSecret<T>(payload: T): EncryptedSecrets {
-  const key = getOrCreateEncryptionKey();
-  const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
-  const plaintext = Buffer.from(JSON.stringify(payload), 'utf-8');
-  const encrypted = Buffer.concat([cipher.update(plaintext), cipher.final()]);
-  const tag = cipher.getAuthTag();
-  return {
-    iv: iv.toString('base64'),
-    tag: tag.toString('base64'),
-    data: encrypted.toString('base64'),
-  };
-}
-
-function decryptChannelSecret<T>(secrets: EncryptedSecrets): T {
-  const key = getOrCreateEncryptionKey();
-  const iv = Buffer.from(secrets.iv, 'base64');
-  const tag = Buffer.from(secrets.tag, 'base64');
-  const encrypted = Buffer.from(secrets.data, 'base64');
-  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
-  decipher.setAuthTag(tag);
-  const decrypted = Buffer.concat([
-    decipher.update(encrypted),
-    decipher.final(),
-  ]).toString('utf-8');
-  return JSON.parse(decrypted) as T;
-}
-
 function readLegacyConfig(
   raw: StoredClaudeProviderConfigLegacy,
 ): ClaudeProviderConfig {

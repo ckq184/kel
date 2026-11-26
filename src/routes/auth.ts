@@ -100,6 +100,9 @@ function buildSetupStatus() {
     );
     return hasBaseUrl && hasCredential;
   });
+  // Channel accounts are the single source of truth. "Configured" means an
+  // enabled Feishu account exists; a disabled account is intentionally not
+  // advertised as ready to install.
   const feishuConfigured = listEnabledChannelAccounts().some(
     (account) => account.provider === 'feishu',
   );
