@@ -1,7 +1,8 @@
 # THESIS-20 角色只留管理员（后端）实施计划
 
 > 来源：[THESIS-20](issues4/THESIS-20-drop-role-backend.md)、[personal-slim 方案 §4](issues4/task-personal-slim-plan.md)。方案定范围与裁决，本文件定怎么落地。
-> 依赖：THESIS-19 合入 main 后开工（本文件在 19 合入后补 base 与最终行号）。
+> 依赖：THESIS-19 已完成（交付提交 `e82843d`，verify 六步全绿）。main 尚未合入 19，本分支先以临时合并 `ef7cb4d` 为基线开工；19 正式合入 main 后再同步。
+> 基线：`ef7cb4d`（main `6ca4a90` + THESIS-19 `e82843d`）。
 > 版本：v1（2026-11-26）。
 
 ## 1. 目标与完成条件
@@ -107,7 +108,7 @@
 
 | #   | 任务                | 主要文件                                                                                                                                                                               | 独立验收                                                                    |
 | --- | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| T1  | 立项                | 本文件、`.gatescope.json`                                                                                                                                                              | base 为 THESIS-19 合入后的 main HEAD；check-scope 通过                      |
+| T1  | 立项                | 本文件、`.gatescope.json`                                                                                                                                                              | base 为 THESIS-19 交付分支的临时合并 `ef7cb4d`；check-scope 通过            |
 | T2  | Red 契约            | 新契约测试、`tests/helpers/route-test-user.ts`                                                                                                                                         | 新契约在 base 上失败，失败原因定位到角色残留                                |
 | T3  | 类型与存储          | `src/types.ts`、`src/db-schema/auth-tables.ts`、`src/db.ts`、`src/reset-admin.ts`                                                                                                      | `UserRole` 只剩 admin；默认值与历史行解释正确                               |
 | T4  | 中间件与纯角色判断  | `src/middleware/auth.ts`、`src/web-context.ts`、`src/routes/{config,monitor,groups,tasks,files,browse,skills,auth,agents,agent-profiles,workspaces,workspace-config}.ts`、`src/web.ts` | `adminRoleMiddleware`/`hasHostExecutionPermission` 零出现；路由行为用例通过 |
@@ -117,7 +118,7 @@
 | T8  | 文档                | `docs/ACL-MATRIX.md`、`docs/API.md`、`CLAUDE.md`、`README.md`、`docs/issues4/*`、`docs/审查记录.md`                                                                                    | `npm run docs:check` 通过；文档不再描述 admin/member 双层                   |
 | T9  | 门禁、审查与交付    | 全范围                                                                                                                                                                                 | verify 六步 + check-scope；两轮独立审查；三处状态同步                       |
 
-回滚点：base 提交；每个任务一个提交，可单独 `git revert`。
+回滚点：base `ef7cb4d`；每个任务一个提交，可单独 `git revert`。
 
 ## 5. 范围声明（`.gatescope.json` allow）
 
