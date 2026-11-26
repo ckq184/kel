@@ -79,6 +79,19 @@ const repoRoot = process.cwd();
 const read = (relativePath: string) =>
   fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
 
+function listSourceFiles(directory: string): string[] {
+  const files: string[] = [];
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const absolute = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...listSourceFiles(absolute));
+    } else if (/\.(ts|tsx)$/.test(entry.name)) {
+      files.push(absolute);
+    }
+  }
+  return files;
+}
+
 describe('bug report HTTP surface is removed', () => {
   test.each([
     ['GET', '/api/bug-report/capabilities'],
@@ -96,7 +109,7 @@ describe('bug report HTTP surface is removed', () => {
     expect(response.status).toBe(404);
   });
 
-  test('route module, mount point and request schemas are gone', () => {
+  test('route module, mount point, request schemas and dedicated tests are gone', () => {
     expect(fs.existsSync(path.join(repoRoot, 'src/routes/bug-report.ts'))).toBe(
       false,
     );
@@ -108,6 +121,16 @@ describe('bug report HTTP surface is removed', () => {
     const schemas = read('src/schemas.ts');
     expect(schemas).not.toContain('BugReport');
     expect(schemas).not.toContain('MAX_SCREENSHOT_BASE64_LENGTH');
+
+    for (const relativePath of [
+      'tests/bug-report-sanitize.test.ts',
+      'tests/thesis-02-bug-report-capability.test.ts',
+    ]) {
+      expect(
+        fs.existsSync(path.join(repoRoot, relativePath)),
+        relativePath,
+      ).toBe(false);
+    }
   });
 });
 
@@ -136,16 +159,11 @@ describe('bug report UI is gone', () => {
   });
 
   test('no frontend source references the bug report API', () => {
-    const sourceRoot = path.join(repoRoot, 'web/src');
-    const files = fs
-      .readdirSync(sourceRoot, { recursive: true })
-      .map((entry) => String(entry))
-      .filter((entry) => /\.(ts|tsx)$/.test(entry));
-    const offenders = files.filter((entry) =>
-      fs
-        .readFileSync(path.join(sourceRoot, entry), 'utf8')
-        .includes('/api/bug-report'),
-    );
+    const offenders = listSourceFiles(path.join(repoRoot, 'web/src'))
+      .filter((file) =>
+        fs.readFileSync(file, 'utf8').includes('/api/bug-report'),
+      )
+      .map((file) => path.relative(repoRoot, file));
     expect(offenders).toEqual([]);
   });
 });
