@@ -1,9 +1,21 @@
 {
-  "task": "personal-slim-v1.1 - issues4 方案升 v1.1：只保留管理员一个角色、多用户代码全部裁减（去归属、按用户存储改单一位置不搬迁、MCP 合并为一个作用域、归属列保留不读）；改 THESIS-19 至 33，新增 THESIS-34 至 37，README 重生成并行矩阵；thesis-trim 台账 #12 与 §15 v0.9.2；只改文档",
-  "base": "607d1b6",
+  "task": "THESIS-24 裁 Bug 报告 - 侧栏与关于页去掉报告问题入口，/api/bug-report 三个接口下线，删除路由、schema、前端对话框与专属测试，同步 API 文档与 RECALL_MODEL 说明",
+  "base": "48903d0",
   "allow": [
     ".gatescope.json",
+    "docs/thesis-24-drop-bug-report-plan.md",
     "docs/issues4/**",
-    "docs/issues2/task-thesis-trim-plan.md"
+    "docs/审查记录.md",
+    "docs/API.md",
+    "CLAUDE.md",
+    "src/routes/bug-report.ts",
+    "src/web.ts",
+    "src/schemas.ts",
+    "web/src/components/common/BugReportDialog.tsx",
+    "web/src/components/layout/UnifiedSidebar.tsx",
+    "web/src/components/settings/AboutSection.tsx",
+    "tests/thesis-24-drop-bug-report.test.ts",
+    "tests/bug-report-sanitize.test.ts",
+    "tests/thesis-02-bug-report-capability.test.ts"
   ]
 }
