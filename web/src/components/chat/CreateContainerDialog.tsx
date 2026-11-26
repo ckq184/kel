@@ -29,7 +29,6 @@ import {
 } from '@/components/ui/select';
 import { DirectoryBrowser } from '../shared/DirectoryBrowser';
 import { useChatStore } from '../../stores/chat';
-import { useAuthStore } from '../../stores/auth';
 import { useAgentProfilesStore } from '../../stores/agent-profiles';
 import {
   getAgentContextSource,
@@ -124,7 +123,6 @@ export function CreateContainerDialog({
 
   const createFlow = useChatStore((s) => s.createFlow);
   const adminHostOnlyMode = useChatStore((s) => s.adminHostOnlyMode);
-  const canHostExec = useAuthStore((s) => s.user?.role === 'admin');
   const profiles = useAgentProfilesStore((s) => s.profiles);
   const profilesLoading = useAgentProfilesStore((s) => s.loading);
   const profilesError = useAgentProfilesStore((s) => s.profilesError);
@@ -133,7 +131,6 @@ export function CreateContainerDialog({
     (profile) => profile.id === selectedAgentProfileId,
   );
   const inheritsHostClaude =
-    canHostExec &&
     getAgentContextSource(
       selectedProfile?.effective_runtime_policy ??
         selectedProfile?.runtime_policy,
@@ -154,13 +151,7 @@ export function CreateContainerDialog({
   }, [open, profiles, selectedAgentProfileId]);
 
   useEffect(() => {
-    if (canHostExec || executionMode === 'container') return;
-    setExecutionMode('container');
-    setCustomCwd('');
-  }, [canHostExec, executionMode]);
-
-  useEffect(() => {
-    if (!open || !canHostExec || !adminHostOnlyMode) return;
+    if (!open || !adminHostOnlyMode) return;
     setExecutionMode('host');
     setInitMode('empty');
     setInitSourcePath('');
@@ -168,23 +159,14 @@ export function CreateContainerDialog({
     setHostMounts([]);
     setFieldErrors({});
     setSubmitError(null);
-  }, [open, canHostExec, adminHostOnlyMode]);
+  }, [open, adminHostOnlyMode]);
 
   useEffect(() => {
-    if (canHostExec && executionMode === 'container') return;
+    if (executionMode === 'container') return;
     setHostMounts([]);
     setFieldErrors({});
     setSubmitError(null);
-  }, [canHostExec, executionMode]);
-
-  useEffect(() => {
-    if (canHostExec) return;
-    setInitMode((current) =>
-      current === 'local' || current === 'git' ? 'empty' : current,
-    );
-    setInitSourcePath('');
-    setInitGitUrl('');
-  }, [canHostExec]);
+  }, [executionMode]);
 
   const clearSubmissionErrors = () => {
     setSubmitError(null);
@@ -194,7 +176,7 @@ export function CreateContainerDialog({
   const reset = () => {
     setName('');
     setAdvancedOpen(false);
-    setExecutionMode(canHostExec && adminHostOnlyMode ? 'host' : 'container');
+    setExecutionMode(adminHostOnlyMode ? 'host' : 'container');
     setCustomCwd('');
     setInitMode('empty');
     setInitSourcePath('');
@@ -223,7 +205,7 @@ export function CreateContainerDialog({
     if (blocked) return;
 
     const mountErrors =
-      canHostExec && executionMode === 'container'
+      executionMode === 'container'
         ? validateHostDirectoryMounts(hostMounts)
         : {};
     if (Object.keys(mountErrors).length > 0) {
@@ -236,16 +218,16 @@ export function CreateContainerDialog({
     setLoading(true);
     try {
       const options: CreateWorkspaceOptions = {};
-      if (executionMode === 'host' && canHostExec) {
+      if (executionMode === 'host') {
         options.execution_mode = 'host';
         if (customCwd.trim()) options.custom_cwd = customCwd.trim();
       } else {
-        if (canHostExec && initMode === 'local' && initSourcePath.trim()) {
+        if (initMode === 'local' && initSourcePath.trim()) {
           options.init_source_path = initSourcePath.trim();
-        } else if (canHostExec && initMode === 'git' && initGitUrl.trim()) {
+        } else if (initMode === 'git' && initGitUrl.trim()) {
           options.init_git_url = initGitUrl.trim();
         }
-        if (canHostExec && hostMounts.length > 0) {
+        if (hostMounts.length > 0) {
           options.execution_mode = 'container';
           options.additional_mounts = toAdditionalMountInputs(hostMounts);
         }
@@ -385,14 +367,12 @@ export function CreateContainerDialog({
                     运行位置
                   </div>
                   <div className="mt-1 flex items-center gap-1.5 text-sm font-medium text-foreground">
-                    {executionMode === 'host' && canHostExec ? (
+                    {executionMode === 'host' ? (
                       <Monitor className="h-3.5 w-3.5 text-muted-foreground" />
                     ) : (
                       <Box className="h-3.5 w-3.5 text-muted-foreground" />
                     )}
-                    {executionMode === 'host' && canHostExec
-                      ? '宿主机'
-                      : 'Docker 容器'}
+                    {executionMode === 'host' ? '宿主机' : 'Docker 容器'}
                   </div>
                 </div>
                 <div className="min-w-0">
@@ -415,11 +395,9 @@ export function CreateContainerDialog({
                 </div>
               </div>
               <p className="mt-2 border-t pt-2 text-[11px] leading-5 text-muted-foreground">
-                {canHostExec
-                  ? inheritsHostClaude
-                    ? `运行位置只决定命令在哪里执行。该智能体会将完整 ~/.claude 作为用户配置层叠加，工作区仍是 cwd；宿主机 Skills：${hostSkillsMode === 'inherit' ? '全部使用' : hostSkillsMode === 'custom' ? `选择 ${selectedProfile?.runtime_policy.skills.host?.ids.length ?? 0} 项` : '不使用'}。`
-                    : '运行位置只决定命令在哪里执行。该智能体使用 CKQClaw 管理的上下文与附加能力。'
-                  : '工作区固定在 Docker 容器中运行，并使用 CKQClaw 管理的智能体上下文与附加能力。'}
+                {inheritsHostClaude
+                  ? `运行位置只决定命令在哪里执行。该智能体会将完整 ~/.claude 作为用户配置层叠加，工作区仍是 cwd；宿主机 Skills：${hostSkillsMode === 'inherit' ? '全部使用' : hostSkillsMode === 'custom' ? `选择 ${selectedProfile?.runtime_policy.skills.host?.ids.length ?? 0} 项` : '不使用'}。`
+                  : '运行位置只决定命令在哪里执行。该智能体使用 CKQClaw 管理的上下文与附加能力。'}
               </p>
             </div>
           )}
@@ -476,37 +454,35 @@ export function CreateContainerDialog({
                         </div>
                       </label>
                     )}
-                    {canHostExec && (
-                      <label className="flex cursor-pointer items-start gap-3 rounded-lg border p-2 transition-colors hover:bg-accent/50">
-                        <input
-                          type="radio"
-                          name="execution_mode"
-                          value="host"
-                          checked={executionMode === 'host'}
-                          onChange={() => {
-                            setExecutionMode('host');
-                            setInitMode('empty');
-                            setInitSourcePath('');
-                            setInitGitUrl('');
-                            setHostMounts([]);
-                            clearSubmissionErrors();
-                          }}
-                          className="mt-0.5 accent-primary"
-                        />
-                        <div>
-                          <div className="flex items-center gap-1.5">
-                            <Monitor className="w-4 h-4 text-muted-foreground" />
-                            <span className="text-sm font-medium">
-                              宿主机模式
-                            </span>
-                          </div>
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            直接在服务器上执行
-                          </p>
+                    <label className="flex cursor-pointer items-start gap-3 rounded-lg border p-2 transition-colors hover:bg-accent/50">
+                      <input
+                        type="radio"
+                        name="execution_mode"
+                        value="host"
+                        checked={executionMode === 'host'}
+                        onChange={() => {
+                          setExecutionMode('host');
+                          setInitMode('empty');
+                          setInitSourcePath('');
+                          setInitGitUrl('');
+                          setHostMounts([]);
+                          clearSubmissionErrors();
+                        }}
+                        className="mt-0.5 accent-primary"
+                      />
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <Monitor className="w-4 h-4 text-muted-foreground" />
+                          <span className="text-sm font-medium">
+                            宿主机模式
+                          </span>
                         </div>
-                      </label>
-                    )}
-                    {canHostExec && adminHostOnlyMode && (
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          直接在服务器上执行
+                        </p>
+                      </div>
+                    </label>
+                    {adminHostOnlyMode && (
                       <p className="rounded-md border border-warning/30 bg-warning-bg px-3 py-2 text-xs leading-5 text-warning">
                         纯宿主机模式已开启，新工作区固定直接在服务器上运行。
                       </p>
@@ -542,33 +518,31 @@ export function CreateContainerDialog({
                           </p>
                         </div>
                       </label>
-                      {canHostExec && (
-                        <label className="flex items-start gap-3 p-2 rounded-lg border cursor-pointer hover:bg-accent/50 transition-colors">
-                          <input
-                            type="radio"
-                            name="init_mode"
-                            value="local"
-                            checked={initMode === 'local'}
-                            onChange={() => {
-                              setInitMode('local');
-                              clearSubmissionErrors();
-                            }}
-                            className="mt-0.5 accent-primary"
-                          />
-                          <div className="flex-1">
-                            <div className="flex items-center gap-1.5">
-                              <FolderInput className="w-4 h-4 text-muted-foreground" />
-                              <span className="text-sm font-medium">
-                                复制本地目录
-                              </span>
-                            </div>
-                            <p className="text-xs text-muted-foreground mt-0.5">
-                              将宿主机目录复制到工作区（隔离副本）
-                            </p>
+                      <label className="flex items-start gap-3 p-2 rounded-lg border cursor-pointer hover:bg-accent/50 transition-colors">
+                        <input
+                          type="radio"
+                          name="init_mode"
+                          value="local"
+                          checked={initMode === 'local'}
+                          onChange={() => {
+                            setInitMode('local');
+                            clearSubmissionErrors();
+                          }}
+                          className="mt-0.5 accent-primary"
+                        />
+                        <div className="flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <FolderInput className="w-4 h-4 text-muted-foreground" />
+                            <span className="text-sm font-medium">
+                              复制本地目录
+                            </span>
                           </div>
-                        </label>
-                      )}
-                      {initMode === 'local' && canHostExec && (
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            将宿主机目录复制到工作区（隔离副本）
+                          </p>
+                        </div>
+                      </label>
+                      {initMode === 'local' && (
                         <div className="ml-6">
                           <DirectoryBrowser
                             value={initSourcePath}
@@ -583,68 +557,64 @@ export function CreateContainerDialog({
                           />
                         </div>
                       )}
-                      {canHostExec && (
-                        <>
-                          <label className="flex cursor-pointer items-start gap-3 rounded-lg border p-2 transition-colors hover:bg-accent/50">
-                            <input
-                              type="radio"
-                              name="init_mode"
-                              value="git"
-                              checked={initMode === 'git'}
-                              onChange={() => {
-                                setInitMode('git');
+                      <>
+                        <label className="flex cursor-pointer items-start gap-3 rounded-lg border p-2 transition-colors hover:bg-accent/50">
+                          <input
+                            type="radio"
+                            name="init_mode"
+                            value="git"
+                            checked={initMode === 'git'}
+                            onChange={() => {
+                              setInitMode('git');
+                              clearSubmissionErrors();
+                            }}
+                            className="mt-0.5 accent-primary"
+                          />
+                          <div className="flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <GitBranch className="h-4 w-4 text-muted-foreground" />
+                              <span className="text-sm font-medium">
+                                克隆 Git 仓库
+                              </span>
+                            </div>
+                            <p className="mt-0.5 text-xs text-muted-foreground">
+                              从 GitHub 等平台克隆仓库到工作区
+                            </p>
+                          </div>
+                        </label>
+                        {initMode === 'git' && (
+                          <div className="ml-6">
+                            <label
+                              htmlFor="workspace-init-git-url"
+                              className="sr-only"
+                            >
+                              Git 仓库地址
+                            </label>
+                            <Input
+                              id="workspace-init-git-url"
+                              value={initGitUrl}
+                              onChange={(e) => {
+                                setInitGitUrl(e.target.value);
                                 clearSubmissionErrors();
                               }}
-                              className="mt-0.5 accent-primary"
+                              placeholder="https://github.com/user/repo"
                             />
-                            <div className="flex-1">
-                              <div className="flex items-center gap-1.5">
-                                <GitBranch className="h-4 w-4 text-muted-foreground" />
-                                <span className="text-sm font-medium">
-                                  克隆 Git 仓库
-                                </span>
-                              </div>
-                              <p className="mt-0.5 text-xs text-muted-foreground">
-                                从 GitHub 等平台克隆仓库到工作区
-                              </p>
-                            </div>
-                          </label>
-                          {initMode === 'git' && (
-                            <div className="ml-6">
-                              <label
-                                htmlFor="workspace-init-git-url"
-                                className="sr-only"
-                              >
-                                Git 仓库地址
-                              </label>
-                              <Input
-                                id="workspace-init-git-url"
-                                value={initGitUrl}
-                                onChange={(e) => {
-                                  setInitGitUrl(e.target.value);
-                                  clearSubmissionErrors();
-                                }}
-                                placeholder="https://github.com/user/repo"
-                              />
-                            </div>
-                          )}
-                        </>
-                      )}
+                          </div>
+                        )}
+                      </>
                     </div>
 
-                    {canHostExec && (
-                      <div className="border-t border-border pt-4">
-                        <HostDirectoryMountEditor
-                          mounts={hostMounts}
-                          onChange={(mounts) => {
-                            setHostMounts(mounts);
-                            clearSubmissionErrors();
-                          }}
-                          fieldErrors={fieldErrors}
-                          disabled={loading}
-                        />
-                      </div>
-                    )}
+                    <div className="border-t border-border pt-4">
+                      <HostDirectoryMountEditor
+                        mounts={hostMounts}
+                        onChange={(mounts) => {
+                          setHostMounts(mounts);
+                          clearSubmissionErrors();
+                        }}
+                        fieldErrors={fieldErrors}
+                        disabled={loading}
+                      />
+                    </div>
                   </div>
                 )}
 

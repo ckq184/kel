@@ -60,7 +60,7 @@ const mocks = vi.hoisted(() => {
     otherProfile,
     profiles: [profile],
     governanceByProfile: {} as Record<string, unknown>,
-    userRole: 'admin' as 'admin' | 'member',
+    userRole: 'admin' as 'admin',
     updateProfile: vi.fn(async () => ({
       ...profile,
       runtime_policy: {
@@ -367,8 +367,7 @@ describe('智能体宿主机 Skills 自动保存', () => {
     expect(mocks.updateProfile).not.toHaveBeenCalled();
   });
 
-  test('普通成员也能看到并重试全局运行时清理', async () => {
-    mocks.userRole = 'member';
+  test('单账号下宿主机 Skills 可授权且全局运行时清理可重试', async () => {
     mocks.governanceByProfile = {
       'research-profile': {
         profile: mocks.profile,
@@ -377,12 +376,15 @@ describe('智能体宿主机 Skills 自动保存', () => {
         runtime_cleanup_pending: true,
       },
     };
-    await renderPage({ expectHostAll: false });
+    const all = await renderPage();
 
     expect(container?.textContent).toContain(
       '智能体配置已保存，但工作区运行时清理未完成',
     );
-    expect(container?.textContent).toContain('当前无法查看和授权宿主机 Skills');
+    expect(all.textContent).toContain('全部使用');
+    expect(container?.textContent).not.toContain(
+      '当前无法查看和授权宿主机 Skills',
+    );
     const retryCleanup = Array.from(
       container!.querySelectorAll<HTMLButtonElement>('button'),
     ).find((button) => button.textContent?.includes('重试清理'));

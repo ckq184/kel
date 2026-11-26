@@ -13,11 +13,9 @@ import {
 } from '../../utils/task-utils';
 import { useConnectedChannels } from '../../hooks/useConnectedChannels';
 import { useGroupsStore } from '../../stores/groups';
-import { useAuthStore } from '../../stores/auth';
 import { getWorkspaceExecutionMode } from '../../utils/agent-product';
 import {
   buildTaskWorkspacePatch,
-  canSelectTaskExecutionMode,
   type TaskExecutionMode,
 } from '../../utils/task-edit';
 import {
@@ -144,10 +142,6 @@ export function TaskDetail({ task }: TaskDetailProps) {
 
   const connectedChannels = useConnectedChannels();
   const groupNames = useTasksStore((s) => s.groupNames);
-  const executionRole = useAuthStore((state) =>
-    state.user?.role === 'admin' ? 'admin' : 'member',
-  );
-  const isAdmin = executionRole === 'admin';
   const groups = useGroupsStore((state) => state.groups);
   const adminHostOnlyMode = useGroupsStore((state) => state.adminHostOnlyMode);
   const groupsLoading = useGroupsStore((state) => state.loading);
@@ -543,7 +537,7 @@ export function TaskDetail({ task }: TaskDetailProps) {
           <div className="text-xs text-muted-foreground mb-1">
             {scheduleLabel()}
           </div>
-          {editing && isAdmin ? (
+          {editing ? (
             <>
               {editForm.schedule_type === 'interval' ? (
                 <div className="flex gap-2">
@@ -614,7 +608,7 @@ export function TaskDetail({ task }: TaskDetailProps) {
 
         <div>
           <div className="text-xs text-muted-foreground mb-1">执行模式</div>
-          {editing && isAdmin ? (
+          {editing ? (
             <>
               <select
                 value={editForm.execution_mode}
@@ -648,13 +642,6 @@ export function TaskDetail({ task }: TaskDetailProps) {
                   ? '宿主机'
                   : 'Docker 容器'}
               </div>
-              {editing && !isAdmin && (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {editForm.execution_mode === 'host'
-                    ? '这是旧版宿主机任务；执行模式不可修改。'
-                    : '该任务固定使用 Docker 容器；宿主机模式不可用。'}
-                </p>
-              )}
             </>
           )}
         </div>
@@ -696,15 +683,6 @@ export function TaskDetail({ task }: TaskDetailProps) {
                   );
                   if (!targetExecutionMode) {
                     showToast('无法切换工作区', '尚未取得目标工作区的执行模式');
-                    return;
-                  }
-                  if (
-                    !canSelectTaskExecutionMode(
-                      executionRole,
-                      targetExecutionMode,
-                    )
-                  ) {
-                    showToast('无法切换工作区', '该任务不能迁移到宿主机工作区');
                     return;
                   }
                   setEditForm({

@@ -36,17 +36,12 @@ interface CreateTaskFormProps {
     contextMode?: 'group' | 'isolated';
   }) => Promise<void>;
   onClose: () => void;
-  isAdmin?: boolean;
 }
 
 type CreateMode = 'ai' | 'manual';
 const MODAL_SELECT_CONTENT_CLASS = 'z-[11020]';
 
-export function CreateTaskForm({
-  onSubmit,
-  onClose,
-  isAdmin,
-}: CreateTaskFormProps) {
+export function CreateTaskForm({ onSubmit, onClose }: CreateTaskFormProps) {
   const [mode, setMode] = useState<CreateMode>('ai');
 
   // --- AI mode state ---
@@ -59,7 +54,7 @@ export function CreateTaskForm({
     scheduleType: 'cron' as 'cron' | 'interval' | 'once',
     scheduleValue: '',
     executionType: 'agent' as 'agent' | 'script',
-    executionMode: (isAdmin ? 'host' : 'container') as 'host' | 'container',
+    executionMode: 'host' as 'host' | 'container',
     scriptCommand: '',
   });
   const [intervalNumber, setIntervalNumber] = useState('');
@@ -94,27 +89,27 @@ export function CreateTaskForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Sync executionMode from selected workspace when user hasn't manually overridden.
-  // For the "default" option (empty chatJid), fall back to a role-based placeholder
-  // that matches what the backend infers for the user's own home workspace.
+  // Sync executionMode from the selected workspace when the user has not
+  // manually overridden it. For the "default" option (empty chatJid), fall
+  // back to host, matching the single account's home workspace.
   useEffect(() => {
-    if (!isAdmin || !adminHostOnlyMode) return;
+    if (!adminHostOnlyMode) return;
     setExecutionModeExplicit(true);
     setFormData((previous) =>
       previous.executionMode === 'host'
         ? previous
         : { ...previous, executionMode: 'host' },
     );
-  }, [isAdmin, adminHostOnlyMode]);
+  }, [adminHostOnlyMode]);
 
   useEffect(() => {
     if (executionModeExplicit) return;
     const sourceMode = chatJid ? groups[chatJid]?.execution_mode : undefined;
-    const next = sourceMode ?? (isAdmin ? 'host' : 'container');
+    const next = sourceMode ?? 'host';
     setFormData((prev) =>
       prev.executionMode === next ? prev : { ...prev, executionMode: next },
     );
-  }, [chatJid, groups, executionModeExplicit, isAdmin]);
+  }, [chatJid, groups, executionModeExplicit]);
 
   const isScript = formData.executionType === 'script';
 
@@ -481,79 +476,75 @@ export function CreateTaskForm({
             className="space-y-4 overflow-y-auto p-4 sm:p-6"
           >
             {/* Execution Type */}
-            {isAdmin && (
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">
-                  执行方式
-                </label>
-                <Select
-                  value={formData.executionType}
-                  onValueChange={(value) =>
-                    setFormData({
-                      ...formData,
-                      executionType: value as 'agent' | 'script',
-                    })
-                  }
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className={MODAL_SELECT_CONTENT_CLASS}>
-                    <SelectItem value="agent">智能体（AI 执行）</SelectItem>
-                    <SelectItem value="script">脚本（Shell 命令）</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {isScript
-                    ? '直接执行 Shell 命令，零 API 消耗，适合确定性任务'
-                    : '启动完整 CKQClaw 智能体，消耗 API tokens'}
-                </p>
-              </div>
-            )}
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-2">
+                执行方式
+              </label>
+              <Select
+                value={formData.executionType}
+                onValueChange={(value) =>
+                  setFormData({
+                    ...formData,
+                    executionType: value as 'agent' | 'script',
+                  })
+                }
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className={MODAL_SELECT_CONTENT_CLASS}>
+                  <SelectItem value="agent">智能体（AI 执行）</SelectItem>
+                  <SelectItem value="script">脚本（Shell 命令）</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {isScript
+                  ? '直接执行 Shell 命令，零 API 消耗，适合确定性任务'
+                  : '启动完整 CKQClaw 智能体，消耗 API tokens'}
+              </p>
+            </div>
 
             {/* Execution Mode */}
-            {isAdmin && (
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">
-                  执行模式
-                </label>
-                <Select
-                  value={formData.executionMode}
-                  disabled={isScript || adminHostOnlyMode}
-                  onValueChange={(value) => {
-                    setExecutionModeExplicit(true);
-                    setFormData({
-                      ...formData,
-                      executionMode: value as 'host' | 'container',
-                    });
-                  }}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className={MODAL_SELECT_CONTENT_CLASS}>
-                    <SelectItem value="host">宿主机</SelectItem>
-                    {!isScript && !adminHostOnlyMode && (
-                      <SelectItem value="container">Docker 容器</SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {adminHostOnlyMode
-                    ? '纯宿主机模式已开启，任务固定在宿主机执行。'
-                    : isScript
-                      ? '脚本固定使用宿主机模式；Docker 容器脚本不会被执行。'
-                      : executionModeExplicit
-                        ? '已手动指定执行模式，不再跟随源工作区'
-                        : '默认继承源工作区的执行模式，选择后将锁定不再自动同步'}
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-2">
+                执行模式
+              </label>
+              <Select
+                value={formData.executionMode}
+                disabled={isScript || adminHostOnlyMode}
+                onValueChange={(value) => {
+                  setExecutionModeExplicit(true);
+                  setFormData({
+                    ...formData,
+                    executionMode: value as 'host' | 'container',
+                  });
+                }}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className={MODAL_SELECT_CONTENT_CLASS}>
+                  <SelectItem value="host">宿主机</SelectItem>
+                  {!isScript && !adminHostOnlyMode && (
+                    <SelectItem value="container">Docker 容器</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {adminHostOnlyMode
+                  ? '纯宿主机模式已开启，任务固定在宿主机执行。'
+                  : isScript
+                    ? '脚本固定使用宿主机模式；Docker 容器脚本不会被执行。'
+                    : executionModeExplicit
+                      ? '已手动指定执行模式，不再跟随源工作区'
+                      : '默认继承源工作区的执行模式，选择后将锁定不再自动同步'}
+              </p>
+              {errors.executionMode && (
+                <p className="mt-1 text-sm text-error">
+                  {errors.executionMode}
                 </p>
-                {errors.executionMode && (
-                  <p className="mt-1 text-sm text-error">
-                    {errors.executionMode}
-                  </p>
-                )}
-              </div>
-            )}
+              )}
+            </div>
 
             {renderTargetWorkspace()}
             {!isScript && renderContextMode()}

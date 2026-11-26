@@ -166,11 +166,11 @@ const appRoutes = createRoutesFromElements(
           </Suspense>
         }
       />
-      {/* 系统监控（上下文审计/渠道可靠性），仅 admin 角色 */}
+      {/* 系统监控（上下文审计/渠道可靠性） */}
       <Route
         path="/monitor"
         element={
-          <AuthGuard requireAdmin>
+          <AuthGuard>
             <Suspense fallback={null}>
               <MonitorPage />
             </Suspense>

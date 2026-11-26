@@ -99,7 +99,6 @@ export function AgentProfilesPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteTargetId, setDeleteTargetId] = useState('');
   const [draftStep, setDraftStep] = useState(1);
-  const isAdmin = useAuthStore((state) => state.user?.role === 'admin');
   const mainAppearance = useAuthStore((state) => state.appearance);
 
   const customProfiles = useMemo(
@@ -711,7 +710,6 @@ export function AgentProfilesPage() {
                   <AgentIdentitySection
                     draftMode={draftMode}
                     draftStep={draftStep}
-                    isAdmin={isAdmin}
                     mainAppearance={mainAppearance}
                     name={name}
                     setName={setName}
@@ -770,7 +768,6 @@ export function AgentProfilesPage() {
                           type="button"
                           role="radio"
                           aria-checked={contextSource === 'host_claude'}
-                          disabled={!isAdmin}
                           onClick={() => setContextSource('host_claude')}
                           className={`rounded-lg border p-4 text-left disabled:cursor-not-allowed disabled:opacity-50 ${contextSource === 'host_claude' ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}
                         >
@@ -852,7 +849,6 @@ export function AgentProfilesPage() {
                     hostSkillOptions={hostSkillOptions}
                     skillsLoading={skillsLoading}
                     skillsError={skillsError}
-                    isAdmin={isAdmin}
                     hostSkillsSaving={hostSkillsSaving}
                     runtimeCleanupRepairing={runtimeCleanupRepairing}
                     hostSkillsSaveStatus={hostSkillsSaveStatus}

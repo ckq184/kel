@@ -4,7 +4,6 @@ import { AlertCircle, ArrowRight, Loader2, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { api } from '../../api/client';
-import { useAuthStore } from '../../stores/auth';
 import { useChatStore } from '../../stores/chat';
 import { useTasksStore } from '../../stores/tasks';
 import { Button } from '@/components/ui/button';
@@ -386,7 +385,6 @@ export function HostIntegrationSettingsSection({
 }: {
   scope?: 'main-agent' | 'host';
 }) {
-  const isAdmin = useAuthStore((state) => state.user?.role === 'admin');
   const [settings, setSettings] = useState<HostIntegrationSettings | null>(
     null,
   );
@@ -396,7 +394,6 @@ export function HostIntegrationSettingsSection({
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const loadSettings = useCallback(async () => {
-    if (!isAdmin) return;
     setLoading(true);
     setLoadError(null);
     try {
@@ -412,13 +409,11 @@ export function HostIntegrationSettingsSection({
     } finally {
       setLoading(false);
     }
-  }, [isAdmin]);
+  }, []);
 
   useEffect(() => {
     void loadSettings();
   }, [loadSettings]);
-
-  if (!isAdmin) return null;
 
   if (loading) {
     return (

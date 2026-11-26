@@ -37,7 +37,6 @@ export interface AgentCapabilitiesSectionProps {
   hostSkillOptions: PolicyResourceOption[];
   skillsLoading: boolean;
   skillsError: string | null;
-  isAdmin: boolean;
   hostSkillsSaving: boolean;
   runtimeCleanupRepairing: boolean;
   hostSkillsSaveStatus: HostSkillSaveStatus;
@@ -69,7 +68,6 @@ export function AgentCapabilitiesSection(props: AgentCapabilitiesSectionProps) {
     hostSkillOptions,
     skillsLoading,
     skillsError,
-    isAdmin,
     hostSkillsSaving,
     runtimeCleanupRepairing,
     hostSkillsSaveStatus,
@@ -113,7 +111,7 @@ export function AgentCapabilitiesSection(props: AgentCapabilitiesSectionProps) {
           hostOptions={hostSkillOptions}
           loading={skillsLoading}
           error={skillsError}
-          hostAvailable={isAdmin}
+          hostAvailable
           hostAutoSave={!draftMode}
           hostSaving={hostSkillsSaving || runtimeCleanupRepairing}
           hostSaveStatus={hostSkillsSaveStatus}

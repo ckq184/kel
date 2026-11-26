@@ -8705,8 +8705,6 @@ function toUserPublic(user: User, lastActiveAt: string | null): UserPublic {
     display_name: user.display_name,
     role: user.role,
     status: user.status,
-    disable_reason: user.disable_reason,
-    notes: user.notes,
     avatar_emoji: user.avatar_emoji,
     avatar_color: user.avatar_color,
     avatar_url: user.avatar_url,
@@ -8714,7 +8712,6 @@ function toUserPublic(user: User, lastActiveAt: string | null): UserPublic {
     created_at: user.created_at,
     last_login_at: user.last_login_at,
     last_active_at: lastActiveAt,
-    deleted_at: user.deleted_at,
   };
 }
 

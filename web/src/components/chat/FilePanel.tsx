@@ -25,7 +25,6 @@ import {
 } from 'lucide-react';
 import { useFileStore, FileEntry, toBase64Url } from '../../stores/files';
 import { useChatStore } from '../../stores/chat';
-import { useAuthStore } from '../../stores/auth';
 import { useScrollIsolation } from '../../hooks/useScrollIsolation';
 import { api } from '../../api/client';
 import { withBasePath } from '../../utils/url';
@@ -838,7 +837,6 @@ export function FilePanel({ groupJid, onClose }: FilePanelProps) {
   const [preview, setPreview] = useState<PreviewState>(null);
 
   const isStreaming = useChatStore((s) => !!s.streaming[groupJid]);
-  const canOpenLocalFolder = useAuthStore((s) => s.user?.role === 'admin');
   const prevStreamingRef = useRef(false);
   const fileListScrollRef = useRef<HTMLDivElement>(null);
 
@@ -1012,21 +1010,19 @@ export function FilePanel({ groupJid, onClose }: FilePanelProps) {
           当前上下文文件
         </h3>
         <div className="flex items-center gap-1">
-          {canOpenLocalFolder && (
-            <button
-              onClick={handleOpenLocalFolder}
-              disabled={openDirLoading}
-              className="hidden md:inline-flex text-muted-foreground hover:text-foreground transition-colors p-2 rounded-md hover:bg-muted cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-              title="打开工作区文件夹"
-              aria-label="打开工作区文件夹"
-            >
-              {openDirLoading ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <FolderOpen className="size-3.5" />
-              )}
-            </button>
-          )}
+          <button
+            onClick={handleOpenLocalFolder}
+            disabled={openDirLoading}
+            className="hidden md:inline-flex text-muted-foreground hover:text-foreground transition-colors p-2 rounded-md hover:bg-muted cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            title="打开工作区文件夹"
+            aria-label="打开工作区文件夹"
+          >
+            {openDirLoading ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <FolderOpen className="size-3.5" />
+            )}
+          </button>
           <button
             onClick={handleRefresh}
             className="text-muted-foreground hover:text-foreground transition-colors p-2 rounded-md hover:bg-muted cursor-pointer"
