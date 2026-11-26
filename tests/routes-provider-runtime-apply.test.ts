@@ -250,65 +250,81 @@ describe('provider runtime apply is a lossless configuration mutation', () => {
     const jid = `web:${folder}`;
     const descendantJid = `${jid}#task:scheduled`;
     const group = registerWorkspace(jid, folder);
-    const queue = new GroupQueue();
-    liveQueue = queue;
-    queue.setSerializationKeyResolver((candidate) => {
-      const taskSeparator = candidate.indexOf('#task:');
-      if (taskSeparator >= 0) {
-        return `${folder}#task:${candidate.slice(taskSeparator + 6)}`;
-      }
-      return candidate === jid ? folder : candidate;
-    });
-    let capacityAllowed = false;
-    queue.setUserConcurrentLimitChecker(() => ({
-      allowed: capacityAllowed,
-    }));
+    const previousSettings = runtimeConfig.getSystemSettings();
+    runtimeConfig.saveSystemSettings({ maxConcurrentContainers: 1 });
+    let releaseBlocker: (() => void) | undefined;
+    try {
+      const queue = new GroupQueue();
+      liveQueue = queue;
+      queue.setSerializationKeyResolver((candidate) => {
+        const taskSeparator = candidate.indexOf('#task:');
+        if (taskSeparator >= 0) {
+          return `${folder}#task:${candidate.slice(taskSeparator + 6)}`;
+        }
+        return candidate === jid ? folder : candidate;
+      });
 
-    let dropped = 0;
-    let runs = 0;
-    expect(
-      queue.enqueueTask(
-        descendantJid,
-        'scheduled',
-        async () => {
-          runs += 1;
-        },
-        {
-          onDropped: () => {
-            dropped += 1;
+      // Occupy the single global container slot so the descendant task below
+      // is genuinely capacity-queued (the per-user limit no longer exists).
+      let release!: () => void;
+      const blockerDone = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      releaseBlocker = release;
+      const blockerJid = `web:${unique('capacity-blocker')}`;
+      expect(
+        queue.enqueueTask(blockerJid, 'blocker', async () => {
+          await blockerDone;
+        }),
+      ).toBe(true);
+
+      let dropped = 0;
+      let runs = 0;
+      expect(
+        queue.enqueueTask(
+          descendantJid,
+          'scheduled',
+          async () => {
+            runs += 1;
           },
-        },
-      ),
-    ).toBe(true);
-    expect(queue.listDescendantJids(jid)).toEqual([descendantJid]);
+          {
+            onDropped: () => {
+              dropped += 1;
+            },
+          },
+        ),
+      ).toBe(true);
+      expect(queue.listDescendantJids(jid)).toEqual([descendantJid]);
+      expect(runs).toBe(0);
 
-    bindDeps({ [jid]: group }, queue);
-    const provider = runtimeConfig.createProvider({
-      name: unique('third-party'),
-      type: 'third_party',
-      anthropicBaseUrl: 'https://old.example.test',
-      anthropicAuthToken: 'test-token',
-      anthropicModel: 'old-model',
-      enabled: true,
-    });
+      bindDeps({ [jid]: group }, queue);
+      const provider = runtimeConfig.createProvider({
+        name: unique('third-party'),
+        type: 'third_party',
+        anthropicBaseUrl: 'https://old.example.test',
+        anthropicAuthToken: 'test-token',
+        anthropicModel: 'old-model',
+        enabled: true,
+      });
 
-    const response = await patchProvider(provider.id, {
-      anthropicModel: 'new-model',
-    });
+      const response = await patchProvider(provider.id, {
+        anthropicModel: 'new-model',
+      });
 
-    expect(response.status).toBe(200);
-    expect(dropped).toBe(0);
-    expect(queue.listDescendantJids(jid)).toEqual([descendantJid]);
-    capacityAllowed = true;
-    (
-      queue as unknown as {
-        drainWaiting: () => void;
-      }
-    ).drainWaiting();
-    await new Promise((resolve) => setImmediate(resolve));
-    await new Promise((resolve) => setImmediate(resolve));
-    expect(runs).toBe(1);
-    expect(dropped).toBe(0);
+      expect(response.status).toBe(200);
+      expect(dropped).toBe(0);
+      expect(queue.listDescendantJids(jid)).toEqual([descendantJid]);
+      expect(runs).toBe(0);
+
+      releaseBlocker?.();
+      await vi.waitFor(() => expect(runs).toBe(1), { timeout: 2000 });
+      expect(dropped).toBe(0);
+    } finally {
+      releaseBlocker?.();
+      runtimeConfig.saveSystemSettings({
+        maxConcurrentContainers: previousSettings.maxConcurrentContainers,
+      });
+    }
   });
 
   test('never stops the same descendant concurrently when sibling JIDs share a folder', async () => {

@@ -241,7 +241,7 @@ describe('IM manager account lifecycle', () => {
       ),
     ).rejects.toThrow('already connected by another channel account');
 
-    await manager.disconnectUserFeishu('legacy-owner');
+    await manager.disconnectChannel('legacy-owner', 'feishu');
     await expect(
       manager.connectChannel(
         'legacy-owner',

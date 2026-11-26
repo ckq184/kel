@@ -70,7 +70,6 @@ describe('ClaudeContextResolver', () => {
     const plan = buildClaudeContextPlan({
       executionMode: 'host',
       group: fakeGroup('main', 'admin', true) as any,
-      ownerHomeFolder: 'main',
       externalClaudeDir: external,
       projectRoot,
       dataDir,
@@ -141,7 +140,6 @@ describe('ClaudeContextResolver', () => {
     const plan = buildClaudeContextPlan({
       executionMode: 'host',
       group: fakeGroup('main', 'admin', true) as any,
-      ownerHomeFolder: 'main',
       externalClaudeDir: external,
       projectRoot: path.join(tmp, 'project'),
       dataDir: path.join(tmp, 'data'),
@@ -166,7 +164,6 @@ describe('ClaudeContextResolver', () => {
     const adminPlan = buildClaudeContextPlan({
       executionMode: 'container',
       group: fakeGroup('main', 'admin', true) as any,
-      ownerHomeFolder: 'main',
       externalClaudeDir: external,
       projectRoot: path.join(tmp, 'project'),
       dataDir: path.join(tmp, 'data'),
@@ -193,7 +190,6 @@ describe('ClaudeContextResolver', () => {
     const userPlan = buildClaudeContextPlan({
       executionMode: 'container',
       group: fakeGroup('alice-home', 'alice', true) as any,
-      ownerHomeFolder: 'alice-home',
       externalClaudeDir: external,
       projectRoot: path.join(tmp, 'project'),
       dataDir: path.join(tmp, 'data'),
@@ -233,7 +229,6 @@ describe('ClaudeContextResolver', () => {
     const plan = buildClaudeContextPlan({
       executionMode: 'host',
       group: fakeGroup('main', 'admin', true) as any,
-      ownerHomeFolder: 'main',
       externalClaudeDir: external,
       projectRoot,
       dataDir,
@@ -274,7 +269,6 @@ describe('ClaudeContextResolver', () => {
     const plan = buildClaudeContextPlan({
       executionMode: 'host',
       group: fakeGroup('main', 'admin', true) as any,
-      ownerHomeFolder: 'main',
       externalClaudeDir: external,
       projectRoot,
       dataDir,
@@ -343,7 +337,6 @@ describe('ClaudeContextResolver', () => {
     const plan = buildClaudeContextPlan({
       executionMode: 'container',
       group: fakeGroup('home-admin-2', 'admin-2', true) as any,
-      ownerHomeFolder: 'home-admin-2',
       externalClaudeDir: external,
       projectRoot: path.join(tmp, 'project'),
       dataDir: path.join(tmp, 'data'),
@@ -367,7 +360,6 @@ describe('ClaudeContextResolver', () => {
     const base = {
       executionMode: 'host' as const,
       group: fakeGroup('main', 'admin', true) as any,
-      ownerHomeFolder: 'main',
       externalClaudeDir: external,
       projectRoot: path.join(tmp, 'project'),
       dataDir: path.join(tmp, 'data'),
