@@ -7,7 +7,7 @@
 
 - API 默认前缀为 `/api`，WebSocket 为 `/ws`。
 - 除明确标记 Public 的接口外，均需要有效的 CKQClaw Cookie Session。
-- 资源接口还会执行登录会话、owner、admin 角色、Host 执行权限等检查，见
+- 资源接口还会执行登录会话、owner 与 Host 执行边界等检查，见
   [个人版访问边界](ACL-MATRIX.md)。
 - 无权访问的资源通常以 `404` 返回，避免泄漏资源是否存在。
 - Secret 写入后加密保存；读取 API 只返回脱敏值或“是否已配置”状态。
@@ -66,7 +66,7 @@ Public：
   Runtime Session、子对话、工作目录及 Workspace Memory（含版本历史和
   Home Owner Profile），关联定时任务停止并移入回收站；保留工作区外壳、
   `data/extra/` 和任务运行历史
-- `POST /api/groups/:jid/reset-owner`，admin break-glass
+- `POST /api/groups/:jid/reset-owner`，owner 离群或换号时的 break-glass
 - `GET /api/groups/:jid/messages`
 - `DELETE /api/groups/:jid/messages/:messageId`
 - `GET|PUT /api/groups/:jid/env`
@@ -293,9 +293,9 @@ Provider：
 - `GET|PUT /api/config/system`；按用户容器并发上限
   `maxConcurrentContainersPerUser` 已随单账号收口删除，`PUT` 带该字段按
   strict schema 返回 400（升级后旧客户端需刷新页面；前端从未提交该字段）
-- `GET|PUT /api/config/host-integration`，仅 admin；包含
-  `adminHostOnlyMode`。从 `false` 切到 `true` 时会停稳管理员工作区运行器，并把
-  active admin 拥有的工作区和定时任务持久迁移为 Host；其他账号的数据不变
+- `GET|PUT /api/config/host-integration`，需登录；包含
+  `adminHostOnlyMode`。从 `false` 切到 `true` 时会停稳工作区运行器，并把
+  active owner 拥有的工作区和定时任务持久迁移为 Host
 - `GET /api/config/external-resources`
 - `GET /api/config/external-resources/rule`
 - `GET|PUT /api/config/appearance`
@@ -321,7 +321,7 @@ Provider：
 - `POST /api/tasks/runs/:runId/cancel`
 - `POST /api/tasks/ai`
 - `POST /api/tasks/purge`，回收站任务批量永久删除（revision CAS；script 任务
-  仅 admin 可永久删除；存在活跃 run 时返回 409 `TASK_HAS_ACTIVE_RUN`）
+  需登录且通过工作区归属检查；存在活跃 run 时返回 409 `TASK_HAS_ACTIVE_RUN`）
 
 写入使用 revision 或 idempotency key 防止并发覆盖和重复运行。运行状态与通知状态
 分开持久化；通知失败不会重新执行任务主体。

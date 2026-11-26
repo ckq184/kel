@@ -19,10 +19,9 @@ function group(
   };
 }
 
-const ADMIN: TaskAclActor = { id: 'u-admin', role: 'admin', status: 'active' };
+const ADMIN: TaskAclActor = { id: 'u-admin', status: 'active' };
 const MEMBER: TaskAclActor = {
   id: 'u-member',
-  role: 'member',
   status: 'active',
 };
 

@@ -33,7 +33,7 @@ vi.mock('../src/middleware/auth.ts', () => ({
       id: process.env.CKQCLAW_MEMORY_TEST_USER ?? 'alice',
       username: process.env.CKQCLAW_MEMORY_TEST_USER ?? 'alice',
       display_name: '',
-      role: process.env.CKQCLAW_MEMORY_TEST_ROLE ?? 'member',
+      role: process.env.CKQCLAW_MEMORY_TEST_ROLE ?? 'admin',
       status: 'active',
       must_change_password: false,
     });
@@ -199,7 +199,7 @@ describe('Workspace Memory v2 routes', () => {
     );
 
     const snapshot = memoryService.getWorkspaceMemorySnapshot({
-      actor: { id: 'alice', role: 'member' },
+      actor: { id: 'alice', role: 'admin' },
       workspaceJid: WORKSPACE_A,
       limit: 10,
       maxChars: 4000,
@@ -240,7 +240,7 @@ describe('Workspace Memory v2 routes', () => {
     expect((await request(route(WORKSPACE_A))).status).toBe(404);
     expect((await create(WORKSPACE_A, 'intrusion')).status).toBe(404);
 
-    asMemoryRouteTestUser('root-admin', 'admin');
+    asMemoryRouteTestUser('root-admin');
     expect((await request(route(WORKSPACE_A, `/${itemId}`))).status).toBe(404);
     expect(
       (

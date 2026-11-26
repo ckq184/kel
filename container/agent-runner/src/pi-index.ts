@@ -507,7 +507,6 @@ async function main(): Promise<void> {
     channelContext: input.channelContext,
     groupFolder: input.groupFolder,
     isHome: input.isHome ?? input.isMain ?? false,
-    isAdminHome: input.isAdminHome ?? input.isMain ?? false,
     agentBuilderEnabled: input.agentBuilderEnabled ?? false,
     ownerProfileEnabled: input.ckqclawOwnerProfileEnabled === true,
     interactionMode: input.interactionMode ?? 'assistant',

@@ -36,8 +36,6 @@ import {
 import {
   hasEmptyCustomHostSkillSelection,
   hasInvalidRuntimePolicyReferences,
-  isUnauthorizedHostClaudeContext,
-  isUnauthorizedHostSkills,
   validateRuntimePolicyReferences,
 } from './agent-profile-policy.js';
 import {
@@ -119,12 +117,6 @@ function validateDefinitionForActor(
 ): void {
   if (actor.user.status !== 'active') throw new Error('User is not active');
   validatePromptStructure(definition);
-  if (isUnauthorizedHostClaudeContext(actor.user, definition.runtime_policy)) {
-    throw new Error('host_claude context requires an admin role');
-  }
-  if (isUnauthorizedHostSkills(actor.user, definition.runtime_policy)) {
-    throw new Error('host skills require an admin role');
-  }
   if (hasEmptyCustomHostSkillSelection(definition.runtime_policy)) {
     throw new Error('Custom host skills require at least one selected skill');
   }
@@ -215,19 +207,16 @@ export function getAgentCapabilityCatalogForBuilder(actor: AgentBuilderActor): {
       name: skill.name,
       description: skill.description,
     }));
-  const hostSkills =
-    actor.user.role === 'admin'
-      ? scanSkillDirectory(
-          path.join(getEffectiveExternalDir(), 'skills'),
-          'host',
-        )
-          .filter((skill) => skill.enabled)
-          .map((skill) => ({
-            id: skill.id,
-            name: skill.name,
-            description: skill.description,
-          }))
-      : [];
+  const hostSkills = scanSkillDirectory(
+    path.join(getEffectiveExternalDir(), 'skills'),
+    'host',
+  )
+    .filter((skill) => skill.enabled)
+    .map((skill) => ({
+      id: skill.id,
+      name: skill.name,
+      description: skill.description,
+    }));
   const layers = loadManagedMcpLayers(actor.user.id, {
     allowAdminOnlySystemMcp: actor.user.role === 'admin',
   });

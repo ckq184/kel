@@ -78,7 +78,7 @@ describe('schema v65 Workspace Memory migration', () => {
     expect(db.getRouterState('schema_version')).toBe(
       String(db.CURRENT_SCHEMA_VERSION),
     );
-    db.ensureUserHomeGroup('new-user', 'member', 'new-user');
+    db.ensureUserHomeGroup('new-user', 'new-user');
     expect(
       fs.existsSync(
         path.join(groupsDir, 'user-global', 'new-user', 'CLAUDE.md'),
@@ -109,7 +109,7 @@ describe('schema v65 Workspace Memory migration', () => {
       raw
         .prepare(
           `SELECT 1 FROM workspace_memory_stores
-           WHERE workspace_jid = 'web:home-new-user'`,
+           WHERE workspace_jid = 'web:main'`,
         )
         .get(),
     ).toBeTruthy();

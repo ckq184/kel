@@ -1,5 +1,5 @@
 export const PROVIDER_FAILURE_USER_NOTICE =
-  '⚠️ 当前模型服务额度已用尽或暂时不可用，本次处理已停止。请稍后重试，或联系管理员切换可用模型。';
+  '⚠️ 当前模型服务额度已用尽或暂时不可用，本次处理已停止。请稍后重试，或到「设置 → 模型服务」切换可用模型。';
 
 export const PROVIDER_AUTH_USER_NOTICE =
   '⚠️ 模型服务认证失败：API Key 无效或已过期，本次处理已停止（已跳过自动重试）。请到「设置 → 模型服务」检查并更新 API Key 后重试。';

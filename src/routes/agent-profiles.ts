@@ -46,8 +46,6 @@ import { promptModeFromLegacyPreset } from '../agent-profile-prompts.js';
 import {
   hasEmptyCustomHostSkillSelection,
   hasInvalidRuntimePolicyReferences,
-  isUnauthorizedHostClaudeContext,
-  isUnauthorizedHostSkills,
   validateRuntimePolicyReferences,
 } from '../agent-profile-policy.js';
 import {
@@ -85,7 +83,7 @@ agentProfileRoutes.get('/', authMiddleware, (c) => {
     profiles: profiles.map((profile) => ({
       ...profile,
       // Persisted policy is kept for editing. The effective policy includes
-      // system defaults and the current role check used at execution time.
+      // system defaults and the current owner status used at execution time.
       effective_runtime_policy:
         resolveEffectiveAgentProfile(profile)?.runtime_policy ??
         profile.runtime_policy,
@@ -112,12 +110,6 @@ agentProfileRoutes.post('/', authMiddleware, async (c) => {
   const parsed = AgentProfileCreateSchema.safeParse(body);
   if (!parsed.success) {
     return zodBadRequest(c, parsed.error, 'body-plain');
-  }
-  if (isUnauthorizedHostClaudeContext(user, parsed.data.runtime_policy)) {
-    return c.json({ error: 'host_claude context requires an admin role' }, 403);
-  }
-  if (isUnauthorizedHostSkills(user, parsed.data.runtime_policy)) {
-    return c.json({ error: 'host skills require an admin role' }, 403);
   }
   if (
     parsed.data.model_config_id &&
@@ -199,16 +191,6 @@ agentProfileRoutes.post(
         : AgentProfileRuntimePolicySchema.safeParse(body.runtime_policy);
     if (!parsedPolicy.success)
       return c.json({ error: 'Invalid runtime policy' }, 400);
-    if (isUnauthorizedHostClaudeContext(user, parsedPolicy.data)) {
-      return c.json(
-        { error: 'host_claude context requires an admin role' },
-        403,
-      );
-    }
-    if (isUnauthorizedHostSkills(user, parsedPolicy.data)) {
-      return c.json({ error: 'host skills require an admin role' }, 403);
-    }
-
     const previewRuntimePolicy =
       parsedPolicy.data === undefined
         ? existing.runtime_policy
@@ -216,12 +198,6 @@ agentProfileRoutes.post(
             existing.runtime_policy,
             parsedPolicy.data,
           );
-    if (
-      parsedPolicy.data?.skills?.host !== undefined &&
-      isUnauthorizedHostSkills(user, previewRuntimePolicy)
-    ) {
-      return c.json({ error: 'host skills require an admin role' }, 403);
-    }
     if (hasEmptyCustomHostSkillSelection(previewRuntimePolicy)) {
       return c.json(
         { error: 'Custom host skills require at least one selected skill' },
@@ -339,12 +315,6 @@ agentProfileRoutes.patch('/:id', authMiddleware, async (c) => {
   if (!parsed.success) {
     return zodBadRequest(c, parsed.error, 'body-plain');
   }
-  if (isUnauthorizedHostClaudeContext(user, parsed.data.runtime_policy)) {
-    return c.json({ error: 'host_claude context requires an admin role' }, 403);
-  }
-  if (isUnauthorizedHostSkills(user, parsed.data.runtime_policy)) {
-    return c.json({ error: 'host skills require an admin role' }, 403);
-  }
   if (
     parsed.data.name === undefined &&
     parsed.data.identity_prompt === undefined &&
@@ -383,12 +353,6 @@ agentProfileRoutes.patch('/:id', authMiddleware, async (c) => {
                 existing.runtime_policy,
                 parsed.data.runtime_policy,
               );
-        if (
-          parsed.data.runtime_policy?.skills?.host !== undefined &&
-          isUnauthorizedHostSkills(user, effectiveRuntimePolicy)
-        ) {
-          return c.json({ error: 'host skills require an admin role' }, 403);
-        }
         if (hasEmptyCustomHostSkillSelection(effectiveRuntimePolicy)) {
           return c.json(
             { error: 'Custom host skills require at least one selected skill' },

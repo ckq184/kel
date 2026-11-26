@@ -130,11 +130,3 @@ export const authMiddleware = async (c: any, next: any) => {
 
   await next();
 };
-
-export const adminRoleMiddleware = async (c: any, next: any) => {
-  const user = c.get('user') as AuthUser;
-  if (user.role !== 'admin') {
-    return c.json({ error: 'Forbidden: admin role required' }, 403);
-  }
-  await next();
-};

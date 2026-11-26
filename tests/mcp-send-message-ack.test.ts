@@ -27,7 +27,6 @@ function setupSendTool(
     chatJid: 'web:workspace',
     groupFolder: 'workspace',
     isHome: false,
-    isAdminHome: false,
     agentBuilderEnabled: false,
     currentInputTurnId: 'delivery-turn-1',
     workspaceIpc: root,

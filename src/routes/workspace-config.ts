@@ -211,7 +211,7 @@ function requireWorkspaceOwner(
   group: RegisteredGroup & { jid: string },
 ): Response | null {
   const authUser = c.get('user') as AuthUser;
-  if (!canModifyGroup({ id: authUser.id, role: authUser.role }, group)) {
+  if (!canModifyGroup({ id: authUser.id }, group)) {
     return c.json(
       { error: 'Only the workspace owner can modify workspace config' },
       403,

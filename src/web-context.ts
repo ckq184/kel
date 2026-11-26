@@ -2,7 +2,7 @@
 
 import type { Context } from 'hono';
 import { WebSocket } from 'ws';
-import { FollowUpActionResult, RegisteredGroup, UserRole } from './types.js';
+import { FollowUpActionResult, RegisteredGroup } from './types.js';
 import {
   GroupQueue,
   type IpcDeliveryReceipt,
@@ -25,7 +25,6 @@ import type { ChannelAccountSecret } from './channel-account-secrets.js';
 interface WsClientInfo {
   sessionId: string;
   userId: string;
-  role: UserRole;
 }
 
 export interface WebDeps {
@@ -269,24 +268,20 @@ export function parseCookie(
   return cookies;
 }
 
-// Host execution helpers
+// Group execution helpers
 export function isHostExecutionGroup(group: RegisteredGroup): boolean {
   return (group.executionMode || 'container') === 'host';
 }
 
-export function hasHostExecutionPermission(user: AuthUser): boolean {
-  return user.role === 'admin';
-}
-
 /**
  * Check if a user can access (view messages, send messages to) a group.
- * All users (including admin) follow the same visibility rules:
+ * All users follow the same visibility rules:
  * - is_home groups → only the owner (created_by) can access
  * - IM groups → only the owner
  * - Web groups → only the creator
  */
 export function canAccessGroup(
-  user: { id: string; role: UserRole },
+  user: { id: string },
   group: RegisteredGroup & { jid: string },
 ): boolean {
   if (group.is_home) return group.created_by === user.id;
@@ -330,7 +325,7 @@ export function groupAccessDeniedResponse(
  * - IM groups can be modified by their owner (created_by).
  */
 export function canModifyGroup(
-  user: { id: string; role: UserRole },
+  user: { id: string },
   group: RegisteredGroup & { jid: string },
 ): boolean {
   if (group.is_home) return group.created_by === user.id;
@@ -355,7 +350,7 @@ export function canModifyGroup(
  * - is_home groups cannot be deleted by anyone.
  */
 export function canDeleteGroup(
-  user: { id: string; role: UserRole },
+  user: { id: string },
   group: RegisteredGroup & { jid: string },
 ): boolean {
   if (group.is_home) return false;

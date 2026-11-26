@@ -49,8 +49,8 @@ vi.mock('../src/middleware/auth.ts', () => ({
     c.set('user', {
       id: 'browse-user',
       username: 'browse-user',
-      role: process.env.CKQCLAW_TEST_USER_ROLE ?? 'admin',
-      status: 'active',
+      role: 'admin',
+      status: process.env.CKQCLAW_BROWSE_TEST_USER_STATUS ?? 'active',
     });
     return next();
   },
@@ -84,12 +84,11 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
-  process.env.CKQCLAW_TEST_USER_ROLE = 'admin';
   fs.rmSync(allowlistPath, { force: true });
 });
 
 describe.sequential('mount-purpose directory browsing', () => {
-  test('still enforces the server-side admin gate', async () => {
+  test('allows the logged-in account to browse mount paths', async () => {
     writePolicy([
       {
         path: allowedRoot,
@@ -97,14 +96,30 @@ describe.sequential('mount-purpose directory browsing', () => {
         description: 'Allowed',
       },
     ]);
-    process.env.CKQCLAW_TEST_USER_ROLE = 'member';
     const routes = await loadBrowseRoutes();
 
     const response = await routes.request('/directories?purpose=mount');
-    const body = (await response.json()) as Record<string, unknown>;
+    expect(response.status).toBe(200);
+  });
 
-    expect(response.status).toBe(403);
-    expect(body.code).toBe('HOST_MOUNT_ADMIN_REQUIRED');
+  test('rejects host mount browsing for an inactive account', async () => {
+    writePolicy([
+      {
+        path: allowedRoot,
+        allowReadWrite: false,
+        description: 'Allowed',
+      },
+    ]);
+    process.env.CKQCLAW_BROWSE_TEST_USER_STATUS = 'disabled';
+    try {
+      const routes = await loadBrowseRoutes();
+      const response = await routes.request('/directories?purpose=mount');
+      const body = (await response.json()) as Record<string, unknown>;
+      expect(response.status).toBe(403);
+      expect(body.code).toBe('HOST_MOUNT_ACCOUNT_INACTIVE');
+    } finally {
+      delete process.env.CKQCLAW_BROWSE_TEST_USER_STATUS;
+    }
   });
 
   test('fails closed instead of falling back to HOME when policy is missing', async () => {

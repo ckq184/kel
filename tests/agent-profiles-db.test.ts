@@ -80,7 +80,7 @@ describe('AgentProfile DB model', () => {
 
   test('persists admin CKQClaw as managed; global host policy is resolved at runtime', () => {
     const userId = 'agent-profile-admin-context';
-    createTestUserRow({ createUser }, userId, 'admin');
+    createTestUserRow({ createUser }, userId);
 
     const original = listAgentProfilesForUser(userId)[0];
     expect(original).toMatchObject({
@@ -101,7 +101,7 @@ describe('AgentProfile DB model', () => {
 
   test('does not rewrite legacy admin context policy during profile reads', () => {
     const userId = 'agent-profile-admin-legacy-context';
-    createTestUserRow({ createUser }, userId, 'admin');
+    createTestUserRow({ createUser }, userId);
     const original = listAgentProfilesForUser(userId)[0];
     const legacyPolicy = {
       provider_id: null,
@@ -231,7 +231,7 @@ describe('AgentProfile DB model', () => {
   test('permanently binds Home Workspace to the built-in CKQClaw', () => {
     const userId = 'agent-profile-home-owner';
     createTestUserRow({ createUser }, userId);
-    const homeJid = ensureUserHomeGroup(userId, 'member', userId);
+    const homeJid = ensureUserHomeGroup(userId, userId);
     const home = getRegisteredGroup(homeJid)!;
     const builtIn = getOrCreateDefaultAgentProfile(userId);
     const custom = createAgentProfile({
@@ -534,7 +534,7 @@ describe('AgentProfile DB model', () => {
     expect(legacy.skills.host).toBeUndefined();
 
     const userId = 'agent-profile-host-skills-merge';
-    createTestUserRow({ createUser }, userId, 'admin');
+    createTestUserRow({ createUser }, userId);
     const profile = createAgentProfile({
       ownerUserId: userId,
       name: 'Host Skill Agent',

@@ -6,10 +6,10 @@ import type { User } from './types.js';
  * point of execution and pass that current record here.
  */
 export function canExecuteOnHost(
-  owner: Pick<User, 'role' | 'status'> | null | undefined,
+  owner: Pick<User, 'status'> | null | undefined,
 ): boolean {
-  return owner?.role === 'admin' && owner.status === 'active';
+  return owner?.status === 'active';
 }
 
 export const HOST_EXECUTION_FORBIDDEN_ERROR =
-  'Host execution requires a currently active administrator owner';
+  'Host execution requires a currently active owner';

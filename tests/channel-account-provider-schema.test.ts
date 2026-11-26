@@ -22,7 +22,7 @@ vi.mock('../src/middleware/auth.ts', () => ({
     c.set('user', {
       id: 'provider-schema-owner',
       username: 'owner',
-      role: 'member',
+      role: 'admin',
     });
     return next();
   },

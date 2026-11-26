@@ -34,7 +34,7 @@ import {
 import { isMentionActivationMode } from '../feishu-conversation-policy.js';
 import { normalizeLegacyOwnerMention } from '../im-audience-policy.js';
 import { conversationBindingPolicyError } from '../channel-conversation-kind.js';
-import { adminRoleMiddleware, authMiddleware } from '../middleware/auth.js';
+import { authMiddleware } from '../middleware/auth.js';
 import {
   AppearanceConfigSchema,
   HostIntegrationSettingsSchema,
@@ -569,611 +569,553 @@ async function applyClaudeConfigToAllGroups(
 // --- Routes ---
 
 // ─── GET /claude/providers — 列出所有供应商 + 健康 + 负载均衡配置 ─────
-configRoutes.get(
-  '/claude/providers',
-  authMiddleware,
-  adminRoleMiddleware,
-  (c) => {
-    try {
-      const providers = getProviders();
-      const balancing = getBalancingConfig();
-      const enabledProviders = getEnabledProviders();
+configRoutes.get('/claude/providers', authMiddleware, (c) => {
+  try {
+    const providers = getProviders();
+    const balancing = getBalancingConfig();
+    const enabledProviders = getEnabledProviders();
 
-      // Refresh pool state for health info
-      providerPool.refreshFromConfig(enabledProviders, balancing);
-      const healthStatuses = providerPool.getHealthStatuses();
+    // Refresh pool state for health info
+    providerPool.refreshFromConfig(enabledProviders, balancing);
+    const healthStatuses = providerPool.getHealthStatuses();
 
-      return c.json({
-        providers: providers.map((p) => ({
-          ...toPublicProvider(p),
-          health: healthStatuses.find((h) => h.profileId === p.id) || null,
-        })),
-        balancing,
-        enabledCount: enabledProviders.length,
-        defaultProviderId: getDefaultProviderId(),
-      });
-    } catch (err) {
-      logger.error({ err }, 'Failed to list providers');
-      return c.json({ error: 'Failed to list providers' }, 500);
-    }
-  },
-);
+    return c.json({
+      providers: providers.map((p) => ({
+        ...toPublicProvider(p),
+        health: healthStatuses.find((h) => h.profileId === p.id) || null,
+      })),
+      balancing,
+      enabledCount: enabledProviders.length,
+      defaultProviderId: getDefaultProviderId(),
+    });
+  } catch (err) {
+    logger.error({ err }, 'Failed to list providers');
+    return c.json({ error: 'Failed to list providers' }, 500);
+  }
+});
 
 // ─── PUT /claude/default — 设置所有继承型 Agent 使用的默认模型配置 ─────
-configRoutes.put(
-  '/claude/default',
-  authMiddleware,
-  adminRoleMiddleware,
-  async (c) => {
-    const body = await c.req.json().catch(() => ({}));
-    const providerId =
-      typeof body.providerId === 'string' ? body.providerId.trim() : '';
-    if (!providerId) {
-      return c.json({ error: 'providerId (string) is required' }, 400);
-    }
-    const actor = (c.get('user') as AuthUser).username;
+configRoutes.put('/claude/default', authMiddleware, async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const providerId =
+    typeof body.providerId === 'string' ? body.providerId.trim() : '';
+  if (!providerId) {
+    return c.json({ error: 'providerId (string) is required' }, 400);
+  }
+  const actor = (c.get('user') as AuthUser).username;
 
-    try {
-      return await withClaudeConfigMutationLock(async () => {
-        const previousProviderId = getDefaultProviderId();
-        if (previousProviderId === providerId) {
-          const provider = getProviders().find(
-            (item) => item.id === providerId,
-          );
-          if (!provider) throw new Error('未找到指定模型配置');
-          return c.json({
-            provider: toPublicProvider(provider),
-            defaultProviderId: provider.id,
-            applied: {
-              success: true,
-              stoppedCount: 0,
-              failedCount: 0,
-              persisted: true,
-            },
-          });
-        }
-        const mutation = await mutateClaudeConfigForAllGroups(
-          actor,
-          {
-            trigger: 'default_model_update',
-            previousProviderId,
-            providerId,
-          },
-          () => {
-            const provider = setDefaultProvider(providerId);
-            appendClaudeConfigAuditBestEffort(actor, 'set_default_model', [
-              `id:${provider.id}`,
-            ]);
-            return provider;
-          },
-        );
-        if (!mutation.applied.success) {
-          return c.json(
-            {
-              error: mutation.applied.error,
-              applied: mutation.applied,
-              ...(mutation.value
-                ? { provider: toPublicProvider(mutation.value) }
-                : {}),
-            },
-            503,
-          );
-        }
+  try {
+    return await withClaudeConfigMutationLock(async () => {
+      const previousProviderId = getDefaultProviderId();
+      if (previousProviderId === providerId) {
+        const provider = getProviders().find((item) => item.id === providerId);
+        if (!provider) throw new Error('未找到指定模型配置');
         return c.json({
-          provider: toPublicProvider(mutation.value!),
-          defaultProviderId: mutation.value!.id,
-          applied: mutation.applied,
+          provider: toPublicProvider(provider),
+          defaultProviderId: provider.id,
+          applied: {
+            success: true,
+            stoppedCount: 0,
+            failedCount: 0,
+            persisted: true,
+          },
         });
+      }
+      const mutation = await mutateClaudeConfigForAllGroups(
+        actor,
+        {
+          trigger: 'default_model_update',
+          previousProviderId,
+          providerId,
+        },
+        () => {
+          const provider = setDefaultProvider(providerId);
+          appendClaudeConfigAuditBestEffort(actor, 'set_default_model', [
+            `id:${provider.id}`,
+          ]);
+          return provider;
+        },
+      );
+      if (!mutation.applied.success) {
+        return c.json(
+          {
+            error: mutation.applied.error,
+            applied: mutation.applied,
+            ...(mutation.value
+              ? { provider: toPublicProvider(mutation.value) }
+              : {}),
+          },
+          503,
+        );
+      }
+      return c.json({
+        provider: toPublicProvider(mutation.value!),
+        defaultProviderId: mutation.value!.id,
+        applied: mutation.applied,
       });
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Failed to set default model';
-      logger.warn({ err, providerId }, 'Failed to set default model');
-      return c.json({ error: message }, 400);
-    }
-  },
-);
+    });
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : 'Failed to set default model';
+    logger.warn({ err, providerId }, 'Failed to set default model');
+    return c.json({ error: message }, 400);
+  }
+});
 
 // ─── POST /claude/providers — 创建供应商 ─────
-configRoutes.post(
-  '/claude/providers',
-  authMiddleware,
-  adminRoleMiddleware,
-  async (c) => {
-    const body = await c.req.json().catch(() => ({}));
-    const validation = UnifiedProviderCreateSchema.safeParse(body);
-    if (!validation.success) {
-      return zodBadRequest(c, validation.error, 'body-format');
-    }
+configRoutes.post('/claude/providers', authMiddleware, async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const validation = UnifiedProviderCreateSchema.safeParse(body);
+  if (!validation.success) {
+    return zodBadRequest(c, validation.error, 'body-format');
+  }
 
-    const actor = (c.get('user') as AuthUser).username;
+  const actor = (c.get('user') as AuthUser).username;
 
-    try {
-      const provider = createProvider(validation.data);
-      appendClaudeConfigAudit(actor, 'create_provider', [
-        `id:${provider.id}`,
-        `type:${provider.type}`,
-        `name:${provider.name}`,
-      ]);
-      return c.json(toPublicProvider(provider), 201);
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Failed to create provider';
-      logger.warn({ err }, 'Failed to create provider');
-      return c.json({ error: message }, 400);
-    }
-  },
-);
+  try {
+    const provider = createProvider(validation.data);
+    appendClaudeConfigAudit(actor, 'create_provider', [
+      `id:${provider.id}`,
+      `type:${provider.type}`,
+      `name:${provider.name}`,
+    ]);
+    return c.json(toPublicProvider(provider), 201);
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : 'Failed to create provider';
+    logger.warn({ err }, 'Failed to create provider');
+    return c.json({ error: message }, 400);
+  }
+});
 
 // ─── PATCH /claude/providers/:id — 更新供应商非密钥字段 ─────
-configRoutes.patch(
-  '/claude/providers/:id',
-  authMiddleware,
-  adminRoleMiddleware,
-  async (c) => {
-    const { id } = c.req.param();
-    const body = await c.req.json().catch(() => ({}));
-    const validation = UnifiedProviderPatchSchema.safeParse(body);
-    if (!validation.success) {
-      return zodBadRequest(c, validation.error, 'body-format');
-    }
+configRoutes.patch('/claude/providers/:id', authMiddleware, async (c) => {
+  const { id } = c.req.param();
+  const body = await c.req.json().catch(() => ({}));
+  const validation = UnifiedProviderPatchSchema.safeParse(body);
+  if (!validation.success) {
+    return zodBadRequest(c, validation.error, 'body-format');
+  }
 
-    const actor = (c.get('user') as AuthUser).username;
+  const actor = (c.get('user') as AuthUser).username;
 
-    try {
-      return await withClaudeConfigMutationLock(async () => {
-        const previous = getProviders().find((p) => p.id === id);
-        if (!previous) throw new Error('未找到指定供应商');
-        // THESIS-02：接口只剩第三方路径，合并态校验对所有供应商无条件生效
-        // （不再按 previous.type 放行官方 Bearer 场景）。create 口由
-        // UnifiedProviderCreateSchema.superRefine 拦截；PATCH 是部分更新，
-        // 必须按合并后的最终状态校验——UnifiedProviderPatchSchema 不携带
-        // type 与密钥字段，故 authToken 只能来自现有 provider，而 baseUrl
-        // 可能被 payload 显式置空或改写（ProviderBaseUrlSchema 允许空串）。
-        const mergedBaseUrl =
-          validation.data.anthropicBaseUrl !== undefined
-            ? validation.data.anthropicBaseUrl.trim()
-            : previous.anthropicBaseUrl;
-        if (!!previous.anthropicAuthToken.trim() && !mergedBaseUrl.trim()) {
-          throw new Error('第三方供应商使用 Auth Token 时必须配置 Base URL');
-        }
-        // ISSUE-16 C1（用户拍板补校验）：无 token 的供应商不得被 PATCH
-        // 清空 Base URL 而进入「Base URL 与 Auth Token 双空」——create 口的
-        // 「至少填一项」规则。只拦进入双空的写入；存量双空脏数据编辑其他
-        // 字段不受影响。
-        if (
-          !previous.anthropicAuthToken.trim() &&
-          !!previous.anthropicBaseUrl.trim() &&
-          !mergedBaseUrl.trim()
-        ) {
-          throw new Error('第三方供应商需要提供 Base URL 或 Auth Token');
-        }
-        const changedFields = Object.keys(validation.data).map(
-          (k) => `${k}:updated`,
-        );
-        const baseUrlChanged = !!(
-          validation.data.anthropicBaseUrl !== undefined &&
-          validation.data.anthropicBaseUrl !== previous.anthropicBaseUrl
-        );
-        const modelChanged = !!(
-          validation.data.anthropicModel !== undefined &&
-          validation.data.anthropicModel !== previous.anthropicModel
-        );
-        const customEnvChanged = !!(
-          validation.data.customEnv !== undefined &&
-          JSON.stringify(validation.data.customEnv) !==
-            JSON.stringify(previous.customEnv)
-        );
-        const protocolFieldChanged =
-          baseUrlChanged || modelChanged || customEnvChanged;
-        const pendingInvalidation = getPendingProviderSessionInvalidation(id);
-        const sessionInvalidation = {
-          modelChanged:
-            modelChanged || pendingInvalidation?.modelChanged === true,
-          baseUrlChanged:
-            baseUrlChanged || pendingInvalidation?.baseUrlChanged === true,
-        };
-        const shouldClearSessions =
-          !!pendingInvalidation || protocolFieldChanged;
-        const metadata = {
-          trigger: 'provider_update',
-          providerId: id,
-          protocolFieldChanged,
-          baseUrlChanged,
-          modelChanged,
-          customEnvChanged,
-        };
-        const commit = () => {
-          const updated = updateProvider(id, validation.data);
-          appendClaudeConfigAuditBestEffort(actor, 'update_provider', [
-            `id:${id}`,
-            ...changedFields,
-            ...(protocolFieldChanged ? ['protocolFieldChanged'] : []),
-          ]);
-          return updated;
-        };
+  try {
+    return await withClaudeConfigMutationLock(async () => {
+      const previous = getProviders().find((p) => p.id === id);
+      if (!previous) throw new Error('未找到指定供应商');
+      // THESIS-02：接口只剩第三方路径，合并态校验对所有供应商无条件生效
+      // （不再按 previous.type 放行官方 Bearer 场景）。create 口由
+      // UnifiedProviderCreateSchema.superRefine 拦截；PATCH 是部分更新，
+      // 必须按合并后的最终状态校验——UnifiedProviderPatchSchema 不携带
+      // type 与密钥字段，故 authToken 只能来自现有 provider，而 baseUrl
+      // 可能被 payload 显式置空或改写（ProviderBaseUrlSchema 允许空串）。
+      const mergedBaseUrl =
+        validation.data.anthropicBaseUrl !== undefined
+          ? validation.data.anthropicBaseUrl.trim()
+          : previous.anthropicBaseUrl;
+      if (!!previous.anthropicAuthToken.trim() && !mergedBaseUrl.trim()) {
+        throw new Error('第三方供应商使用 Auth Token 时必须配置 Base URL');
+      }
+      // ISSUE-16 C1（用户拍板补校验）：无 token 的供应商不得被 PATCH
+      // 清空 Base URL 而进入「Base URL 与 Auth Token 双空」——create 口的
+      // 「至少填一项」规则。只拦进入双空的写入；存量双空脏数据编辑其他
+      // 字段不受影响。
+      if (
+        !previous.anthropicAuthToken.trim() &&
+        !!previous.anthropicBaseUrl.trim() &&
+        !mergedBaseUrl.trim()
+      ) {
+        throw new Error('第三方供应商需要提供 Base URL 或 Auth Token');
+      }
+      const changedFields = Object.keys(validation.data).map(
+        (k) => `${k}:updated`,
+      );
+      const baseUrlChanged = !!(
+        validation.data.anthropicBaseUrl !== undefined &&
+        validation.data.anthropicBaseUrl !== previous.anthropicBaseUrl
+      );
+      const modelChanged = !!(
+        validation.data.anthropicModel !== undefined &&
+        validation.data.anthropicModel !== previous.anthropicModel
+      );
+      const customEnvChanged = !!(
+        validation.data.customEnv !== undefined &&
+        JSON.stringify(validation.data.customEnv) !==
+          JSON.stringify(previous.customEnv)
+      );
+      const protocolFieldChanged =
+        baseUrlChanged || modelChanged || customEnvChanged;
+      const pendingInvalidation = getPendingProviderSessionInvalidation(id);
+      const sessionInvalidation = {
+        modelChanged:
+          modelChanged || pendingInvalidation?.modelChanged === true,
+        baseUrlChanged:
+          baseUrlChanged || pendingInvalidation?.baseUrlChanged === true,
+      };
+      const shouldClearSessions = !!pendingInvalidation || protocolFieldChanged;
+      const metadata = {
+        trigger: 'provider_update',
+        providerId: id,
+        protocolFieldChanged,
+        baseUrlChanged,
+        modelChanged,
+        customEnvChanged,
+      };
+      const commit = () => {
+        const updated = updateProvider(id, validation.data);
+        appendClaudeConfigAuditBestEffort(actor, 'update_provider', [
+          `id:${id}`,
+          ...changedFields,
+          ...(protocolFieldChanged ? ['protocolFieldChanged'] : []),
+        ]);
+        return updated;
+      };
 
-        let mutation: ClaudeMutationResult<ReturnType<typeof updateProvider>>;
-        if (previous.enabled) {
-          mutation = await mutateClaudeConfigForAllGroups(
-            actor,
-            metadata,
-            commit,
-            shouldClearSessions
-              ? {
-                  clearSessionsForProviderId: id,
-                  sessionInvalidation,
-                }
-              : undefined,
-          );
-        } else {
-          const committed = shouldClearSessions
-            ? commitProviderConfigWithSessionInvalidation(
-                id,
+      let mutation: ClaudeMutationResult<ReturnType<typeof updateProvider>>;
+      if (previous.enabled) {
+        mutation = await mutateClaudeConfigForAllGroups(
+          actor,
+          metadata,
+          commit,
+          shouldClearSessions
+            ? {
+                clearSessionsForProviderId: id,
                 sessionInvalidation,
-                commit,
-              )
-            : { value: commit(), clearedSessionsCount: undefined };
-          const updated = committed.value;
-          const clearedSessionsCount = committed.clearedSessionsCount;
-          if (shouldClearSessions) {
-            clearPendingProviderSessionInvalidation(id);
-            if (!hasPendingProviderSessionInvalidations()) {
-              deps?.queue?.unblockGroupsForRuntimeSafety?.(
-                getKnownClaudeRuntimeJids(),
-                PROVIDER_RUNTIME_SAFETY_SOURCE,
-              );
-            }
+              }
+            : undefined,
+        );
+      } else {
+        const committed = shouldClearSessions
+          ? commitProviderConfigWithSessionInvalidation(
+              id,
+              sessionInvalidation,
+              commit,
+            )
+          : { value: commit(), clearedSessionsCount: undefined };
+        const updated = committed.value;
+        const clearedSessionsCount = committed.clearedSessionsCount;
+        if (shouldClearSessions) {
+          clearPendingProviderSessionInvalidation(id);
+          if (!hasPendingProviderSessionInvalidations()) {
+            deps?.queue?.unblockGroupsForRuntimeSafety?.(
+              getKnownClaudeRuntimeJids(),
+              PROVIDER_RUNTIME_SAFETY_SOURCE,
+            );
           }
-          mutation = {
-            value: updated,
+        }
+        mutation = {
+          value: updated,
+          applied: {
+            success: true,
+            stoppedCount: 0,
+            failedCount: 0,
+            persisted: true,
+            ...(clearedSessionsCount !== undefined
+              ? { clearedSessionsCount }
+              : {}),
+          },
+        };
+      }
+
+      if (!mutation.applied.success) {
+        return c.json(
+          {
+            error: mutation.applied.error,
+            applied: mutation.applied,
+            ...(mutation.value
+              ? { provider: toPublicProvider(mutation.value) }
+              : {}),
+          },
+          503,
+        );
+      }
+      return c.json({
+        provider: toPublicProvider(mutation.value!),
+        applied: mutation.applied,
+      });
+    });
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : 'Failed to update provider';
+    logger.warn({ err }, 'Failed to update provider');
+    return c.json({ error: message }, 400);
+  }
+});
+
+// ─── PUT /claude/providers/:id/secrets — 更新密钥 ─────
+configRoutes.put('/claude/providers/:id/secrets', authMiddleware, async (c) => {
+  const { id } = c.req.param();
+  const body = await c.req.json().catch(() => ({}));
+  const validation = UnifiedProviderSecretsSchema.safeParse(body);
+  if (!validation.success) {
+    return zodBadRequest(c, validation.error, 'body-format');
+  }
+
+  const actor = (c.get('user') as AuthUser).username;
+
+  try {
+    return await withClaudeConfigMutationLock(async () => {
+      const previous = getProviders().find((provider) => provider.id === id);
+      if (!previous) throw new Error('未找到指定供应商');
+      // THESIS-02：secrets 口同样对所有供应商无条件校验合并态，不再
+      // 为官方 Bearer 场景放行。secrets 口只改密钥，按现有 provider
+      // 状态 + 新 token 判断。
+      const incomingAuthToken =
+        typeof validation.data.anthropicAuthToken === 'string'
+          ? validation.data.anthropicAuthToken.trim()
+          : '';
+      if (!!incomingAuthToken && !previous.anthropicBaseUrl.trim()) {
+        throw new Error('第三方供应商使用 Auth Token 时必须配置 Base URL');
+      }
+      // ISSUE-16 C1（用户拍板补校验）：secrets 口清空 token 不得让无 Base
+      // URL 的供应商进入「双空」（create 口「至少填一项」规则）；
+      // 只拦进入双空的写入，存量双空数据不受影响。
+      const mergedAuthToken =
+        validation.data.anthropicAuthToken !== undefined
+          ? incomingAuthToken
+          : validation.data.clearAnthropicAuthToken
+            ? ''
+            : previous.anthropicAuthToken.trim();
+      if (
+        !previous.anthropicBaseUrl.trim() &&
+        !!previous.anthropicAuthToken.trim() &&
+        !mergedAuthToken
+      ) {
+        throw new Error('第三方供应商需要提供 Base URL 或 Auth Token');
+      }
+      const changedFields: string[] = [];
+      if (validation.data.anthropicAuthToken !== undefined)
+        changedFields.push('anthropicAuthToken:set');
+      if (validation.data.clearAnthropicAuthToken)
+        changedFields.push('anthropicAuthToken:clear');
+      if (validation.data.anthropicApiKey !== undefined)
+        changedFields.push('anthropicApiKey:set');
+      if (validation.data.clearAnthropicApiKey)
+        changedFields.push('anthropicApiKey:clear');
+
+      const commit = () => {
+        const updated = updateProviderSecrets(id, validation.data);
+        appendClaudeConfigAuditBestEffort(actor, 'update_provider_secrets', [
+          `id:${id}`,
+          ...changedFields,
+        ]);
+        return updated;
+      };
+
+      const mutation = previous.enabled
+        ? await mutateClaudeConfigForAllGroups(
+            actor,
+            {
+              trigger: 'provider_secrets_update',
+              providerId: id,
+            },
+            commit,
+            {
+              clearSessionsForProviderId: id,
+              sessionInvalidation: {
+                modelChanged: true,
+                baseUrlChanged: true,
+              },
+            },
+          )
+        : {
+            value: commit(),
             applied: {
               success: true,
               stoppedCount: 0,
               failedCount: 0,
               persisted: true,
-              ...(clearedSessionsCount !== undefined
-                ? { clearedSessionsCount }
-                : {}),
-            },
+            } satisfies ClaudeApplyResultPayload,
           };
-        }
 
-        if (!mutation.applied.success) {
-          return c.json(
-            {
-              error: mutation.applied.error,
-              applied: mutation.applied,
-              ...(mutation.value
-                ? { provider: toPublicProvider(mutation.value) }
-                : {}),
-            },
-            503,
-          );
-        }
-        return c.json({
-          provider: toPublicProvider(mutation.value!),
-          applied: mutation.applied,
-        });
+      if (!mutation.applied.success) {
+        return c.json(
+          {
+            error: mutation.applied.error,
+            applied: mutation.applied,
+            ...(mutation.value
+              ? { provider: toPublicProvider(mutation.value) }
+              : {}),
+          },
+          503,
+        );
+      }
+      return c.json({
+        provider: toPublicProvider(mutation.value!),
+        applied: mutation.applied,
       });
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Failed to update provider';
-      logger.warn({ err }, 'Failed to update provider');
-      return c.json({ error: message }, 400);
-    }
-  },
-);
-
-// ─── PUT /claude/providers/:id/secrets — 更新密钥 ─────
-configRoutes.put(
-  '/claude/providers/:id/secrets',
-  authMiddleware,
-  adminRoleMiddleware,
-  async (c) => {
-    const { id } = c.req.param();
-    const body = await c.req.json().catch(() => ({}));
-    const validation = UnifiedProviderSecretsSchema.safeParse(body);
-    if (!validation.success) {
-      return zodBadRequest(c, validation.error, 'body-format');
-    }
-
-    const actor = (c.get('user') as AuthUser).username;
-
-    try {
-      return await withClaudeConfigMutationLock(async () => {
-        const previous = getProviders().find((provider) => provider.id === id);
-        if (!previous) throw new Error('未找到指定供应商');
-        // THESIS-02：secrets 口同样对所有供应商无条件校验合并态，不再
-        // 为官方 Bearer 场景放行。secrets 口只改密钥，按现有 provider
-        // 状态 + 新 token 判断。
-        const incomingAuthToken =
-          typeof validation.data.anthropicAuthToken === 'string'
-            ? validation.data.anthropicAuthToken.trim()
-            : '';
-        if (!!incomingAuthToken && !previous.anthropicBaseUrl.trim()) {
-          throw new Error('第三方供应商使用 Auth Token 时必须配置 Base URL');
-        }
-        // ISSUE-16 C1（用户拍板补校验）：secrets 口清空 token 不得让无 Base
-        // URL 的供应商进入「双空」（create 口「至少填一项」规则）；
-        // 只拦进入双空的写入，存量双空数据不受影响。
-        const mergedAuthToken =
-          validation.data.anthropicAuthToken !== undefined
-            ? incomingAuthToken
-            : validation.data.clearAnthropicAuthToken
-              ? ''
-              : previous.anthropicAuthToken.trim();
-        if (
-          !previous.anthropicBaseUrl.trim() &&
-          !!previous.anthropicAuthToken.trim() &&
-          !mergedAuthToken
-        ) {
-          throw new Error('第三方供应商需要提供 Base URL 或 Auth Token');
-        }
-        const changedFields: string[] = [];
-        if (validation.data.anthropicAuthToken !== undefined)
-          changedFields.push('anthropicAuthToken:set');
-        if (validation.data.clearAnthropicAuthToken)
-          changedFields.push('anthropicAuthToken:clear');
-        if (validation.data.anthropicApiKey !== undefined)
-          changedFields.push('anthropicApiKey:set');
-        if (validation.data.clearAnthropicApiKey)
-          changedFields.push('anthropicApiKey:clear');
-
-        const commit = () => {
-          const updated = updateProviderSecrets(id, validation.data);
-          appendClaudeConfigAuditBestEffort(actor, 'update_provider_secrets', [
-            `id:${id}`,
-            ...changedFields,
-          ]);
-          return updated;
-        };
-
-        const mutation = previous.enabled
-          ? await mutateClaudeConfigForAllGroups(
-              actor,
-              {
-                trigger: 'provider_secrets_update',
-                providerId: id,
-              },
-              commit,
-              {
-                clearSessionsForProviderId: id,
-                sessionInvalidation: {
-                  modelChanged: true,
-                  baseUrlChanged: true,
-                },
-              },
-            )
-          : {
-              value: commit(),
-              applied: {
-                success: true,
-                stoppedCount: 0,
-                failedCount: 0,
-                persisted: true,
-              } satisfies ClaudeApplyResultPayload,
-            };
-
-        if (!mutation.applied.success) {
-          return c.json(
-            {
-              error: mutation.applied.error,
-              applied: mutation.applied,
-              ...(mutation.value
-                ? { provider: toPublicProvider(mutation.value) }
-                : {}),
-            },
-            503,
-          );
-        }
-        return c.json({
-          provider: toPublicProvider(mutation.value!),
-          applied: mutation.applied,
-        });
-      });
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Failed to update secrets';
-      logger.warn({ err }, 'Failed to update provider secrets');
-      return c.json({ error: message }, 400);
-    }
-  },
-);
+    });
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : 'Failed to update secrets';
+    logger.warn({ err }, 'Failed to update provider secrets');
+    return c.json({ error: message }, 400);
+  }
+});
 
 // ─── DELETE /claude/providers/:id — 删除供应商 ─────
-configRoutes.delete(
-  '/claude/providers/:id',
-  authMiddleware,
-  adminRoleMiddleware,
-  async (c) => {
-    const { id } = c.req.param();
-    const actor = (c.get('user') as AuthUser).username;
+configRoutes.delete('/claude/providers/:id', authMiddleware, async (c) => {
+  const { id } = c.req.param();
+  const actor = (c.get('user') as AuthUser).username;
 
-    try {
-      return await withClaudeConfigMutationLock(async () => {
-        const previous = getProviders().find((provider) => provider.id === id);
-        const pendingInvalidation = getPendingProviderSessionInvalidation(id);
-        if (!previous && !pendingInvalidation) {
-          throw new Error('未找到指定供应商');
-        }
-        const referencedAgentCount = countAgentProfilesByModelConfigId(id);
-        if (referencedAgentCount > 0) {
-          throw new Error(
-            `该模型配置仍被 ${referencedAgentCount} 个智能体使用，请先重新分配`,
-          );
-        }
-        const sessionInvalidation = pendingInvalidation ?? {
-          modelChanged: true,
-          baseUrlChanged: true,
-        };
-        const mutation = await mutateClaudeConfigForAllGroups(
-          actor,
-          { trigger: 'provider_delete', providerId: id },
-          () => {
-            if (previous) {
-              deleteProvider(id);
-              appendClaudeConfigAuditBestEffort(actor, 'delete_provider', [
-                `id:${id}`,
-              ]);
-            }
-            return { id };
-          },
-          {
-            clearSessionsForProviderId: id,
-            sessionInvalidation,
-          },
+  try {
+    return await withClaudeConfigMutationLock(async () => {
+      const previous = getProviders().find((provider) => provider.id === id);
+      const pendingInvalidation = getPendingProviderSessionInvalidation(id);
+      if (!previous && !pendingInvalidation) {
+        throw new Error('未找到指定供应商');
+      }
+      const referencedAgentCount = countAgentProfilesByModelConfigId(id);
+      if (referencedAgentCount > 0) {
+        throw new Error(
+          `该模型配置仍被 ${referencedAgentCount} 个智能体使用，请先重新分配`,
         );
-        if (!mutation.applied.success) {
-          return c.json(
-            {
-              error: mutation.applied.error,
-              applied: mutation.applied,
-            },
-            503,
-          );
-        }
-        return c.json({ ok: true, applied: mutation.applied });
-      });
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Failed to delete provider';
-      logger.warn({ err }, 'Failed to delete provider');
-      return c.json({ error: message }, 400);
-    }
-  },
-);
+      }
+      const sessionInvalidation = pendingInvalidation ?? {
+        modelChanged: true,
+        baseUrlChanged: true,
+      };
+      const mutation = await mutateClaudeConfigForAllGroups(
+        actor,
+        { trigger: 'provider_delete', providerId: id },
+        () => {
+          if (previous) {
+            deleteProvider(id);
+            appendClaudeConfigAuditBestEffort(actor, 'delete_provider', [
+              `id:${id}`,
+            ]);
+          }
+          return { id };
+        },
+        {
+          clearSessionsForProviderId: id,
+          sessionInvalidation,
+        },
+      );
+      if (!mutation.applied.success) {
+        return c.json(
+          {
+            error: mutation.applied.error,
+            applied: mutation.applied,
+          },
+          503,
+        );
+      }
+      return c.json({ ok: true, applied: mutation.applied });
+    });
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : 'Failed to delete provider';
+    logger.warn({ err }, 'Failed to delete provider');
+    return c.json({ error: message }, 400);
+  }
+});
 
 // ─── POST /claude/providers/:id/toggle — 切换 enabled ─────
-configRoutes.post(
-  '/claude/providers/:id/toggle',
-  authMiddleware,
-  adminRoleMiddleware,
-  async (c) => {
-    const { id } = c.req.param();
-    const actor = (c.get('user') as AuthUser).username;
-    const body = await c.req.json().catch(() => ({}));
-    if (typeof body.enabled !== 'boolean') {
-      return c.json({ error: 'enabled must be a boolean' }, 400);
-    }
+configRoutes.post('/claude/providers/:id/toggle', authMiddleware, async (c) => {
+  const { id } = c.req.param();
+  const actor = (c.get('user') as AuthUser).username;
+  const body = await c.req.json().catch(() => ({}));
+  if (typeof body.enabled !== 'boolean') {
+    return c.json({ error: 'enabled must be a boolean' }, 400);
+  }
 
-    try {
-      return await withClaudeConfigMutationLock(async () => {
-        const mutation = await mutateClaudeConfigForAllGroups(
-          actor,
-          { trigger: 'provider_toggle', providerId: id },
-          () => {
-            const updated = setProviderEnabled(id, body.enabled);
-            appendClaudeConfigAuditBestEffort(actor, 'toggle_provider', [
-              `id:${id}`,
-              `enabled:${updated.enabled}`,
-            ]);
-            return updated;
+  try {
+    return await withClaudeConfigMutationLock(async () => {
+      const mutation = await mutateClaudeConfigForAllGroups(
+        actor,
+        { trigger: 'provider_toggle', providerId: id },
+        () => {
+          const updated = setProviderEnabled(id, body.enabled);
+          appendClaudeConfigAuditBestEffort(actor, 'toggle_provider', [
+            `id:${id}`,
+            `enabled:${updated.enabled}`,
+          ]);
+          return updated;
+        },
+      );
+      if (!mutation.applied.success) {
+        return c.json(
+          {
+            error: mutation.applied.error,
+            applied: mutation.applied,
+            ...(mutation.value
+              ? { provider: toPublicProvider(mutation.value) }
+              : {}),
           },
+          503,
         );
-        if (!mutation.applied.success) {
-          return c.json(
-            {
-              error: mutation.applied.error,
-              applied: mutation.applied,
-              ...(mutation.value
-                ? { provider: toPublicProvider(mutation.value) }
-                : {}),
-            },
-            503,
-          );
-        }
-        return c.json({
-          provider: toPublicProvider(mutation.value!),
-          applied: mutation.applied,
-        });
+      }
+      return c.json({
+        provider: toPublicProvider(mutation.value!),
+        applied: mutation.applied,
       });
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Failed to toggle provider';
-      logger.warn({ err }, 'Failed to toggle provider');
-      return c.json({ error: message }, 400);
-    }
-  },
-);
+    });
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : 'Failed to toggle provider';
+    logger.warn({ err }, 'Failed to toggle provider');
+    return c.json({ error: message }, 400);
+  }
+});
 
 // ─── POST /claude/providers/:id/reset-health — 重置健康状态 ─────
-configRoutes.post(
-  '/claude/providers/:id/reset-health',
-  authMiddleware,
-  adminRoleMiddleware,
-  (c) => {
-    const { id } = c.req.param();
-    providerPool.resetHealth(id);
-    return c.json({ ok: true });
-  },
-);
+configRoutes.post('/claude/providers/:id/reset-health', authMiddleware, (c) => {
+  const { id } = c.req.param();
+  providerPool.resetHealth(id);
+  return c.json({ ok: true });
+});
 
 // ─── GET /claude/providers/health — 健康状态轮询 ─────
-configRoutes.get(
-  '/claude/providers/health',
-  authMiddleware,
-  adminRoleMiddleware,
-  (c) => {
-    // Refresh pool state
-    const enabledProviders = getEnabledProviders();
-    const balancing = getBalancingConfig();
-    providerPool.refreshFromConfig(enabledProviders, balancing);
-    return c.json({ statuses: providerPool.getHealthStatuses() });
-  },
-);
+configRoutes.get('/claude/providers/health', authMiddleware, (c) => {
+  // Refresh pool state
+  const enabledProviders = getEnabledProviders();
+  const balancing = getBalancingConfig();
+  providerPool.refreshFromConfig(enabledProviders, balancing);
+  return c.json({ statuses: providerPool.getHealthStatuses() });
+});
 
 // ─── PUT /claude/balancing — 更新负载均衡参数 ─────
-configRoutes.put(
-  '/claude/balancing',
-  authMiddleware,
-  adminRoleMiddleware,
-  async (c) => {
-    const body = await c.req.json().catch(() => ({}));
-    const validation = BalancingConfigSchema.safeParse(body);
-    if (!validation.success) {
-      return zodBadRequest(c, validation.error, 'body-format');
-    }
+configRoutes.put('/claude/balancing', authMiddleware, async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const validation = BalancingConfigSchema.safeParse(body);
+  if (!validation.success) {
+    return zodBadRequest(c, validation.error, 'body-format');
+  }
 
-    const actor = (c.get('user') as AuthUser).username;
+  const actor = (c.get('user') as AuthUser).username;
 
-    try {
-      const saved = saveBalancingConfig(validation.data);
-      appendClaudeConfigAudit(actor, 'update_balancing', [
-        ...Object.keys(validation.data),
-      ]);
-      return c.json(saved);
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Failed to update balancing';
-      return c.json({ error: message }, 400);
-    }
-  },
-);
+  try {
+    const saved = saveBalancingConfig(validation.data);
+    appendClaudeConfigAudit(actor, 'update_balancing', [
+      ...Object.keys(validation.data),
+    ]);
+    return c.json(saved);
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : 'Failed to update balancing';
+    return c.json({ error: message }, 400);
+  }
+});
 
 // ─── POST /claude/apply — 应用配置到所有容器 ─────
-configRoutes.post(
-  '/claude/apply',
-  authMiddleware,
-  adminRoleMiddleware,
-  async (c) => {
-    const actor = (c.get('user') as AuthUser).username;
-    try {
-      return await withClaudeConfigMutationLock(async () => {
-        const result = await applyClaudeConfigToAllGroups(actor, {
-          trigger: 'manual_provider_apply',
-        });
-        if (!result.success) {
-          return c.json(result, 503);
-        }
-        return c.json(result);
+configRoutes.post('/claude/apply', authMiddleware, async (c) => {
+  const actor = (c.get('user') as AuthUser).username;
+  try {
+    return await withClaudeConfigMutationLock(async () => {
+      const result = await applyClaudeConfigToAllGroups(actor, {
+        trigger: 'manual_provider_apply',
       });
-    } catch (err) {
-      logger.error({ err }, 'Failed to apply Claude config to all groups');
-      return c.json({ error: 'Server not initialized' }, 500);
-    }
-  },
-);
+      if (!result.success) {
+        return c.json(result, 503);
+      }
+      return c.json(result);
+    });
+  } catch (err) {
+    logger.error({ err }, 'Failed to apply Claude config to all groups');
+    return c.json({ error: 'Server not initialized' }, 500);
+  }
+});
 
 // ─── Helpers ────────────────────────────────────────────────────
 
@@ -1200,7 +1142,7 @@ function restoreDefaultChannelError(restored: { reason: string }): string {
 
 const SYSTEM_AGENT_AVATAR_PREFIX = 'system-agent-';
 
-configRoutes.get('/appearance', authMiddleware, adminRoleMiddleware, (c) => {
+configRoutes.get('/appearance', authMiddleware, (c) => {
   try {
     return c.json(getAppearanceConfig());
   } catch (err) {
@@ -1209,35 +1151,27 @@ configRoutes.get('/appearance', authMiddleware, adminRoleMiddleware, (c) => {
   }
 });
 
-configRoutes.put(
-  '/appearance',
-  authMiddleware,
-  adminRoleMiddleware,
-  async (c) => {
-    const body = await c.req.json().catch(() => ({}));
-    const validation = AppearanceConfigSchema.safeParse(body);
-    if (!validation.success) {
-      return zodBadRequest(c, validation.error, 'body-format');
-    }
+configRoutes.put('/appearance', authMiddleware, async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const validation = AppearanceConfigSchema.safeParse(body);
+  if (!validation.success) {
+    return zodBadRequest(c, validation.error, 'body-format');
+  }
 
-    try {
-      const saved = saveAppearanceConfig(validation.data);
-      return c.json(saved);
-    } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : 'Invalid appearance config payload';
-      logger.warn({ err }, 'Invalid appearance config payload');
-      return c.json({ error: message }, 400);
-    }
-  },
-);
+  try {
+    const saved = saveAppearanceConfig(validation.data);
+    return c.json(saved);
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : 'Invalid appearance config payload';
+    logger.warn({ err }, 'Invalid appearance config payload');
+    return c.json({ error: message }, 400);
+  }
+});
 
 configRoutes.post(
   '/appearance/avatar',
   authMiddleware,
-  adminRoleMiddleware,
   avatarUploadBodyLimit,
   async (c) => {
     // Shared validation + write pipeline (ISSUE-11 B9); this route keeps the
@@ -1256,19 +1190,14 @@ configRoutes.post(
   },
 );
 
-configRoutes.delete(
-  '/appearance/avatar',
-  authMiddleware,
-  adminRoleMiddleware,
-  (c) => {
-    const appearance = saveAppearanceConfig({
-      aiAvatarUrl: null,
-      aiAvatarMode: 'emoji',
-    });
-    reapAvatarFiles({ prefix: SYSTEM_AGENT_AVATAR_PREFIX });
-    return c.json({ appearance });
-  },
-);
+configRoutes.delete('/appearance/avatar', authMiddleware, (c) => {
+  const appearance = saveAppearanceConfig({
+    aiAvatarUrl: null,
+    aiAvatarMode: 'emoji',
+  });
+  reapAvatarFiles({ prefix: SYSTEM_AGENT_AVATAR_PREFIX });
+  return c.json({ appearance });
+});
 
 // Public endpoint — no auth required (like /api/auth/status)
 configRoutes.get('/appearance/public', (c) => {
@@ -1305,7 +1234,7 @@ function toSystemSettingsResponse(
   };
 }
 
-configRoutes.get('/system', authMiddleware, adminRoleMiddleware, (c) => {
+configRoutes.get('/system', authMiddleware, (c) => {
   try {
     return c.json(toSystemSettingsResponse(getSystemSettings()));
   } catch (err) {
@@ -1314,7 +1243,7 @@ configRoutes.get('/system', authMiddleware, adminRoleMiddleware, (c) => {
   }
 });
 
-configRoutes.put('/system', authMiddleware, adminRoleMiddleware, async (c) => {
+configRoutes.put('/system', authMiddleware, async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const validation = SystemSettingsSchema.safeParse(body);
   if (!validation.success) {
@@ -1346,7 +1275,7 @@ configRoutes.put('/system', authMiddleware, adminRoleMiddleware, async (c) => {
   }
 });
 
-// ─── Host integration settings (admin role only) ───────────────────
+// ─── Host integration settings ─────────────────────────────────────
 
 function toHostIntegrationResponse(
   settings: ReturnType<typeof getSystemSettings>,
@@ -1360,334 +1289,308 @@ function toHostIntegrationResponse(
   };
 }
 
-configRoutes.get(
-  '/host-integration',
-  authMiddleware,
-  adminRoleMiddleware,
-  (c) => c.json(toHostIntegrationResponse(getSystemSettings())),
+configRoutes.get('/host-integration', authMiddleware, (c) =>
+  c.json(toHostIntegrationResponse(getSystemSettings())),
 );
 
-configRoutes.put(
-  '/host-integration',
-  authMiddleware,
-  adminRoleMiddleware,
-  async (c) => {
-    const body = await c.req.json().catch(() => ({}));
-    const validation = HostIntegrationSettingsSchema.safeParse(body);
-    if (!validation.success) {
-      return zodBadRequest(c, validation.error, 'body-format');
-    }
-    const requestedDir = validation.data.externalClaudeDir?.trim();
-    if (requestedDir) {
-      try {
-        const resolved = fs.realpathSync(requestedDir);
-        if (
-          !path.isAbsolute(requestedDir) ||
-          !fs.statSync(resolved).isDirectory()
-        ) {
-          throw new Error('not an absolute directory');
-        }
-      } catch {
-        return c.json(
-          { error: 'externalClaudeDir must be an existing absolute directory' },
-          400,
-        );
+configRoutes.put('/host-integration', authMiddleware, async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const validation = HostIntegrationSettingsSchema.safeParse(body);
+  if (!validation.success) {
+    return zodBadRequest(c, validation.error, 'body-format');
+  }
+  const requestedDir = validation.data.externalClaudeDir?.trim();
+  if (requestedDir) {
+    try {
+      const resolved = fs.realpathSync(requestedDir);
+      if (
+        !path.isAbsolute(requestedDir) ||
+        !fs.statSync(resolved).isDirectory()
+      ) {
+        throw new Error('not an absolute directory');
       }
-    }
-
-    return withCapabilityScopeLocks([SYSTEM_CAPABILITY_LOCK_KEY], async () => {
-      const before = toHostIntegrationResponse(getSystemSettings());
-      const mainContextSourceChanged =
-        validation.data.mainAgentContextSource !== undefined &&
-        validation.data.mainAgentContextSource !==
-          before.mainAgentContextSource;
-      const externalClaudeDirChanged =
-        validation.data.externalClaudeDir !== undefined &&
-        validation.data.externalClaudeDir !== before.externalClaudeDir;
-      const hostContextChanged =
-        mainContextSourceChanged || externalClaudeDirChanged;
-      const adminHostOnlyModeChanged =
-        validation.data.adminHostOnlyMode !== undefined &&
-        validation.data.adminHostOnlyMode !== before.adminHostOnlyMode;
-      const enablingAdminHostOnlyMode =
-        adminHostOnlyModeChanged && validation.data.adminHostOnlyMode === true;
-      const pendingRuntimeCleanupFolders =
-        getPendingAdminHostOnlyCleanupFolders();
-      const repairingRuntimeCleanup = pendingRuntimeCleanupFolders.length > 0;
-      const enforcingAdminHostOnlyMode =
-        enablingAdminHostOnlyMode ||
-        (repairingRuntimeCleanup &&
-          before.adminHostOnlyMode &&
-          validation.data.adminHostOnlyMode !== false);
-      const defaultCompactChanged =
-        (validation.data.mainAgentAutoCompactWindow !== undefined &&
-          validation.data.mainAgentAutoCompactWindow !==
-            before.mainAgentAutoCompactWindow) ||
-        (validation.data.mainAgentAutoCompactPercentage !== undefined &&
-          validation.data.mainAgentAutoCompactPercentage !==
-            before.mainAgentAutoCompactPercentage);
-      const contextMutationRequested =
-        hostContextChanged ||
-        defaultCompactChanged ||
-        enablingAdminHostOnlyMode ||
-        repairingRuntimeCleanup;
-      const contextWorkspaces =
-        hostContextChanged || defaultCompactChanged
-          ? Object.entries(getAllRegisteredGroups())
-              .map(([jid, group]) => ({
-                jid,
-                group,
-                profile: group.created_by
-                  ? getAgentProfileForWorkspace(group.folder, group.created_by)
-                  : undefined,
-              }))
-              .filter(({ group, profile }) => {
-                if (!group.created_by || !profile) return false;
-                const isActiveAdmin =
-                  getUserById(group.created_by)?.role === 'admin';
-                const currentContextSource =
-                  resolveEffectiveAgentProfile(profile)?.runtime_policy.context
-                    .source ?? 'managed';
-                const nextContextSource = profile.is_default
-                  ? (validation.data.mainAgentContextSource ??
-                    before.mainAgentContextSource)
-                  : profile.runtime_policy.context.source;
-                return (
-                  (defaultCompactChanged && profile.is_default) ||
-                  (mainContextSourceChanged &&
-                    profile.is_default &&
-                    isActiveAdmin) ||
-                  (externalClaudeDirChanged &&
-                    isActiveAdmin &&
-                    (currentContextSource === 'host_claude' ||
-                      nextContextSource === 'host_claude'))
-                );
-              })
-          : [];
-      const allGroups =
-        enablingAdminHostOnlyMode || repairingRuntimeCleanup
-          ? getAllRegisteredGroups()
-          : {};
-      const activeAdminFolders = enablingAdminHostOnlyMode
-        ? new Set(
-            Object.values(allGroups)
-              .filter((group) => {
-                const owner = group.created_by
-                  ? getUserById(group.created_by)
-                  : undefined;
-                return owner?.role === 'admin' && owner.status === 'active';
-              })
-              .map((group) => group.folder),
-          )
-        : new Set<string>();
-      for (const folder of pendingRuntimeCleanupFolders) {
-        activeAdminFolders.add(folder);
-      }
-      const policyWorkspaces = Array.from(activeAdminFolders)
-        .map((folder) => {
-          const entries = Object.entries(allGroups).filter(
-            ([, group]) => group.folder === folder,
-          );
-          const preferred =
-            entries.find(([jid]) => jid.startsWith('web:')) ?? entries[0];
-          if (!preferred) return null;
-          const [jid, group] = preferred;
-          return {
-            jid,
-            group,
-            profile: group.created_by
-              ? getAgentProfileForWorkspace(group.folder, group.created_by)
-              : undefined,
-          };
-        })
-        .filter(
-          (workspace): workspace is NonNullable<typeof workspace> =>
-            workspace !== null,
-        );
-      const workspaceByFolder = new Map<
-        string,
-        (typeof contextWorkspaces)[number] | (typeof policyWorkspaces)[number]
-      >();
-      for (const workspace of [...contextWorkspaces, ...policyWorkspaces]) {
-        workspaceByFolder.set(workspace.group.folder, workspace);
-      }
-      const workspaces = Array.from(workspaceByFolder.values());
-      const sessionResetFolders = Array.from(
-        new Set([
-          ...workspaces.map(({ group }) => group.folder),
-          ...pendingRuntimeCleanupFolders,
-        ]),
+    } catch {
+      return c.json(
+        { error: 'externalClaudeDir must be an existing absolute directory' },
+        400,
       );
-      let hostOnlyMigration:
-        | ReturnType<typeof forceActiveAdminRuntimesToHost>
-        | undefined;
-      const commit = () => {
-        if (enforcingAdminHostOnlyMode) {
-          hostOnlyMigration = forceActiveAdminRuntimesToHost();
-          if (deps) {
-            const liveGroups = deps.getRegisteredGroups();
-            for (const { jid } of hostOnlyMigration.affectedGroups) {
-              const fresh = getRegisteredGroup(jid);
-              if (fresh) liveGroups[jid] = fresh;
-            }
+    }
+  }
+
+  return withCapabilityScopeLocks([SYSTEM_CAPABILITY_LOCK_KEY], async () => {
+    const before = toHostIntegrationResponse(getSystemSettings());
+    const mainContextSourceChanged =
+      validation.data.mainAgentContextSource !== undefined &&
+      validation.data.mainAgentContextSource !== before.mainAgentContextSource;
+    const externalClaudeDirChanged =
+      validation.data.externalClaudeDir !== undefined &&
+      validation.data.externalClaudeDir !== before.externalClaudeDir;
+    const hostContextChanged =
+      mainContextSourceChanged || externalClaudeDirChanged;
+    const adminHostOnlyModeChanged =
+      validation.data.adminHostOnlyMode !== undefined &&
+      validation.data.adminHostOnlyMode !== before.adminHostOnlyMode;
+    const enablingAdminHostOnlyMode =
+      adminHostOnlyModeChanged && validation.data.adminHostOnlyMode === true;
+    const pendingRuntimeCleanupFolders =
+      getPendingAdminHostOnlyCleanupFolders();
+    const repairingRuntimeCleanup = pendingRuntimeCleanupFolders.length > 0;
+    const enforcingAdminHostOnlyMode =
+      enablingAdminHostOnlyMode ||
+      (repairingRuntimeCleanup &&
+        before.adminHostOnlyMode &&
+        validation.data.adminHostOnlyMode !== false);
+    const defaultCompactChanged =
+      (validation.data.mainAgentAutoCompactWindow !== undefined &&
+        validation.data.mainAgentAutoCompactWindow !==
+          before.mainAgentAutoCompactWindow) ||
+      (validation.data.mainAgentAutoCompactPercentage !== undefined &&
+        validation.data.mainAgentAutoCompactPercentage !==
+          before.mainAgentAutoCompactPercentage);
+    const contextMutationRequested =
+      hostContextChanged ||
+      defaultCompactChanged ||
+      enablingAdminHostOnlyMode ||
+      repairingRuntimeCleanup;
+    const contextWorkspaces =
+      hostContextChanged || defaultCompactChanged
+        ? Object.entries(getAllRegisteredGroups())
+            .map(([jid, group]) => ({
+              jid,
+              group,
+              profile: group.created_by
+                ? getAgentProfileForWorkspace(group.folder, group.created_by)
+                : undefined,
+            }))
+            .filter(({ group, profile }) => {
+              if (!group.created_by || !profile) return false;
+              const hasOwnerRecord = Boolean(getUserById(group.created_by));
+              const currentContextSource =
+                resolveEffectiveAgentProfile(profile)?.runtime_policy.context
+                  .source ?? 'managed';
+              const nextContextSource = profile.is_default
+                ? (validation.data.mainAgentContextSource ??
+                  before.mainAgentContextSource)
+                : profile.runtime_policy.context.source;
+              return (
+                (defaultCompactChanged && profile.is_default) ||
+                (mainContextSourceChanged &&
+                  profile.is_default &&
+                  hasOwnerRecord) ||
+                (externalClaudeDirChanged &&
+                  hasOwnerRecord &&
+                  (currentContextSource === 'host_claude' ||
+                    nextContextSource === 'host_claude'))
+              );
+            })
+        : [];
+    const allGroups =
+      enablingAdminHostOnlyMode || repairingRuntimeCleanup
+        ? getAllRegisteredGroups()
+        : {};
+    const activeOwnerFolders = enablingAdminHostOnlyMode
+      ? new Set(
+          Object.values(allGroups)
+            .filter((group) => {
+              const owner = group.created_by
+                ? getUserById(group.created_by)
+                : undefined;
+              return owner?.status === 'active';
+            })
+            .map((group) => group.folder),
+        )
+      : new Set<string>();
+    for (const folder of pendingRuntimeCleanupFolders) {
+      activeOwnerFolders.add(folder);
+    }
+    const policyWorkspaces = Array.from(activeOwnerFolders)
+      .map((folder) => {
+        const entries = Object.entries(allGroups).filter(
+          ([, group]) => group.folder === folder,
+        );
+        const preferred =
+          entries.find(([jid]) => jid.startsWith('web:')) ?? entries[0];
+        if (!preferred) return null;
+        const [jid, group] = preferred;
+        return {
+          jid,
+          group,
+          profile: group.created_by
+            ? getAgentProfileForWorkspace(group.folder, group.created_by)
+            : undefined,
+        };
+      })
+      .filter(
+        (workspace): workspace is NonNullable<typeof workspace> =>
+          workspace !== null,
+      );
+    const workspaceByFolder = new Map<
+      string,
+      (typeof contextWorkspaces)[number] | (typeof policyWorkspaces)[number]
+    >();
+    for (const workspace of [...contextWorkspaces, ...policyWorkspaces]) {
+      workspaceByFolder.set(workspace.group.folder, workspace);
+    }
+    const workspaces = Array.from(workspaceByFolder.values());
+    const sessionResetFolders = Array.from(
+      new Set([
+        ...workspaces.map(({ group }) => group.folder),
+        ...pendingRuntimeCleanupFolders,
+      ]),
+    );
+    let hostOnlyMigration:
+      | ReturnType<typeof forceActiveAdminRuntimesToHost>
+      | undefined;
+    const commit = () => {
+      if (enforcingAdminHostOnlyMode) {
+        hostOnlyMigration = forceActiveAdminRuntimesToHost();
+        if (deps) {
+          const liveGroups = deps.getRegisteredGroups();
+          for (const { jid } of hostOnlyMigration.affectedGroups) {
+            const fresh = getRegisteredGroup(jid);
+            if (fresh) liveGroups[jid] = fresh;
           }
         }
-        for (const folder of sessionResetFolders)
-          deleteWorkspaceSessions(folder);
-        if (deps?.sessions) {
-          for (const folder of sessionResetFolders)
-            delete deps.sessions[folder];
-        }
-        const value = saveSystemSettings(validation.data);
-        if (hostOnlyMigration?.migratedTaskIds.length) {
-          notifyTaskSchedulerChanged();
-        }
-        return value;
-      };
-      let saved: ReturnType<typeof saveSystemSettings>;
-      if (contextMutationRequested && deps) {
-        const profileIds = Array.from(
-          new Set(
-            workspaces
-              .map(({ profile }) => profile)
-              .filter((profile) => !!profile)
-              .map((profile) => profile.id),
+      }
+      for (const folder of sessionResetFolders) deleteWorkspaceSessions(folder);
+      if (deps?.sessions) {
+        for (const folder of sessionResetFolders) delete deps.sessions[folder];
+      }
+      const value = saveSystemSettings(validation.data);
+      if (hostOnlyMigration?.migratedTaskIds.length) {
+        notifyTaskSchedulerChanged();
+      }
+      return value;
+    };
+    let saved: ReturnType<typeof saveSystemSettings>;
+    if (contextMutationRequested && deps) {
+      const profileIds = Array.from(
+        new Set(
+          workspaces
+            .map(({ profile }) => profile)
+            .filter((profile) => !!profile)
+            .map((profile) => profile.id),
+        ),
+      );
+      try {
+        const targets = workspaces.map(({ jid, group }) => ({
+          folder: group.folder,
+          primaryJid: jid,
+        }));
+        const result = await withAgentProfileLocks(profileIds, () =>
+          quiesceWorkspaceRunnersAroundCommit(
+            deps,
+            targets,
+            {
+              reason: 'Host integration context updated',
+              onPostCommitFailure: (runtimeJids) => {
+                markAdminHostOnlyCleanupPending(sessionResetFolders);
+                deps.queue.blockGroupsForRuntimeSafety?.(
+                  runtimeJids,
+                  'Host integration runtime cleanup failed after settings commit',
+                  ADMIN_HOST_ONLY_RUNTIME_SAFETY_SOURCE,
+                );
+              },
+            },
+            commit,
           ),
         );
+        saved = result.value;
+        clearAdminHostOnlyCleanupPending(sessionResetFolders);
+        deps.queue.unblockGroupsForRuntimeSafety?.(
+          result.runtimeJids,
+          ADMIN_HOST_ONLY_RUNTIME_SAFETY_SOURCE,
+        );
+      } catch (err) {
+        if (!(err instanceof WorkspaceRuntimeQuiesceError)) throw err;
+        return c.json(
+          {
+            error: err.persisted
+              ? 'Host integration was updated, but runtime cleanup failed; retry the same request'
+              : 'Failed to quiesce active workspaces; host integration was not updated',
+            persisted: err.persisted,
+            retryable: true,
+          },
+          503,
+        );
+      }
+    } else {
+      saved = commit();
+    }
+    const response = toHostIntegrationResponse(saved);
+
+    return c.json(response);
+  });
+});
+
+// ─── External Claude resources ──────────────────────────────────────
+
+configRoutes.get('/external-resources', authMiddleware, (c) => {
+  const effectiveDir = getEffectiveExternalDir();
+
+  const result: {
+    dir: string;
+    rules: Array<{ name: string; size: number }>;
+    claudeMd: string | null;
+  } = { dir: effectiveDir, rules: [], claudeMd: null };
+
+  // Rules
+  const rulesDir = path.join(effectiveDir, 'rules');
+  try {
+    if (fs.existsSync(rulesDir)) {
+      for (const entry of fs.readdirSync(rulesDir, { withFileTypes: true })) {
+        if (!entry.isFile() && !entry.isSymbolicLink()) continue;
         try {
-          const targets = workspaces.map(({ jid, group }) => ({
-            folder: group.folder,
-            primaryJid: jid,
-          }));
-          const result = await withAgentProfileLocks(profileIds, () =>
-            quiesceWorkspaceRunnersAroundCommit(
-              deps,
-              targets,
-              {
-                reason: 'Host integration context updated',
-                onPostCommitFailure: (runtimeJids) => {
-                  markAdminHostOnlyCleanupPending(sessionResetFolders);
-                  deps.queue.blockGroupsForRuntimeSafety?.(
-                    runtimeJids,
-                    'Host integration runtime cleanup failed after settings commit',
-                    ADMIN_HOST_ONLY_RUNTIME_SAFETY_SOURCE,
-                  );
-                },
-              },
-              commit,
-            ),
-          );
-          saved = result.value;
-          clearAdminHostOnlyCleanupPending(sessionResetFolders);
-          deps.queue.unblockGroupsForRuntimeSafety?.(
-            result.runtimeJids,
-            ADMIN_HOST_ONLY_RUNTIME_SAFETY_SOURCE,
-          );
-        } catch (err) {
-          if (!(err instanceof WorkspaceRuntimeQuiesceError)) throw err;
-          return c.json(
-            {
-              error: err.persisted
-                ? 'Host integration was updated, but runtime cleanup failed; retry the same request'
-                : 'Failed to quiesce active workspaces; host integration was not updated',
-              persisted: err.persisted,
-              retryable: true,
-            },
-            503,
-          );
-        }
-      } else {
-        saved = commit();
-      }
-      const response = toHostIntegrationResponse(saved);
-
-      return c.json(response);
-    });
-  },
-);
-
-// ─── External Claude resources (admin only) ─────────────────────────
-
-configRoutes.get(
-  '/external-resources',
-  authMiddleware,
-  adminRoleMiddleware,
-  (c) => {
-    const effectiveDir = getEffectiveExternalDir();
-
-    const result: {
-      dir: string;
-      rules: Array<{ name: string; size: number }>;
-      claudeMd: string | null;
-    } = { dir: effectiveDir, rules: [], claudeMd: null };
-
-    // Rules
-    const rulesDir = path.join(effectiveDir, 'rules');
-    try {
-      if (fs.existsSync(rulesDir)) {
-        for (const entry of fs.readdirSync(rulesDir, { withFileTypes: true })) {
-          if (!entry.isFile() && !entry.isSymbolicLink()) continue;
-          try {
-            const st = fs.statSync(path.join(rulesDir, entry.name));
-            result.rules.push({ name: entry.name, size: st.size });
-          } catch {
-            /* skip */
-          }
+          const st = fs.statSync(path.join(rulesDir, entry.name));
+          result.rules.push({ name: entry.name, size: st.size });
+        } catch {
+          /* skip */
         }
       }
-    } catch {
-      /* ignore */
     }
+  } catch {
+    /* ignore */
+  }
 
-    // CLAUDE.md
-    const claudeMdPath = path.join(effectiveDir, 'CLAUDE.md');
-    try {
-      if (fs.existsSync(claudeMdPath)) {
-        const content = fs.readFileSync(claudeMdPath, 'utf-8');
-        result.claudeMd =
-          content.length > 10000
-            ? content.slice(0, 10000) + '\n...(截断)'
-            : content;
-      }
-    } catch {
-      /* ignore */
+  // CLAUDE.md
+  const claudeMdPath = path.join(effectiveDir, 'CLAUDE.md');
+  try {
+    if (fs.existsSync(claudeMdPath)) {
+      const content = fs.readFileSync(claudeMdPath, 'utf-8');
+      result.claudeMd =
+        content.length > 10000
+          ? content.slice(0, 10000) + '\n...(截断)'
+          : content;
     }
+  } catch {
+    /* ignore */
+  }
 
-    return c.json(result);
-  },
-);
+  return c.json(result);
+});
 
-// Read a single rule file content (admin only)
-configRoutes.get(
-  '/external-resources/rule',
-  authMiddleware,
-  adminRoleMiddleware,
-  (c) => {
-    const user = c.get('user') as AuthUser;
-    if (user.role !== 'admin') {
+// Read a single rule file content
+configRoutes.get('/external-resources/rule', authMiddleware, (c) => {
+  const name = c.req.query('name');
+  if (!name || name.includes('/') || name.includes('..')) {
+    return c.text('Invalid name', 400);
+  }
+  const effectiveDir = getEffectiveExternalDir();
+  const filePath = path.join(effectiveDir, 'rules', name);
+  try {
+    const resolved = fs.realpathSync(filePath);
+    // 确保解析后的路径仍在 rules 目录内
+    if (
+      !resolved.startsWith(fs.realpathSync(path.join(effectiveDir, 'rules')))
+    ) {
       return c.text('Forbidden', 403);
     }
-    const name = c.req.query('name');
-    if (!name || name.includes('/') || name.includes('..')) {
-      return c.text('Invalid name', 400);
-    }
-    const effectiveDir = getEffectiveExternalDir();
-    const filePath = path.join(effectiveDir, 'rules', name);
-    try {
-      const resolved = fs.realpathSync(filePath);
-      // 确保解析后的路径仍在 rules 目录内
-      if (
-        !resolved.startsWith(fs.realpathSync(path.join(effectiveDir, 'rules')))
-      ) {
-        return c.text('Forbidden', 403);
-      }
-      const content = fs.readFileSync(resolved, 'utf-8');
-      return c.text(content);
-    } catch {
-      return c.text('Not found', 404);
-    }
-  },
-);
+    const content = fs.readFileSync(resolved, 'utf-8');
+    return c.text(content);
+  } catch {
+    return c.text('Not found', 404);
+  }
+});
 
 // ─── IM Binding management (bindings panoramic page) ────────────
 

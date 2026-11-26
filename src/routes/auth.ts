@@ -170,13 +170,13 @@ authRoutes.post('/setup', async (c) => {
     return c.json({ error: 'Username already taken' }, 400);
   }
 
-  // Create admin home group (web:main, folder=main, host mode)
+  // Create the account's home group (web:main, folder=main, host mode)
   try {
-    ensureUserHomeGroup(userId, 'admin', username);
+    ensureUserHomeGroup(userId, username);
   } catch (err) {
     logger.warn(
       { err, userId },
-      'Failed to create admin home group during setup',
+      'Failed to create the home group during setup',
     );
   }
 
@@ -280,7 +280,7 @@ authRoutes.post('/login', async (c) => {
 
   // Ensure user has a home group (backfill for existing users)
   try {
-    ensureUserHomeGroup(user.id, user.role, user.username);
+    ensureUserHomeGroup(user.id, user.username);
   } catch (err) {
     // Don't block login if home group creation fails
     logger.warn(
@@ -290,8 +290,7 @@ authRoutes.post('/login', async (c) => {
   }
 
   const updatedUser = getUserById(user.id) ?? user;
-  const setupStatus =
-    updatedUser.role === 'admin' ? buildSetupStatus() : undefined;
+  const setupStatus = buildSetupStatus();
 
   return new Response(
     JSON.stringify({
@@ -336,16 +335,12 @@ authRoutes.get('/me', authMiddleware, (c) => {
   // own cache strategy (NetworkFirst + auth-store delete on login/logout).
   c.header('Cache-Control', 'private, no-store');
 
-  // Admin users get setup status for the onboarding wizard
-  if (fullUser.role === 'admin') {
-    return c.json({
-      user: userPublic,
-      appearance,
-      setupStatus: buildSetupStatus(),
-    });
-  }
-
-  return c.json({ user: userPublic, appearance });
+  // The single account gets setup status for the onboarding wizard
+  return c.json({
+    user: userPublic,
+    appearance,
+    setupStatus: buildSetupStatus(),
+  });
 });
 
 authRoutes.put('/profile', authMiddleware, async (c) => {

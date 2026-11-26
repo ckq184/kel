@@ -357,11 +357,10 @@ export interface ContainerInput {
   currentSourceJid?: string;
   /** Sanitized provider identity for the exact input turn. */
   channelContext?: ChannelTurnContext;
-  /** @deprecated Use isHome + isAdminHome instead */
+  /** @deprecated Use isHome instead. Kept for older host processes. */
   isMain: boolean;
   turnId?: string;
   isHome?: boolean;
-  isAdminHome?: boolean;
   isScheduledTask?: boolean;
   /**
    * Internal per-runner HMAC secret delivered only in the stdin bootstrap.
@@ -991,7 +990,7 @@ export function cleanupContainerTaskRuntimeEnvDirs(
 
 export function buildVolumeMounts(
   group: RegisteredGroup,
-  isAdminHome: boolean,
+  isHome: boolean,
   mountUserSkills = true,
   sessionAgentId?: string,
   taskRunId?: string,
@@ -1021,9 +1020,7 @@ export function buildVolumeMounts(
       currentOwner = undefined;
     }
     if (!canExecuteOnHost(currentOwner)) {
-      throw new Error(
-        'Host directory mounts require a currently active administrator owner',
-      );
+      throw new Error('Host directory mounts require a currently active owner');
     }
   }
 
@@ -1032,22 +1029,22 @@ export function buildVolumeMounts(
   const projectRoot = process.cwd();
   const ownerId = group.created_by;
 
-  if (isAdminHome) {
-    // Admin home gets the entire project root mounted
+  if (isHome) {
+    // Home gets the entire project root mounted
     mounts.push({
       hostPath: projectRoot,
       containerPath: '/workspace/project',
       readonly: false,
     });
 
-    // Admin home also gets its group folder as the working directory
+    // Home also gets its group folder as the working directory
     mounts.push({
       hostPath: path.join(GROUPS_DIR, group.folder),
       containerPath: '/workspace/group',
       readonly: false,
     });
   } else {
-    // Member home and non-home groups only get their own folder
+    // Non-Home groups only get their own folder
     mounts.push({
       hostPath: path.join(GROUPS_DIR, group.folder),
       containerPath: '/workspace/group',
@@ -1567,12 +1564,12 @@ export async function runContainerAgent(
     input.turnId,
   );
   try {
-    const isAdminHome = !!input.isAdminHome;
+    const isHome = input.isHome ?? input.isMain;
     // Per-user skills: always mount if the group has an owner
     const shouldMountUserSkills = !!group.created_by;
     const mounts = buildVolumeMounts(
       group,
-      isAdminHome,
+      isHome,
       shouldMountUserSkills,
       sessionAgentId,
       input.taskRunId,
@@ -1929,7 +1926,7 @@ export async function runContainerAgent(
 
 export function writeTasksSnapshot(
   groupFolder: string,
-  isAdminHome: boolean,
+  isHome: boolean,
   tasks: Array<{
     id: string;
     groupFolder: string;
@@ -1944,8 +1941,8 @@ export function writeTasksSnapshot(
   const groupIpcDir = path.join(DATA_DIR, 'ipc', groupFolder);
   fs.mkdirSync(groupIpcDir, { recursive: true });
 
-  // Admin home sees all tasks, others only see their own
-  const filteredTasks = isAdminHome
+  // Home sees all tasks, others only see their own
+  const filteredTasks = isHome
     ? tasks
     : tasks.filter((t) => t.groupFolder === groupFolder);
 
@@ -1968,20 +1965,20 @@ export interface AvailableGroup {
 
 /**
  * Write available groups snapshot for the container to read.
- * Only admin home can see all available groups (for activation).
+ * Only the Home workspace can see all available groups (for activation).
  * Other groups see nothing (they can't activate groups).
  */
 export function writeGroupsSnapshot(
   groupFolder: string,
-  isAdminHome: boolean,
+  isHome: boolean,
   groups: AvailableGroup[],
   registeredJids: Set<string>,
 ): void {
   const groupIpcDir = path.join(DATA_DIR, 'ipc', groupFolder);
   fs.mkdirSync(groupIpcDir, { recursive: true });
 
-  // Admin home sees all groups; others see nothing (they can't activate groups)
-  const visibleGroups = isAdminHome ? groups : [];
+  // Home sees all groups; others see nothing (they can't activate groups)
+  const visibleGroups = isHome ? groups : [];
 
   const groupsFile = path.join(groupIpcDir, 'available_groups.json');
   try {

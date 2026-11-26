@@ -65,7 +65,7 @@ vi.mock('../src/logger.js', () => ({
 }));
 
 // web.ts imports the FULL route surface, so the auth-middleware mock must keep
-// every real export (adminRoleMiddleware, …) and only swap out authMiddleware
+// every real export and only swap out authMiddleware
 // to inject the test user.
 vi.mock('../src/middleware/auth.ts', async (importOriginal) => {
   const real = (await importOriginal()) as Record<string, unknown>;
@@ -76,9 +76,7 @@ vi.mock('../src/middleware/auth.ts', async (importOriginal) => {
         id: process.env.CKQCLAW_TEST_USER_ID ?? 'alice',
         username: 'alice',
         display_name: 'Alice',
-        role: (process.env.CKQCLAW_TEST_USER_ROLE ?? 'member') as
-          | 'admin'
-          | 'member',
+        role: (process.env.CKQCLAW_TEST_USER_ROLE ?? 'admin') as 'admin',
       });
       return next();
     },

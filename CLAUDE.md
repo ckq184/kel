@@ -72,19 +72,19 @@ HTTP 路由位于 `src/routes/`，完整模块索引见 `docs/API.md`。
 Web 位于 `web/`，使用 React 19、Vite、Tailwind CSS 4、React Router、Zustand 和
 Radix UI。路由以 `web/src/App.tsx` 为准：
 
-| 路径                      | 用途                    |
-| ------------------------- | ----------------------- |
-| `/setup`                  | 首个管理员初始化        |
-| `/setup/providers`        | Provider 引导           |
-| `/setup/channels`         | 用户渠道引导            |
-| `/login`                  | 登录                    |
-| `/chat/:groupFolder?`     | 工作台与会话            |
-| `/agent-profiles`         | Agent 管理              |
-| `/capabilities/:section?` | Skills、MCP             |
-| `/tasks`                  | 定时任务                |
-| `/memory`                 | 记忆管理                |
-| `/settings`               | 账户和系统设置          |
-| `/monitor`                | 运行状态，仅 admin 角色 |
+| 路径                      | 用途             |
+| ------------------------- | ---------------- |
+| `/setup`                  | 首个管理员初始化 |
+| `/setup/providers`        | Provider 引导    |
+| `/setup/channels`         | 用户渠道引导     |
+| `/login`                  | 登录             |
+| `/chat/:groupFolder?`     | 工作台与会话     |
+| `/agent-profiles`         | Agent 管理       |
+| `/capabilities/:section?` | Skills、MCP      |
+| `/tasks`                  | 定时任务         |
+| `/memory`                 | 记忆管理         |
+| `/settings`               | 账户和系统设置   |
+| `/monitor`                | 运行状态         |
 
 兼容重定向不应新增独立页面，共两层：路由级（`web/src/App.tsx`）`/groups`→`/chat`、
 `/skills`→`/capabilities/skills`、`/mcp-servers`→`/capabilities/mcp`；`/settings` 旧
@@ -258,9 +258,9 @@ Channel Reliability 的 Inbox/Turn/Outbox/Card 表由
 - Cookie 会话使用 HMAC 签名，密钥来自环境变量、持久文件或首次自动生成。
 - 除公开接口外，HTTP 与 WebSocket 都要求有效登录会话；`/ws` 升级同时校验 Cookie Session 与 Origin。
 - 登录限流按用户名与来源 IP 计数，超过阈值返回 429。
-- 唯一账号恒为 admin：系统配置、Host 集成、系统外观与运行状态管理操作使用 `adminRoleMiddleware`；只读的 `GET /api/status` 对已登录账号开放。
-- Host 工作区额外要求 admin 角色，并在启动前用 `canExecuteOnHost` 复查 owner 当前状态。
-- `canAccessGroup`、`canModifyGroup` 和 `canDeleteGroup` 保留为数据归属检查，不提供 admin 全局旁路；单账号下当前账号即工作区 owner。
+- 系统只剩管理员一个角色：系统配置、Host 集成、系统外观与运行状态管理操作只需有效登录会话；`GET /api/status` 同样对已登录账号开放。
+- Host 工作区由服务端强制使用 Host；启动前用 `canExecuteOnHost` 复查 owner 仍存在且为 active。
+- `canAccessGroup`、`canModifyGroup` 和 `canDeleteGroup` 保留为数据归属检查，不提供跨 owner 旁路；单账号下当前账号即工作区 owner。
 - IM 侧访问控制独立于 Web 会话：机器人主人、发送者白名单、响应对象、激活方式与 IM 命令的主人约束。
 - 敏感写操作必须先停止或暂停相关 Runner，并在提交失败时恢复队列。
 - API 返回资源不存在时通常使用 404，避免泄漏资源是否存在。

@@ -14,7 +14,7 @@ export const CONTAINER_IMAGE_UNAVAILABLE_ERROR_PREFIX =
 
 /** 用户可见文案：只说原因和处理建议，不暴露镜像名与 Docker 原文（用户拍板 3a）。 */
 export const CONTAINER_IMAGE_UNAVAILABLE_USER_NOTICE =
-  '⚠️ Agent 运行环境（容器镜像）不可用，本次处理已停止（已跳过自动重试）。请联系管理员在「监控」页拉取镜像，或将工作区切换为宿主机模式后重试。';
+  '⚠️ Agent 运行环境（容器镜像）不可用，本次处理已停止（已跳过自动重试）。请在「监控」页拉取镜像，或将工作区切换为宿主机模式后重试。';
 
 const IMAGE_UNAVAILABLE_PATTERNS: RegExp[] = [
   /Unable to find image/i,

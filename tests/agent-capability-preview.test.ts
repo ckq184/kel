@@ -313,7 +313,7 @@ describe('buildAgentCapabilityPreview', () => {
     );
   });
 
-  test('marks admin-only system MCP unavailable to members and available to admins', () => {
+  test('marks admin-only system MCP available to the admin account', () => {
     const profile = {
       id: 'credential-preview-profile',
       owner_user_id: 'owner',
@@ -339,22 +339,6 @@ describe('buildAgentCapabilityPreview', () => {
         mcp: { mode: 'inherit' as const, ids: [] },
       },
     };
-
-    const memberPreview = buildAgentCapabilityPreview({
-      profile,
-      ownerRole: 'member',
-    });
-    expect(memberPreview.mcp.entries).toContainEqual(
-      expect.objectContaining({
-        id: 'platform',
-        source: 'system',
-        available: false,
-        unavailableReason: 'system_admin_only',
-      }),
-    );
-    expect(memberPreview.notes).toContain(
-      '有 1 个系统 MCP 当前不可用，智能体不会继承。',
-    );
 
     const adminPreview = buildAgentCapabilityPreview({
       profile,

@@ -29,25 +29,13 @@ describe('per-user home workspace isolation', () => {
   test('never reuses another admin home workspace', () => {
     db.initDatabase();
 
-    const firstAdminJid = db.ensureUserHomeGroup(
-      'admin-one',
-      'admin',
-      'admin-one',
-    );
-    const secondAdminJid = db.ensureUserHomeGroup(
-      'admin-two',
-      'admin',
-      'admin-two',
-    );
-    const memberJid = db.ensureUserHomeGroup(
-      'member-one',
-      'member',
-      'member-one',
-    );
+    const firstAdminJid = db.ensureUserHomeGroup('admin-one', 'admin-one');
+    const secondAdminJid = db.ensureUserHomeGroup('admin-two', 'admin-two');
+    const thirdJid = db.ensureUserHomeGroup('member-one', 'member-one');
 
     expect(firstAdminJid).toBe('web:main');
     expect(secondAdminJid).toBe('web:home-admin-two');
-    expect(memberJid).toBe('web:home-member-one');
+    expect(thirdJid).toBe('web:home-member-one');
 
     expect(db.getRegisteredGroup(firstAdminJid)).toMatchObject({
       folder: 'main',
@@ -61,11 +49,11 @@ describe('per-user home workspace isolation', () => {
       is_home: true,
       executionMode: 'host',
     });
-    expect(db.getRegisteredGroup(memberJid)).toMatchObject({
+    expect(db.getRegisteredGroup(thirdJid)).toMatchObject({
       folder: 'home-member-one',
       created_by: 'member-one',
       is_home: true,
-      executionMode: 'container',
+      executionMode: 'host',
     });
 
     expect(db.getUserHomeGroup('admin-one')?.jid).toBe(firstAdminJid);

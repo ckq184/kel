@@ -64,7 +64,6 @@ function setup(contextValue: ChannelTurnContext = feishuContext()) {
     channelContext: contextValue,
     groupFolder: 'workspace',
     isHome: true,
-    isAdminHome: true,
     agentBuilderEnabled: false,
     currentInputTurnId: 'delivery-1',
     workspaceIpc: root,

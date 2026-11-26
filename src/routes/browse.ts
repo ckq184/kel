@@ -2,7 +2,6 @@ import { Hono } from 'hono';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Variables } from '../web-context.js';
-import { hasHostExecutionPermission } from '../web-context.js';
 import { authMiddleware } from '../middleware/auth.js';
 import type { AuthUser } from '../types.js';
 import { logger } from '../logger.js';
@@ -112,22 +111,15 @@ browseRoutes.get('/directories', authMiddleware, (c) => {
       400,
     );
   }
-  if (
-    purpose === 'mount' &&
-    (authUser.role !== 'admin' || authUser.status !== 'active')
-  ) {
+  if (purpose === 'mount' && authUser.status !== 'active') {
     return c.json(
       {
-        error: 'Only an active administrator can browse host mount paths',
-        code: 'HOST_MOUNT_ADMIN_REQUIRED',
+        error: 'Only an active account can browse host mount paths',
+        code: 'HOST_MOUNT_ACCOUNT_INACTIVE',
       },
       403,
     );
   }
-  if (purpose !== 'mount' && !hasHostExecutionPermission(authUser)) {
-    return c.json({ error: 'Insufficient permissions' }, 403);
-  }
-
   const requestedPath = c.req.query('path');
   const allowlist = loadMountAllowlist();
   const blockedPatterns = allowlist?.blockedPatterns ?? [];
@@ -307,22 +299,15 @@ browseRoutes.post('/directories', authMiddleware, async (c) => {
       400,
     );
   }
-  if (
-    purpose === 'mount' &&
-    (authUser.role !== 'admin' || authUser.status !== 'active')
-  ) {
+  if (purpose === 'mount' && authUser.status !== 'active') {
     return c.json(
       {
-        error: 'Only an active administrator can create host mount paths',
-        code: 'HOST_MOUNT_ADMIN_REQUIRED',
+        error: 'Only an active account can create host mount paths',
+        code: 'HOST_MOUNT_ACCOUNT_INACTIVE',
       },
       403,
     );
   }
-  if (purpose !== 'mount' && !hasHostExecutionPermission(authUser)) {
-    return c.json({ error: 'Insufficient permissions' }, 403);
-  }
-
   const body = await c.req.json().catch(() => ({}));
   const { parentPath, name } = body;
 

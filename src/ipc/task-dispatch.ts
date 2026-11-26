@@ -72,7 +72,6 @@ export type IpcTaskRequest = {
   filePath?: string;
   fileName?: string;
   // For list_tasks / list_task_runs / workspace_memory snapshots
-  isAdminHome?: boolean;
   includeDeleted?: boolean;
   limit?: number;
   before?: string;
@@ -117,7 +116,6 @@ export type IpcFileDeliveryDeps = Omit<
   IpcSendFileInput,
   | 'data'
   | 'sourceGroup'
-  | 'isAdminHome'
   | 'isHome'
   | 'sourceGroupEntry'
   | 'tasksDir'
@@ -128,7 +126,7 @@ export type IpcFileDeliveryDeps = Omit<
 >;
 export type IpcSkillRegistryDeps = Omit<
   IpcSkillRegistryInput,
-  'data' | 'sourceGroup' | 'isAdminHome'
+  'data' | 'sourceGroup'
 >;
 export type IpcFeishuCapabilityDeps = Omit<
   IpcFeishuCapabilityInput,
@@ -138,7 +136,6 @@ export type IpcFeishuCapabilityDeps = Omit<
 export interface IpcTaskDispatchInput {
   data: IpcTaskRequest;
   sourceGroup: string;
-  isAdminHome: boolean;
   isHome: boolean;
   sourceGroupEntry: RegisteredGroup | undefined;
   tasksDir: string;
@@ -164,7 +161,6 @@ export async function processTaskIpcImpl(
   const {
     data,
     sourceGroup,
-    isAdminHome,
     isHome,
     sourceGroupEntry,
     tasksDir,
@@ -189,7 +185,7 @@ export async function processTaskIpcImpl(
 
   // Scheduled-task ACL for this IPC surface. The predicate itself lives in
   // src/task-acl.ts so it is unit-testable and cannot silently regress; see
-  // that module for why `isAdminHome` is deliberately absent.
+  // that module for why Home access is deliberately absent.
   const taskAclDeps: TaskAclDeps = {
     lookupGroup: (jid) => getRegisteredGroups()[jid] ?? getRegisteredGroup(jid),
     resolveActor: () => {
@@ -197,7 +193,7 @@ export async function processTaskIpcImpl(
       if (!actorId) return undefined;
       const actor = getUserById(actorId);
       if (!actor) return undefined;
-      return { id: actor.id, role: actor.role, status: actor.status };
+      return { id: actor.id, status: actor.status };
     },
     canAccessGroup,
   };
@@ -280,7 +276,7 @@ export async function processTaskIpcImpl(
         ...ipcTaskOpsDeps,
         data,
         sourceGroup,
-        isAdminHome,
+        isHome,
         sourceGroupEntry,
         tasksDir,
         ipcAgentId,
@@ -303,7 +299,7 @@ export async function processTaskIpcImpl(
         ...ipcSkillRegistryDeps,
         data,
         sourceGroup,
-        isAdminHome,
+        isHome,
       });
       break;
 
@@ -327,7 +323,6 @@ export async function processTaskIpcImpl(
       await processIpcSendFile({
         data,
         sourceGroup,
-        isAdminHome,
         isHome,
         sourceGroupEntry,
         tasksDir,

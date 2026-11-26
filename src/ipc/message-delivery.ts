@@ -81,15 +81,12 @@ export interface IpcSendMessageInput {
   ipcTaskId: string | null;
   durableTaskRunId: string | null;
   isHome: boolean;
-  isAdminHome: boolean;
   broadcastFolder: string;
   REPLY_LIMIT_REACHED_ERROR: string;
   activeImReplyRoutes: Map<string, string | null>;
   canSendCrossGroupMessage: (
-    isAdminHome: boolean,
     isHome: boolean,
     sourceFolder: string,
-    sourceGroupEntry: RegisteredGroup | undefined,
     targetGroup: RegisteredGroup | undefined,
   ) => boolean;
   getIpcDeliveryTargetGroup: (chatJid: string) => RegisteredGroup | undefined;
@@ -195,7 +192,6 @@ export async function processIpcSendMessage(
     ipcTaskId,
     durableTaskRunId,
     isHome,
-    isAdminHome,
     broadcastFolder,
     REPLY_LIMIT_REACHED_ERROR,
     activeImReplyRoutes,
@@ -243,13 +239,7 @@ export async function processIpcSendMessage(
     return { skippedFile: true };
   }
   const ipcInteractionMode = frozenIpcMode.mode;
-  const authorized = canSendCrossGroupMessage(
-    isAdminHome,
-    isHome,
-    sourceGroup,
-    sourceGroupEntry,
-    targetGroup,
-  );
+  const authorized = canSendCrossGroupMessage(isHome, sourceGroup, targetGroup);
   const hostOutputRoute = routeHostIpcOutput(
     {
       sourceGroup,

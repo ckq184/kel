@@ -37,8 +37,6 @@ import {
   wsClients,
   lastActiveCache,
   LAST_ACTIVE_DEBOUNCE_MS,
-  isHostExecutionGroup,
-  hasHostExecutionPermission,
   canAccessGroup,
   canModifyGroup,
   getCachedSessionWithUser,
@@ -110,7 +108,6 @@ import type {
   WsMessageIn,
   AuthUser,
   StreamEvent,
-  UserRole,
   RunFinishReason,
 } from './types.js';
 import {
@@ -245,13 +242,6 @@ app.post('/api/messages', authMiddleware, async (c) => {
   if (!canAccessGroup(authUser, group)) {
     return c.json({ error: 'Access denied' }, 403);
   }
-  if (isHostExecutionGroup(group) && !hasHostExecutionPermission(authUser)) {
-    return c.json(
-      { error: 'Insufficient permissions for host execution mode' },
-      403,
-    );
-  }
-
   if (agentId) {
     const agent = getAgent(agentId);
     if (!agent || agent.kind !== 'conversation' || agent.chat_jid !== chatJid) {
@@ -264,12 +254,7 @@ app.post('/api/messages', authMiddleware, async (c) => {
   // route, since /clear has the same destructive effect (clears agent
   // session files, stops sibling containers, drops conversation history).
   if (isClearCommand(content)) {
-    if (
-      !canModifyGroup(
-        { id: authUser.id, role: authUser.role },
-        { ...group, jid: chatJid },
-      )
-    ) {
+    if (!canModifyGroup({ id: authUser.id }, { ...group, jid: chatJid })) {
       return c.json({ error: 'Only the workspace owner can run /clear' }, 403);
     }
     if (!deps) return c.json({ error: 'Server not initialized' }, 500);
@@ -416,12 +401,7 @@ app.post('/api/follow-ups/:messageId/action', authMiddleware, async (c) => {
     }
     result = await deps.promoteFollowUp?.(chatJid, messageId, targetRunId);
   } else {
-    if (
-      !canModifyGroup(
-        { id: authUser.id, role: authUser.role },
-        { ...group, jid: baseJid },
-      )
-    ) {
+    if (!canModifyGroup({ id: authUser.id }, { ...group, jid: baseJid })) {
       return c.json(
         { error: 'Only the workspace owner can interrupt it' },
         403,
@@ -1126,7 +1106,6 @@ function setupWebSocket(server: any): WebSocketServer {
     wsClients.set(ws, {
       sessionId: sessionId || '',
       userId: connSession?.user_id || '',
-      role: (connSession?.role || 'member') as UserRole,
     });
 
     // Push an authoritative logical-run snapshot on every connection. A warm
@@ -1313,12 +1292,7 @@ function setupWebSocket(server: any): WebSocketServer {
             }
             // Permission: user must be able to access the group
             const groupWithJid = { ...group, jid: chatJid };
-            if (
-              !canAccessGroup(
-                { id: session.user_id, role: session.role },
-                groupWithJid,
-              )
-            ) {
+            if (!canAccessGroup({ id: session.user_id }, groupWithJid)) {
               ws.send(
                 JSON.stringify({
                   type: 'terminal_error',
@@ -1549,26 +1523,17 @@ function setupWebSocket(server: any): WebSocketServer {
 // --- Broadcast Functions ---
 
 /**
- * Broadcast to all connected WebSocket clients.
- * If adminOnly is true, only send to clients whose session belongs to an admin user.
- * If ownerUserId is provided, only send to that user and admins (for group isolation).
- */
-/**
  * Broadcast a WebSocket message with access control filtering.
  *
  * @param msg - The message to broadcast
- * @param adminOnly - If true, only admin users receive the message
  * @param allowedUserIds - Group access filtering:
- *   - undefined: no user-level filtering (e.g. system-wide admin broadcasts)
- *   - null: ownership unresolvable → default-deny (drop for ALL recipients,
- *     including admin). 这是有意的硬拒绝，不区分角色，避免 ACL 解析失败时
- *     管理员意外看到本不该看的群组事件。注意先前文档说"only admin can see"
- *     与代码不一致，代码 default-deny 更安全所以保留代码、对齐注释。
+ *   - undefined: no user-level filtering (e.g. system-wide broadcasts)
+ *   - null: ownership unresolvable → default-deny (drop for ALL recipients).
+ *     这是有意的硬拒绝，避免 ACL 解析失败时意外看到本不该看的群组事件。
  *   - Set<string>: only these workspace owners
  */
 function safeBroadcast(
   msg: WsMessageOut,
-  adminOnly = false,
   allowedUserIds?: Set<string> | null,
 ): void {
   const data = JSON.stringify(msg);
@@ -1605,10 +1570,6 @@ function safeBroadcast(
       continue;
     }
 
-    if (adminOnly && session.role !== 'admin') {
-      continue;
-    }
-
     // Group isolation: only the workspace owner can see this group's events.
     // allowedUserIds === null means ownership unresolvable → default-deny EVERYONE
     // (including admin). 故意这样：解析失败时宁可不广播也不要意外泄漏。
@@ -1634,12 +1595,6 @@ function safeBroadcast(
  * - Set<string>: the owner user ID
  * - null: ownership unresolvable → default-deny
  */
-/** Check if a chatJid belongs to a host-mode group (for broadcast filtering) */
-function isHostGroupJid(chatJid: string): boolean {
-  const group = getRegisteredGroup(chatJid);
-  return !!group && isHostExecutionGroup(group);
-}
-
 /**
  * Normalize chatJid for WebSocket broadcasts.
  *
@@ -1705,7 +1660,6 @@ export function broadcastToWebClients(
       timestamp,
       notice: options?.notice,
     },
-    isHostGroupJid(chatJid),
     allowedUserIds,
   );
 }
@@ -1733,7 +1687,7 @@ export function broadcastNewMessage(
     ...(effectiveAgentId ? { agentId: effectiveAgentId } : {}),
     ...(source ? { source } : {}),
   };
-  safeBroadcast(wsMsg, isHostGroupJid(baseChatJid), allowedUserIds);
+  safeBroadcast(wsMsg, allowedUserIds);
 }
 
 export function broadcastFollowUpUpdate(
@@ -1757,7 +1711,7 @@ export function broadcastFollowUpUpdate(
     ...(agentId ? { agentId } : {}),
     ...(transition ? { transition } : {}),
   };
-  safeBroadcast(msg, isHostGroupJid(baseChatJid), allowedUserIds);
+  safeBroadcast(msg, allowedUserIds);
 }
 
 // ─── Streaming Snapshot Accumulation ─────────────────────────────────
@@ -2210,7 +2164,7 @@ export function broadcastStreamEvent(
         event,
         runId: decision.runId,
       };
-  safeBroadcast(msg, isHostGroupJid(chatJid), allowedUserIds);
+  safeBroadcast(msg, allowedUserIds);
 
   // Accumulate snapshot for both main and agent streams.
   updateStreamingSnapshot(snapshotJid, event, decision.runId);
@@ -2232,7 +2186,6 @@ export function broadcastGroupCreated(
   if (!ownerUserId) return;
   safeBroadcast(
     { type: 'group_created', jid, folder, name },
-    false,
     new Set([ownerUserId]),
   );
 }
@@ -2255,7 +2208,7 @@ export function broadcastChannelAccountStatus(
     accountId,
     ...state,
   };
-  safeBroadcast(msg, false, new Set([userId]));
+  safeBroadcast(msg, new Set([userId]));
 }
 
 export function broadcastAgentStatus(
@@ -2283,7 +2236,7 @@ export function broadcastAgentStatus(
     resultSummary,
     titleGenerating,
   };
-  safeBroadcast(msg, isHostGroupJid(chatJid), allowedUserIds);
+  safeBroadcast(msg, allowedUserIds);
 }
 
 export function broadcastAgentRemoved(
@@ -2340,7 +2293,7 @@ export function broadcastRunnerState(
     chatJid: jid,
     state,
   };
-  safeBroadcast(msg, isHostGroupJid(baseJid), allowedUserIds);
+  safeBroadcast(msg, allowedUserIds);
   if (state === 'idle') pruneOrphanedAgentSnapshots(jid);
 }
 
@@ -2389,7 +2342,6 @@ export function broadcastRunStarted(
       startedAt: new Date(startedAt).toISOString(),
       phase: 'preparing',
     },
-    isHostGroupJid(baseJid),
     allowedUserIds,
   );
 }
@@ -2415,7 +2367,6 @@ export function broadcastRunFinished(
       reason,
       finishedAt: new Date(finishedAt).toISOString(),
     },
-    isHostGroupJid(baseJid),
     allowedUserIds,
   );
 
@@ -2434,14 +2385,14 @@ export function broadcastRunFinished(
 }
 
 export function broadcastDockerPullLog(line: string): void {
-  safeBroadcast({ type: 'docker_pull_log', line }, true);
+  safeBroadcast({ type: 'docker_pull_log', line });
 }
 
 export function broadcastDockerPullComplete(
   success: boolean,
   error?: string,
 ): void {
-  safeBroadcast({ type: 'docker_pull_complete', success, error }, true);
+  safeBroadcast({ type: 'docker_pull_complete', success, error });
 }
 
 // --- Server Startup ---

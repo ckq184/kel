@@ -906,15 +906,12 @@ async function runTaskInner(
     : workspace.jid;
   const taskOwnerId = task.created_by || workspaceGroup.created_by || null;
   // The task's creator (taskOwnerId) can legitimately differ from the
-  // workspace's actual owner for admin-initiated cross-group tasks
-  // (hasCrossGroupAccess in mcp-tools.ts lets an admin home target another
-  // user's workspace via target_group_jid). Every check that decides what
-  // privileges/mounts/gates apply to the *execution context* must be scoped
-  // to the workspace being executed in, not to whoever scheduled the task —
-  // otherwise an admin-created task targeting a member's workspace would
-  // inherit admin privileges (isAdminHome mount, owner-active bypass,
-  // billing bypass) inside that member's own container. taskOwnerId is kept
-  // only for display/audit attribution (who scheduled this run).
+  // workspace's actual owner for cross-group tasks (hasCrossGroupAccess in
+  // mcp-tools.ts lets Home target another workspace via target_group_jid).
+  // Every check that decides what privileges/mounts/gates apply to the
+  // *execution context* must be scoped to the workspace being executed in,
+  // not to whoever scheduled the task. taskOwnerId is kept only for
+  // display/audit attribution (who scheduled this run).
   const workspaceOwnerId = workspaceGroup.created_by || null;
 
   const groupDir = path.join(GROUPS_DIR, workspace.folder);
@@ -967,14 +964,10 @@ async function runTaskInner(
 
   // Update tasks snapshot for container to read (filtered by group)
   const isHome = !!workspaceGroup.is_home;
-  const workspaceOwner = workspaceOwnerId
-    ? getUserById(workspaceOwnerId)
-    : null;
-  const isAdminHome = isHome && workspaceOwner?.role === 'admin';
   const tasks = getAllTasks();
   writeTasksSnapshot(
     workspace.folder,
-    isAdminHome,
+    isHome,
     tasks.map((t) => ({
       id: t.id,
       groupFolder: t.group_folder,
@@ -988,10 +981,10 @@ async function runTaskInner(
 
   // Store task prompt as a user message in workspace chat so it's visible in
   // conversation. Sender attribution/audit must use the task's actual
-  // creator (taskOwnerId), NOT workspaceOwner — otherwise an admin-created
-  // cross-group task would be misattributed in the chat history and audit
-  // trail as if the target workspace's own member had typed the prompt
-  // themselves. Continuation runs execute (and archive) their framed prompt.
+  // creator (taskOwnerId), NOT workspaceOwner — otherwise a cross-group
+  // task would be misattributed in the chat history and audit trail as if
+  // the target workspace's own owner had typed the prompt. Continuation
+  // runs execute (and archive) their framed prompt.
   const effectivePrompt = resolveScheduledTaskPrompt(task, options?.durableRun);
   if (deps.storePromptMessage) {
     const taskCreator = taskOwnerId ? getUserById(taskOwnerId) : null;
@@ -1166,9 +1159,8 @@ async function runTaskInner(
         sessionId,
         groupFolder: workspace.folder,
         chatJid: workspace.jid,
-        isMain: isAdminHome,
+        isMain: isHome,
         isHome,
-        isAdminHome,
         isScheduledTask: true,
         taskRunId: options?.taskRunId,
         // The run ID is only an IPC/session namespace.  Routing must use the
@@ -1612,7 +1604,7 @@ async function runScriptTaskInner(
 
   try {
     // Script tasks execute directly on the host even when their source
-    // workspace is container-backed. Re-authorize against the current DB role
+    // workspace is container-backed. Re-authorize against the current account status
     // immediately before spawning the process.
     const currentOwnerId = deps.registeredGroups()[groupJid]?.created_by;
     if (

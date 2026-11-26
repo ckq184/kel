@@ -220,23 +220,21 @@ function scanDirectory(rootDir: string, source: 'user' | 'project'): Skill[] {
   }));
 }
 
-function discoverSkills(userId: string, userRole?: string): Skill[] {
+function discoverSkills(userId: string): Skill[] {
   const userSkills = scanDirectory(getUserSkillsDir(userId), 'user');
   const projectSkills = scanDirectory(getProjectSkillsDir(), 'project');
 
-  // 宿主机 ~/.claude/skills（仅 admin 可见）
+  // 宿主机 ~/.claude/skills
   const externalSkills: Skill[] = [];
-  if (userRole === 'admin') {
-    const extSkillsDir = path.join(getEffectiveExternalDir(), 'skills');
-    if (fs.existsSync(extSkillsDir)) {
-      const scanned = scanDirectory(extSkillsDir, 'project');
-      for (const s of scanned) {
-        s.source = 'external';
-        s.sourceKey = `external:${s.id}`;
-        s.readonly = true;
-      }
-      externalSkills.push(...scanned);
+  const extSkillsDir = path.join(getEffectiveExternalDir(), 'skills');
+  if (fs.existsSync(extSkillsDir)) {
+    const scanned = scanDirectory(extSkillsDir, 'project');
+    for (const s of scanned) {
+      s.source = 'external';
+      s.sourceKey = `external:${s.id}`;
+      s.readonly = true;
     }
+    externalSkills.push(...scanned);
   }
 
   // 读取 skills manifest 补充安装元数据
@@ -255,14 +253,10 @@ function discoverSkills(userId: string, userRole?: string): Skill[] {
   const result = [...externalSkills, ...projectSkills, ...userSkills];
   const effectiveManifest = resolveEffectiveSkills({
     layers: [
-      ...(userRole === 'admin'
-        ? [
-            {
-              source: 'host' as const,
-              root: path.join(getEffectiveExternalDir(), 'skills'),
-            },
-          ]
-        : []),
+      {
+        source: 'host' as const,
+        root: path.join(getEffectiveExternalDir(), 'skills'),
+      },
       { source: 'project', root: getProjectSkillsDir() },
       { source: 'managed', root: getUserSkillsDir(userId) },
     ],
@@ -298,7 +292,6 @@ function discoverSkills(userId: string, userRole?: string): Skill[] {
 function getSkillDetail(
   skillId: string,
   userId: string,
-  userRole?: string,
   requestedSource?: string,
 ): SkillDetail | null {
   if (!validateSkillId(skillId)) return null;
@@ -310,11 +303,9 @@ function getSkillDetail(
     { rootDir: getUserSkillsDir(userId), source: 'user' },
     { rootDir: getProjectSkillsDir(), source: 'project' },
   ];
-  if (userRole === 'admin') {
-    const extSkillsDir = path.join(getEffectiveExternalDir(), 'skills');
-    if (fs.existsSync(extSkillsDir)) {
-      searchDirs.push({ rootDir: extSkillsDir, source: 'external' });
-    }
+  const extSkillsDir = path.join(getEffectiveExternalDir(), 'skills');
+  if (fs.existsSync(extSkillsDir)) {
+    searchDirs.push({ rootDir: extSkillsDir, source: 'external' });
   }
   if (requestedSource) {
     if (!['user', 'project', 'external'].includes(requestedSource)) return null;
@@ -350,7 +341,7 @@ function getSkillDetail(
       const frontmatter = parseFrontmatter(content);
       const stats = fs.statSync(skillDir);
 
-      const discovered = discoverSkills(userId, userRole).find(
+      const discovered = discoverSkills(userId).find(
         (candidate) => candidate.id === skillId && candidate.source === source,
       );
       const detail: SkillDetail = {
@@ -642,7 +633,7 @@ function skillRuntimeMutationFailure(error: unknown, action: string) {
 
 skillsRoutes.get('/', authMiddleware, (c) => {
   const authUser = c.get('user') as AuthUser;
-  const skills = discoverSkills(authUser.id, authUser.role);
+  const skills = discoverSkills(authUser.id);
   return c.json({ skills });
 });
 
@@ -857,12 +848,7 @@ skillsRoutes.post(
 skillsRoutes.get('/:id', authMiddleware, (c) => {
   const id = c.req.param('id');
   const authUser = c.get('user') as AuthUser;
-  const skill = getSkillDetail(
-    id,
-    authUser.id,
-    authUser.role,
-    c.req.query('source'),
-  );
+  const skill = getSkillDetail(id, authUser.id, c.req.query('source'));
 
   if (!skill) {
     return c.json({ error: 'Skill not found' }, 404);

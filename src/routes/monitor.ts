@@ -4,17 +4,11 @@ import { promisify } from 'util';
 
 import { Hono } from 'hono';
 import type { Variables } from '../web-context.js';
-import { adminRoleMiddleware, authMiddleware } from '../middleware/auth.js';
+import { authMiddleware } from '../middleware/auth.js';
 import type { AuthUser } from '../types.js';
-import {
-  isHostExecutionGroup,
-  hasHostExecutionPermission,
-  canAccessGroup,
-  getWebDeps,
-} from '../web-context.js';
+import { getWebDeps } from '../web-context.js';
 import {
   getAllRegisteredGroups,
-  getRegisteredGroup,
   getRouterState,
   getUserById,
   hasContainerModeGroups,
@@ -252,19 +246,10 @@ monitorRoutes.get('/status', authMiddleware, async (c) => {
   const deps = getWebDeps();
   if (!deps) return c.json({ error: 'Server not initialized' }, 500);
 
-  const authUser = c.get('user') as AuthUser;
-  const isAdmin = hasHostExecutionPermission(authUser);
   const queueStatus = deps.queue.getStatus();
 
-  // 监控页面属于系统管理功能，admin 可见所有群组状态（不受工作区隔离约束）
-  const filteredGroups = isAdmin
-    ? queueStatus.groups
-    : queueStatus.groups.filter((g) => {
-        const group = getRegisteredGroup(g.jid);
-        if (!group) return false;
-        if (isHostExecutionGroup(group)) return false;
-        return canAccessGroup({ id: authUser.id, role: authUser.role }, group);
-      });
+  // 监控页面属于系统管理功能，可见所有群组状态（不受工作区隔离约束）
+  const filteredGroups = queueStatus.groups;
 
   const dockerRequired = hasContainerModeGroups();
   const dockerImageExists = dockerRequired
@@ -272,23 +257,8 @@ monitorRoutes.get('/status', authMiddleware, async (c) => {
     : false;
   const systemSettings = getSystemSettings();
 
-  // For non-admin users, derive aggregate metrics from their own filtered groups only
-  // to prevent leaking global system load information across users
-  let activeContainers: number;
-  let queueLength: number;
-  if (isAdmin) {
-    activeContainers = queueStatus.activeContainerCount;
-    queueLength = queueStatus.waitingCount;
-  } else {
-    activeContainers = filteredGroups.filter((g) => g.active).length;
-    // Filter waiting groups by user ownership
-    queueLength = queueStatus.waitingGroupJids.filter((jid) => {
-      const group = getRegisteredGroup(jid);
-      if (!group) return false;
-      if (isHostExecutionGroup(group)) return false;
-      return canAccessGroup({ id: authUser.id, role: authUser.role }, group);
-    }).length;
-  }
+  const activeContainers = queueStatus.activeContainerCount;
+  const queueLength = queueStatus.waitingCount;
 
   // Enrich groups with provider name and owner username (batch lookups)
   const providers = getProviders();
@@ -328,22 +298,19 @@ monitorRoutes.get('/status', authMiddleware, async (c) => {
 
   return c.json({
     activeContainers,
-    activeHostProcesses: isAdmin
-      ? queueStatus.activeHostProcessCount
-      : undefined,
-    activeTotal: isAdmin ? queueStatus.activeCount : activeContainers,
+    activeHostProcesses: queueStatus.activeHostProcessCount,
+    activeTotal: queueStatus.activeCount,
     maxConcurrentContainers: systemSettings.maxConcurrentContainers,
     queueLength,
     uptime: Math.floor(process.uptime()),
     groups: enrichedGroups,
     dockerImageExists,
     dockerRequired,
-    adminHostOnlyMode: isAdmin ? systemSettings.adminHostOnlyMode : undefined,
+    adminHostOnlyMode: systemSettings.adminHostOnlyMode,
     dockerPullInProgress: pullState.pulling,
-    piRuntimeVersions: isAdmin ? await getPiRuntimeVersions() : undefined,
-    dockerPullLogs:
-      isAdmin && pullState.pulling ? pullState.logs.slice(-50) : undefined,
-    dockerPullResult: isAdmin ? pullState.result : undefined,
+    piRuntimeVersions: await getPiRuntimeVersions(),
+    dockerPullLogs: pullState.pulling ? pullState.logs.slice(-50) : undefined,
+    dockerPullResult: pullState.result,
   });
 });
 
@@ -353,7 +320,6 @@ monitorRoutes.get('/status', authMiddleware, async (c) => {
 monitorRoutes.post(
   '/status/groups/:folder/switch-provider',
   authMiddleware,
-  adminRoleMiddleware,
   (c) =>
     c.json(
       {
@@ -373,7 +339,6 @@ monitorRoutes.post(
 monitorRoutes.get(
   '/status/channel-outbox/uncertain',
   authMiddleware,
-  adminRoleMiddleware,
   async (c) => {
     const limitParam = Number(c.req.query('limit') ?? '100');
     const items = listUncertainChannelOutbox(
@@ -405,7 +370,6 @@ monitorRoutes.get(
 monitorRoutes.post(
   '/status/channel-outbox/:id/resolve',
   authMiddleware,
-  adminRoleMiddleware,
   async (c) => {
     const id = c.req.param('id');
     let body: {
@@ -498,116 +462,109 @@ monitorRoutes.post(
 );
 
 // POST /api/docker/pull - 拉取 GitHub Actions 发布的镜像（仅 admin，异步 + WS 进度）
-monitorRoutes.post(
-  '/docker/pull',
-  authMiddleware,
-  adminRoleMiddleware,
-  async (c) => {
-    if (pullState.pulling) {
-      return c.json(
-        {
-          error: 'Docker image pull already in progress',
-          startedAt: pullState.startedAt,
-          startedBy: pullState.startedBy,
-        },
-        409,
-      );
-    }
-
-    const authUser = c.get('user') as AuthUser;
-
-    pullState = {
-      pulling: true,
-      startedAt: Date.now(),
-      startedBy: authUser.username,
-      logs: [],
-      result: null,
-    };
-    logger.info(
-      { image: CONTAINER_IMAGE, startedBy: authUser.username },
-      'Docker image pull requested via API',
-    );
-
-    // Runtime hosts only consume immutable output from the registry. Image
-    // compilation is exclusively owned by .github/workflows/docker-publish.yml.
-    const proc = spawn('docker', ['pull', CONTAINER_IMAGE], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    let settled = false;
-
-    const finish = (success: boolean, error?: string) => {
-      if (settled) return;
-      settled = true;
-      pullState.pulling = false;
-      pullState.result = { success, error };
-      if (success) {
-        cachedDockerImageId = null;
-        cachedVersions = null;
-        logger.info({ image: CONTAINER_IMAGE }, 'Docker image pull completed');
-      } else {
-        logger.error(
-          { image: CONTAINER_IMAGE, error },
-          'Docker image pull failed',
-        );
-      }
-      broadcastComplete?.(success, error);
-    };
-
-    // 10-minute timeout
-    const timeout = setTimeout(
-      () => {
-        proc.kill('SIGKILL');
-        const errMsg = 'Docker image pull timed out after 10 minutes';
-        logger.error(errMsg);
-        broadcastLog?.(errMsg);
-        finish(false, errMsg);
-      },
-      10 * 60 * 1000,
-    );
-
-    const pushLine = (line: string) => {
-      pullState.logs.push(line);
-      // Keep last 200 lines in memory
-      if (pullState.logs.length > 200) {
-        pullState.logs = pullState.logs.slice(-200);
-      }
-      broadcastLog?.(line);
-    };
-
-    // Read stdout and stderr line by line
-    if (proc.stdout) {
-      const rl = readline.createInterface({ input: proc.stdout });
-      rl.on('line', pushLine);
-    }
-    if (proc.stderr) {
-      const rl = readline.createInterface({ input: proc.stderr });
-      rl.on('line', pushLine);
-    }
-
-    proc.on('close', (code) => {
-      clearTimeout(timeout);
-      const success = code === 0;
-      const error = success
-        ? undefined
-        : `Docker pull exited with code ${code}`;
-      finish(success, error);
-    });
-
-    proc.on('error', (err) => {
-      clearTimeout(timeout);
-      finish(false, err.message);
-    });
-
-    // Return immediately with 202 Accepted
+monitorRoutes.post('/docker/pull', authMiddleware, async (c) => {
+  if (pullState.pulling) {
     return c.json(
       {
-        accepted: true,
-        message:
-          'Docker image pull started. Progress will be streamed via WebSocket.',
+        error: 'Docker image pull already in progress',
+        startedAt: pullState.startedAt,
+        startedBy: pullState.startedBy,
       },
-      202,
+      409,
     );
-  },
-);
+  }
+
+  const authUser = c.get('user') as AuthUser;
+
+  pullState = {
+    pulling: true,
+    startedAt: Date.now(),
+    startedBy: authUser.username,
+    logs: [],
+    result: null,
+  };
+  logger.info(
+    { image: CONTAINER_IMAGE, startedBy: authUser.username },
+    'Docker image pull requested via API',
+  );
+
+  // Runtime hosts only consume immutable output from the registry. Image
+  // compilation is exclusively owned by .github/workflows/docker-publish.yml.
+  const proc = spawn('docker', ['pull', CONTAINER_IMAGE], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let settled = false;
+
+  const finish = (success: boolean, error?: string) => {
+    if (settled) return;
+    settled = true;
+    pullState.pulling = false;
+    pullState.result = { success, error };
+    if (success) {
+      cachedDockerImageId = null;
+      cachedVersions = null;
+      logger.info({ image: CONTAINER_IMAGE }, 'Docker image pull completed');
+    } else {
+      logger.error(
+        { image: CONTAINER_IMAGE, error },
+        'Docker image pull failed',
+      );
+    }
+    broadcastComplete?.(success, error);
+  };
+
+  // 10-minute timeout
+  const timeout = setTimeout(
+    () => {
+      proc.kill('SIGKILL');
+      const errMsg = 'Docker image pull timed out after 10 minutes';
+      logger.error(errMsg);
+      broadcastLog?.(errMsg);
+      finish(false, errMsg);
+    },
+    10 * 60 * 1000,
+  );
+
+  const pushLine = (line: string) => {
+    pullState.logs.push(line);
+    // Keep last 200 lines in memory
+    if (pullState.logs.length > 200) {
+      pullState.logs = pullState.logs.slice(-200);
+    }
+    broadcastLog?.(line);
+  };
+
+  // Read stdout and stderr line by line
+  if (proc.stdout) {
+    const rl = readline.createInterface({ input: proc.stdout });
+    rl.on('line', pushLine);
+  }
+  if (proc.stderr) {
+    const rl = readline.createInterface({ input: proc.stderr });
+    rl.on('line', pushLine);
+  }
+
+  proc.on('close', (code) => {
+    clearTimeout(timeout);
+    const success = code === 0;
+    const error = success ? undefined : `Docker pull exited with code ${code}`;
+    finish(success, error);
+  });
+
+  proc.on('error', (err) => {
+    clearTimeout(timeout);
+    finish(false, err.message);
+  });
+
+  // Return immediately with 202 Accepted
+  return c.json(
+    {
+      accepted: true,
+      message:
+        'Docker image pull started. Progress will be streamed via WebSocket.',
+    },
+    202,
+  );
+});
 
 export default monitorRoutes;

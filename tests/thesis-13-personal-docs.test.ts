@@ -75,8 +75,7 @@ describe('THESIS-13 personal access-boundary document', () => {
   test('documents the retained session, ownership and IM boundaries', () => {
     for (const token of [
       'authMiddleware',
-      'adminRoleMiddleware',
-      'hasHostExecutionPermission',
+      'isHome',
       'canExecuteOnHost',
       'canAccessGroup',
       'canModifyGroup',

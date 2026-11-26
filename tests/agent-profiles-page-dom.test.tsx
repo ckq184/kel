@@ -60,7 +60,7 @@ const mocks = vi.hoisted(() => {
     otherProfile,
     profiles: [profile],
     governanceByProfile: {} as Record<string, unknown>,
-    userRole: 'admin' as 'admin' | 'member',
+    userRole: 'admin' as 'admin',
     updateProfile: vi.fn(async () => ({
       ...profile,
       runtime_policy: {

@@ -175,17 +175,6 @@ describe.sequential.skipIf(process.platform === 'win32')(
       ]);
     });
 
-    it('rejects old persisted mounts immediately after the owner is downgraded', () => {
-      const hostPath = source('downgraded');
-      db.updateUserFields(OWNER_ID, { role: 'member' });
-
-      expect(() =>
-        runtimeAdditionalMounts([
-          { hostPath, containerPath: 'downgraded', readonly: true },
-        ]),
-      ).toThrow();
-    });
-
     it('rejects old persisted mounts immediately after the owner is disabled', () => {
       const hostPath = source('disabled');
       db.updateUserFields(OWNER_ID, {

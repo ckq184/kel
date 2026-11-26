@@ -58,7 +58,7 @@ vi.mock('../src/middleware/auth.ts', () => ({
     c.set('user', {
       id: process.env.CKQCLAW_TEST_USER_ID ?? 'alice',
       username: 'alice',
-      role: process.env.CKQCLAW_TEST_USER_ROLE ?? 'member',
+      role: process.env.CKQCLAW_TEST_USER_ROLE ?? 'admin',
       status: 'active',
     });
     return next();
@@ -135,7 +135,7 @@ describe('POST /:jid/reset-owner (admin break-glass)', () => {
   });
 
   test('admin clears owner_im_id + allowlist and downgrades activation_mode', async () => {
-    asRouteTestUser(ADMIN_ID, 'admin');
+    asRouteTestUser(ADMIN_ID);
     const res = await groupRoutes.request(
       `/${encodeURIComponent(JID)}/reset-owner`,
       { method: 'POST' },
@@ -146,27 +146,6 @@ describe('POST /:jid/reset-owner (admin break-glass)', () => {
     expect(after?.owner_im_id).toBeUndefined();
     expect(after?.sender_allowlist).toBeUndefined();
     expect(after?.activation_mode).toBe('when_mentioned');
-  });
-
-  test('non-admin member is denied (403)', async () => {
-    asRouteTestUser(OWNER_ID, 'member');
-    const res = await groupRoutes.request(
-      `/${encodeURIComponent(JID)}/reset-owner`,
-      { method: 'POST' },
-    );
-    expect(res.status).toBe(403);
-
-    // Owner must be untouched after a denied attempt.
-    const after = db.getRegisteredGroup(JID);
-    expect(after?.owner_im_id).toBe('ou_owner_who_left');
-  });
-
-  test('non-admin downgrade attempt does not change activation_mode', async () => {
-    asRouteTestUser(OWNER_ID, 'member');
-    await groupRoutes.request(`/${encodeURIComponent(JID)}/reset-owner`, {
-      method: 'POST',
-    });
-    expect(db.getRegisteredGroup(JID)?.activation_mode).toBe('owner_mentioned');
   });
 });
 
@@ -197,7 +176,7 @@ describe('PATCH /:jid preserves owner fields on rename (regression)', () => {
   });
 
   test('renaming a web group keeps owner_im_id / allowlist / nav_mode', async () => {
-    asRouteTestUser(OWNER_ID, 'member');
+    asRouteTestUser(OWNER_ID);
     const res = await groupRoutes.request(`/${encodeURIComponent(JID)}`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
@@ -226,7 +205,7 @@ describe('PATCH /:jid execution mode runtime boundary', () => {
     });
     webDepsCache[jid] = db.getRegisteredGroup(jid)!;
     runtimeConfig.saveSystemSettings({ adminHostOnlyMode: true });
-    asRouteTestUser(ADMIN_ID, 'admin');
+    asRouteTestUser(ADMIN_ID);
 
     try {
       const response = await groupRoutes.request(
@@ -274,7 +253,7 @@ describe('PATCH /:jid execution mode runtime boundary', () => {
       },
     } as unknown as Parameters<typeof webContext.setWebDeps>[0]);
 
-    asRouteTestUser(ADMIN_ID, 'admin');
+    asRouteTestUser(ADMIN_ID);
     const response = await groupRoutes.request(`/${encodeURIComponent(jid)}`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
@@ -345,7 +324,7 @@ describe('DELETE /:jid blocks channel_mounts-bound workspaces', () => {
   });
 
   test('owner gets 409 until mounted IM channel is unbound', async () => {
-    asRouteTestUser(OWNER_ID, 'member');
+    asRouteTestUser(OWNER_ID);
     const res = await groupRoutes.request(`/${encodeURIComponent(JID)}`, {
       method: 'DELETE',
     });
@@ -357,7 +336,7 @@ describe('DELETE /:jid blocks channel_mounts-bound workspaces', () => {
   });
 
   test('preflight reports the channels that will be detached', async () => {
-    asRouteTestUser(OWNER_ID, 'member');
+    asRouteTestUser(OWNER_ID);
     const res = await groupRoutes.request(
       `/${encodeURIComponent(JID)}/delete-impact`,
     );
@@ -405,7 +384,7 @@ describe('DELETE /:jid blocks channel_mounts-bound workspaces', () => {
     } as unknown as Parameters<typeof webContext.setWebDeps>[0]);
 
     try {
-      asRouteTestUser(OWNER_ID, 'member');
+      asRouteTestUser(OWNER_ID);
       const res = await groupRoutes.request(
         `/${encodeURIComponent(JID)}?unbind_channels=true`,
         { method: 'DELETE' },
@@ -1182,7 +1161,7 @@ describe('POST / workspace Agent membership publication lock', () => {
     );
     await patchEnteredPromise;
 
-    asRouteTestUser(ADMIN_ID, 'admin');
+    asRouteTestUser(ADMIN_ID);
     const createPromise = groupRoutes.request('/', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -1242,7 +1221,7 @@ describe('POST / workspace Agent membership publication lock', () => {
     } as unknown as Parameters<typeof webContext.setWebDeps>[0]);
 
     try {
-      asRouteTestUser(ADMIN_ID, 'admin');
+      asRouteTestUser(ADMIN_ID);
       const createPromise = groupRoutes.request('/', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -1304,7 +1283,7 @@ describe('POST / workspace Agent membership publication lock', () => {
       ensureTerminalContainerStarted,
     } as unknown as Parameters<typeof webContext.setWebDeps>[0]);
 
-    asRouteTestUser(ADMIN_ID, 'admin');
+    asRouteTestUser(ADMIN_ID);
     const createPromise = groupRoutes.request('/', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -1357,7 +1336,7 @@ describe('GET/PUT /:jid/env owner boundary', () => {
   });
 
   test('member owner can read and write own customEnv without a permission grant', async () => {
-    asRouteTestUser(OWNER_ID, 'member');
+    asRouteTestUser(OWNER_ID);
 
     const put = await groupRoutes.request(`/${encodeURIComponent(JID)}/env`, {
       method: 'PUT',
@@ -1379,7 +1358,7 @@ describe('GET/PUT /:jid/env owner boundary', () => {
   });
 
   test('non-owner member cannot read or write the env', async () => {
-    asRouteTestUser('bob', 'member');
+    asRouteTestUser('bob');
 
     const get = await groupRoutes.request(`/${encodeURIComponent(JID)}/env`);
     expect(get.status).toBe(404);

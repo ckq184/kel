@@ -36,8 +36,6 @@ const exists = (relativePath: string) =>
 
 const adminUsername = 'thesis11-admin';
 const adminPhrase = 'thesis11-admin-pass';
-const memberUsername = 'thesis11-member';
-const memberPhrase = 'thesis11-member-pass';
 
 beforeAll(async () => {
   fs.mkdirSync(path.join(tmpDir, 'db'), { recursive: true });
@@ -50,17 +48,6 @@ beforeAll(async () => {
     password_hash: await hashPassword(adminPhrase),
     display_name: 'THESIS-11 Admin',
     role: 'admin',
-    status: 'active',
-    created_at: now,
-    updated_at: now,
-    must_change_password: false,
-  });
-  db.createUser({
-    id: 'thesis11-member',
-    username: memberUsername,
-    password_hash: await hashPassword(memberPhrase),
-    display_name: 'THESIS-11 Member',
-    role: 'member',
     status: 'active',
     created_at: now,
     updated_at: now,
@@ -121,7 +108,7 @@ const adminProtectedRoutes: Array<[string, string]> = [
   ['GET', '/api/status/channel-outbox/uncertain'],
 ];
 
-describe('adminRoleMiddleware replaces the permission middleware', () => {
+describe('the former permission endpoints are open to the logged-in account', () => {
   test('admin can access the formerly permission-protected endpoints', async () => {
     const cookie = await login(adminUsername, adminPhrase);
     for (const [method, route] of adminProtectedRoutes) {
@@ -129,30 +116,11 @@ describe('adminRoleMiddleware replaces the permission middleware', () => {
       expect(response.status, `${method} ${route}`).toBe(200);
     }
   });
-
-  test('member is rejected with 403 on the same endpoints', async () => {
-    const cookie = await login(memberUsername, memberPhrase);
-    for (const [method, route] of adminProtectedRoutes) {
-      const response = await request(method, route, { cookie });
-      expect(response.status, `${method} ${route}`).toBe(403);
-    }
-  });
 });
 
 describe('user responses no longer carry permissions', () => {
   test('admin /api/auth/me has no permissions field', async () => {
     const cookie = await login(adminUsername, adminPhrase);
-    const response = await request('GET', '/api/auth/me', { cookie });
-    expect(response.status).toBe(200);
-    const body = (await response.json()) as {
-      user?: Record<string, unknown>;
-    };
-    expect(body.user).toBeDefined();
-    expect(body.user).not.toHaveProperty('permissions');
-  });
-
-  test('member /api/auth/me has no permissions field', async () => {
-    const cookie = await login(memberUsername, memberPhrase);
     const response = await request('GET', '/api/auth/me', { cookie });
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
@@ -240,14 +208,10 @@ describe('permission system source cleanup', () => {
     expect(store).not.toContain('permissions');
   });
 
-  test('all old permission middleware mounts were replaced by admin role checks', () => {
-    const countMounts = (source: string) =>
-      (source.match(/authMiddleware,\s*adminRoleMiddleware/g) || []).length;
-
-    // config 原有 5 处 adminRole + 16 处 systemConfig 替换
-    expect(countMounts(read('src/routes/config.ts'))).toBe(21);
-    // monitor 4 处 systemConfig 替换
-    expect(countMounts(read('src/routes/monitor.ts'))).toBe(4);
+  test('the retired admin role middleware is no longer mounted', () => {
+    for (const file of ['src/routes/config.ts', 'src/routes/monitor.ts']) {
+      expect(read(file)).not.toContain('adminRoleMiddleware');
+    }
   });
 
   test('monitor route is guarded by role instead of permission', () => {

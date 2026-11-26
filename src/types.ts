@@ -642,7 +642,7 @@ export interface TaskRunLog {
 
 // --- Auth types ---
 
-export type UserRole = 'admin' | 'member';
+export type UserRole = 'admin';
 export type UserStatus = 'active' | 'disabled' | 'deleted';
 
 export interface AuthUser {

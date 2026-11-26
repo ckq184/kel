@@ -30,7 +30,6 @@ export interface McpContext {
   channelContext?: ChannelTurnContext;
   groupFolder: string;
   isHome: boolean;
-  isAdminHome: boolean;
   /** Whether this runtime is an interactive session of the main CKQClaw. */
   agentBuilderEnabled: boolean;
   /** Host admitted Owner Profile capability for built-in CKQClaw in Home. */
@@ -481,7 +480,7 @@ export function createMcpTools(ctx: McpContext): McpToolDefinition<any>[] {
   const MESSAGES_DIR = path.join(ctx.workspaceIpc, 'messages');
   const MESSAGE_RESULTS_DIR = path.join(ctx.workspaceIpc, 'message-results');
   const TASKS_DIR = path.join(ctx.workspaceIpc, 'tasks');
-  const hasCrossGroupAccess = ctx.isAdminHome;
+  const hasCrossGroupAccess = ctx.isHome;
 
   /**
    * Must stay in step with `usesProactiveInteractiveContract()` in
@@ -1049,11 +1048,11 @@ The actual file types and size limit are enforced by the selected provider.`,
 
 EXECUTION TYPE:
 \u2022 "agent" (default): Task runs as a full Claude Agent with access to all tools. Consumes API tokens.
-\u2022 "script" (admin only): Task runs a shell command directly on the host. Zero API token cost. Use for deterministic tasks like health checks, data collection, cURL calls, or cron-like scripts.
+\u2022 "script" (Home workspace only): Task runs a shell command directly on the host. Zero API token cost. Use for deterministic tasks like health checks, data collection, cURL calls, or cron-like scripts.
 
 EXECUTION MODE:
-\u2022 "host": Task runs directly on the host machine. Admin only.
-\u2022 "container" (default for non-admin): Task runs in a Docker container.
+\u2022 "host": Task runs directly on the host machine. Home workspace only.
+\u2022 "container" (default): Task runs in a Docker container.
 Each agent task runs in its source workspace (same files, mounts, skills, and Agent profile).
 
 CONTEXT MODE (agent mode only) - Choose based on task type:
@@ -1090,7 +1089,7 @@ SCHEDULE VALUE FORMAT (all times are LOCAL timezone):
           .enum(['agent', 'script'])
           .default('agent')
           .describe(
-            'agent=full Claude Agent (default), script=shell command (admin only, zero token cost)',
+            'agent=full Claude Agent (default), script=shell command (Home workspace only, zero token cost)',
           ),
         script_command: z
           .string()
@@ -1115,7 +1114,7 @@ SCHEDULE VALUE FORMAT (all times are LOCAL timezone):
           .string()
           .optional()
           .describe(
-            '(Admin home only) JID of the group to schedule the task for. Defaults to the current group.',
+            '(Home workspace only) JID of the group to schedule the task for. Defaults to the current group.',
           ),
       },
       async (args) => {
@@ -1144,12 +1143,12 @@ SCHEDULE VALUE FORMAT (all times are LOCAL timezone):
             isError: true,
           };
         }
-        if (execType === 'script' && !ctx.isAdminHome) {
+        if (execType === 'script' && !ctx.isHome) {
           return {
             content: [
               {
                 type: 'text' as const,
-                text: 'Only admin home container can create script tasks.',
+                text: 'Only the Home workspace Agent can create script tasks.',
               },
             ],
             isError: true,
@@ -1277,7 +1276,7 @@ SCHEDULE VALUE FORMAT (all times are LOCAL timezone):
     // --- list_tasks ---
     tool(
       'list_tasks',
-      "List all scheduled tasks. From admin home: shows all tasks. From other groups: shows only that group's tasks.",
+      "List all scheduled tasks. From Home: shows all tasks. From other groups: shows only that group's tasks.",
       {
         include_deleted: z
           .boolean()
@@ -1295,7 +1294,6 @@ SCHEDULE VALUE FORMAT (all times are LOCAL timezone):
               type: 'list_tasks',
               requestId,
               groupFolder: ctx.groupFolder,
-              isAdminHome: hasCrossGroupAccess,
               includeDeleted: args.include_deleted,
               timestamp: new Date().toISOString(),
             },
@@ -1568,7 +1566,7 @@ SCHEDULE VALUE FORMAT (all times are LOCAL timezone):
         execution_type: z
           .enum(['agent', 'script'])
           .optional()
-          .describe('New execution type (script is admin only)'),
+          .describe('New execution type (script is Home workspace only)'),
         script_command: z
           .string()
           .max(4096)
@@ -1577,7 +1575,7 @@ SCHEDULE VALUE FORMAT (all times are LOCAL timezone):
         execution_mode: z
           .enum(['host', 'container'])
           .optional()
-          .describe('New execution mode (host is admin only)'),
+          .describe('New execution mode (host is Home workspace only)'),
       },
       async (args) => {
         // 改 schedule_type 必须同时给 schedule_value，否则主进程无法据新类型重算 next_run。
@@ -1907,10 +1905,10 @@ SCHEDULE VALUE FORMAT (all times are LOCAL timezone):
     // --- register_group ---
     tool(
       'register_group',
-      `Register a new group so the agent can respond to messages there. Admin home only.
+      `Register a new group so the agent can respond to messages there. Home workspace only.
 
 Use available_groups.json to find the JID for a group. The folder name should be lowercase with hyphens (e.g., "family-chat").
-You can optionally specify execution_mode: "container" (default, isolated Docker) or "host" (direct host access, admin only).`,
+You can optionally specify execution_mode: "container" (default, isolated Docker) or "host" (direct host access, Home workspace only).`,
       {
         jid: z.string().describe('The chat JID (e.g., "feishu:oc_xxxx")'),
         name: z.string().describe('Display name for the group'),
@@ -1939,7 +1937,7 @@ You can optionally specify execution_mode: "container" (default, isolated Docker
             content: [
               {
                 type: 'text' as const,
-                text: 'Only the admin home container can register new groups.',
+                text: 'Only the Home workspace can register new groups.',
               },
             ],
             isError: true,

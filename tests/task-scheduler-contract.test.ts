@@ -1844,7 +1844,7 @@ describe('scheduled task workspace/session contract', () => {
     ).toMatchObject({ id: laterCreated.run.id, status: 'cancelled' });
   });
 
-  test('host task cannot use an admin creator to bypass a downgraded workspace owner', async () => {
+  test('host task cannot bypass a disabled workspace owner', async () => {
     const now = new Date().toISOString();
     for (const id of ['host-workspace-owner', 'host-task-creator']) {
       db.createUser({
@@ -1865,7 +1865,10 @@ describe('scheduled task workspace/session contract', () => {
       executionMode: 'host' as const,
     };
     db.setRegisteredGroup(GROUP_JID, hostGroup);
-    db.updateUserFields('host-workspace-owner', { role: 'member' });
+    db.updateUserFields('host-workspace-owner', {
+      status: 'disabled',
+      disable_reason: 'security test',
+    });
     const taskId = createTask({
       id: 'host-owner-revoked-task',
       execution_mode: 'host',
@@ -1879,7 +1882,7 @@ describe('scheduled task workspace/session contract', () => {
     expect(runHostAgentMock).not.toHaveBeenCalled();
     expect(db.getTaskRunLogs(taskId, 1)[0]).toMatchObject({
       status: 'error',
-      error: expect.stringContaining('active administrator'),
+      error: expect.stringContaining('账户已禁用'),
     });
   });
 
@@ -2474,7 +2477,7 @@ describe('scheduled task workspace/session contract', () => {
     );
   });
 
-  test('admin-created cross-group container task does not inherit isAdminHome from its creator', async () => {
+  test('cross-group task execution follows the target workspace, not the task creator', async () => {
     const now = new Date().toISOString();
     for (const id of ['xgroup-admin-creator', 'xgroup-member-owner']) {
       db.createUser({
@@ -2482,7 +2485,7 @@ describe('scheduled task workspace/session contract', () => {
         username: id,
         password_hash: 'hash',
         display_name: id,
-        role: id === 'xgroup-admin-creator' ? 'admin' : 'member',
+        role: 'admin',
         status: 'active',
         must_change_password: false,
         created_at: now,
@@ -2499,12 +2502,10 @@ describe('scheduled task workspace/session contract', () => {
       executionMode: 'container' as const,
     };
     db.setRegisteredGroup(memberHomeJid, memberHomeGroup);
-    // The task is created_by the admin (as an MCP schedule_task call with
-    // target_group_jid would produce), but it targets the member's own
-    // home workspace. isAdminHome, the owner-active gate, and the billing
-    // gate must all key off the workspace's real owner (the member), not
-    // the admin who happened to create the task — otherwise the run would
-    // get an admin-privileged container mount inside the member's sandbox.
+    // The task is created by one account (as an MCP schedule_task call with
+    // target_group_jid would produce) but targets the other account's home
+    // workspace. Home capabilities and the owner-active gate must key off the
+    // workspace's real owner, not the task creator.
     const taskId = createTask({
       id: 'xgroup-admin-task',
       group_folder: memberHomeGroup.folder,
@@ -2521,14 +2522,12 @@ describe('scheduled task workspace/session contract', () => {
     expect(runContainerAgentMock).toHaveBeenCalledTimes(1);
     const input = runContainerAgentMock.mock.calls[0][1];
     expect(input.isHome).toBe(true);
-    expect(input.isAdminHome).toBe(false);
-    expect(input.isMain).toBe(false);
+    expect(input.isMain).toBe(true);
 
     // Security/execution-context fields must use the workspace's real
     // owner (verified above), but the prompt message's sender attribution
-    // must still credit the actual task creator (the admin) — otherwise
-    // the chat history/audit trail would misattribute the admin's
-    // cross-group automation as if the member had typed it themselves.
+    // must still credit the actual task creator — otherwise the chat
+    // history/audit trail would misattribute the cross-group automation.
     expect(deps.storePromptMessage).toHaveBeenCalledWith(
       expect.stringContaining(memberHomeJid),
       'xgroup-admin-creator',

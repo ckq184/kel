@@ -66,7 +66,7 @@ describe('checkOwnerActive', () => {
  * short-circuit in front of it, should turn one of these red.
  */
 describe('owner gate — per-path drop decision', () => {
-  type Owner = { id: string; role: 'admin' | 'member'; status: string };
+  type Owner = { id: string; role: 'admin'; status: string };
 
   // Simulates the inline gate: `created_by → getUserById → checkOwnerActive`.
   function shouldDrop(
@@ -78,12 +78,12 @@ describe('owner gate — per-path drop decision', () => {
   }
 
   const users: Record<string, Owner> = {
-    'u-active': { id: 'u-active', role: 'member', status: 'active' },
-    'u-disabled': { id: 'u-disabled', role: 'member', status: 'disabled' },
+    'u-active': { id: 'u-active', role: 'admin', status: 'active' },
+    'u-disabled': { id: 'u-disabled', role: 'admin', status: 'disabled' },
     // Deleting an account is a SOFT delete (db.ts): the row stays with
     // status='deleted', so getUserById still returns it — the gate blocks on
     // the status value.
-    'u-deleted': { id: 'u-deleted', role: 'member', status: 'deleted' },
+    'u-deleted': { id: 'u-deleted', role: 'admin', status: 'deleted' },
     'u-admin-disabled': {
       id: 'u-admin-disabled',
       role: 'admin',
