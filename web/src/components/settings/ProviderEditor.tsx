@@ -37,6 +37,7 @@ import {
 import {
   buildCustomEnv,
   DEFAULTED_THIRD_PARTY_ENV_KEYS,
+  envRowsToText,
 } from '../../utils/custom-env';
 import {
   applyCustomHeaders,
@@ -53,17 +54,9 @@ const MANAGED_ENV_SOURCE_LABELS = {
 } as const;
 
 /**
- * ISSUE-11 B5：EnvRow 行编辑器 → KEY=value 逐行文本（key/value 均空的占位
- * 行序列化为空行，交给共享 buildCustomEnv 的空行跳过逻辑）；校验严格化
- * 见 utils/custom-env.ts（拍板 #7，存量已存数据不动）。
+ * ISSUE-11 B5：EnvRow 行编辑器的序列化与校验严格化见 utils/custom-env.ts
+ * （拍板 #7，存量已存数据不动）。
  */
-function envRowsToText(rows: EnvRow[]): string {
-  return rows
-    .map((row) =>
-      row.key === '' && row.value === '' ? '' : `${row.key}=${row.value}`,
-    )
-    .join('\n');
-}
 
 interface ProviderEditorProps {
   open: boolean;

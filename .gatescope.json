@@ -11,6 +11,7 @@
     "src/ipc/task-ops.ts",
     "web/src/components/common/EmojiPicker.tsx",
     "web/src/components/common/UserMenuPopover.tsx",
+    "web/src/hooks/useAgentWorkspaceSections.ts",
     "web/src/components/settings/ProviderEditor.tsx",
     "web/src/pages/SetupProvidersPage.tsx",
     "web/src/utils/custom-env.ts",

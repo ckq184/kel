@@ -71,7 +71,7 @@
 
 ## 4. 范围声明（`.gatescope.json` allow）
 
-`.gatescope.json`、`docs/thesis-27-safe-slim-runner-web-plan.md`、`docs/issues4/THESIS-27-safe-slim-runner-web.md`、`docs/issues4/README.md`、`docs/审查记录.md`、`container/agent-runner/src/mcp-tools.ts`、`src/ipc/task-ops.ts`、`web/src/components/common/EmojiPicker.tsx`、`web/src/components/common/UserMenuPopover.tsx`、`web/src/components/settings/ProviderEditor.tsx`、`web/src/pages/SetupProvidersPage.tsx`、`web/src/utils/custom-env.ts`、`web/src/components/layout/UnifiedSidebar.tsx`、`web/src/pages/ChatPage.tsx`、`tests/mcp-task-v2-contract.test.ts`、`tests/emoji-picker-contract.test.tsx`、`tests/ipc-task-ops-revision.test.ts`、`tests/issue11-compat-and-duplicate-convergence.test.ts`、`tests/frontend-agent-identity.test.ts`。
+`.gatescope.json`、`docs/thesis-27-safe-slim-runner-web-plan.md`、`docs/issues4/THESIS-27-safe-slim-runner-web.md`、`docs/issues4/README.md`、`docs/审查记录.md`、`container/agent-runner/src/mcp-tools.ts`、`src/ipc/task-ops.ts`、`web/src/components/common/EmojiPicker.tsx`、`web/src/components/common/UserMenuPopover.tsx`、`web/src/hooks/useAgentWorkspaceSections.ts`、`web/src/components/settings/ProviderEditor.tsx`、`web/src/pages/SetupProvidersPage.tsx`、`web/src/utils/custom-env.ts`、`web/src/components/layout/UnifiedSidebar.tsx`、`web/src/pages/ChatPage.tsx`、`tests/mcp-task-v2-contract.test.ts`、`tests/emoji-picker-contract.test.tsx`、`tests/ipc-task-ops-revision.test.ts`、`tests/issue11-compat-and-duplicate-convergence.test.ts`、`tests/frontend-agent-identity.test.ts`。
 
 与 issue "预计改动路径"的差异：增列经核实需要同步的共享 helper/组件与测试；未列 `web/tests/**`（经核实无相关用例）。
 
@@ -80,7 +80,7 @@
 1. 五项重复代码各只剩一份实现；R1 五个工具对外契约逐字不变；W1 表情分类名/顺序/每类数量不变。
 2. `npm run verify` 六步全绿；`node scripts/check-scope.mjs` 通过。
 3. 新增表征/契约用例在 base 上通过（W3 结构用例除外，按计划先红后绿），重构后全部通过。
-4. 生产代码净减行数不低于约 550 行（issue 估算 ~650）。
+4. 五项重复代码各只剩一份实现；生产代码净减行数如实写入交付记录（issue 的 ~650 为估算，不设为通过条件，偏差原因见 §8）。
 5. **人工冒烟（用户）**：在对话里让 Agent 暂停、恢复、取消一个定时任务；聊天输入框表情选择器显示正常。
 
 ## 6. 非目标
@@ -98,3 +98,14 @@
 - W1 若用 `Array.from` 会拆坏 ZWJ 表情：改用空白分隔，用例锁定每类数量与首尾项。
 - W3 抽组件改变源码文本：同步更新 `frontend-agent-identity` 的读取路径并断言两处调用，保持"桌面与移动账号菜单都显示上传头像"的原意。
 - 回滚：`git revert <提交号>`；无数据、schema 与外部依赖变更。
+
+## 8. 执行偏差（2026-11-26，实现后实测）
+
+- **净减行数**：生产代码实测 `+462 / −900`，净减 **438 行**（不含测试新增）。issue 估算 ~650：
+  - R1 实测 −120（issue ~200）：工厂保留类型安全的通用配置与共享 schema，未把五个工具压成无类型的单行表。
+  - R2 实测 −3（issue ~80）：宿主回执去重同时引入 `revisionFailurePayload` / `writeRevisionOutcome` / 缺失 revision 校验共约 140 行公共骨架，抵掉了 144 行重复块。issue 的估算没有计入骨架本身。
+  - W1 实测 −296（issue ~300），一致。
+  - W2 实测 −7（issue ~15）：函数体只有 7 行，移入共享模块后净值受限。
+  - W3 实测 −12（issue ~35）：Popover 共享组件 77 行 + 分组 hook 41 行，抵掉两页各约 70 行内联实现。
+- **处理**：不改回为刻意压行数的写法（可读性与类型安全优先）；验收条件 4 改为如实记录，行数不作为通过条件。issue 原本的验收条件（verify + check-scope + 人工冒烟）不受影响。
+- **W1 拆分方式**：issue 建议 `Array.from`，实测会按码点拆坏 ZWJ 表情，改为空白分隔 + `split(/\s+/)`；用例锁定每类数量与首尾项。

@@ -572,6 +572,97 @@ export function createMcpTools(ctx: McpContext): McpToolDefinition<any>[] {
     return result;
   };
 
+  /**
+   * THESIS-27 R1：pause/resume/cancel/stop_task_run/restore_task 共用同一套
+   * IPC 轮询与回执骨架。调用处的 `type` 保留字面量，供
+   * tests/ipc-type-bidirectional-contract.test.ts 扫描。
+   */
+  type TaskToolTarget = 'workspace-task' | 'task' | 'run';
+
+  interface TaskMutationToolConfig<Schema extends z.ZodRawShape> {
+    name: string;
+    description: string;
+    inputSchema: Schema;
+    /** IPC 请求类型，必须以字面量出现在调用处供契约扫描。 */
+    type: string;
+    /** 请求携带的 id/修订字段与工作区上下文。 */
+    target: TaskToolTarget;
+    /** 失败与超时文案中的动词（pause/resume/...）。 */
+    verb: string;
+    targetNoun: 'task' | 'run';
+    successText: (
+      args: z.infer<z.ZodObject<Schema>>,
+      result: Record<string, unknown>,
+    ) => string;
+  }
+
+  const taskRevisionSchema = (taskIdDescription: string) => ({
+    task_id: z.string().describe(taskIdDescription),
+    expected_revision: z
+      .number()
+      .int()
+      .positive()
+      .describe('Revision returned by list_tasks'),
+  });
+
+  function taskMutationTool<Schema extends z.ZodRawShape>(
+    config: TaskMutationToolConfig<Schema>,
+  ): McpToolDefinition<Schema> {
+    return tool(
+      config.name,
+      config.description,
+      config.inputSchema,
+      async (args) => {
+        const requestId = newRequestId();
+        const values = args as Record<string, unknown>;
+        const targetId =
+          config.target === 'run'
+            ? String(values.run_id)
+            : String(values.task_id);
+        const data = {
+          type: config.type,
+          requestId,
+          ...(config.target === 'run'
+            ? { runId: targetId }
+            : {
+                taskId: targetId,
+                expectedRevision: values.expected_revision,
+                ...(config.target === 'workspace-task'
+                  ? {
+                      groupFolder: ctx.groupFolder,
+                      isMain: hasCrossGroupAccess,
+                    }
+                  : {}),
+              }),
+          timestamp: new Date().toISOString(),
+        };
+        const reply = (text: string, isError = false) => ({
+          content: [{ type: 'text' as const, text }],
+          ...(isError ? { isError: true } : {}),
+        });
+        try {
+          const result = await pollIpcResult(
+            TASKS_DIR,
+            data,
+            `${config.type}_result`,
+          );
+          if (!result.success) {
+            return reply(
+              `Failed to ${config.verb} ${config.targetNoun} ${targetId}: ${String(result.error || 'Unknown error')}`,
+              true,
+            );
+          }
+          return reply(config.successText(args, result));
+        } catch {
+          return reply(
+            `Timeout waiting for ${config.verb} confirmation for ${config.targetNoun} ${targetId}.`,
+            true,
+          );
+        }
+      },
+    );
+  }
+
   const tools: McpToolDefinition<any>[] = [
     // --- current channel context ---
     tool(
@@ -1354,181 +1445,43 @@ SCHEDULE VALUE FORMAT (all times are LOCAL timezone):
     ),
 
     // --- pause_task ---
-    tool(
-      'pause_task',
-      'Pause future scheduled occurrences. A currently running occurrence continues; use stop_task_run to stop it.',
-      {
-        task_id: z.string().describe('The task ID to pause'),
-        expected_revision: z
-          .number()
-          .int()
-          .positive()
-          .describe('Revision returned by list_tasks'),
-      },
-      async (args) => {
-        const data = {
-          type: 'pause_task',
-          requestId: newRequestId(),
-          taskId: args.task_id,
-          expectedRevision: args.expected_revision,
-          groupFolder: ctx.groupFolder,
-          isMain: hasCrossGroupAccess,
-          timestamp: new Date().toISOString(),
-        };
-        try {
-          const result = await pollIpcResult(
-            TASKS_DIR,
-            data,
-            'pause_task_result',
-          );
-          if (!result.success) {
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Failed to pause task ${args.task_id}: ${result.error || 'Unknown error'}`,
-                },
-              ],
-              isError: true,
-            };
-          }
-          return {
-            content: [
-              { type: 'text' as const, text: `Task ${args.task_id} paused.` },
-            ],
-          };
-        } catch {
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: `Timeout waiting for pause confirmation for task ${args.task_id}.`,
-              },
-            ],
-            isError: true,
-          };
-        }
-      },
-    ),
+    taskMutationTool({
+      type: 'pause_task',
+      name: 'pause_task',
+      description:
+        'Pause future scheduled occurrences. A currently running occurrence continues; use stop_task_run to stop it.',
+      inputSchema: taskRevisionSchema('The task ID to pause'),
+      target: 'workspace-task',
+      verb: 'pause',
+      targetNoun: 'task',
+      successText: (args) => `Task ${args.task_id} paused.`,
+    }),
 
     // --- resume_task ---
-    tool(
-      'resume_task',
-      'Resume a paused task.',
-      {
-        task_id: z.string().describe('The task ID to resume'),
-        expected_revision: z
-          .number()
-          .int()
-          .positive()
-          .describe('Revision returned by list_tasks'),
-      },
-      async (args) => {
-        const data = {
-          type: 'resume_task',
-          requestId: newRequestId(),
-          taskId: args.task_id,
-          expectedRevision: args.expected_revision,
-          groupFolder: ctx.groupFolder,
-          isMain: hasCrossGroupAccess,
-          timestamp: new Date().toISOString(),
-        };
-        try {
-          const result = await pollIpcResult(
-            TASKS_DIR,
-            data,
-            'resume_task_result',
-          );
-          if (!result.success) {
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Failed to resume task ${args.task_id}: ${result.error || 'Unknown error'}`,
-                },
-              ],
-              isError: true,
-            };
-          }
-          return {
-            content: [
-              { type: 'text' as const, text: `Task ${args.task_id} resumed.` },
-            ],
-          };
-        } catch {
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: `Timeout waiting for resume confirmation for task ${args.task_id}.`,
-              },
-            ],
-            isError: true,
-          };
-        }
-      },
-    ),
+    taskMutationTool({
+      type: 'resume_task',
+      name: 'resume_task',
+      description: 'Resume a paused task.',
+      inputSchema: taskRevisionSchema('The task ID to resume'),
+      target: 'workspace-task',
+      verb: 'resume',
+      targetNoun: 'task',
+      successText: (args) => `Task ${args.task_id} resumed.`,
+    }),
 
     // --- cancel_task ---
-    tool(
-      'cancel_task',
-      'Soft-delete a scheduled task. Future runs stop, but run history is retained.',
-      {
-        task_id: z.string().describe('The task ID to delete'),
-        expected_revision: z
-          .number()
-          .int()
-          .positive()
-          .describe('Revision returned by list_tasks'),
-      },
-      async (args) => {
-        const data = {
-          type: 'cancel_task',
-          requestId: newRequestId(),
-          taskId: args.task_id,
-          expectedRevision: args.expected_revision,
-          groupFolder: ctx.groupFolder,
-          isMain: hasCrossGroupAccess,
-          timestamp: new Date().toISOString(),
-        };
-        try {
-          const result = await pollIpcResult(
-            TASKS_DIR,
-            data,
-            'cancel_task_result',
-          );
-          if (!result.success) {
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Failed to cancel task ${args.task_id}: ${result.error || 'Unknown error'}`,
-                },
-              ],
-              isError: true,
-            };
-          }
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: `Task ${args.task_id} deleted. Its run history is retained.`,
-              },
-            ],
-          };
-        } catch {
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: `Timeout waiting for cancel confirmation for task ${args.task_id}.`,
-              },
-            ],
-            isError: true,
-          };
-        }
-      },
-    ),
+    taskMutationTool({
+      type: 'cancel_task',
+      name: 'cancel_task',
+      description:
+        'Soft-delete a scheduled task. Future runs stop, but run history is retained.',
+      inputSchema: taskRevisionSchema('The task ID to delete'),
+      target: 'workspace-task',
+      verb: 'cancel',
+      targetNoun: 'task',
+      successText: (args) =>
+        `Task ${args.task_id} deleted. Its run history is retained.`,
+    }),
 
     // --- update_task ---
     tool(
@@ -1734,112 +1687,39 @@ SCHEDULE VALUE FORMAT (all times are LOCAL timezone):
     ),
 
     // --- stop_task_run ---
-    tool(
-      'stop_task_run',
-      'Stop one queued or running occurrence. This does not pause future scheduled runs.',
-      {
+    taskMutationTool({
+      type: 'stop_task_run',
+      name: 'stop_task_run',
+      description:
+        'Stop one queued or running occurrence. This does not pause future scheduled runs.',
+      inputSchema: {
         run_id: z
           .string()
           .describe('Run ID returned by run_task_now/list_task_runs'),
       },
-      async (args) => {
-        const requestId = newRequestId();
-        try {
-          const result = await pollIpcResult(
-            TASKS_DIR,
-            {
-              type: 'stop_task_run',
-              requestId,
-              runId: args.run_id,
-              timestamp: new Date().toISOString(),
-            },
-            'stop_task_run_result',
-          );
-          return result.success
-            ? {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: `Run ${args.run_id} stopped. Future task schedules are unchanged.`,
-                  },
-                ],
-              }
-            : {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: `Failed to stop run ${args.run_id}: ${result.error || 'Unknown error'}`,
-                  },
-                ],
-                isError: true,
-              };
-        } catch {
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: `Timeout waiting for stop confirmation for run ${args.run_id}.`,
-              },
-            ],
-            isError: true,
-          };
-        }
-      },
-    ),
+      target: 'run',
+      verb: 'stop',
+      targetNoun: 'run',
+      successText: (args) =>
+        `Run ${args.run_id} stopped. Future task schedules are unchanged.`,
+    }),
 
     // --- restore_task ---
-    tool(
-      'restore_task',
-      'Restore a soft-deleted task as paused. It will not run until explicitly resumed.',
-      {
+    taskMutationTool({
+      type: 'restore_task',
+      name: 'restore_task',
+      description:
+        'Restore a soft-deleted task as paused. It will not run until explicitly resumed.',
+      inputSchema: {
         task_id: z.string(),
         expected_revision: z.number().int().positive(),
       },
-      async (args) => {
-        const requestId = newRequestId();
-        try {
-          const result = await pollIpcResult(
-            TASKS_DIR,
-            {
-              type: 'restore_task',
-              requestId,
-              taskId: args.task_id,
-              expectedRevision: args.expected_revision,
-              timestamp: new Date().toISOString(),
-            },
-            'restore_task_result',
-          );
-          return result.success
-            ? {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: `Task ${args.task_id} restored as paused (revision ${result.revision ?? '?'}).`,
-                  },
-                ],
-              }
-            : {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: `Failed to restore task ${args.task_id}: ${result.error || 'Unknown error'}`,
-                  },
-                ],
-                isError: true,
-              };
-        } catch {
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: `Timeout waiting for restore confirmation for task ${args.task_id}.`,
-              },
-            ],
-            isError: true,
-          };
-        }
-      },
-    ),
+      target: 'task',
+      verb: 'restore',
+      targetNoun: 'task',
+      successText: (args, result) =>
+        `Task ${args.task_id} restored as paused (revision ${result.revision ?? '?'}).`,
+    }),
 
     // --- list_task_runs ---
     tool(

@@ -76,6 +76,57 @@ export interface IpcTaskOpsInput {
   SAFE_REQUEST_ID_RE: RegExp;
 }
 
+interface RevisionMutationLike {
+  status: string;
+  task?: { revision: number };
+  run?: { id: string };
+}
+
+interface RevisionFailurePayload {
+  code?: string;
+  error: string;
+  task?: { revision: number };
+  runId?: string;
+}
+
+/**
+ * THESIS-27 R2：pause/resume/cancel/update/restore 共用的修订冲突与不存在
+ * 回执。文案逐字保留：restore 的冲突提示历史上没有 "Call list_tasks and
+ * retry."，由 conflictHint 关闭；active_run 仅 cancel 会产生。
+ */
+function revisionFailurePayload(
+  mutation: RevisionMutationLike,
+  options: { conflictHint?: boolean; notFoundError?: string } = {},
+): RevisionFailurePayload | null {
+  if (mutation.status === 'conflict' && mutation.task) {
+    const hint =
+      options.conflictHint === false ? '' : ' Call list_tasks and retry.';
+    return {
+      code: 'TASK_REVISION_CONFLICT',
+      error: `Task changed; current revision is ${mutation.task.revision}.${hint}`,
+      task: mutation.task,
+    };
+  }
+  if (mutation.status === 'active_run' && mutation.run) {
+    return {
+      code: 'TASK_HAS_ACTIVE_RUN',
+      error: 'Task is running. Stop the current run before deleting.',
+      runId: mutation.run.id,
+    };
+  }
+  if (mutation.status === 'not_found') {
+    return { error: options.notFoundError ?? 'Task not found.' };
+  }
+  return null;
+}
+
+/** 回执已写出后用于把 mutation 收窄到 updated（成功分支只读 revision）。 */
+function isUpdatedMutation(
+  mutation: RevisionMutationLike,
+): mutation is { status: 'updated'; task: { revision: number } } {
+  return mutation.status === 'updated';
+}
+
 export async function processIpcTaskOps(input: IpcTaskOpsInput): Promise<void> {
   const {
     data,
@@ -91,6 +142,57 @@ export async function processIpcTaskOps(input: IpcTaskOpsInput): Promise<void> {
     isAdminHostOnlyOwner,
     SAFE_REQUEST_ID_RE,
   } = input;
+
+  const rejectMissingExpectedRevision = (type: string): boolean => {
+    if (Number.isInteger(data.expectedRevision)) return false;
+    writeTaskResult(tasksDir, type, data.requestId, {
+      success: false,
+      error: 'expected_revision is required. Call list_tasks first.',
+    });
+    return true;
+  };
+
+  /**
+   * 写修订型 mutation 的回执：失败回执走统一文案；成功默认回执
+   * `{ taskId, revision }` 并通知调度器，logMessage/successPayload 供各
+   * case 保留原有日志与额外字段。onNotFound 保留 update_task 的 warn 日志。
+   */
+  const writeRevisionOutcome = (options: {
+    type: string;
+    requestId: string | undefined;
+    mutation: RevisionMutationLike;
+    logMessage?: string;
+    onNotFound?: (error: string) => void;
+    successPayload?: (task: { revision: number }) => Record<string, unknown>;
+    conflictHint?: boolean;
+    notFoundError?: string;
+  }): void => {
+    const failure = revisionFailurePayload(options.mutation, options);
+    if (failure) {
+      if (options.mutation.status === 'not_found' && options.onNotFound) {
+        options.onNotFound(failure.error);
+        return;
+      }
+      writeTaskResult(tasksDir, options.type, options.requestId, {
+        success: false,
+        ...failure,
+      });
+      return;
+    }
+    if (!isUpdatedMutation(options.mutation)) return;
+    if (options.logMessage) {
+      logger.info({ taskId: data.taskId, sourceGroup }, options.logMessage);
+    }
+    notifyTaskSchedulerChanged();
+    writeTaskResult(tasksDir, options.type, options.requestId, {
+      success: true,
+      ...(options.successPayload?.(options.mutation.task) ?? {
+        taskId: data.taskId,
+        revision: options.mutation.task.revision,
+      }),
+    });
+  };
+
   switch (data.type) {
     case 'schedule_task': {
       const failSchedule = (error: string): void => {
@@ -301,43 +403,17 @@ export async function processIpcTaskOps(input: IpcTaskOpsInput): Promise<void> {
       if (data.taskId) {
         const task = getTaskById(data.taskId);
         if (task && ipcActorCanManageTask(task)) {
-          if (!Number.isInteger(data.expectedRevision)) {
-            writeTaskResult(tasksDir, 'pause_task', data.requestId, {
-              success: false,
-              error: 'expected_revision is required. Call list_tasks first.',
-            });
-            break;
-          }
+          if (rejectMissingExpectedRevision('pause_task')) break;
           const mutation = updateTaskWithRevision(
             data.taskId,
             data.expectedRevision!,
             { status: 'paused' },
           );
-          if (mutation.status === 'conflict') {
-            writeTaskResult(tasksDir, 'pause_task', data.requestId, {
-              success: false,
-              code: 'TASK_REVISION_CONFLICT',
-              error: `Task changed; current revision is ${mutation.task.revision}. Call list_tasks and retry.`,
-              task: mutation.task,
-            });
-            break;
-          }
-          if (mutation.status === 'not_found') {
-            writeTaskResult(tasksDir, 'pause_task', data.requestId, {
-              success: false,
-              error: 'Task not found.',
-            });
-            break;
-          }
-          logger.info(
-            { taskId: data.taskId, sourceGroup },
-            'Task paused via IPC',
-          );
-          notifyTaskSchedulerChanged();
-          writeTaskResult(tasksDir, 'pause_task', data.requestId, {
-            success: true,
-            taskId: data.taskId,
-            revision: mutation.task.revision,
+          writeRevisionOutcome({
+            type: 'pause_task',
+            requestId: data.requestId,
+            mutation,
+            logMessage: 'Task paused via IPC',
           });
         } else {
           logger.warn(
@@ -413,43 +489,17 @@ export async function processIpcTaskOps(input: IpcTaskOpsInput): Promise<void> {
               break;
             }
           }
-          if (!Number.isInteger(data.expectedRevision)) {
-            writeTaskResult(tasksDir, 'resume_task', data.requestId, {
-              success: false,
-              error: 'expected_revision is required. Call list_tasks first.',
-            });
-            break;
-          }
+          if (rejectMissingExpectedRevision('resume_task')) break;
           const mutation = updateTaskWithRevision(
             data.taskId,
             data.expectedRevision!,
             patch,
           );
-          if (mutation.status === 'conflict') {
-            writeTaskResult(tasksDir, 'resume_task', data.requestId, {
-              success: false,
-              code: 'TASK_REVISION_CONFLICT',
-              error: `Task changed; current revision is ${mutation.task.revision}. Call list_tasks and retry.`,
-              task: mutation.task,
-            });
-            break;
-          }
-          if (mutation.status === 'not_found') {
-            writeTaskResult(tasksDir, 'resume_task', data.requestId, {
-              success: false,
-              error: 'Task not found.',
-            });
-            break;
-          }
-          logger.info(
-            { taskId: data.taskId, sourceGroup },
-            'Task resumed via IPC',
-          );
-          notifyTaskSchedulerChanged();
-          writeTaskResult(tasksDir, 'resume_task', data.requestId, {
-            success: true,
-            taskId: data.taskId,
-            revision: mutation.task.revision,
+          writeRevisionOutcome({
+            type: 'resume_task',
+            requestId: data.requestId,
+            mutation,
+            logMessage: 'Task resumed via IPC',
           });
         } else {
           logger.warn(
@@ -493,51 +543,16 @@ export async function processIpcTaskOps(input: IpcTaskOpsInput): Promise<void> {
             });
             break;
           }
-          if (!Number.isInteger(data.expectedRevision)) {
-            writeTaskResult(tasksDir, 'cancel_task', data.requestId, {
-              success: false,
-              error: 'expected_revision is required. Call list_tasks first.',
-            });
-            break;
-          }
+          if (rejectMissingExpectedRevision('cancel_task')) break;
           const mutation = softDeleteTaskWithRevision(
             data.taskId,
             data.expectedRevision!,
           );
-          if (mutation.status === 'conflict') {
-            writeTaskResult(tasksDir, 'cancel_task', data.requestId, {
-              success: false,
-              code: 'TASK_REVISION_CONFLICT',
-              error: `Task changed; current revision is ${mutation.task.revision}. Call list_tasks and retry.`,
-              task: mutation.task,
-            });
-            break;
-          }
-          if (mutation.status === 'active_run') {
-            writeTaskResult(tasksDir, 'cancel_task', data.requestId, {
-              success: false,
-              code: 'TASK_HAS_ACTIVE_RUN',
-              error: 'Task is running. Stop the current run before deleting.',
-              runId: mutation.run.id,
-            });
-            break;
-          }
-          if (mutation.status === 'not_found') {
-            writeTaskResult(tasksDir, 'cancel_task', data.requestId, {
-              success: false,
-              error: 'Task not found.',
-            });
-            break;
-          }
-          logger.info(
-            { taskId: data.taskId, sourceGroup },
-            'Task cancelled via IPC',
-          );
-          notifyTaskSchedulerChanged();
-          writeTaskResult(tasksDir, 'cancel_task', data.requestId, {
-            success: true,
-            taskId: data.taskId,
-            revision: mutation.task.revision,
+          writeRevisionOutcome({
+            type: 'cancel_task',
+            requestId: data.requestId,
+            mutation,
+            logMessage: 'Task cancelled via IPC',
           });
         } else {
           logger.warn(
@@ -708,26 +723,17 @@ export async function processIpcTaskOps(input: IpcTaskOpsInput): Promise<void> {
         data.expectedRevision!,
         patch,
       );
-      if (mutation.status === 'conflict') {
-        writeTaskResult(tasksDir, 'update_task', data.requestId, {
-          success: false,
-          code: 'TASK_REVISION_CONFLICT',
-          error: `Task changed; current revision is ${mutation.task.revision}. Call list_tasks and retry.`,
-          task: mutation.task,
-        });
-        break;
-      }
-      if (mutation.status === 'not_found') {
-        failUpdate('Task not found.');
-        break;
-      }
-      logger.info({ taskId: data.taskId, sourceGroup }, 'Task updated via IPC');
-      notifyTaskSchedulerChanged();
-      writeTaskResult(tasksDir, 'update_task', data.requestId, {
-        success: true,
-        taskId: data.taskId,
-        nextRun: updatedNextRun,
-        revision: mutation.task.revision,
+      writeRevisionOutcome({
+        type: 'update_task',
+        requestId: data.requestId,
+        mutation,
+        logMessage: 'Task updated via IPC',
+        onNotFound: failUpdate,
+        successPayload: (updated) => ({
+          taskId: data.taskId,
+          nextRun: updatedNextRun,
+          revision: updated.revision,
+        }),
       });
       break;
     }
@@ -884,26 +890,17 @@ export async function processIpcTaskOps(input: IpcTaskOpsInput): Promise<void> {
         break;
       }
       const mutation = restoreTaskWithRevision(task.id, data.expectedRevision!);
-      if (mutation.status === 'conflict') {
-        writeTaskResult(tasksDir, 'restore_task', data.requestId, {
-          success: false,
-          code: 'TASK_REVISION_CONFLICT',
-          error: `Task changed; current revision is ${mutation.task.revision}.`,
-          task: mutation.task,
-        });
-      } else if (mutation.status === 'updated') {
-        notifyTaskSchedulerChanged();
-        writeTaskResult(tasksDir, 'restore_task', data.requestId, {
-          success: true,
+      writeRevisionOutcome({
+        type: 'restore_task',
+        requestId: data.requestId,
+        mutation,
+        conflictHint: false,
+        notFoundError: 'Deleted task not found.',
+        successPayload: (updated) => ({
           taskId: task.id,
-          revision: mutation.task.revision,
-        });
-      } else {
-        writeTaskResult(tasksDir, 'restore_task', data.requestId, {
-          success: false,
-          error: 'Deleted task not found.',
-        });
-      }
+          revision: updated.revision,
+        }),
+      });
       break;
     }
 
