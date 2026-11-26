@@ -12,10 +12,7 @@ describe('WeChat first-class account runtime contract', () => {
     const start = indexSource.indexOf(
       "} else if (account.provider === 'wechat') {",
     );
-    const end = indexSource.indexOf(
-      'function syncLegacyConfigToDefaultChannelAccount(',
-      start,
-    );
+    const end = indexSource.indexOf('async function main()', start);
     const branch = indexSource.slice(start, end);
 
     expect(branch).toMatch(
@@ -29,10 +26,7 @@ describe('WeChat first-class account runtime contract', () => {
     const start = indexSource.indexOf(
       "} else if (account.provider === 'wechat') {",
     );
-    const end = indexSource.indexOf(
-      'function syncLegacyConfigToDefaultChannelAccount(',
-      start,
-    );
+    const end = indexSource.indexOf('async function main()', start);
     const branch = indexSource.slice(start, end);
 
     expect(branch).toContain("state.status === 'expired'");
@@ -48,13 +42,12 @@ describe('WeChat first-class account runtime contract', () => {
     const start = indexSource.indexOf(
       "} else if (account.provider === 'wechat') {",
     );
-    const end = indexSource.indexOf(
-      'function syncLegacyConfigToDefaultChannelAccount(',
-      start,
-    );
+    const end = indexSource.indexOf('async function main()', start);
     const branch = indexSource.slice(start, end);
     expect(branch).toContain('ignoreMessagesBefore: secret.getUpdatesBuf');
     expect(branch).toContain('onUpdatesBuf: (cursor: string) =>');
     expect(branch).toContain('saveChannelAccountSecret(');
+    expect(branch).not.toContain('getUserWeChatConfig');
+    expect(branch).not.toContain('saveUserWeChatConfig');
   });
 });

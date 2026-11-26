@@ -134,7 +134,6 @@ export interface WebDeps {
     runIds: string[],
     timeoutMs?: number,
   ) => Promise<boolean>;
-  applyAutoIsolateContext?: (userId: string, enable: boolean) => number;
   /**
    * Resolve a registered group to its effective sibling-aware form. For non-home
    * groups bound (or auto-mapped) to a home sibling, returns the merged group

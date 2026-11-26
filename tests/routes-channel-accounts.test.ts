@@ -28,7 +28,6 @@ vi.mock('../src/middleware/auth.ts', () => ({
 }));
 
 const db = await import('../src/db.js');
-const runtimeConfig = await import('../src/runtime-config.js');
 const routeModule = await import('../src/routes/channel-accounts.js');
 const channelSecrets = await import('../src/channel-account-secrets.js');
 const routes = routeModule.default;
@@ -248,95 +247,81 @@ describe('channel account routes', () => {
     ).toEqual(original);
   });
 
-  test('direct POST projects a legacy default before creating a secondary account', async () => {
-    process.env.CHANNEL_TEST_USER = 'legacy-direct-post';
-    runtimeConfig.saveUserQQConfig('legacy-direct-post', {
-      appId: 'legacy-app',
-      appSecret: 'legacy-token',
-      enabled: true,
-    });
-    db.setRegisteredGroup('web:legacy-direct-home', {
-      name: 'Legacy home',
-      folder: 'legacy-direct-home',
-      added_at: '2026-07-01T00:00:00.000Z',
-      created_by: 'legacy-direct-post',
-    });
-    db.setRegisteredGroup('qq:existing-group', {
-      name: 'Existing QQ group',
-      folder: 'legacy-direct-home',
-      added_at: '2026-07-01T00:00:00.000Z',
-      created_by: 'legacy-direct-post',
-      target_main_jid: 'web:legacy-direct-home',
-    });
+  test('direct POST keeps the first provider account as default without legacy projection', async () => {
+    process.env.CHANNEL_TEST_USER = 'post-defaults';
+    const first = await createQQ('First QQ bot');
+    expect(first.response.status).toBe(201);
 
     // Deliberately POST without first calling GET /channel-accounts.
-    const created = await createQQ('Second QQ bot');
-    expect(created.response.status).toBe(201);
+    const second = await createQQ('Second QQ bot');
+    expect(second.response.status).toBe(201);
 
-    const accounts = db.listChannelAccountsForUser('legacy-direct-post');
+    const accounts = db.listChannelAccountsForUser('post-defaults');
     expect(accounts).toHaveLength(2);
-    const legacyAccount = accounts.find((account) => account.is_legacy_default);
-    expect(accounts.find((account) => account.is_default)).toMatchObject({
-      is_legacy_default: true,
-      provider: 'qq',
+    expect(
+      accounts.find((account) => account.id === first.body.account.id),
+    ).toMatchObject({
+      is_default: true,
+      is_legacy_default: false,
     });
-    expect(created.body.account).toMatchObject({
+    expect(second.body.account).toMatchObject({
       is_default: false,
       is_legacy_default: false,
     });
-    expect(db.getRegisteredGroup('qq:existing-group')).toMatchObject({
-      target_main_jid: 'web:legacy-direct-home',
-      channel_account_id: legacyAccount?.id,
-    });
   });
 
-  test('legacy default cannot be deleted and first-class edits stay visible through the old facade', async () => {
-    process.env.CHANNEL_TEST_USER = 'legacy-facade-owner';
-    runtimeConfig.saveUserQQConfig('legacy-facade-owner', {
-      appId: 'legacy-facade-app',
+  test('legacy default cannot be deleted while edits and toggle persist on the account', async () => {
+    process.env.CHANNEL_TEST_USER = 'legacy-owner';
+    const id = `legacy-${Date.now()}`;
+    const ref = channelSecrets.channelAccountSecretRef(id);
+    channelSecrets.saveChannelAccountSecret(ref, {
+      appId: 'legacy-account-app',
       appSecret: 'legacy-before',
+    });
+    db.createChannelAccount({
+      id,
+      owner_user_id: 'legacy-owner',
+      provider: 'qq',
+      name: 'Legacy QQ',
+      secret_ref: ref,
       enabled: true,
+      is_default: true,
+      is_legacy_default: true,
     });
     const listed = await routes.request('/');
     const account = ((await listed.json()) as any).accounts.find(
-      (item: any) => item.provider === 'qq',
+      (item: any) => item.id === id,
     );
     expect(account).toMatchObject({ is_legacy_default: true });
 
-    const patched = await routes.request(`/${account.id}`, {
+    const patched = await routes.request(`/${id}`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         credentials: {
-          appId: 'legacy-facade-app',
+          appId: 'legacy-account-app',
           appSecret: 'legacy-after',
         },
       }),
     });
     expect(patched.status).toBe(200);
-    expect(runtimeConfig.getUserQQConfig('legacy-facade-owner')).toMatchObject({
-      appId: 'legacy-facade-app',
+    expect(channelSecrets.loadChannelAccountSecret(ref)).toMatchObject({
+      appId: 'legacy-account-app',
       appSecret: 'legacy-after',
-      enabled: true,
     });
 
-    const removed = await routes.request(`/${account.id}`, {
+    const removed = await routes.request(`/${id}`, {
       method: 'DELETE',
     });
     expect(removed.status).toBe(409);
-    const relisted = await routes.request('/');
-    const accounts = ((await relisted.json()) as any).accounts.filter(
-      (item: any) => item.provider === 'qq',
-    );
-    expect(accounts).toHaveLength(1);
-    expect(accounts[0].id).toBe(account.id);
+    expect(db.getChannelAccount(id)).toBeDefined();
 
-    const toggled = await routes.request(`/${account.id}/toggle`, {
+    const toggled = await routes.request(`/${id}/toggle`, {
       method: 'POST',
     });
     expect(toggled.status).toBe(200);
-    expect(runtimeConfig.getUserQQConfig('legacy-facade-owner')).toMatchObject({
-      enabled: false,
+    expect(db.getChannelAccount(id)).toMatchObject({ enabled: false });
+    expect(channelSecrets.loadChannelAccountSecret(ref)).toMatchObject({
       appSecret: 'legacy-after',
     });
   });

@@ -301,8 +301,11 @@ Web 持久设置 > 环境变量 > 代码默认值
 | `MAIN_AGENT_CONTEXT_SOURCE`                            | `host_claude`                 | 主 Agent 上下文来源初始值（`managed` 或 `host_claude`），系统设置回落项                       |
 | `CKQCLAW_MIGRATION_BACKUP_DIR`                         | `<db 目录>/migration-backups` | Schema 迁移前自动备份目录                                                                     |
 
-Provider 和渠道账号应优先通过 Web 配置。Legacy `/api/config/user-im/*` 只用于兼容，
-新功能统一使用 `/api/channel-accounts`。
+Provider 与渠道账号统一通过 Web 配置；渠道凭据只存在
+`channel_accounts` 的加密 secret。旧的按用户 IM 配置
+（`data/config/user-im/*`）与全局飞书配置（`feishu-provider.json`、
+`FEISHU_APP_ID`/`FEISHU_APP_SECRET` 回落）的读写代码已删除，旧文件不再读取
+（磁盘文件保留）。
 
 ## 10. 开发与验证
 

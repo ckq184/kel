@@ -2,8 +2,8 @@
 
 | 字段          | 值                                                                                                                                                                                                                                                                                                                                                                         |
 | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 状态          | 待领取                                                                                                                                                                                                                                                                                                                                                                     |
-| 领取人 / 分支 | —                                                                                                                                                                                                                                                                                                                                                                          |
+| 状态          | 已完成                                                                                                                                                                                                                                                                                                                                                                     |
+| 领取人 / 分支 | claude/thesis-22-im-config-single-source                                                                                                                                                                                                                                                                                                                                   |
 | 优先级        | P2                                                                                                                                                                                                                                                                                                                                                                         |
 | 类型          | 兼容收窄（第二真源与旧迁移）                                                                                                                                                                                                                                                                                                                                               |
 | 依赖          | THESIS-19（同在 `src/index.ts` 13447 起的区域）                                                                                                                                                                                                                                                                                                                            |
@@ -66,4 +66,17 @@
 
 ## 交付记录
 
-（待填）
+- 交付提交：本提交（立项 `e674232`、实现 `12ef037`、规格审查处置 `caf16a3`、质量审查处置 `917d512`）；分支 `claude/thesis-22-im-config-single-source`，基线 `5f0db61`。
+- 改动范围：删 `src/channel-account-migration.ts` 与 `src/runtime-config.ts` 的按用户/全局飞书配置读写（含 `encryptChannelSecret`/`decryptChannelSecret`）、`src/index.ts` 的 `migrateSystemIMToPerUser`/`syncLegacyConfigToDefaultChannelAccount`/`migrateDataDirectories`/`movePathWithFallback`/按用户投影循环/`autoIsolateContext` 接线与 `learnFeishuOwner`；`src/routes/channel-accounts.ts` 删复制门面与 GET/POST 投影；`src/im-context-isolation.ts` 只留 `clearTargetAgentBindingsForDeletedAgents`；`src/routes/auth.ts` 的 `feishuConfigured` 改由渠道账号推导；删 `FeishuConfigSchema` 与 `tests/channel-account-legacy-compat.test.ts`、`tests/feishu-config-validation.test.ts`（其中 `testFeishuCredentials` 4 条迁至 `tests/feishu-connectivity.test.ts`）；新增 `tests/thesis-22-im-config-single-source.test.ts`。
+- 逐条验收：
+  1. 旧配置符号零出现、`src/channel-account-migration.ts` 不存在：新契约测试 7 条通过。
+  2. 启动只按 `listEnabledChannelAccounts()` 连接，不再遍历用户读旧配置：`channel-account-startup-contract` 断言 + 符号检查通过。
+  3. `ownerOpenId` 两处读点与微信游标改读/只写渠道账号 secret：`thesis-22` 切片断言、`feishu-channel-account-owner`、`wechat-account-runtime-contract` 通过。
+  4. `autoIsolateContext` 零出现，`clearTargetAgentBindingsForDeletedAgents` 与 `/new` 的 `createAutoImConversationAgent` 保留：`im-context-isolation` 测试与 `routes-channel-accounts` 行为用例通过。
+  5. `FeishuConfigSchema` 与 schema 用例删除：`tests/feishu-config-validation.test.ts` 已删，`feishu-connectivity` 4 条保留。
+  6. `npm run verify` 6/6 全绿（370 文件，3022 通过 / 23 跳过，20.4s）；`node scripts/check-scope.mjs` 23 路径通过；`docs:check` 161 个 Markdown 通过。
+  7. `CLAUDE.md` §9 末段与 `docs/API.md` 已同步。
+- 与 issue 的偏差：计划升 v1.1（规格审查发现删测试文件时误删 `testFeishuCredentials` 4 条，已迁回）；改动路径较 issue 预计增加 `src/routes/auth.ts`（全局飞书配置删除后 `feishuConfigured` 无来源）与 `tests/feishu-connectivity.test.ts`（承接保留用例）。
+- 审查：规格审查通过（Critical 0 / Major 1 已修 / Minor 5，其中 1 项行为测试延后）；质量审查通过（Critical 0 / Major 0 / Minor 5，M1/M5 与文档措辞已修，M2/M3/M4 登记延后）。
+- 剩余风险：依赖 `FEISHU_APP_ID`/`FEISHU_APP_SECRET` 环境变量或仅存旧 json 的部署不再自动连接，须先在「渠道账号」建账号；`migrateDataDirectories` 删除后，`store/`、`groups/` 旧布局不再自动搬迁；`/allow` 历史组回落依赖 legacy default 飞书账号。
+- 未实机验收：待用户重启后冒烟三个渠道账号收发、渠道账号列表、飞书新聊天会话归属。

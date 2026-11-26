@@ -33,15 +33,6 @@ import {
   saveChannelAccountSecret,
   type ChannelAccountSecret,
 } from '../channel-account-secrets.js';
-import {
-  getUserFeishuConfig,
-  getUserQQConfig,
-  getUserWeChatConfig,
-  saveUserFeishuConfig,
-  saveUserQQConfig,
-  saveUserWeChatConfig,
-} from '../runtime-config.js';
-import { ensureLegacyDefaultChannelAccount } from '../channel-account-migration.js';
 import { generatePairingCode } from '../channel-pairing.js';
 import {
   isJidForChannelAccount,
@@ -151,12 +142,6 @@ function cancelPendingOnboarding(account: ChannelAccount): void {
   updateChannelAccountStatus(account.id, 'disconnected');
 }
 
-const PROVIDER_NAMES: Record<ChannelProvider, string> = {
-  feishu: '飞书',
-  qq: 'QQ',
-  wechat: '微信',
-};
-
 function publicAccount(account: ChannelAccount): ChannelAccountPublic {
   const { secret_ref: _secretRef, ...metadata } = account;
   const secret = loadChannelAccountSecret(account.secret_ref) ?? {};
@@ -249,48 +234,6 @@ function onboardingPayload(account: ChannelAccount) {
   };
 }
 
-/**
- * The old /user-im routes remain a compatibility facade for the historical
- * default connector. Mirror first-class legacy-account mutations so old GETs
- * never expose stale credentials/options as a second source of truth.
- */
-function syncLegacyUserImFacade(
-  account: ChannelAccount,
-  secretOverride?: ChannelAccountSecret,
-): void {
-  if (!account.is_legacy_default) return;
-  const secret =
-    secretOverride ?? loadChannelAccountSecret(account.secret_ref) ?? {};
-  const enabled = account.enabled && account.auth_status !== 'revoked';
-  if (account.provider === 'feishu') {
-    const old = getUserFeishuConfig(account.owner_user_id);
-    saveUserFeishuConfig(account.owner_user_id, {
-      appId: secret.appId || '',
-      appSecret: secret.appSecret || '',
-      ownerOpenId: secret.ownerOpenId,
-      autoIsolateContext: old?.autoIsolateContext ?? false,
-      enabled,
-    });
-  } else if (account.provider === 'qq') {
-    saveUserQQConfig(account.owner_user_id, {
-      appId: secret.appId || '',
-      appSecret: secret.appSecret || '',
-      enabled,
-    });
-  } else if (account.provider === 'wechat') {
-    const old = getUserWeChatConfig(account.owner_user_id);
-    saveUserWeChatConfig(account.owner_user_id, {
-      botToken: secret.botToken || '',
-      ilinkBotId: secret.ilinkBotId || '',
-      baseUrl: secret.baseUrl,
-      cdnBaseUrl: secret.cdnBaseUrl,
-      getUpdatesBuf: secret.getUpdatesBuf ?? old?.getUpdatesBuf,
-      bypassProxy: secret.bypassProxy !== 'false',
-      enabled,
-    });
-  }
-}
-
 function validateTargets(
   user: AuthUser,
   input: {
@@ -310,70 +253,8 @@ function validateTargets(
   return null;
 }
 
-function legacyCredentialsFor(
-  userId: string,
-  provider: ChannelProvider,
-): { secret: ChannelAccountSecret; enabled: boolean } | null {
-  if (provider === 'feishu') {
-    const value = getUserFeishuConfig(userId);
-    return value
-      ? {
-          secret: {
-            appId: value.appId,
-            appSecret: value.appSecret,
-            ownerOpenId: value.ownerOpenId,
-          },
-          enabled: value.enabled !== false,
-        }
-      : null;
-  }
-  if (provider === 'qq') {
-    const value = getUserQQConfig(userId);
-    return value
-      ? {
-          secret: { appId: value.appId, appSecret: value.appSecret },
-          enabled: value.enabled !== false,
-        }
-      : null;
-  }
-  if (provider === 'wechat') {
-    const value = getUserWeChatConfig(userId);
-    return value
-      ? {
-          secret: {
-            botToken: value.botToken,
-            ilinkBotId: value.ilinkBotId,
-            baseUrl: value.baseUrl,
-            cdnBaseUrl: value.cdnBaseUrl,
-            getUpdatesBuf: value.getUpdatesBuf,
-            bypassProxy: String(value.bypassProxy ?? true),
-          },
-          enabled: value.enabled !== false,
-        }
-      : null;
-  }
-  return null;
-}
-
-/** Lazy, idempotent projection of legacy per-user/provider singleton configs. */
-function ensureLegacyDefaultChannelAccounts(userId: string): void {
-  const providers = Object.keys(PROVIDER_NAMES) as ChannelProvider[];
-  for (const provider of providers) {
-    const legacy = legacyCredentialsFor(userId, provider);
-    if (!legacy) continue;
-    ensureLegacyDefaultChannelAccount({
-      ownerUserId: userId,
-      provider,
-      name: `默认${PROVIDER_NAMES[provider]}`,
-      secret: legacy.secret,
-      enabled: legacy.enabled,
-    });
-  }
-}
-
 routes.get('/', authMiddleware, (c) => {
   const user = c.get('user') as AuthUser;
-  ensureLegacyDefaultChannelAccounts(user.id);
   return c.json({
     accounts: listChannelAccountsForUser(user.id).map(publicAccount),
   });
@@ -387,12 +268,6 @@ routes.post('/', authMiddleware, async (c) => {
   if (!parsed.success) {
     return zodBadRequest(c, parsed.error, 'request-format');
   }
-
-  // The web server becomes available before the startup migration finishes.
-  // Project legacy singleton configs before creating a first-class account so
-  // a direct POST cannot accidentally take the default slot and cause the
-  // historical unscoped JID connector to disappear on this boot.
-  ensureLegacyDefaultChannelAccounts(user.id);
 
   const targetError = validateTargets(user, parsed.data);
   if (targetError) return c.json({ error: targetError }, 400);
@@ -568,7 +443,6 @@ routes.patch('/:id', authMiddleware, async (c) => {
       restorePreviousMetadata();
       updateChannelAccountAuthStatus(id, previousAuthStatus);
       await deps.reloadChannelAccount?.(id).catch(() => undefined);
-      syncLegacyUserImFacade(getChannelAccountForUser(id, user.id)!);
       const message = error instanceof Error ? error.message : String(error);
       return c.json({ error: `Channel reload failed: ${message}` }, 502);
     }
@@ -578,7 +452,6 @@ routes.patch('/:id', authMiddleware, async (c) => {
         restorePreviousMetadata();
         updateChannelAccountAuthStatus(id, previousAuthStatus);
         await deps.reloadChannelAccount?.(id);
-        syncLegacyUserImFacade(getChannelAccountForUser(id, user.id)!);
         return c.json({ error: 'Credential validation failed' }, 422);
       }
       if (current.auth_mode !== 'qr_session') {
@@ -592,7 +465,6 @@ routes.patch('/:id', authMiddleware, async (c) => {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       updateChannelAccountStatus(id, 'error', 'Connector cleanup failed');
-      syncLegacyUserImFacade(getChannelAccountForUser(id, user.id)!);
       return c.json(
         {
           error: `Settings were saved, but connector cleanup failed: ${message}`,
@@ -605,7 +477,6 @@ routes.patch('/:id', authMiddleware, async (c) => {
     }
     if (account.enabled) updateChannelAccountStatus(id, 'disconnected');
   }
-  syncLegacyUserImFacade(getChannelAccountForUser(id, user.id)!);
   return c.json({
     account: publicAccount(getChannelAccountForUser(id, user.id)!),
   });
@@ -790,7 +661,6 @@ routes.get('/:id/onboarding/status', authMiddleware, async (c) => {
       }
     }
     account = getChannelAccountForUser(account.id, user.id)!;
-    syncLegacyUserImFacade(account);
     return c.json({
       account: publicAccount(account),
       onboarding: onboardingPayload(account),
@@ -923,7 +793,6 @@ routes.post('/:id/disconnect', authMiddleware, async (c) => {
     const message = error instanceof Error ? error.message : String(error);
     updateChannelAccountStatus(account.id, 'error', 'Connector cleanup failed');
     const disabled = getChannelAccountForUser(account.id, user.id)!;
-    syncLegacyUserImFacade(disabled);
     return c.json(
       {
         error: `Account was disabled, but connector cleanup failed: ${message}`,
@@ -936,7 +805,6 @@ routes.post('/:id/disconnect', authMiddleware, async (c) => {
   }
   updateChannelAccountStatus(account.id, 'disconnected');
   const refreshed = getChannelAccountForUser(account.id, user.id)!;
-  syncLegacyUserImFacade(refreshed);
   return c.json({
     account: publicAccount(refreshed),
     onboarding: onboardingPayload(refreshed),
@@ -955,7 +823,6 @@ routes.post('/:id/logout', authMiddleware, async (c) => {
     const message = error instanceof Error ? error.message : String(error);
     updateChannelAccountStatus(account.id, 'error', 'Connector logout failed');
     const disabled = getChannelAccountForUser(account.id, user.id)!;
-    syncLegacyUserImFacade(disabled);
     return c.json(
       {
         error: `Account was disabled, but logout failed: ${message}`,
@@ -971,7 +838,6 @@ routes.post('/:id/logout', authMiddleware, async (c) => {
   updateChannelAccountAuthStatus(account.id, 'revoked');
   updateChannelAccountStatus(account.id, 'disconnected');
   const refreshed = getChannelAccountForUser(account.id, user.id)!;
-  syncLegacyUserImFacade(refreshed, {});
   return c.json({
     account: publicAccount(refreshed),
     onboarding: onboardingPayload(refreshed),
@@ -992,7 +858,6 @@ routes.post('/:id/toggle', authMiddleware, async (c) => {
       if (connected === false) {
         updateChannelAccount(id, user.id, { enabled: false });
         updateChannelAccountStatus(id, 'error', 'Connection failed');
-        syncLegacyUserImFacade(getChannelAccountForUser(id, user.id)!);
         return c.json(
           {
             error: 'Connection failed',
@@ -1004,7 +869,6 @@ routes.post('/:id/toggle', authMiddleware, async (c) => {
     } catch (error) {
       updateChannelAccount(id, user.id, { enabled: false });
       updateChannelAccountStatus(id, 'error', 'Connection failed');
-      syncLegacyUserImFacade(getChannelAccountForUser(id, user.id)!);
       const message = error instanceof Error ? error.message : String(error);
       return c.json(
         {
@@ -1021,7 +885,6 @@ routes.post('/:id/toggle', authMiddleware, async (c) => {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       updateChannelAccountStatus(id, 'error', 'Connector cleanup failed');
-      syncLegacyUserImFacade(getChannelAccountForUser(id, user.id)!);
       return c.json(
         {
           error: `Account state was saved, but connector cleanup failed: ${message}`,
@@ -1033,7 +896,6 @@ routes.post('/:id/toggle', authMiddleware, async (c) => {
       );
     }
   }
-  syncLegacyUserImFacade(getChannelAccountForUser(id, user.id)!);
   return c.json({
     account: publicAccount(getChannelAccountForUser(id, user.id)!),
   });

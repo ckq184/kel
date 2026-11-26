@@ -30,12 +30,9 @@ import {
   getUserSessions,
   getUserCount,
   ensureUserHomeGroup,
+  listEnabledChannelAccounts,
 } from '../db.js';
-import {
-  getEnabledProviders,
-  getFeishuProviderConfigWithSource,
-  getAppearanceConfig,
-} from '../runtime-config.js';
+import { getEnabledProviders, getAppearanceConfig } from '../runtime-config.js';
 import {
   verifyPassword,
   hashPassword,
@@ -103,8 +100,12 @@ function buildSetupStatus() {
     );
     return hasBaseUrl && hasCredential;
   });
-  const { source: feishuSource } = getFeishuProviderConfigWithSource();
-  const feishuConfigured = feishuSource !== 'none';
+  // Channel accounts are the single source of truth. "Configured" means an
+  // enabled Feishu account exists; a disabled account is intentionally not
+  // advertised as ready to install.
+  const feishuConfigured = listEnabledChannelAccounts().some(
+    (account) => account.provider === 'feishu',
+  );
   const providerSetupSkipped = getSystemSettings().providerSetupSkipped;
 
   return {
