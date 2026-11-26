@@ -321,6 +321,9 @@ describe('channel account routes', () => {
     });
     expect(toggled.status).toBe(200);
     expect(db.getChannelAccount(id)).toMatchObject({ enabled: false });
+    expect(channelSecrets.loadChannelAccountSecret(ref)).toMatchObject({
+      appSecret: 'legacy-after',
+    });
   });
 
   test('credential reload failure rolls back metadata, secret, and auth state', async () => {

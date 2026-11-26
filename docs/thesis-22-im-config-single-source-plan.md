@@ -3,7 +3,7 @@
 > 来源：[THESIS-22](issues4/THESIS-22-im-config-single-source.md)、[personal-slim 方案 §2 P3/P8、§5](issues4/task-personal-slim-plan.md)。方案定范围与裁决，本文件定怎么落地。
 > 依赖：THESIS-19 已完成并合入 main（`a0c29c2`）；THESIS-21 也已合入 main（`a4ee4bb`），本分支基线为 main `5f0db61`。
 > 基线：`5f0db61`（开工前 HEAD，回滚点）。
-> 版本：v1.0（2026-11-26）。
+> 版本：v1.1（2026-11-26，规格审查后修正：删除 schema 测试时保留同文件内仍在用的 `testFeishuCredentials` 4 条用例，迁至 `tests/feishu-connectivity.test.ts`）。
 
 ## 1. 目标与完成条件
 
@@ -15,7 +15,7 @@
 2. 启动时只加载 `channel_accounts` 并连接；不再遍历用户读取旧配置、不再写旧配置文件。
 3. `ownerOpenId` 的两处读点（`/allow` 回填、未知飞书会话准入）改从渠道账号 secret 读取；微信游标只写渠道账号 secret，不再镜像旧 json。
 4. `autoIsolateContext` 的配置读取、批量绑定、启动恢复、健康检查重建全部删除；`clearTargetAgentBindingsForDeletedAgents` 与 `/new` 使用的 `createAutoImConversationAgent` 保留。
-5. `FeishuConfigSchema` 与其唯一使用方 `tests/feishu-config-validation.test.ts` 删除。
+5. `FeishuConfigSchema` 删除；`tests/feishu-config-validation.test.ts` 的 schema 用例删除，同文件内 `testFeishuCredentials` 的 4 条用例迁至 `tests/feishu-connectivity.test.ts`（该函数仍被渠道账号凭据校验使用）。
 6. `npm run verify` 六步全绿；`node scripts/check-scope.mjs` 通过。
 7. 文档同步 `CLAUDE.md` §9 末段与 `docs/API.md`。
 
@@ -35,7 +35,7 @@
 | `src/index.ts` `ensureAutoImConversationBinding`                                                                                                                                  | 仅 autoIsolate 的三处调用                                                                                                                                                                                    | 删除；`resolveAutoImWorkspace` / `createAutoImConversationAgent` 仍被 `/new` 使用，保留                                         |
 | `src/index.ts` `isSenderAllowedInGroup` 未知会话分支、`handleAllowCommand` 回填分支                                                                                               | 读 `getUserFeishuConfig(...).ownerOpenId`                                                                                                                                                                    | 改读 `group.channel_account_id` / JID 内账户 id 对应账号的 secret；旧无账户 id 的组回落到该用户的 legacy default 飞书账号       |
 | `src/index.ts` 微信 `onUpdatesBuf`                                                                                                                                                | 写账号 secret 后镜像旧 json                                                                                                                                                                                  | 删除镜像分支                                                                                                                    |
-| `src/schemas.ts` `FeishuConfigSchema`、`FEISHU_APP_ID_REGEX`                                                                                                                      | 仅 `tests/feishu-config-validation.test.ts`                                                                                                                                                                  | 删除 schema 与测试                                                                                                              |
+| `src/schemas.ts` `FeishuConfigSchema`、`FEISHU_APP_ID_REGEX`                                                                                                                      | 仅 `tests/feishu-config-validation.test.ts` 的 schema 用例                                                                                                                                                   | 删除 schema；同文件里 `testFeishuCredentials` 4 条迁至 `tests/feishu-connectivity.test.ts`                                      |
 
 **明确保留（非目标）**：
 
@@ -57,7 +57,7 @@
 2. 新增 `tests/thesis-22-im-config-single-source.test.ts`：对 `src/` 全量 grep 断言第 1 节符号零出现；`src/channel-account-migration.ts` 不存在；`src/routes/channel-accounts.ts` 不再 import 旧配置 getter；`src/routes/auth.ts` 的 `feishuConfigured` 由 `listEnabledChannelAccounts` 推导。
 3. 改写 `tests/routes-channel-accounts.test.ts` 两条用例：删除「POST 先投影 legacy default」与「facade 可见」断言，保留「legacy default 不可删除、编辑/切换落库」。
 4. `tests/im-context-isolation.test.ts` 删除两个 autoIsolate describe，保留 `clearTargetAgentBindingsForDeletedAgents`。
-5. 删除 `tests/channel-account-legacy-compat.test.ts` 与 `tests/feishu-config-validation.test.ts`。
+5. 删除 `tests/channel-account-legacy-compat.test.ts` 与 `tests/feishu-config-validation.test.ts`（后者的 `testFeishuCredentials` 4 条先迁至 `tests/feishu-connectivity.test.ts`）。
 6. 运行相关测试确认 Red。
 
 ### 3.2 Green

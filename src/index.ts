@@ -180,7 +180,6 @@ import {
   updateAgentStatus,
   updateAgentLastImJid,
   updateAgentInfo,
-  deleteAgent,
   archiveInactiveConversationAgents,
   deleteCompletedAgents,
   deleteImGroupRecord,
@@ -471,11 +470,6 @@ import {
   MAX_TASK_PROMPT_LENGTH,
   MAX_TASK_SCRIPT_COMMAND_LENGTH,
 } from './schemas.js';
-import type {
-  FeishuConnectConfig,
-  QQConnectConfig,
-  WeChatConnectConfig,
-} from './im-manager.js';
 import {
   GroupQueue,
   type IpcDeliveryReceipt,
@@ -569,7 +563,6 @@ import {
   broadcastNewMessage,
   broadcastStreamEvent,
   broadcastAgentStatus,
-  broadcastAgentRemoved,
   broadcastTitleGenerating,
   broadcastChannelAccountStatus,
   broadcastGroupCreated,
@@ -3399,6 +3392,28 @@ function handleReleaseOwnerCommand(chatJid: string): string {
 }
 
 /**
+ * Read the owner open_id from a Feishu channel account secret. A damaged
+ * secret must not break /allow or inbound admission; the old per-user config
+ * reader swallowed read/decrypt errors the same way.
+ */
+function readChannelAccountOwnerOpenId(
+  accountId: string | null | undefined,
+): string | undefined {
+  if (!accountId) return undefined;
+  const account = getChannelAccount(accountId);
+  if (!account || account.provider !== 'feishu') return undefined;
+  try {
+    return loadChannelAccountSecret(account.secret_ref)?.ownerOpenId;
+  } catch (err) {
+    logger.warn(
+      { err, accountId },
+      'Failed to read channel account owner open_id',
+    );
+    return undefined;
+  }
+}
+
+/**
  * Resolve the Feishu owner open_id recorded on the channel account that owns
  * this chat. Historical unscoped groups fall back to the user's legacy default
  * Feishu account.
@@ -3412,10 +3427,7 @@ function resolveFeishuOwnerOpenIdForGroup(
     group.channel_account_id ??
     parseChannelAddress(chatJid)?.channelAccountId ??
     getLegacyChannelAccount(ownerUserId, 'feishu')?.id;
-  if (!accountId) return undefined;
-  const account = getChannelAccount(accountId);
-  if (!account || account.provider !== 'feishu') return undefined;
-  return loadChannelAccountSecret(account.secret_ref)?.ownerOpenId;
+  return readChannelAccountOwnerOpenId(accountId);
 }
 
 /**
@@ -12005,7 +12017,7 @@ function buildFeishuBotAddedHandler(
     if (isNew) {
       // 文案分支:仅在飞书路径(传入 getOwnerOpenId,DM 可学到 ownerOpenId 并启用 allowlist)
       // 才提示「已启用发言者白名单」+「私信识别 owner」。通用渠道路径
-      // 不传 getOwnerOpenId,实际未启用白名单,DM 也没有 learnFeishuOwner 通道,引导用
+      // 不传 getOwnerOpenId,实际未启用白名单,DM 也没有自动识别 owner 的通道,引导用
       // /owner_mention 在群内自我认领。
       let welcome: string;
       if (getOwnerOpenId) {
@@ -12827,10 +12839,7 @@ function isSenderAllowedInGroup(chatJid: string, senderImId?: string): boolean {
   if (!group) {
     if (getChannelType(conversationJid) !== 'feishu') return false;
     const accountId = parseChannelAddress(conversationJid)?.channelAccountId;
-    const account = accountId ? getChannelAccount(accountId) : undefined;
-    const knownOwner = account
-      ? loadChannelAccountSecret(account.secret_ref)?.ownerOpenId
-      : undefined;
+    const knownOwner = readChannelAccountOwnerOpenId(accountId);
     return isUnknownFeishuSenderAllowed(knownOwner, senderImId);
   }
 

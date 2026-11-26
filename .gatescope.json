@@ -18,6 +18,7 @@
     "tests/routes-channel-accounts.test.ts",
     "tests/im-context-isolation.test.ts",
     "tests/feishu-config-validation.test.ts",
+    "tests/feishu-connectivity.test.ts",
     "tests/thesis-22-im-config-single-source.test.ts",
     "CLAUDE.md",
     "docs/API.md",

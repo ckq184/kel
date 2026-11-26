@@ -88,7 +88,7 @@ describe('THESIS-22 IM config single source', () => {
 
   test('/allow owner backfill reads ownerOpenId from the channel account secret', () => {
     const allow = indexSlice(
-      'function resolveFeishuOwnerOpenIdForGroup(',
+      'function readChannelAccountOwnerOpenId(',
       'function handleDisallowCommand(',
     );
     expect(allow).toContain('loadChannelAccountSecret(');
@@ -100,7 +100,7 @@ describe('THESIS-22 IM config single source', () => {
       'function isSenderAllowedInGroup(',
       'function handleIncomingFollowUp(',
     );
-    expect(admission).toContain('loadChannelAccountSecret(');
+    expect(admission).toContain('readChannelAccountOwnerOpenId(');
     expect(admission).not.toContain('getUserFeishuConfig');
   });
 
