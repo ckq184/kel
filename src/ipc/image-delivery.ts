@@ -67,7 +67,6 @@ export interface IpcSendImageInput {
   canSendCrossGroupMessage: (
     isHome: boolean,
     sourceFolder: string,
-    sourceGroupEntry: RegisteredGroup | undefined,
     targetGroup: RegisteredGroup | undefined,
   ) => boolean;
   getIpcDeliveryTargetGroup: (chatJid: string) => RegisteredGroup | undefined;
@@ -156,9 +155,7 @@ export async function processIpcSendImage(
   let taskImageTargetJids: string[] = [];
   let taskImageDeliverySettled = false;
   let isTaskIpcImage = false;
-  if (
-    canSendCrossGroupMessage(isHome, sourceGroup, sourceGroupEntry, targetGroup)
-  ) {
+  if (canSendCrossGroupMessage(isHome, sourceGroup, targetGroup)) {
     try {
       const imageBuffer = Buffer.from(data.imageBase64, 'base64');
       const mimeType = data.mimeType || 'image/png';

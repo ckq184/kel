@@ -147,16 +147,6 @@ describe('POST /:jid/reset-owner (admin break-glass)', () => {
     expect(after?.sender_allowlist).toBeUndefined();
     expect(after?.activation_mode).toBe('when_mentioned');
   });
-
-  test('owner-account reset downgrades activation_mode', async () => {
-    asRouteTestUser(OWNER_ID);
-    const res = await groupRoutes.request(
-      `/${encodeURIComponent(JID)}/reset-owner`,
-      { method: 'POST' },
-    );
-    expect(res.status).toBe(200);
-    expect(db.getRegisteredGroup(JID)?.activation_mode).toBe('when_mentioned');
-  });
 });
 
 describe('PATCH /:jid preserves owner fields on rename (regression)', () => {

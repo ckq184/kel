@@ -8611,13 +8611,11 @@ function stopStreamingBuffer(): void {
 function canSendCrossGroupMessage(
   isHome: boolean,
   sourceFolder: string,
-  sourceGroupEntry: RegisteredGroup | undefined,
   targetGroup: RegisteredGroup | undefined,
 ): boolean {
   return canSendCrossGroupMessagePure(
     isHome,
     sourceFolder,
-    sourceGroupEntry,
     targetGroup,
     (jid) => registeredGroups[jid] ?? getRegisteredGroup(jid),
   );
@@ -9020,8 +9018,6 @@ async function processAgentConversation(
     }
     return;
   }
-
-  const isHome = !!effectiveGroup.is_home;
 
   // The batch runtime id is needed before the rest of the conversation setup.
   // Keep this declaration above startBatch so startup recovery cannot hit the
@@ -11865,8 +11861,8 @@ function buildOnNewChat(
 
       // Different user's connection now owns this IM app.
       // Two possible scenarios:
-      //   1. Credential transfer: admin disables their Feishu channel, member
-      //      enables the same appId → re-route chat to the new user.
+      //   1. Credential transfer: the previous account disables its Feishu
+      //      channel, another account enables the same appId → re-route chat.
       //   2. Multi-bot setup: same human talks to multiple bots, each owned by
       //      a different CKQClaw user → do NOT re-route.
       //

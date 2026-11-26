@@ -1044,7 +1044,7 @@ export function buildVolumeMounts(
       readonly: false,
     });
   } else {
-    // Member home and non-home groups only get their own folder
+    // Non-Home groups only get their own folder
     mounts.push({
       hostPath: path.join(GROUPS_DIR, group.folder),
       containerPath: '/workspace/group',

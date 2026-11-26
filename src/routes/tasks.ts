@@ -217,7 +217,7 @@ tasksRoutes.post('/', authMiddleware, async (c) => {
   if (adminHostOnlyMode && validation.data.execution_mode === 'container') {
     return c.json(
       {
-        error: '管理员纯宿主机模式已开启，任务不能使用 Docker 执行',
+        error: '纯宿主机模式已开启，任务不能使用 Docker 执行',
         code: 'ADMIN_HOST_ONLY_MODE_ENABLED',
       },
       409,
@@ -463,7 +463,7 @@ tasksRoutes.patch('/:id', authMiddleware, async (c) => {
   ) {
     return c.json(
       {
-        error: '管理员纯宿主机模式已开启，任务不能使用 Docker 执行',
+        error: '纯宿主机模式已开启，任务不能使用 Docker 执行',
         code: 'ADMIN_HOST_ONLY_MODE_ENABLED',
       },
       409,
@@ -592,8 +592,6 @@ tasksRoutes.delete('/:id', authMiddleware, (c) => {
       return groupAccessDeniedResponse(c, 'Task not found');
     }
   }
-  // Only admin can delete script tasks
-
   const activeRun = getActiveTaskRunForTask(id);
   if (!activeRun && getRunningTaskIds().includes(id)) {
     return c.json(
@@ -901,7 +899,7 @@ tasksRoutes.post('/ai', authMiddleware, async (c) => {
   if (adminHostOnlyMode && !sourceIsHost) {
     return c.json(
       {
-        error: '管理员纯宿主机模式已开启，请刷新工作区状态后重试',
+        error: '纯宿主机模式已开启，请刷新工作区状态后重试',
         code: 'ADMIN_HOST_ONLY_MODE_ENABLED',
       },
       409,

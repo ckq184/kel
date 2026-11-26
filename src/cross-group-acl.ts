@@ -12,7 +12,6 @@ import type { RegisteredGroup } from './types.js';
 export function canSendCrossGroupMessage(
   isHome: boolean,
   sourceFolder: string,
-  sourceGroupEntry: RegisteredGroup | undefined,
   targetGroup: RegisteredGroup | undefined,
   lookupGroup: (jid: string) => RegisteredGroup | undefined,
 ): boolean {

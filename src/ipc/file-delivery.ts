@@ -62,7 +62,6 @@ export interface IpcSendFileInput {
   canSendCrossGroupMessage: (
     isHome: boolean,
     sourceFolder: string,
-    sourceGroupEntry: RegisteredGroup | undefined,
     targetGroup: RegisteredGroup | undefined,
   ) => boolean;
   resolveImRoute: (opts: {
@@ -151,14 +150,7 @@ export async function processIpcSendFile(
     }
     // Cross-group authorization check (same as send_message)
     const targetGroup = getIpcDeliveryTargetGroup(data.chatJid);
-    if (
-      !canSendCrossGroupMessage(
-        isHome,
-        sourceGroup,
-        sourceGroupEntry,
-        targetGroup,
-      )
-    ) {
+    if (!canSendCrossGroupMessage(isHome, sourceGroup, targetGroup)) {
       logger.warn(
         { chatJid: data.chatJid, sourceGroup },
         'Unauthorized IPC send_file attempt blocked',

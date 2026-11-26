@@ -313,7 +313,7 @@ describe('buildAgentCapabilityPreview', () => {
     );
   });
 
-  test('marks admin-only system MCP unavailable to members and available to admins', () => {
+  test('marks admin-only system MCP available to the admin account', () => {
     const profile = {
       id: 'credential-preview-profile',
       owner_user_id: 'owner',

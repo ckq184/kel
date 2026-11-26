@@ -21,7 +21,6 @@ import type {
 } from '../types.js';
 import { DATA_DIR, GROUPS_DIR, isDockerAvailable } from '../config.js';
 import {
-  isHostExecutionGroup,
   canAccessGroup,
   canModifyGroup,
   canDeleteGroup,
@@ -554,7 +553,7 @@ groupRoutes.post('/', authMiddleware, async (c) => {
   if (adminHostOnlyMode && validation.data.execution_mode === 'container') {
     return c.json(
       {
-        error: '管理员纯宿主机模式已开启，不能创建 Docker 工作区',
+        error: '纯宿主机模式已开启，不能创建 Docker 工作区',
         code: 'ADMIN_HOST_ONLY_MODE_ENABLED',
       },
       409,
@@ -1004,7 +1003,7 @@ groupRoutes.post('/', authMiddleware, async (c) => {
     if (hostOnlyPolicyChangedDuringCreate) {
       return c.json(
         {
-          error: '管理员纯宿主机模式已开启，请按宿主机模式重新创建工作区',
+          error: '纯宿主机模式已开启，请按宿主机模式重新创建工作区',
           code: 'ADMIN_HOST_ONLY_MODE_ENABLED',
         },
         409,
@@ -1100,7 +1099,7 @@ groupRoutes.patch('/:jid', authMiddleware, async (c) => {
   ) {
     return c.json(
       {
-        error: '管理员纯宿主机模式已开启，不能切换到 Docker 执行',
+        error: '纯宿主机模式已开启，不能切换到 Docker 执行',
         code: 'ADMIN_HOST_ONLY_MODE_ENABLED',
       },
       409,
@@ -1260,7 +1259,7 @@ groupRoutes.patch('/:jid', authMiddleware, async (c) => {
         if (err instanceof AdminHostOnlyModeConflictError) {
           return c.json(
             {
-              error: '管理员纯宿主机模式已开启，不能切换到 Docker 执行',
+              error: '纯宿主机模式已开启，不能切换到 Docker 执行',
               code: 'ADMIN_HOST_ONLY_MODE_ENABLED',
             },
             409,
@@ -1301,7 +1300,7 @@ groupRoutes.patch('/:jid', authMiddleware, async (c) => {
         if (err instanceof AdminHostOnlyModeConflictError) {
           return c.json(
             {
-              error: '管理员纯宿主机模式已开启，不能切换到 Docker 执行',
+              error: '纯宿主机模式已开启，不能切换到 Docker 执行',
               code: 'ADMIN_HOST_ONLY_MODE_ENABLED',
             },
             409,

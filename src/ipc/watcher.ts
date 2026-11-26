@@ -8,7 +8,6 @@ import {
   deleteMessagesForChatJid,
   deleteSession,
   finalizeTaskRunNotificationIfPending,
-  getUserById,
   getUserHomeGroup,
   type TaskRunNotificationReceipt,
 } from '../db.js';
@@ -253,7 +252,6 @@ export interface IpcWatcherDeps {
   canSendCrossGroupMessage: (
     isHome: boolean,
     sourceFolder: string,
-    sourceGroupEntry: RegisteredGroup | undefined,
     targetGroup: RegisteredGroup | undefined,
   ) => boolean;
   getIpcDeliveryTargetGroup: (chatJid: string) => RegisteredGroup | undefined;

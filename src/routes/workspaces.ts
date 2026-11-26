@@ -58,10 +58,7 @@ function resolveWorkspaceAccess(
   return { workspace, group: groupWithJid };
 }
 
-function getAgentProfileSnapshot(
-  workspace: WorkspaceRecord,
-  includePolicy: boolean,
-) {
+function getAgentProfileSnapshot(workspace: WorkspaceRecord) {
   const profileId = getWorkspaceAgentProfileId(workspace.folder);
   if (!profileId) return null;
   const profile = getAgentProfile(profileId);
@@ -70,8 +67,8 @@ function getAgentProfileSnapshot(
     id: profile.id,
     name: profile.name,
     version: profile.version,
-    identity_hash: includePolicy ? profile.identity_hash : undefined,
-    runtime_policy: includePolicy ? profile.runtime_policy : undefined,
+    identity_hash: profile.identity_hash,
+    runtime_policy: profile.runtime_policy,
     is_default: profile.is_default,
   };
 }
@@ -114,7 +111,7 @@ function serializeWorkspaceSummary(
     execution_mode: group.executionMode ?? 'container',
     interaction_mode: getWorkspaceInteractionMode(workspace.folder),
     custom_cwd: group.customCwd ?? null,
-    agent_profile: getAgentProfileSnapshot(workspace, true),
+    agent_profile: getAgentProfileSnapshot(workspace),
     runtime_session_count: runtimeSessions.length,
     channel_mount_count: channelMounts.length,
     can_modify: canModifyGroup(user, group),
@@ -139,7 +136,7 @@ function resolveOwnerProfileAccess(
   }
   const access = resolveWorkspaceAccess(user, workspace);
   if (!access || access.group.created_by !== user.id) return null;
-  const profile = getAgentProfileSnapshot(workspace, true);
+  const profile = getAgentProfileSnapshot(workspace);
   return profile?.is_default === true ? access : null;
 }
 

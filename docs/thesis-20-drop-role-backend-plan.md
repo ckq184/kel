@@ -164,3 +164,7 @@
    - 前端角色契约（`frontend-agent-product-contract`、`agent-profiles-page-dom`）待 THESIS-21 删除。
    - `tests/thesis-20-drop-role-backend.test.ts` 的历史行回读用例（插入旧角色值、断言读回 admin）。
 8. **提示语**：容器镜像、供应商失败与中断提示不再让用户“联系管理员”，改为直接给出可执行操作。
+9. **任务权限响应**：`permissions.is_admin` 字段随角色判断删除；`web/src` 无消费方，API 文档未记录该字段。
+10. **遗留迁移的 SQL 角色过滤**：`migrateSystemIMToPerUser` 仍用 `listUsers({ role: 'admin' })`，仅影响“旧库只有非 admin 行”的边界场景（`parseUserRole` 运行期读作 admin）；归 THESIS-22 统一处理。
+11. **host-only 迁移范围扩大**：`forceActiveAdminRuntimesToHost` 现在迁移所有 active owner 的工作区与任务；对遗留多账号库是单向执行边界变化，升级说明需注明（单账号安装无差异）。
+12. **源码扫描契约无白名单机制**：`tests/thesis-20-drop-role-backend.test.ts` 禁止 `src/`/runner 出现旧角色字面量；未来确需引用旧值的历史迁移只能显式改契约，当前实现下无例外。

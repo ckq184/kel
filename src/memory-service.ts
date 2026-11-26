@@ -5,7 +5,7 @@
  * 三条不变约束：
  * 1. 鉴权前置——每个导出函数第一步 authorizeWorkspace（读 canAccessGroup /
  *    写 canModifyGroup）；拒绝时统一报 not_found，刻意不暴露工作区存在性
- *    （管理员同样只遵循 owner 策略）；
+ *    （登录账号同样只遵循 owner 策略）；
  * 2. 写入并发安全——更新/遗忘必须携带 expectedRevision（乐观锁），
  *    可选 idempotencyKey + requestHash（sha256）实现幂等重放（replayed）；
  * 3. 错误边界——store 层错误经 translateStoreError 翻译成带 code 的

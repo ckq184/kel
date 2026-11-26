@@ -47,13 +47,7 @@ describe('canSendCrossGroupMessage', () => {
     const source = makeGroup({ folder: 'flow-x', created_by: 'u1' });
     const target = makeGroup({ folder: 'flow-x', created_by: 'u1' });
     expect(
-      canSendCrossGroupMessage(
-        false,
-        'flow-x',
-        source,
-        target,
-        () => undefined,
-      ),
+      canSendCrossGroupMessage(false, 'flow-x', target, () => undefined),
     ).toBe(true);
   });
 
@@ -61,13 +55,7 @@ describe('canSendCrossGroupMessage', () => {
     const source = makeGroup({ folder: 'flow-x', created_by: 'u1' });
     const target = makeGroup({ folder: 'flow-y', created_by: 'u2' });
     expect(
-      canSendCrossGroupMessage(
-        false,
-        'flow-x',
-        source,
-        target,
-        () => undefined,
-      ),
+      canSendCrossGroupMessage(false, 'flow-x', target, () => undefined),
     ).toBe(false);
   });
 
@@ -88,7 +76,7 @@ describe('canSendCrossGroupMessage', () => {
         : undefined,
     );
     expect(
-      canSendCrossGroupMessage(false, 'flow-x', source, imTarget, lookupGroup),
+      canSendCrossGroupMessage(false, 'flow-x', imTarget, lookupGroup),
     ).toBe(true);
     expect(lookupGroup).toHaveBeenCalledWith('web:flow-x');
   });
@@ -114,13 +102,7 @@ describe('canSendCrossGroupMessage', () => {
     );
 
     expect(
-      canSendCrossGroupMessage(
-        false,
-        'flow-x',
-        source,
-        resolvedTarget,
-        lookupGroup,
-      ),
+      canSendCrossGroupMessage(false, 'flow-x', resolvedTarget, lookupGroup),
     ).toBe(true);
     expect(lookupGroup).toHaveBeenCalledWith('feishu:oc_topic');
   });
@@ -137,7 +119,7 @@ describe('canSendCrossGroupMessage', () => {
         : undefined,
     );
     expect(
-      canSendCrossGroupMessage(false, 'flow-x', source, imTarget, lookupGroup),
+      canSendCrossGroupMessage(false, 'flow-x', imTarget, lookupGroup),
     ).toBe(false);
   });
 
@@ -149,7 +131,7 @@ describe('canSendCrossGroupMessage', () => {
     });
     const lookupGroup = vi.fn(() => undefined);
     expect(
-      canSendCrossGroupMessage(false, 'flow-x', source, imTarget, lookupGroup),
+      canSendCrossGroupMessage(false, 'flow-x', imTarget, lookupGroup),
     ).toBe(false);
   });
 

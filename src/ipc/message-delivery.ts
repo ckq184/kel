@@ -87,7 +87,6 @@ export interface IpcSendMessageInput {
   canSendCrossGroupMessage: (
     isHome: boolean,
     sourceFolder: string,
-    sourceGroupEntry: RegisteredGroup | undefined,
     targetGroup: RegisteredGroup | undefined,
   ) => boolean;
   getIpcDeliveryTargetGroup: (chatJid: string) => RegisteredGroup | undefined;
@@ -240,12 +239,7 @@ export async function processIpcSendMessage(
     return { skippedFile: true };
   }
   const ipcInteractionMode = frozenIpcMode.mode;
-  const authorized = canSendCrossGroupMessage(
-    isHome,
-    sourceGroup,
-    sourceGroupEntry,
-    targetGroup,
-  );
+  const authorized = canSendCrossGroupMessage(isHome, sourceGroup, targetGroup);
   const hostOutputRoute = routeHostIpcOutput(
     {
       sourceGroup,
