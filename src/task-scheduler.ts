@@ -1607,7 +1607,7 @@ async function runScriptTaskInner(
 
   try {
     // Script tasks execute directly on the host even when their source
-    // workspace is container-backed. Re-authorize against the current DB role
+    // workspace is container-backed. Re-authorize against the current account status
     // immediately before spawning the process.
     const currentOwnerId = deps.registeredGroups()[groupJid]?.created_by;
     if (

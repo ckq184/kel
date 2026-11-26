@@ -132,6 +132,26 @@ describe('single role in the backend', () => {
   });
 });
 
+describe('legacy role rows', () => {
+  test('rows persisted with a non-admin role are read back as admin', () => {
+    const now = new Date().toISOString();
+    db.createUser({
+      id: 'thesis20-legacy-role',
+      username: 'thesis20-legacy-role',
+      password_hash: 'hash',
+      display_name: 'Legacy role row',
+      // Legacy database rows may carry the old role value; the reader must
+      // still interpret every account as admin.
+      role: 'member' as never,
+      status: 'active',
+      created_at: now,
+      updated_at: now,
+      must_change_password: false,
+    });
+    expect(db.getUserById('thesis20-legacy-role')?.role).toBe('admin');
+  });
+});
+
 describe('host execution no longer depends on role', () => {
   test('an active owner can execute on host without a role field', () => {
     expect(hostPolicy.canExecuteOnHost({ status: 'active' })).toBe(true);

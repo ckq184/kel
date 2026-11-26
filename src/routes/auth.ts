@@ -176,7 +176,7 @@ authRoutes.post('/setup', async (c) => {
   } catch (err) {
     logger.warn(
       { err, userId },
-      'Failed to create admin home group during setup',
+      'Failed to create the home group during setup',
     );
   }
 

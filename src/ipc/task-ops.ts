@@ -159,7 +159,7 @@ export async function processIpcTaskOps(input: IpcTaskOpsInput): Promise<void> {
         const targetFolder = targetGroupEntry.folder;
 
         // Authorization: own workspace, or a group this workspace's owner also
-        // owns. Admin home gets no global bypass here — see
+        // owns. Home gets no global bypass here — see
         // ipcActorCanAccessGroupJid.
         if (!ipcActorCanAccessGroupJid(targetJid)) {
           failSchedule('Not authorized to schedule tasks for another group.');

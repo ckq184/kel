@@ -16,7 +16,7 @@ import type { RegisteredGroup, UserStatus } from './types.js';
  * immediately run cron jobs in another tenant's workspace.
  *
  * Privilege checks that are not about workspace scope — script tasks and host
- * execution mode requiring admin — stay at the call sites; they gate *what*
+ * execution mode requiring the Home workspace — stay at the call sites; they gate *what*
  * may be scheduled, not *whose* workspace it lands in.
  */
 

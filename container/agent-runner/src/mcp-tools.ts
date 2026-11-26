@@ -1048,10 +1048,10 @@ The actual file types and size limit are enforced by the selected provider.`,
 
 EXECUTION TYPE:
 \u2022 "agent" (default): Task runs as a full Claude Agent with access to all tools. Consumes API tokens.
-\u2022 "script" (admin only): Task runs a shell command directly on the host. Zero API token cost. Use for deterministic tasks like health checks, data collection, cURL calls, or cron-like scripts.
+\u2022 "script" (Home workspace only): Task runs a shell command directly on the host. Zero API token cost. Use for deterministic tasks like health checks, data collection, cURL calls, or cron-like scripts.
 
 EXECUTION MODE:
-\u2022 "host": Task runs directly on the host machine. Admin only.
+\u2022 "host": Task runs directly on the host machine. Home workspace only.
 \u2022 "container" (default): Task runs in a Docker container.
 Each agent task runs in its source workspace (same files, mounts, skills, and Agent profile).
 
@@ -1089,7 +1089,7 @@ SCHEDULE VALUE FORMAT (all times are LOCAL timezone):
           .enum(['agent', 'script'])
           .default('agent')
           .describe(
-            'agent=full Claude Agent (default), script=shell command (admin only, zero token cost)',
+            'agent=full Claude Agent (default), script=shell command (Home workspace only, zero token cost)',
           ),
         script_command: z
           .string()
@@ -1566,7 +1566,7 @@ SCHEDULE VALUE FORMAT (all times are LOCAL timezone):
         execution_type: z
           .enum(['agent', 'script'])
           .optional()
-          .describe('New execution type (script is admin only)'),
+          .describe('New execution type (script is Home workspace only)'),
         script_command: z
           .string()
           .max(4096)
@@ -1575,7 +1575,7 @@ SCHEDULE VALUE FORMAT (all times are LOCAL timezone):
         execution_mode: z
           .enum(['host', 'container'])
           .optional()
-          .describe('New execution mode (host is admin only)'),
+          .describe('New execution mode (host is Home workspace only)'),
       },
       async (args) => {
         // 改 schedule_type 必须同时给 schedule_value，否则主进程无法据新类型重算 next_run。
@@ -1908,7 +1908,7 @@ SCHEDULE VALUE FORMAT (all times are LOCAL timezone):
       `Register a new group so the agent can respond to messages there. Home workspace only.
 
 Use available_groups.json to find the JID for a group. The folder name should be lowercase with hyphens (e.g., "family-chat").
-You can optionally specify execution_mode: "container" (default, isolated Docker) or "host" (direct host access, admin only).`,
+You can optionally specify execution_mode: "container" (default, isolated Docker) or "host" (direct host access, Home workspace only).`,
       {
         jid: z.string().describe('The chat JID (e.g., "feishu:oc_xxxx")'),
         name: z.string().describe('Display name for the group'),

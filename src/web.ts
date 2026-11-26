@@ -1595,7 +1595,6 @@ function safeBroadcast(
  * - Set<string>: the owner user ID
  * - null: ownership unresolvable → default-deny
  */
-/** Check if a chatJid belongs to a host-mode group (for broadcast filtering) */
 /**
  * Normalize chatJid for WebSocket broadcasts.
  *

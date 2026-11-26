@@ -1,6 +1,6 @@
 {
   "task": "THESIS-20 角色只留管理员（后端） - UserRole 只留 admin、删除 adminRoleMiddleware/hasHostExecutionPermission/isAdminHome 与纯角色判断，宿主机执行闸门只查 owner，测试夹具与文档同步",
-  "base": "ef7cb4d",
+  "base": "4fd7096",
   "allow": [
     ".gatescope.json",
     "docs/thesis-20-drop-role-backend-plan.md",
@@ -14,6 +14,7 @@
     "src/db.ts",
     "src/db-schema/auth-tables.ts",
     "src/reset-admin.ts",
+    "src/script-task-policy.ts",
     "src/middleware/auth.ts",
     "src/web-context.ts",
     "src/web.ts",

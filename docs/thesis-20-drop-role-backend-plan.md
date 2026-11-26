@@ -2,7 +2,7 @@
 
 > 来源：[THESIS-20](issues4/THESIS-20-drop-role-backend.md)、[personal-slim 方案 §4](issues4/task-personal-slim-plan.md)。方案定范围与裁决，本文件定怎么落地。
 > 依赖：THESIS-19 已完成（交付提交 `e82843d`，verify 六步全绿）。main 尚未合入 19，本分支先以临时合并 `ef7cb4d` 为基线开工；19 正式合入 main 后再同步。
-> 基线：`ef7cb4d`（main `6ca4a90` + THESIS-19 `e82843d`）。
+> 基线：`4fd7096`（main `a0c29c2` 含 THESIS-19 正式合入 + 实现 `de6f7fa` 的同步合并）。
 > 版本：v1（2026-11-26）。
 
 ## 1. 目标与完成条件
@@ -108,7 +108,7 @@
 
 | #   | 任务                | 主要文件                                                                                                                                                                               | 独立验收                                                                    |
 | --- | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| T1  | 立项                | 本文件、`.gatescope.json`                                                                                                                                                              | base 为 THESIS-19 交付分支的临时合并 `ef7cb4d`；check-scope 通过            |
+| T1  | 立项                | 本文件、`.gatescope.json`                                                                                                                                                              | base 为同步 main 后的 `4fd7096`；check-scope 通过                           |
 | T2  | Red 契约            | 新契约测试、`tests/helpers/route-test-user.ts`                                                                                                                                         | 新契约在 base 上失败，失败原因定位到角色残留                                |
 | T3  | 类型与存储          | `src/types.ts`、`src/db-schema/auth-tables.ts`、`src/db.ts`、`src/reset-admin.ts`                                                                                                      | `UserRole` 只剩 admin；默认值与历史行解释正确                               |
 | T4  | 中间件与纯角色判断  | `src/middleware/auth.ts`、`src/web-context.ts`、`src/routes/{config,monitor,groups,tasks,files,browse,skills,auth,agents,agent-profiles,workspaces,workspace-config}.ts`、`src/web.ts` | `adminRoleMiddleware`/`hasHostExecutionPermission` 零出现；路由行为用例通过 |
@@ -118,7 +118,7 @@
 | T8  | 文档                | `docs/ACL-MATRIX.md`、`docs/API.md`、`CLAUDE.md`、`README.md`、`docs/issues4/*`、`docs/审查记录.md`                                                                                    | `npm run docs:check` 通过；文档不再描述 admin/member 双层                   |
 | T9  | 门禁、审查与交付    | 全范围                                                                                                                                                                                 | verify 六步 + check-scope；两轮独立审查；三处状态同步                       |
 
-回滚点：base `ef7cb4d`；每个任务一个提交，可单独 `git revert`。
+回滚点：base `4fd7096`；实现提交 `de6f7fa` 可单独 `git revert`。
 
 ## 5. 范围声明（`.gatescope.json` allow）
 
@@ -128,6 +128,7 @@
 
 - 增列 `src/cross-group-acl.ts`（`isAdminHome` 参数必须改名）；
 - 增列 `src/agent-builder.ts`、`src/memory-service.ts`（同样是角色判断/Host 资源门）；
+- 增列 `src/script-task-policy.ts`（脚本任务提示语“管理员宿主机工作区”改为 Home 工作区）；
 - `src/routes/mcp-servers.ts` 与 MCP 可见性代码**不改**（THESIS-37），但因 `src/routes/**` 是 glob，实际 diff 不含该文件；
 - 前端 `web/src/**` 不改（THESIS-21）。
 
@@ -161,4 +162,5 @@
    - 历史 schema fixture（`channel-mounts-db`、`db-upgrade-safety`、`schema-v46-migration`、`schema-v69-agent-effort`）模拟旧库列默认值与旧行；
    - MCP 可见性契约（`mcp-runtime-secret-boundary`、`routes-mcp-server-isolation`、`routes-mcp-server-secrets`、`routes-agent-profiles` 的 `x-test-role` mock）待 THESIS-37 删除；
    - 前端角色契约（`frontend-agent-product-contract`、`agent-profiles-page-dom`）待 THESIS-21 删除。
+   - `tests/thesis-20-drop-role-backend.test.ts` 的历史行回读用例（插入旧角色值、断言读回 admin）。
 8. **提示语**：容器镜像、供应商失败与中断提示不再让用户“联系管理员”，改为直接给出可执行操作。

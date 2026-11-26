@@ -2,7 +2,7 @@
 
 import type { Context } from 'hono';
 import { WebSocket } from 'ws';
-import { FollowUpActionResult, RegisteredGroup, UserRole } from './types.js';
+import { FollowUpActionResult, RegisteredGroup } from './types.js';
 import {
   GroupQueue,
   type IpcDeliveryReceipt,

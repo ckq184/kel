@@ -1,7 +1,7 @@
 import type { RegisteredGroup, ScheduledTask } from './types.js';
 
 export const SCRIPT_TASK_HOST_REQUIRED_ERROR =
-  '脚本任务只能在管理员宿主机工作区中以 host 模式执行。';
+  '脚本任务只能在 Home 工作区中以 host 模式执行。';
 
 export function getScriptTaskHostExecutionError(
   task: Pick<

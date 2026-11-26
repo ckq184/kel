@@ -1523,7 +1523,7 @@ configRoutes.put('/host-integration', authMiddleware, async (c) => {
   });
 });
 
-// ─── External Claude resources (admin only) ─────────────────────────
+// ─── External Claude resources ──────────────────────────────────────
 
 configRoutes.get('/external-resources', authMiddleware, (c) => {
   const effectiveDir = getEffectiveExternalDir();

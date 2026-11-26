@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Variables } from '../web-context.js';
 import { authMiddleware } from '../middleware/auth.js';
+import type { AuthUser } from '../types.js';
 import { logger } from '../logger.js';
 import {
   loadMountAllowlist,
@@ -102,11 +103,21 @@ function listSubdirectories(
 
 // GET /api/browse/directories?path=xxx
 browseRoutes.get('/directories', authMiddleware, (c) => {
+  const authUser = c.get('user') as AuthUser;
   const purpose = c.req.query('purpose');
   if (purpose !== undefined && purpose !== 'mount') {
     return c.json(
       { error: 'Unsupported browse purpose', code: 'INVALID_BROWSE_PURPOSE' },
       400,
+    );
+  }
+  if (purpose === 'mount' && authUser.status !== 'active') {
+    return c.json(
+      {
+        error: 'Only an active account can browse host mount paths',
+        code: 'HOST_MOUNT_ACCOUNT_INACTIVE',
+      },
+      403,
     );
   }
   const requestedPath = c.req.query('path');
@@ -280,11 +291,21 @@ browseRoutes.get('/directories', authMiddleware, (c) => {
 
 // POST /api/browse/directories — create a new folder
 browseRoutes.post('/directories', authMiddleware, async (c) => {
+  const authUser = c.get('user') as AuthUser;
   const purpose = c.req.query('purpose');
   if (purpose !== undefined && purpose !== 'mount') {
     return c.json(
       { error: 'Unsupported browse purpose', code: 'INVALID_BROWSE_PURPOSE' },
       400,
+    );
+  }
+  if (purpose === 'mount' && authUser.status !== 'active') {
+    return c.json(
+      {
+        error: 'Only an active account can create host mount paths',
+        code: 'HOST_MOUNT_ACCOUNT_INACTIVE',
+      },
+      403,
     );
   }
   const body = await c.req.json().catch(() => ({}));

@@ -173,7 +173,7 @@ describe('system settings capability boundaries', () => {
     const now = new Date().toISOString();
     for (const [id, role] of [
       ['settings-admin-owner', 'admin'],
-      ['settings-member-owner', 'member'],
+      ['settings-member-owner', 'admin'],
     ] as const) {
       db.createUser({
         id,

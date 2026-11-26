@@ -41,7 +41,7 @@ export interface WorkspaceRuntimeQuiesceTarget {
 
 /**
  * Resolve security-sensitive policy at execution time. Persisted profile data
- * is never sufficient authorization: role downgrades must take effect without
+ * is never sufficient authorization: owner status changes must take effect without
  * rewriting every historical profile.
  */
 export function resolveEffectiveAgentProfile(
