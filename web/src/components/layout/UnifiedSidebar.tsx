@@ -1,13 +1,12 @@
 import { useState, useMemo, useEffect } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { PanelLeftClose, Bug, LogOut, Plus, UserCog } from 'lucide-react';
+import { PanelLeftClose, LogOut, Plus, UserCog } from 'lucide-react';
 import { useChatStore } from '../../stores/chat';
 import { useAuthStore } from '../../stores/auth';
 import { useGroupsStore } from '../../stores/groups';
 import { useClearWorkspace } from '../../hooks/useClearWorkspace';
 import { ConfirmDialog } from '@/components/common';
 import { EmojiAvatar } from '../common/EmojiAvatar';
-import { BugReportDialog } from '../common/BugReportDialog';
 import {
   Tooltip,
   TooltipContent,
@@ -54,7 +53,6 @@ export function UnifiedSidebar({
 
   const user = useAuthStore((s) => s.user);
   const appearance = useAuthStore((s) => s.appearance);
-  const [showBugReport, setShowBugReport] = useState(false);
   const userInitial = (user?.display_name ||
     user?.username ||
     '?')[0].toUpperCase();
@@ -285,19 +283,6 @@ export function UnifiedSidebar({
           {/* Spacer */}
           <div className="flex-1" />
 
-          {/* Bug report */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                onClick={() => setShowBugReport(true)}
-                className="w-10 h-10 rounded-lg flex items-center justify-center text-muted-foreground hover:text-warning hover:bg-warning-bg/60 transition-colors"
-              >
-                <Bug className="w-4 h-4" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right">报告问题</TooltipContent>
-          </Tooltip>
-
           {/* User avatar popover */}
           <Popover>
             <PopoverTrigger asChild>
@@ -409,10 +394,6 @@ export function UnifiedSidebar({
         </div>
       </div>
 
-      <BugReportDialog
-        open={showBugReport}
-        onClose={() => setShowBugReport(false)}
-      />
       <CreateContainerDialog
         open={createOpen}
         onClose={() => setCreateOpen(false)}

@@ -29,7 +29,6 @@
 | `/api/memory`                      | `src/routes/memory.ts`           | Workspace Memory v2          |
 | `/api/skills`                      | `src/routes/skills.ts`           | 用户 Skills                  |
 | `/api/mcp-servers`                 | `src/routes/mcp-servers.ts`      | 用户/系统 MCP                |
-| `/api/bug-report`                  | `src/routes/bug-report.ts`       | 脱敏问题报告                 |
 | `/api/browse`                      | `src/routes/browse.ts`           | Host 目录选择                |
 | `/api`                             | `src/routes/monitor.ts`          | 健康、状态和 Docker 构建     |
 | `/api/messages`、`/api/follow-ups` | `src/web.ts`                     | 消息发送和 Follow-up         |
@@ -490,7 +489,7 @@ Web 和 Runtime 不再把它们当作第二个可写真相源。
 完整产品边界与交互约定见
 [Workspace Memory v2](workspace-memory-v2.md)。
 
-## 监控与问题报告
+## 监控
 
 监控：
 
@@ -515,12 +514,6 @@ worker 收口：文本按入队时的 payload 重建后重投，图片、文件�
 安全重建，转为 `failed`；payload 校验失败或创建超过 1 小时的行同样转为 `failed`，渠道
 暂不可用时保留到下一轮。worker 不处理 `uncertain` 行，也不处理被 `uncertain` 围栏的
 Turn（见 [ISSUE-14](issues/ISSUE-14-channel-outbox-worker.md)）。
-
-问题报告：
-
-- `GET /api/bug-report/capabilities`
-- `POST /api/bug-report/generate`
-- `POST /api/bug-report/submit`
 
 目录浏览：
 
