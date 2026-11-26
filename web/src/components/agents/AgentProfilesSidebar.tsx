@@ -7,7 +7,7 @@ import { useAgentProfilesStore } from '@/stores/agent-profiles';
 // ISSUE-12 波 5 单元 5.9：档案侧栏（标题/刷新/新建/草稿项/列表与错误重试）
 // 自 web/src/pages/AgentProfilesPage.tsx 原文搬运（原 669-765）。
 // JSX 逐字节一致；计划偏差留痕（同 5.5）：handleSelectProfile/
-// handleOpenCreatePanel/handleRefreshProfiles 留守页面经同名 props 注入。
+// handleCreateNewAgent/handleRefreshProfiles 留守页面经同名 props 注入。
 
 type CustomProfileRow = ReturnType<
   typeof useAgentProfilesStore.getState
@@ -17,13 +17,12 @@ export interface AgentProfilesSidebarProps {
   customProfiles: CustomProfileRow[];
   loading: boolean;
   profilesError: string | null;
-  createPanelOpen: boolean;
   draftMode: boolean;
   setDraftMode: Dispatch<SetStateAction<boolean>>;
   selectedId: string | null;
   name: string;
   handleRefreshProfiles: () => void;
-  handleOpenCreatePanel: () => void;
+  handleCreateNewAgent: () => void;
   handleSelectProfile: (profileId: string) => void;
 }
 
@@ -32,13 +31,12 @@ export function AgentProfilesSidebar(props: AgentProfilesSidebarProps) {
     customProfiles,
     loading,
     profilesError,
-    createPanelOpen,
     draftMode,
     setDraftMode,
     selectedId,
     name,
     handleRefreshProfiles,
-    handleOpenCreatePanel,
+    handleCreateNewAgent,
     handleSelectProfile,
   } = props;
 
@@ -63,13 +61,7 @@ export function AgentProfilesSidebar(props: AgentProfilesSidebarProps) {
         >
           <RefreshCw className={loading ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} />
         </Button>
-        <Button
-          size="sm"
-          variant={createPanelOpen ? 'secondary' : 'default'}
-          onClick={handleOpenCreatePanel}
-          aria-expanded={createPanelOpen}
-          aria-current={createPanelOpen ? 'page' : undefined}
-        >
+        <Button size="sm" onClick={handleCreateNewAgent}>
           <Plus className="h-4 w-4" />
           新建
         </Button>
@@ -108,7 +100,7 @@ export function AgentProfilesSidebar(props: AgentProfilesSidebarProps) {
           </div>
         ) : (
           customProfiles.map((profile) => {
-            const active = profile.id === selectedId && !createPanelOpen;
+            const active = profile.id === selectedId;
             return (
               <button
                 key={profile.id}

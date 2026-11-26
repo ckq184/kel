@@ -323,12 +323,6 @@ export const AgentProfileRuntimePolicySchema = z
 
 const AgentPromptTextSchema = z.string().max(20000);
 const AgentPromptModeSchema = z.enum(['append', 'replace']);
-const AgentPromptSectionsSchema = z.object({
-  identity_prompt: AgentPromptTextSchema,
-  soul_prompt: AgentPromptTextSchema,
-  agents_prompt: AgentPromptTextSchema,
-  tools_prompt: AgentPromptTextSchema,
-});
 
 function validatePromptModeCompatibility(
   value: {
@@ -393,38 +387,6 @@ export const AgentProfilePatchSchema = z
     runtime_policy: AgentProfileRuntimePolicySchema.optional(),
   })
   .superRefine(validatePromptModeCompatibility);
-
-export const AgentProfileGenerateSchema = z.object({
-  description: z.string().trim().min(1).max(4000),
-});
-
-export const AgentProfileRefinePromptSchema = z
-  .object({
-    message: z.string().trim().min(1).max(4000),
-    section: z.enum(['identity', 'soul', 'agents', 'tools']).optional(),
-    current_prompts: AgentPromptSectionsSchema.optional(),
-    /** @deprecated Legacy all-in-one prompt, interpreted as AGENTS. */
-    current_prompt: AgentPromptTextSchema.optional(),
-    history: z
-      .array(
-        z.object({
-          role: z.enum(['user', 'assistant']),
-          content: z.string().trim().min(1).max(4000),
-        }),
-      )
-      .max(12)
-      .optional()
-      .default([]),
-  })
-  .superRefine((value, ctx) => {
-    if (!value.current_prompts && value.current_prompt === undefined) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['current_prompts'],
-        message: 'current_prompts or current_prompt is required',
-      });
-    }
-  });
 
 const WorkspaceMemoryKindSchema = z.enum([
   'fact',

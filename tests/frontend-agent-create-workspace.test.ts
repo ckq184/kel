@@ -2,100 +2,67 @@ import { describe, expect, test } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const readAgentProfilesPage = () =>
-  fs.readFileSync(
-    path.join(process.cwd(), 'web/src/pages/AgentProfilesPage.tsx'),
-    'utf8',
-  );
+const root = process.cwd();
+const read = (relativePath: string) =>
+  fs.readFileSync(path.join(root, relativePath), 'utf8');
+const exists = (relativePath: string) =>
+  fs.existsSync(path.join(root, relativePath));
 
 describe('Agent creation workspace', () => {
-  test('opens creation in the main workspace instead of a compact sidebar panel', () => {
-    // ISSUE-12 波 5 单元 5.5：新建面板 section 已迁
-    // web/src/components/agents/AgentCreatePanel.tsx（原文搬运），锚随体迁
-    // ——面板内容断言改读组件文件，aside/main 结构断言仍读页面。
-    const page = readAgentProfilesPage();
-    // ISSUE-12 波 5 单元 5.9：aside 侧栏已迁
-    // web/src/components/agents/AgentProfilesSidebar.tsx（原文搬运），
-    // aside 断言改读组件文件；main 结构断言仍读页面。
-    const aside = fs.readFileSync(
-      path.join(
-        process.cwd(),
-        'web/src/components/agents/AgentProfilesSidebar.tsx',
-      ),
-      'utf8',
-    );
+  test('opens a blank draft directly in the main workspace', () => {
+    // THESIS-25：AI 一句话生成入口下线后，新建不再经过描述面板，
+    // 侧栏与页面都直接进入空白草稿编辑。
+    const page = read('web/src/pages/AgentProfilesPage.tsx');
+    const aside = read('web/src/components/agents/AgentProfilesSidebar.tsx');
     const main = page.slice(page.indexOf('<main'));
-    const createPanel = fs.readFileSync(
-      path.join(
-        process.cwd(),
-        'web/src/components/agents/AgentCreatePanel.tsx',
-      ),
-      'utf8',
-    );
 
-    expect(aside).toContain('onClick={handleOpenCreatePanel}');
+    expect(aside).toContain('onClick={handleCreateNewAgent}');
     expect(aside).not.toContain('new-agent-description');
     expect(aside).not.toContain('<Textarea');
-    expect(main).toContain('{createPanelOpen && !draftMode ? (');
-    expect(main).toContain('<AgentCreatePanel');
-    expect(createPanel).toContain('id="create-agent-title"');
-    expect(createPanel).toContain('id="new-agent-description"');
-    expect(createPanel).toContain('AI 生成配置');
-    expect(createPanel).toContain('空白创建');
+    expect(page).not.toContain('AgentCreatePanel');
+    expect(exists('web/src/components/agents/AgentCreatePanel.tsx')).toBe(
+      false,
+    );
+    expect(main).not.toContain('new-agent-description');
+    expect(page).toContain('const handleCreateNewAgent = () => {');
+    expect(page).toContain('if (!confirmDiscardEditorChanges()) return;');
+    expect(page).toContain('beginBlankDraft();');
   });
 
-  test('keeps the large creation workspace labelled, responsive, and keyboard accessible', () => {
-    // ISSUE-12 波 5 单元 5.5：同上，锚随体迁改读组件文件，断言文本不变。
-    const createPanel = fs.readFileSync(
-      path.join(
-        process.cwd(),
-        'web/src/components/agents/AgentCreatePanel.tsx',
-      ),
-      'utf8',
-    );
+  test('blank draft resets every editable part before entering draft mode', () => {
+    const page = read('web/src/pages/AgentProfilesPage.tsx');
+    const start = page.indexOf('const beginBlankDraft = () => {');
+    const begin = page.slice(start, page.indexOf('useEffect(() => {', start));
 
-    expect(createPanel).toContain('aria-labelledby="create-agent-title"');
-    expect(createPanel).toContain('htmlFor="new-agent-description"');
-    expect(createPanel).toContain(
-      'aria-describedby="new-agent-description-help"',
-    );
-    expect(createPanel).toContain('min-h-[180px]');
-    expect(createPanel).toContain('sm:flex-row');
-    expect(createPanel).toContain('focus-visible:ring-2');
+    expect(begin).toContain('setDraftMode(true)');
+    expect(begin).toContain('setSelectedId(null)');
+    expect(begin).toContain("identity_prompt: ''");
+    expect(begin).toContain("soul_prompt: ''");
+    expect(begin).toContain("agents_prompt: ''");
+    expect(begin).toContain("tools_prompt: ''");
+    expect(begin).toContain('applyRuntimePolicyToForm(DEFAULT_RUNTIME_POLICY)');
+    expect(begin).not.toContain('generateProfileDraft');
   });
 
-  test('routes create links to the same main-workspace entry flow', () => {
-    // ISSUE-12 波 5 单元 5.1：?create=1 路由效应已随
-    // useUnsavedNavigationGuard hook 迁 web/src/hooks/useUnsavedNavigationGuard.ts
-    // （原文搬运），锚随体迁、切片标记与断言文本不变。
-    const page = fs.readFileSync(
-      path.join(process.cwd(), 'web/src/hooks/useUnsavedNavigationGuard.ts'),
-      'utf8',
-    );
-    const createRouteEffect = page.slice(
-      page.indexOf("if (searchParams.get('create') !== '1') return;"),
-      page.indexOf("if (searchParams.get('create') !== '1') return;") + 450,
+  test('?create=1 routes to the same blank-draft entry flow', () => {
+    // THESIS-25：?create=1 不再打开描述面板，而是请求空白草稿。
+    const guard = read('web/src/hooks/useUnsavedNavigationGuard.ts');
+    const createRouteEffect = guard.slice(
+      guard.indexOf("if (searchParams.get('create') !== '1') return;"),
     );
 
-    expect(createRouteEffect).toContain('setDraftMode(false)');
-    expect(createRouteEffect).toContain('setCreatePanelOpen(true)');
-    expect(createRouteEffect).not.toContain('setCurrentPrompts');
+    expect(createRouteEffect).toContain('requestBlankDraft()');
+    expect(createRouteEffect).not.toContain('setCreatePanelOpen');
   });
 
-  test('protects typed creation intent without warning when the primary action consumes it', () => {
-    const page = readAgentProfilesPage();
-    const generateHandler = page.slice(
-      page.indexOf('const handleGenerateDraft = async () => {'),
-      page.indexOf('const handleBlankDraft = () => {'),
-    );
+  test('manual four-part prompt editing remains available', () => {
+    const page = read('web/src/pages/AgentProfilesPage.tsx');
 
-    expect(page).toContain(
-      'createPanelOpen && !draftMode && createDescription.trim().length > 0',
+    expect(page).toContain('<AgentPromptEditor');
+    expect(page).toContain('value={currentPrompts}');
+    expect(page).toContain('onChange={setCurrentPrompts}');
+    expect(exists('web/src/components/agents/AgentPromptEditor.tsx')).toBe(
+      true,
     );
-    expect(page).toContain(
-      'const hasUnsavedChanges = editorUnsavedChanges || createDirty',
-    );
-    expect(generateHandler).toContain('confirmDiscardEditorChanges()');
-    expect(generateHandler).not.toContain('confirmDiscardUnsavedChanges()');
   });
 });

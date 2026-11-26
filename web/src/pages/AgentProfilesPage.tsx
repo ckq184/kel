@@ -2,8 +2,8 @@
  * 智能体档案管理页（Agent Builder 的 Web 端，路由 /agent-profiles）。
  *
  * 结构：左侧档案列表 + 右侧编辑器；`?agent=<id>` 查询参数同步选中项。
- * 编辑器分块：四段提示词（identity/soul/agents/tools，支持 AI 助手生成与
- * 版本历史回滚）、运行时策略（reasoning effort / context source / 技能与
+ * 编辑器分块：四段提示词（identity/soul/agents/tools，支持版本历史回滚）、
+ * 运行时策略（reasoning effort / context source / 技能与
  * MCP 引用）、生效能力预览（EffectiveCapabilitiesPreview）与治理区
  * （AgentGovernanceSection）。仅自定义档案可编辑（getCustomAgentProfiles，
  * 主 CKQClaw 不可自改）；dirty 状态经 useBlocker + beforeunload 拦截
@@ -24,12 +24,10 @@ import {
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { AgentPromptAssistant } from '../components/agents/AgentPromptAssistant';
 import { AgentPromptEditor } from '../components/agents/AgentPromptEditor';
 import { AgentPromptVersionHistory } from '../components/agents/AgentPromptVersionHistory';
 import { EffectiveCapabilitiesPreview } from '../components/agents/EffectiveCapabilitiesPreview';
 import { AgentGovernanceSection } from '../components/agents/AgentGovernanceSection';
-import { AgentCreatePanel } from '../components/agents/AgentCreatePanel';
 import { AgentDraftSummary } from '../components/agents/AgentDraftSummary';
 import { AgentProfilesSidebar } from '../components/agents/AgentProfilesSidebar';
 import { AgentDeleteMigrationDialog } from '../components/agents/AgentDeleteMigrationDialog';
@@ -77,7 +75,6 @@ export function AgentProfilesPage() {
     governanceByProfile,
     governanceLoading,
     governanceErrors,
-    generateProfileDraft,
     createProfile,
     updateProfile,
     uploadProfileAvatar,
@@ -92,8 +89,7 @@ export function AgentProfilesPage() {
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [generatingDraft, setGeneratingDraft] = useState(false);
-  const [createDescription, setCreateDescription] = useState('');
+  const [blankDraftRequested, setBlankDraftRequested] = useState(false);
   const [movingWorkspaceJid, setMovingWorkspaceJid] = useState<string | null>(
     null,
   );
@@ -102,7 +98,6 @@ export function AgentProfilesPage() {
   >({});
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteTargetId, setDeleteTargetId] = useState('');
-  const [createPanelOpen, setCreatePanelOpen] = useState(false);
   const [draftStep, setDraftStep] = useState(1);
   const isAdmin = useAuthStore((state) => state.user?.role === 'admin');
   const mainAppearance = useAuthStore((state) => state.appearance);
@@ -167,8 +162,7 @@ export function AgentProfilesPage() {
   const { setAllowedSearchParams } = useUnsavedNavigationGuard({
     getHasUnsavedChanges: () => hasUnsavedChanges,
     searchParams,
-    setDraftMode,
-    setCreatePanelOpen,
+    requestBlankDraft: () => setBlankDraftRequested(true),
   });
 
   useEffect(() => {
@@ -232,7 +226,7 @@ export function AgentProfilesPage() {
   }, [location.hash, selected]);
 
   // ISSUE-12 波 5 单元 5.4：表单状态簇（name/四段提示词/promptMode/
-  // modelConfigId/assistantSection/头像四态）、currentPrompts、回填效应与
+  // modelConfigId/头像四态）、currentPrompts、回填效应与
   // dirty/draftDirty 已迁 ../hooks/useAgentProfileForm.ts（原文搬运；
   // 回填效应依赖数组 [draftMode, selected?.id] 刻意不补全，逐字保留），
   // 同名解构零调用点改动。
@@ -243,8 +237,6 @@ export function AgentProfilesPage() {
     setPromptMode,
     modelConfigId,
     setModelConfigId,
-    assistantSection,
-    setAssistantSection,
     avatarEmoji,
     setAvatarEmoji,
     avatarColor,
@@ -273,10 +265,8 @@ export function AgentProfilesPage() {
     });
   }, [draftMode, loadProfileGovernance, selected?.id]);
 
-  const createDirty =
-    createPanelOpen && !draftMode && createDescription.trim().length > 0;
   const editorUnsavedChanges = dirty || draftDirty;
-  const hasUnsavedChanges = editorUnsavedChanges || createDirty;
+  const hasUnsavedChanges = editorUnsavedChanges;
 
   const governance = selected ? governanceByProfile[selected.id] : undefined;
   const governanceBusy = selected ? !!governanceLoading[selected.id] : false;
@@ -320,20 +310,12 @@ export function AgentProfilesPage() {
 
   const handleSelectProfile = (profileId: string) => {
     if (profileId === selectedId && !draftMode) {
-      setCreatePanelOpen(false);
       return;
     }
     if (!confirmDiscardUnsavedChanges()) return;
     setDraftMode(false);
-    setCreatePanelOpen(false);
     setSelectedId(profileId);
     setAllowedSearchParams({ agent: profileId }, { replace: true });
-  };
-
-  const handleOpenCreatePanel = () => {
-    if (draftMode && !confirmDiscardUnsavedChanges()) return;
-    setDraftMode(false);
-    setCreatePanelOpen(true);
   };
 
   const handleRefreshProfiles = () => {
@@ -341,43 +323,7 @@ export function AgentProfilesPage() {
     void loadProfiles();
   };
 
-  const handleGenerateDraft = async () => {
-    const description = createDescription.trim();
-    if (!description) return;
-    // The creation description is consumed by this action, not discarded.
-    if (!confirmDiscardEditorChanges()) return;
-    setGeneratingDraft(true);
-    try {
-      const draft = await generateProfileDraft(description);
-      setDraftMode(true);
-      setDraftStep(1);
-      setSelectedId(null);
-      setName(draft.name);
-      setCurrentPrompts({
-        identity_prompt: draft.identity_prompt,
-        soul_prompt: draft.soul_prompt,
-        agents_prompt: draft.agents_prompt,
-        tools_prompt: draft.tools_prompt,
-      });
-      setPromptMode(draft.prompt_mode);
-      setModelConfigId('inherit');
-      setAvatarEmoji(null);
-      setAvatarColor(null);
-      setAvatarUrl(null);
-      setAvatarStyleOpen(false);
-      applyRuntimePolicyToForm(DEFAULT_RUNTIME_POLICY);
-      setCreateDescription('');
-      setCreatePanelOpen(false);
-      toast.success('已生成智能体配置');
-    } catch (err) {
-      toast.error(extractErrorMessage(err, '生成失败'));
-    } finally {
-      setGeneratingDraft(false);
-    }
-  };
-
-  const handleBlankDraft = () => {
-    if (!confirmDiscardEditorChanges()) return;
+  const beginBlankDraft = () => {
     setDraftMode(true);
     setDraftStep(1);
     setSelectedId(null);
@@ -393,16 +339,25 @@ export function AgentProfilesPage() {
     setAvatarEmoji(null);
     setAvatarColor(null);
     setAvatarUrl(null);
-    setCreateDescription('');
     setAvatarStyleOpen(false);
     applyRuntimePolicyToForm(DEFAULT_RUNTIME_POLICY);
-    setCreatePanelOpen(false);
+  };
+
+  useEffect(() => {
+    if (!blankDraftRequested) return;
+    setBlankDraftRequested(false);
+    if (!confirmDiscardEditorChanges()) return;
+    beginBlankDraft();
+  }, [blankDraftRequested]);
+
+  const handleCreateNewAgent = () => {
+    if (!confirmDiscardEditorChanges()) return;
+    beginBlankDraft();
   };
 
   const handleDiscardDraft = () => {
     if (draftDirty && !confirm('确认放弃当前智能体草稿？')) return;
     setDraftMode(false);
-    setCreatePanelOpen(true);
     const fallback = customProfiles[0];
     setSelectedId(fallback?.id ?? null);
   };
@@ -421,9 +376,7 @@ export function AgentProfilesPage() {
         model_config_id: modelConfigId === 'inherit' ? null : modelConfigId,
         runtime_policy: currentRuntimePolicy,
       });
-      setCreateDescription('');
       setDraftMode(false);
-      setCreatePanelOpen(false);
       setSelectedId(profile.id);
       setAllowedSearchParams({ agent: profile.id }, { replace: true });
       toast.success(
@@ -648,27 +601,17 @@ export function AgentProfilesPage() {
         customProfiles={customProfiles}
         loading={loading}
         profilesError={profilesError}
-        createPanelOpen={createPanelOpen}
         draftMode={draftMode}
         setDraftMode={setDraftMode}
         selectedId={selectedId}
         name={name}
         handleRefreshProfiles={handleRefreshProfiles}
-        handleOpenCreatePanel={handleOpenCreatePanel}
+        handleCreateNewAgent={handleCreateNewAgent}
         handleSelectProfile={handleSelectProfile}
       />
       <main className="min-w-0 flex-1">
         <div className="mx-auto max-w-5xl p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">
-          {createPanelOpen && !draftMode ? (
-            <AgentCreatePanel
-              createDescription={createDescription}
-              setCreateDescription={setCreateDescription}
-              generatingDraft={generatingDraft}
-              onClose={() => setCreatePanelOpen(false)}
-              handleGenerateDraft={handleGenerateDraft}
-              handleBlankDraft={handleBlankDraft}
-            />
-          ) : !selected && !draftMode ? (
+          {!selected && !draftMode ? (
             <div className="flex min-h-[420px] flex-col items-center justify-center rounded-xl border border-dashed border-border px-6 text-center">
               <div className="grid h-12 w-12 place-items-center rounded-full bg-muted text-muted-foreground">
                 <Bot className="h-5 w-5" />
@@ -847,22 +790,11 @@ export function AgentProfilesPage() {
                     <AgentPromptEditor
                       value={currentPrompts}
                       onChange={setCurrentPrompts}
-                      onOpenAssistant={
-                        draftMode ? undefined : setAssistantSection
-                      }
                     />
                   </div>
 
                   {!draftMode && selected && (
                     <>
-                      <AgentPromptAssistant
-                        key={selected.id}
-                        profileId={selected.id}
-                        agentName={name.trim() || selected.name}
-                        currentPrompts={currentPrompts}
-                        activeSection={assistantSection}
-                        onApply={setCurrentPrompts}
-                      />
                       <AgentPromptVersionHistory
                         profileId={selected.id}
                         currentVersion={selected.version}

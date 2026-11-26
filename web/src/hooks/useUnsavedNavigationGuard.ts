@@ -15,26 +15,19 @@ import { createUnsavedNavigationGuard } from '../utils/unsaved-navigation';
 // （页面该值在 hook 调用点之后才算出，两个回调体内改为惰性取值、deps 数组
 // 相应改 [getHasUnsavedChanges]——阻断判定与 beforeunload 语义逐字节等价，
 // 仅回调重建频率由值变化驱动改为每渲染，useBlocker/useBeforeUnload 行为
-// 无差）；②?create=1 效应的 setDraftMode/setCreatePanelOpen 经参数注入
-// （页面状态声明先于本 hook 调用点，见页面内接线注释）。其余搬运体
-// 逐字节一致。
+// 无差）；②?create=1 效应的 requestBlankDraft 经参数注入（页面状态声明
+// 先于本 hook 调用点，见页面内接线注释）。其余搬运体逐字节一致。
 
 export interface UseUnsavedNavigationGuardInput {
   getHasUnsavedChanges: () => boolean;
   searchParams: URLSearchParams;
-  setDraftMode: (value: boolean) => void;
-  setCreatePanelOpen: (value: boolean) => void;
+  requestBlankDraft: () => void;
 }
 
 export function useUnsavedNavigationGuard(
   input: UseUnsavedNavigationGuardInput,
 ) {
-  const {
-    getHasUnsavedChanges,
-    searchParams,
-    setDraftMode,
-    setCreatePanelOpen,
-  } = input;
+  const { getHasUnsavedChanges, searchParams, requestBlankDraft } = input;
   const location = useLocation();
   const [, setSearchParams] = useSearchParams();
   const navigationGuardRef = useRef(createUnsavedNavigationGuard());
@@ -95,10 +88,9 @@ export function useUnsavedNavigationGuard(
     if (searchParams.get('create') !== '1') return;
     const next = new URLSearchParams(searchParams);
     next.delete('create');
-    setDraftMode(false);
-    setCreatePanelOpen(true);
+    requestBlankDraft();
     setAllowedSearchParams(next, { replace: true });
-  }, [searchParams, setAllowedSearchParams]);
+  }, [searchParams, setAllowedSearchParams, requestBlankDraft]);
 
   return { setAllowedSearchParams };
 }
