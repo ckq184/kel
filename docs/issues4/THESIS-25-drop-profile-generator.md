@@ -2,7 +2,7 @@
 
 | 字段          | 值                                                                                                                                                                                                                                                                                                |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 状态          | 进行中                                                                                                                                                                                                                                                                                            |
+| 状态          | 已完成                                                                                                                                                                                                                                                                                            |
 | 领取人 / 分支 | claude/thesis-25-drop-profile-generator                                                                                                                                                                                                                                                           |
 | 优先级        | P2                                                                                                                                                                                                                                                                                                |
 | 类型          | 裁减（功能下线）                                                                                                                                                                                                                                                                                  |
@@ -52,4 +52,9 @@ Agent 管理页的"AI 助手"（一句话生成四段 Prompt、对已有 Prompt 
 
 ## 交付记录
 
-（待填）
+- **提交**：`43112bf`（立项）、`b2f89bb`（实现）、`824f839`（审查处置），审查记录与交付随本提交（分支 `claude/thesis-25-drop-profile-generator`，基于 main `48903d0`）。
+- **实现**：删除 `src/agent-profile-generator.ts`；删除 `POST /api/agent-profiles/generate`、`POST /api/agent-profiles/:id/refine-prompt` 与三个专属 schema；删除 `AgentPromptAssistant.tsx`、`AgentCreatePanel.tsx`、store 的 `generateProfileDraft`/`refineProfilePrompt` 与三个专属类型；新建入口改为直接进入空白草稿，`?create=1` 经导航守卫请求空白草稿；删除 `AgentPromptEditor` 的“用 AI 优化这一段”与表单 `assistantSection`。保留手写四段 Prompt、Prompt 版本历史、档案增删改、对话式 Agent Builder 与 `sdkQuery` 的其他调用方。
+- **验证**：`npm run verify` 六步全绿（370 文件，3031 通过 / 23 跳过 / 0 失败，30.2s）；`node scripts/check-scope.mjs` 23 个路径全在声明范围内；新增两个 404 用例与源码契约在 base 上先失败、实现后转绿；THESIS-15 可达性契约通过；规格审查通过（零阻塞），质量审查通过（Critical 0 / Major 0 / Minor 5）。
+- **偏差**：删除 `AgentCreatePanel`，并让“新建/`?create=1`”直接进入空白草稿。该面板的描述、示例与双入口都服务于一句话生成，AI 入口下线后保留面板即为空壳；不改变“手写四段 Prompt 保留”的边界。
+- **范围外登记**：`src/agent-profile-prompts.ts` 的 `AGENT_PROMPT_SECTION_MAX_LENGTH`（生成器删除后无生产调用）与 `agentProfilePromptsFromLegacy`（仅测试引用）未清理，`src/schemas.ts` 仍硬编码 `20000`；建议在 THESIS-28 零引用导出清理时处理。
+- **未实机验收**：人工冒烟（新建/编辑/保存四段 Prompt、查看版本历史；聊天里让主 Agent 起草并发布新 Agent）待用户在浏览器执行；本环境未启动服务。
