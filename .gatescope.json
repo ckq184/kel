@@ -1,20 +1,9 @@
 {
-  "task": "THESIS-18 - 裁减遗留死代码清扫（D-S1 ①；合入 main，分支 base 248c7cb，合入前 main 7f21804）",
-  "base": "7f21804",
+  "task": "personal-slim-v1.1 - issues4 方案升 v1.1：只保留管理员一个角色、多用户代码全部裁减（去归属、按用户存储改单一位置不搬迁、MCP 合并为一个作用域、归属列保留不读）；改 THESIS-19 至 33，新增 THESIS-34 至 37，README 重生成并行矩阵；thesis-trim 台账 #12 与 §15 v0.9.2；只改文档",
+  "base": "607d1b6",
   "allow": [
     ".gatescope.json",
-    "docs/thesis-18-dead-code-sweep-plan.md",
-    "docs/issues3/THESIS-18-dead-code-sweep.md",
-    "docs/issues3/README.md",
-    "docs/审查记录.md",
-    "src/runtime-config.ts",
-    "src/auth.ts",
-    "src/db.ts",
-    "container/agent-runner/src/runtime/pi/pi-provider.ts",
-    "container/agent-runner/src/runtime/pi/pi-runtime.ts",
-    "scripts/test-real-model-smoke.ts",
-    "tests/no-duplicate-helpers-contract.test.ts",
-    "tests/pi-subagent-custom-provider.test.ts",
-    "tests/thesis-18-dead-code-sweep.test.ts"
+    "docs/issues4/**",
+    "docs/issues2/task-thesis-trim-plan.md"
   ]
 }

@@ -8,9 +8,9 @@
 | 类型          | 兼容收窄                                                                                                                                                                                                                                                                                                                              |
 | 依赖          | THESIS-20（`src/middleware/auth.ts` 相邻区域）、THESIS-22（`src/runtime-config.ts`、`src/index.ts`）                                                                                                                                                                                                                                  |
 | 阻塞          | 28 至 31                                                                                                                                                                                                                                                                                                                              |
-| 可并行        | ✅ 25、27、32、33。⚠️ 21（`web/src/App.tsx`、`SettingsPage.tsx`）、24（`src/web.ts`）、26（`src/index.ts`、`src/config.ts` 不同区域）。❌ 19、20、22、28 至 31（口径见 [README 第三节](README.md#三并行关系与执行顺序)）                                                                                                              |
+| 可并行        | 见 [README 3.1](README.md#31-并行矩阵) 第 23 行                                                                                                                                                                                                                                                                                       |
 | 预计改动路径  | `src/auth.ts`、`src/config.ts`、`src/middleware/auth.ts`、`src/web.ts`、`src/index.ts`（:634 一带）、`src/schemas.ts`、`src/routes/{config,groups,memory,monitor}.ts`、`src/runtime-config.ts`（pre-V5 段）、`web/src/App.tsx`、`web/src/pages/SettingsPage.tsx`、`tests/**`、`web/tests/**`、`CLAUDE.md`、`docs/API.md`、`README.md` |
-| 需用户决策    | **是**：D-K1、D-K2                                                                                                                                                                                                                                                                                                                    |
+| 需用户决策    | **是**：D-K1（D-K2 已定 ①）                                                                                                                                                                                                                                                                                                           |
 | 来源          | 方案 P3、§5                                                                                                                                                                                                                                                                                                                           |
 
 ## 目标
@@ -42,7 +42,7 @@
 | #    | 问题              | 选项                                                                                                                             | 建议                                  |
 | ---- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
 | D-K1 | 环境变量别名      | ① 每组只留一个正式名：`CKQCLAW_ASSISTANT_NAME`、`CONTAINER_IMAGE`、`CKQCLAW_WEB_URL`，旧名删除；② 只删 cookie 与设置键，别名保留 | ①（前提：用户确认自己的部署没用旧名） |
-| D-K2 | pre-V5 供应商配置 | ① 删迁移代码，读到旧版本配置时记错误日志并按"未配置"处理；② 保留                                                                 | ①                                     |
+| D-K2 | pre-V5 供应商配置 | **已定 ①**（v1.1，2026-11-25）：删迁移代码，读到旧版本配置时记错误日志并按"未配置"处理。本机供应商配置已核实为 V5                | —                                     |
 
 ## 执行前核实
 
