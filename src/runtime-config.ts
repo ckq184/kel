@@ -70,7 +70,6 @@ const CLAUDE_CUSTOM_ENV_FILE = path.join(
   CLAUDE_CONFIG_DIR,
   'claude-custom-env.json',
 );
-const FEISHU_CONFIG_FILE = path.join(CLAUDE_CONFIG_DIR, 'feishu-provider.json');
 const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const RESERVED_CLAUDE_ENV_KEYS = new Set([
   'CLAUDE_CODE_OAUTH_TOKEN',
@@ -256,15 +255,6 @@ interface ClaudeThirdPartyProfile {
   customEnv: Record<string, string>;
 }
 
-interface FeishuProviderConfig {
-  appId: string;
-  appSecret: string;
-  enabled?: boolean;
-  updatedAt: string | null;
-}
-
-type FeishuConfigSource = 'runtime' | 'env' | 'none';
-
 interface SecretPayload {
   anthropicAuthToken: string;
   anthropicApiKey: string;
@@ -276,20 +266,6 @@ interface EncryptedSecrets {
   iv: string;
   tag: string;
   data: string;
-}
-
-interface FeishuSecretPayload {
-  appSecret: string;
-}
-
-interface StoredFeishuProviderConfigV1 {
-  version: 1;
-  appId: string;
-  enabled?: boolean;
-  updatedAt: string;
-  ownerOpenId?: string;
-  autoIsolateContext?: boolean;
-  secret: EncryptedSecrets;
 }
 
 interface StoredClaudeProviderConfigV2 {
@@ -498,18 +474,6 @@ function normalizeContextWindow(
     return input as DeclaredContextWindow;
   }
   throw new Error('Invalid field: contextWindow');
-}
-
-function normalizeFeishuAppId(input: unknown): string {
-  if (typeof input !== 'string') {
-    throw new Error('Invalid field: appId');
-  }
-  const value = input.trim();
-  if (!value) return '';
-  if (value.length > MAX_FIELD_LENGTH) {
-    throw new Error('Field too long: appId');
-  }
-  return value;
 }
 
 function normalizeProfileName(input: unknown): string {
@@ -1647,56 +1611,6 @@ function defaultsFromEnv(): ClaudeProviderConfig {
   }
 }
 
-function readStoredFeishuConfig(): FeishuProviderConfig | null {
-  if (!fs.existsSync(FEISHU_CONFIG_FILE)) return null;
-  const content = fs.readFileSync(FEISHU_CONFIG_FILE, 'utf-8');
-  const parsed = JSON.parse(content) as Record<string, unknown>;
-  if (parsed.version !== 1) return null;
-
-  const stored = parsed as unknown as StoredFeishuProviderConfigV1;
-  const secret = decryptChannelSecret<FeishuSecretPayload>(stored.secret);
-  return {
-    appId: normalizeFeishuAppId(stored.appId ?? ''),
-    appSecret: secret.appSecret,
-    enabled: stored.enabled,
-    updatedAt: stored.updatedAt || null,
-  };
-}
-
-function defaultsFeishuFromEnv(): FeishuProviderConfig {
-  const raw = {
-    appId: process.env.FEISHU_APP_ID || '',
-    appSecret: process.env.FEISHU_APP_SECRET || '',
-  };
-  return {
-    appId: raw.appId.trim(),
-    appSecret: raw.appSecret.trim(),
-    updatedAt: null,
-  };
-}
-
-export function getFeishuProviderConfigWithSource(): {
-  config: FeishuProviderConfig;
-  source: FeishuConfigSource;
-} {
-  try {
-    const stored = readStoredFeishuConfig();
-    if (stored) return { config: stored, source: 'runtime' };
-  } catch (err) {
-    logger.warn(
-      { err },
-      'Failed to read runtime Feishu config, falling back to env',
-    );
-  }
-
-  const fromEnv = defaultsFeishuFromEnv();
-  if (fromEnv.appId || fromEnv.appSecret) {
-    return { config: fromEnv, source: 'env' };
-  }
-
-  return { config: fromEnv, source: 'none' };
-}
-
 function maskSecret(value: string): string | null {
   if (!value) return null;
   if (value.length <= 8)
@@ -2190,260 +2104,6 @@ export function saveAppearanceConfig(
     aiAvatarUrl: config.aiAvatarUrl,
     aiAvatarMode: config.aiAvatarMode,
   };
-}
-
-// ─── Per-user IM config (AES-256-GCM encrypted) ─────────────────
-
-const USER_IM_CONFIG_DIR = path.join(DATA_DIR, 'config', 'user-im');
-
-interface UserFeishuConfig {
-  appId: string;
-  appSecret: string;
-  enabled?: boolean;
-  updatedAt: string | null;
-  ownerOpenId?: string; // auto-detected from first DM; used as sender_allowlist seed for new groups
-  autoIsolateContext?: boolean; // auto-create isolated conversation for each new IM chat
-}
-
-interface UserQQConfig {
-  appId: string;
-  appSecret: string;
-  enabled?: boolean;
-  updatedAt: string | null;
-}
-
-interface StoredQQProviderConfigV1 {
-  version: 1;
-  appId: string;
-  enabled?: boolean;
-  updatedAt: string;
-  secret: EncryptedSecrets;
-}
-
-interface QQSecretPayload {
-  appSecret: string;
-}
-
-function userImDir(userId: string): string {
-  if (!/^[a-zA-Z0-9_-]+$/.test(userId)) {
-    throw new Error('Invalid userId');
-  }
-  return path.join(USER_IM_CONFIG_DIR, userId);
-}
-
-export function getUserFeishuConfig(userId: string): UserFeishuConfig | null {
-  const filePath = path.join(userImDir(userId), 'feishu.json');
-  try {
-    if (!fs.existsSync(filePath)) return null;
-    const content = fs.readFileSync(filePath, 'utf-8');
-    const parsed = JSON.parse(content) as Record<string, unknown>;
-    if (parsed.version !== 1) return null;
-
-    const stored = parsed as unknown as StoredFeishuProviderConfigV1;
-    const secret = decryptChannelSecret<FeishuSecretPayload>(stored.secret);
-    return {
-      appId: normalizeFeishuAppId(stored.appId ?? ''),
-      appSecret: secret.appSecret,
-      enabled: stored.enabled,
-      updatedAt: stored.updatedAt || null,
-      ownerOpenId: stored.ownerOpenId || undefined,
-      autoIsolateContext: stored.autoIsolateContext ?? false,
-    };
-  } catch (err) {
-    logger.warn({ err, userId }, 'Failed to read user Feishu config');
-    return null;
-  }
-}
-
-export function saveUserFeishuConfig(
-  userId: string,
-  next: Omit<UserFeishuConfig, 'updatedAt'>,
-): UserFeishuConfig {
-  const normalized: UserFeishuConfig = {
-    appId: normalizeFeishuAppId(next.appId),
-    appSecret: normalizeSecret(next.appSecret, 'appSecret'),
-    enabled: next.enabled,
-    updatedAt: new Date().toISOString(),
-    ownerOpenId: next.ownerOpenId,
-    autoIsolateContext: next.autoIsolateContext,
-  };
-
-  const payload: StoredFeishuProviderConfigV1 = {
-    version: 1,
-    appId: normalized.appId,
-    enabled: normalized.enabled,
-    updatedAt: normalized.updatedAt || new Date().toISOString(),
-    ownerOpenId: normalized.ownerOpenId,
-    autoIsolateContext: normalized.autoIsolateContext,
-    secret: encryptChannelSecret<FeishuSecretPayload>({
-      appSecret: normalized.appSecret,
-    }),
-  };
-
-  const dir = userImDir(userId);
-  fs.mkdirSync(dir, { recursive: true });
-  const filePath = path.join(dir, 'feishu.json');
-  writeSecretFile(filePath, JSON.stringify(payload, null, 2) + '\n');
-  return normalized;
-}
-
-/**
- * Update only the ownerOpenId in an existing Feishu config file, preserving the encrypted secret.
- */
-export function saveFeishuOwnerOpenId(userId: string, openId: string): void {
-  const filePath = path.join(userImDir(userId), 'feishu.json');
-  try {
-    const content = fs.readFileSync(filePath, 'utf-8');
-    const parsed = JSON.parse(content) as Record<string, unknown>;
-    parsed.ownerOpenId = openId;
-    writeSecretFile(filePath, JSON.stringify(parsed, null, 2) + '\n');
-    logger.info({ userId, openId }, 'Feishu owner open_id saved');
-  } catch (err) {
-    logger.warn({ err, userId }, 'Failed to save Feishu owner open_id');
-  }
-}
-
-// ========== QQ User IM Config ==========
-
-export function getUserQQConfig(userId: string): UserQQConfig | null {
-  const filePath = path.join(userImDir(userId), 'qq.json');
-  try {
-    if (!fs.existsSync(filePath)) return null;
-    const content = fs.readFileSync(filePath, 'utf-8');
-    const parsed = JSON.parse(content) as Record<string, unknown>;
-    if (parsed.version !== 1) return null;
-
-    const stored = parsed as unknown as StoredQQProviderConfigV1;
-    const secret = decryptChannelSecret<QQSecretPayload>(stored.secret);
-    return {
-      appId: normalizeFeishuAppId(stored.appId ?? ''),
-      appSecret: secret.appSecret,
-      enabled: stored.enabled,
-      updatedAt: stored.updatedAt || null,
-    };
-  } catch (err) {
-    logger.warn({ err, userId }, 'Failed to read user QQ config');
-    return null;
-  }
-}
-
-export function saveUserQQConfig(
-  userId: string,
-  next: Omit<UserQQConfig, 'updatedAt'>,
-): UserQQConfig {
-  const normalized: UserQQConfig = {
-    appId: normalizeFeishuAppId(next.appId),
-    appSecret: normalizeSecret(next.appSecret, 'appSecret'),
-    enabled: next.enabled,
-    updatedAt: new Date().toISOString(),
-  };
-
-  const payload: StoredQQProviderConfigV1 = {
-    version: 1,
-    appId: normalized.appId,
-    enabled: normalized.enabled,
-    updatedAt: normalized.updatedAt || new Date().toISOString(),
-    secret: encryptChannelSecret<QQSecretPayload>({
-      appSecret: normalized.appSecret,
-    }),
-  };
-
-  const dir = userImDir(userId);
-  fs.mkdirSync(dir, { recursive: true });
-  const filePath = path.join(dir, 'qq.json');
-  writeSecretFile(filePath, JSON.stringify(payload, null, 2) + '\n');
-  return normalized;
-}
-
-// ========== WeChat User IM Config ==========
-
-interface UserWeChatConfig {
-  botToken: string; // iLink bot_token
-  ilinkBotId: string; // bot ID (xxx@im.bot)
-  baseUrl?: string; // 默认 https://ilinkai.weixin.qq.com
-  cdnBaseUrl?: string; // 默认 https://novac2c.cdn.weixin.qq.com/c2c
-  getUpdatesBuf?: string; // 长轮询游标
-  bypassProxy?: boolean; // 直连模式：绕过 HTTP 代理（默认 true）
-  enabled?: boolean;
-  updatedAt: string | null;
-}
-
-interface StoredWeChatProviderConfigV1 {
-  version: 1;
-  ilinkBotId: string;
-  baseUrl?: string;
-  cdnBaseUrl?: string;
-  getUpdatesBuf?: string;
-  bypassProxy?: boolean;
-  enabled?: boolean;
-  updatedAt: string;
-  secret: EncryptedSecrets;
-}
-
-interface WeChatSecretPayload {
-  botToken: string;
-}
-
-export function getUserWeChatConfig(userId: string): UserWeChatConfig | null {
-  const filePath = path.join(userImDir(userId), 'wechat.json');
-  try {
-    if (!fs.existsSync(filePath)) return null;
-    const content = fs.readFileSync(filePath, 'utf-8');
-    const parsed = JSON.parse(content) as Record<string, unknown>;
-    if (parsed.version !== 1) return null;
-
-    const stored = parsed as unknown as StoredWeChatProviderConfigV1;
-    const secret = decryptChannelSecret<WeChatSecretPayload>(stored.secret);
-    return {
-      botToken: secret.botToken,
-      ilinkBotId: ((stored.ilinkBotId as string) ?? '').trim(),
-      baseUrl: stored.baseUrl,
-      cdnBaseUrl: stored.cdnBaseUrl,
-      getUpdatesBuf: stored.getUpdatesBuf,
-      bypassProxy: stored.bypassProxy ?? true, // 默认直连
-      enabled: stored.enabled,
-      updatedAt: stored.updatedAt || null,
-    };
-  } catch (err) {
-    logger.warn({ err, userId }, 'Failed to read user WeChat config');
-    return null;
-  }
-}
-
-export function saveUserWeChatConfig(
-  userId: string,
-  next: Omit<UserWeChatConfig, 'updatedAt'>,
-): UserWeChatConfig {
-  const normalized: UserWeChatConfig = {
-    botToken: normalizeSecret(next.botToken, 'botToken'),
-    ilinkBotId: (next.ilinkBotId ?? '').trim(),
-    baseUrl: next.baseUrl?.trim() || undefined,
-    cdnBaseUrl: next.cdnBaseUrl?.trim() || undefined,
-    getUpdatesBuf: next.getUpdatesBuf,
-    bypassProxy: next.bypassProxy ?? true,
-    enabled: next.enabled,
-    updatedAt: new Date().toISOString(),
-  };
-
-  const payload: StoredWeChatProviderConfigV1 = {
-    version: 1,
-    ilinkBotId: normalized.ilinkBotId,
-    baseUrl: normalized.baseUrl,
-    cdnBaseUrl: normalized.cdnBaseUrl,
-    getUpdatesBuf: normalized.getUpdatesBuf,
-    bypassProxy: normalized.bypassProxy,
-    enabled: normalized.enabled,
-    updatedAt: normalized.updatedAt || new Date().toISOString(),
-    secret: encryptChannelSecret<WeChatSecretPayload>({
-      botToken: normalized.botToken,
-    }),
-  };
-
-  const dir = userImDir(userId);
-  fs.mkdirSync(dir, { recursive: true });
-  const filePath = path.join(dir, 'wechat.json');
-  writeSecretFile(filePath, JSON.stringify(payload, null, 2) + '\n');
-  return normalized;
 }
 
 // ─── System settings (plain JSON, no encryption) ─────────────────

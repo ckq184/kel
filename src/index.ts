@@ -36,7 +36,6 @@ import {
   CONTAINER_IMAGE,
   DATA_DIR,
   GROUPS_DIR,
-  STORE_DIR,
   CONVERSATION_AGENT_ARCHIVE_DAYS,
   POLL_INTERVAL,
   TIMEZONE,
@@ -202,11 +201,11 @@ import {
   upsertImContextBinding,
   touchImContextBindingActivity,
   updateAgentContextInfo,
-  backfillEmptyAllowlistsForUser,
   backfillEmptyAllowlistsForChannelAccount,
   getChannelMount,
   migrateAgentProfileAutoCompactWindow,
   getChannelAccount,
+  getLegacyChannelAccount,
   listEnabledChannelAccounts,
   updateChannelAccountAuthStatus,
   updateChannelAccountStatus,
@@ -371,10 +370,6 @@ import {
   type TaskNotificationDeliveryAttempt,
 } from './task-notification.js';
 import { resolveImGroupDefaults } from './im-group-defaults.js';
-import {
-  applyAutoIsolateContextForGroups,
-  getUserContextIsolationConfig,
-} from './im-context-isolation.js';
 import { canSendCrossGroupMessage as canSendCrossGroupMessagePure } from './cross-group-acl.js';
 import {
   canIpcActorAccessGroup,
@@ -459,10 +454,6 @@ import {
   saveChannelAccountSecret,
 } from './channel-account-secrets.js';
 import {
-  ensureLegacyDefaultChannelAccount,
-  syncDefaultChannelAccountCredentials,
-} from './channel-account-migration.js';
-import {
   applyChannelAccountRegistrationFallback,
   resolveChannelAccountFallbackWorkspace,
 } from './channel-account-routing.js';
@@ -473,15 +464,8 @@ import {
 } from './agent-profile-prompts.js';
 import { resolveAgentSdkEffort } from './agent-effort.js';
 import {
-  getFeishuProviderConfigWithSource,
-  getUserFeishuConfig,
-  getUserQQConfig,
-  getUserWeChatConfig,
   getSystemSettings,
   getLegacySystemAutoCompactWindow,
-  saveUserFeishuConfig,
-  saveFeishuOwnerOpenId,
-  saveUserWeChatConfig,
 } from './runtime-config.js';
 import {
   MAX_TASK_PROMPT_LENGTH,
@@ -3415,6 +3399,26 @@ function handleReleaseOwnerCommand(chatJid: string): string {
 }
 
 /**
+ * Resolve the Feishu owner open_id recorded on the channel account that owns
+ * this chat. Historical unscoped groups fall back to the user's legacy default
+ * Feishu account.
+ */
+function resolveFeishuOwnerOpenIdForGroup(
+  chatJid: string,
+  group: RegisteredGroup,
+  ownerUserId: string,
+): string | undefined {
+  const accountId =
+    group.channel_account_id ??
+    parseChannelAddress(chatJid)?.channelAccountId ??
+    getLegacyChannelAccount(ownerUserId, 'feishu')?.id;
+  if (!accountId) return undefined;
+  const account = getChannelAccount(accountId);
+  if (!account || account.provider !== 'feishu') return undefined;
+  return loadChannelAccountSecret(account.secret_ref)?.ownerOpenId;
+}
+
+/**
  * /allow @成员 命令：将 @提及的成员加入发言者白名单（仅 owner 可操作）。
  */
 function handleAllowCommand(
@@ -3426,22 +3430,26 @@ function handleAllowCommand(
   let group = registeredGroups[chatJid] ?? getRegisteredGroup(chatJid);
   if (!group) return '未找到当前会话';
 
-  // Backfill owner_im_id if the group was registered before the user-level
-  // ownerOpenId was known (e.g., bot added to group first, owner DM'd later).
-  // Only backfill when the sender matches the user-level ownerOpenId.
+  // Backfill owner_im_id if the group was registered before its channel
+  // account learned the ownerOpenId (e.g., bot added to group first, owner
+  // DM'd later). Only backfill when the sender matches that account's owner.
   if (
     !group.owner_im_id &&
     group.owner_claim_source !== 'transfer_reset' &&
     group.created_by
   ) {
-    const userOwnerOpenId = getUserFeishuConfig(group.created_by)?.ownerOpenId;
-    if (userOwnerOpenId && userOwnerOpenId === senderImId) {
+    const accountOwnerOpenId = resolveFeishuOwnerOpenIdForGroup(
+      chatJid,
+      group,
+      group.created_by,
+    );
+    if (accountOwnerOpenId && accountOwnerOpenId === senderImId) {
       const updated = claimOwner(group, senderImId);
       persistGroupUpdate(chatJid, updated, registeredGroups);
       group = updated;
       logger.info(
         { chatJid, senderImId },
-        'Backfilled owner_im_id via /allow (matched user-level ownerOpenId)',
+        'Backfilled owner_im_id via /allow (matched channel account ownerOpenId)',
       );
     }
   }
@@ -4097,66 +4105,6 @@ interface SendMessageOptions {
     result?: string | null;
     error?: string | null;
   }>;
-}
-
-/**
- * One-time migration: copy system-level IM config → admin's per-user config.
- * Safe to call repeatedly — writes a flag file after first successful run.
- */
-function migrateSystemIMToPerUser(): void {
-  const flagFile = path.join(DATA_DIR, 'config', '.im-config-migrated');
-  if (fs.existsSync(flagFile)) return;
-
-  try {
-    // Find first admin user
-    const adminResult = listUsers({
-      status: 'active',
-      role: 'admin',
-      page: 1,
-      pageSize: 1,
-    });
-    const admin = adminResult.users[0];
-    if (!admin) {
-      // No admin yet (fresh install) — nothing to migrate
-      return;
-    }
-
-    let migratedFeishu = false;
-
-    // Feishu: copy system config → admin per-user (if admin has no per-user config)
-    const existingUserFeishu = getUserFeishuConfig(admin.id);
-    if (!existingUserFeishu) {
-      const { config: sysFeishu, source: feishuSource } =
-        getFeishuProviderConfigWithSource();
-      if (feishuSource !== 'none' && sysFeishu.appId && sysFeishu.appSecret) {
-        saveUserFeishuConfig(admin.id, {
-          appId: sysFeishu.appId,
-          appSecret: sysFeishu.appSecret,
-          enabled: sysFeishu.enabled,
-        });
-        migratedFeishu = true;
-      }
-    }
-
-    // Write flag file (even if nothing was migrated — to avoid re-checking)
-    fs.mkdirSync(path.dirname(flagFile), { recursive: true });
-    fs.writeFileSync(flagFile, new Date().toISOString() + '\n', 'utf-8');
-
-    if (migratedFeishu) {
-      logger.info(
-        {
-          adminId: admin.id,
-          feishu: migratedFeishu,
-        },
-        'Migrated system-level IM config to admin per-user config',
-      );
-    }
-  } catch (err) {
-    logger.warn(
-      { err },
-      'Failed to migrate system-level IM config (non-fatal)',
-    );
-  }
 }
 
 function loadState(): void {
@@ -11822,20 +11770,6 @@ function buildOnNewChat(
             }
           }
         }
-        const channelType = getChannelType(chatJid);
-        const isolationConfig = getUserContextIsolationConfig(
-          userId,
-          channelType,
-          { getUserFeishuConfig },
-        );
-        if (isolationConfig.enabled) {
-          ensureAutoImConversationBinding(
-            chatJid,
-            existing,
-            userId,
-            trimmed || existing.name || chatJid,
-          );
-        }
         return;
       }
 
@@ -11956,15 +11890,6 @@ function buildOnNewChat(
       },
       'Auto-registered IM chat',
     );
-
-    const channelType = getChannelType(chatJid);
-    const isolationConfig = getUserContextIsolationConfig(userId, channelType, {
-      getUserFeishuConfig,
-    });
-    if (isolationConfig.enabled) {
-      const registered = registeredGroups[chatJid]!;
-      ensureAutoImConversationBinding(chatJid, registered, userId, chatName);
-    }
   };
 }
 
@@ -12048,85 +11973,6 @@ function createAutoImConversationAgent(input: {
     workspaceJid: workspace.jid,
     workspaceFolder: workspace.folder,
   };
-}
-
-function ensureAutoImConversationBinding(
-  jid: string,
-  group: RegisteredGroup,
-  userId: string,
-  name: string,
-): boolean {
-  if (group.target_main_jid) return false;
-  if (group.target_agent_id) {
-    const existingAgent = getAgent(group.target_agent_id);
-    if (existingAgent?.source_kind === 'auto_im') {
-      ensureAgentDirectories(existingAgent.group_folder, existingAgent.id);
-      updateAgentLastImJid(existingAgent.id, jid);
-      return false;
-    }
-    return false;
-  }
-
-  const created = createAutoImConversationAgent({
-    userId,
-    sourceJid: jid,
-    groupFolder: group.folder,
-    name: name || group.name || jid,
-  });
-  if (!created) return false;
-
-  group.target_agent_id = created.agentId;
-  setRegisteredGroup(jid, group);
-  registeredGroups[jid] = group;
-  return true;
-}
-
-/**
- * Batch-apply autoIsolateContext toggle for a user's existing Feishu IM chats.
- * enable=true:  create conversation agents for unbound Feishu chats
- * enable=false: remove auto_im agent bindings (manual bindings untouched)
- */
-function applyAutoIsolateContext(userId: string, enable: boolean): number {
-  return applyAutoIsolateContextForGroups(userId, enable, {
-    groups: getAllRegisteredGroups(),
-    channelType: 'feishu',
-    getChannelType,
-    getAgent,
-    ensureBinding: ensureAutoImConversationBinding,
-    setGroup: (jid, group) => {
-      setRegisteredGroup(jid, group);
-      registeredGroups[jid] = group;
-    },
-    deleteAgent,
-    broadcastAgentRemoved,
-  });
-}
-
-/**
- * Record the Feishu owner's open_id (auto-detected from a P2P DM) and
- * unstick any of this user's groups whose `sender_allowlist=[]` —
- * the "owner-locked trap" that buildOnNewChat creates when a group is
- * registered before the owner has DM'd the bot.
- */
-function learnFeishuOwner(
-  userId: string,
-  senderOpenId: string,
-  ownerRef: { value: string | undefined },
-): void {
-  const ownerOpenId = ownerRef.value ?? senderOpenId;
-  if (!ownerRef.value) {
-    ownerRef.value = senderOpenId;
-    saveFeishuOwnerOpenId(userId, senderOpenId);
-  }
-  const backfilled = backfillEmptyAllowlistsForUser(userId, ownerOpenId);
-  for (const jid of backfilled) {
-    const fresh = getRegisteredGroup(jid);
-    if (fresh) registeredGroups[jid] = fresh;
-  }
-  logger.info(
-    { userId, senderOpenId, ownerOpenId, backfilledCount: backfilled.length },
-    'Feishu owner open_id auto-detected from P2P message',
-  );
 }
 
 /**
@@ -12983,7 +12829,7 @@ function isSenderAllowedInGroup(chatJid: string, senderImId?: string): boolean {
     const accountId = parseChannelAddress(conversationJid)?.channelAccountId;
     const account = accountId ? getChannelAccount(accountId) : undefined;
     const knownOwner = account
-      ? getUserFeishuConfig(account.owner_user_id)?.ownerOpenId
+      ? loadChannelAccountSecret(account.secret_ref)?.ownerOpenId
       : undefined;
     return isUnknownFeishuSenderAllowed(knownOwner, senderImId);
   }
@@ -13222,9 +13068,6 @@ async function reloadChannelAccountById(accountId: string): Promise<boolean> {
             if (!secret.ownerOpenId) {
               secret.ownerOpenId = senderOpenId;
               saveChannelAccountSecret(account.secret_ref, secret);
-              if (account.is_legacy_default) {
-                saveFeishuOwnerOpenId(account.owner_user_id, senderOpenId);
-              }
             }
             for (const jid of backfillEmptyAllowlistsForChannelAccount(
               account.owner_user_id,
@@ -13365,15 +13208,6 @@ async function reloadChannelAccountById(accountId: string): Promise<boolean> {
               ...latestSecret,
               getUpdatesBuf: cursor,
             });
-            if (account.is_legacy_default) {
-              const legacy = getUserWeChatConfig(account.owner_user_id);
-              if (legacy && legacy.getUpdatesBuf !== cursor) {
-                saveUserWeChatConfig(account.owner_user_id, {
-                  ...legacy,
-                  getUpdatesBuf: cursor,
-                });
-              }
-            }
           },
         },
       );
@@ -13407,136 +13241,7 @@ async function reloadChannelAccountById(accountId: string): Promise<boolean> {
   }
 }
 
-function syncLegacyConfigToDefaultChannelAccount(
-  userId: string,
-  channel: 'feishu' | 'qq' | 'wechat',
-): ChannelAccount | null {
-  if (channel === 'feishu') {
-    const value = getUserFeishuConfig(userId);
-    return value
-      ? syncDefaultChannelAccountCredentials({
-          ownerUserId: userId,
-          provider: channel,
-          name: '默认飞书',
-          enabled: value.enabled !== false,
-          secret: {
-            appId: value.appId,
-            appSecret: value.appSecret,
-            ownerOpenId: value.ownerOpenId,
-          },
-        })
-      : null;
-  }
-  if (channel === 'qq') {
-    const value = getUserQQConfig(userId);
-    return value
-      ? syncDefaultChannelAccountCredentials({
-          ownerUserId: userId,
-          provider: channel,
-          name: '默认 QQ',
-          enabled: value.enabled !== false,
-          secret: { appId: value.appId, appSecret: value.appSecret },
-        })
-      : null;
-  }
-  if (channel === 'wechat') {
-    const value = getUserWeChatConfig(userId);
-    return value
-      ? syncDefaultChannelAccountCredentials({
-          ownerUserId: userId,
-          provider: channel,
-          name: '默认微信',
-          enabled: value.enabled !== false,
-          secret: {
-            botToken: value.botToken,
-            ilinkBotId: value.ilinkBotId,
-            baseUrl: value.baseUrl,
-            cdnBaseUrl: value.cdnBaseUrl,
-            getUpdatesBuf: value.getUpdatesBuf,
-            bypassProxy: String(value.bypassProxy ?? true),
-          },
-        })
-      : null;
-  }
-  return null;
-}
-
-function movePathWithFallback(src: string, dst: string): void {
-  try {
-    fs.renameSync(src, dst);
-  } catch (err: unknown) {
-    // Cross-device rename fallback.
-    if ((err as NodeJS.ErrnoException).code === 'EXDEV') {
-      fs.cpSync(src, dst, { recursive: true });
-      fs.rmSync(src, { recursive: true, force: true });
-      return;
-    }
-    throw err;
-  }
-}
-
-/**
- * One-shot migration: move legacy top-level directories into data/.
- * - store/messages.db* → data/db/messages.db*
- * - groups/            → data/groups/
- * Also supports partial migrations (old+new paths both exist).
- */
-function migrateDataDirectories(): void {
-  const projectRoot = process.cwd();
-
-  // 1. Migrate store/ → data/db/
-  const oldStoreDir = path.join(projectRoot, 'store');
-  if (fs.existsSync(oldStoreDir)) {
-    fs.mkdirSync(STORE_DIR, { recursive: true });
-    // Move messages.db and WAL files
-    for (const file of ['messages.db', 'messages.db-wal', 'messages.db-shm']) {
-      const src = path.join(oldStoreDir, file);
-      const dst = path.join(STORE_DIR, file);
-      if (fs.existsSync(src) && !fs.existsSync(dst)) {
-        movePathWithFallback(src, dst);
-        logger.info({ src, dst }, 'Migrated database file');
-      }
-    }
-    // Remove old store/ if empty
-    try {
-      fs.rmdirSync(oldStoreDir);
-    } catch {
-      // Not empty — leave it
-    }
-  }
-
-  // 2. Migrate groups/ → data/groups/
-  const oldGroupsDir = path.join(projectRoot, 'groups');
-  if (fs.existsSync(oldGroupsDir)) {
-    fs.mkdirSync(path.dirname(GROUPS_DIR), { recursive: true });
-    if (!fs.existsSync(GROUPS_DIR)) {
-      movePathWithFallback(oldGroupsDir, GROUPS_DIR);
-      logger.info(
-        { src: oldGroupsDir, dst: GROUPS_DIR },
-        'Migrated groups directory',
-      );
-    } else {
-      // Partial migration: move missing entries one-by-one.
-      const entries = fs.readdirSync(oldGroupsDir, { withFileTypes: true });
-      for (const entry of entries) {
-        const src = path.join(oldGroupsDir, entry.name);
-        const dst = path.join(GROUPS_DIR, entry.name);
-        if (!fs.existsSync(dst)) {
-          movePathWithFallback(src, dst);
-          logger.info({ src, dst }, 'Migrated legacy group entry');
-        }
-      }
-      try {
-        fs.rmdirSync(oldGroupsDir);
-      } catch {
-        // Not empty — leave it
-      }
-    }
-  }
-}
-
 async function main(): Promise<void> {
-  migrateDataDirectories();
   initDatabase();
   logger.info('Database initialized');
 
@@ -13585,9 +13290,6 @@ async function main(): Promise<void> {
   } catch (err) {
     logger.warn({ err }, 'Failed to mark stale spawn agents at startup');
   }
-
-  // Migrate system-level IM config → admin's per-user config (one-time)
-  migrateSystemIMToPerUser();
 
   loadState();
 
@@ -13817,8 +13519,6 @@ async function main(): Promise<void> {
     finalizeHeldCard: (key: string) => {
       activeAgentAdmissionHooks.get(key)?.();
     },
-    applyAutoIsolateContext: (userId: string, enable: boolean) =>
-      applyAutoIsolateContext(userId, enable),
     resolveEffectiveGroup,
     promoteFollowUp,
     cancelFollowUp,
@@ -14341,145 +14041,17 @@ async function main(): Promise<void> {
       waitForTaskRunsToStop(runIds, timeoutMs);
   }
 
-  // --- IM Connection Pool: connect per-user IM channels ---
-  // Load global IM config (backward compat: used for admin if no per-user config exists)
-  const globalFeishuConfig = getFeishuProviderConfigWithSource();
-
-  // Paginate through all active users (listUsers caps at 200 per page)
-  let allActiveUsers: typeof listUsers extends (...args: any) => {
-    users: infer U;
-  }
-    ? U
-    : never = [];
-  {
-    let page = 1;
-    while (true) {
-      const result = listUsers({ status: 'active', page, pageSize: 200 });
-      allActiveUsers = allActiveUsers.concat(result.users);
-      if (allActiveUsers.length >= result.total) break;
-      page++;
-    }
-  }
-
-  let anyFeishuConnected = false;
-
-  // Project each user's legacy singleton configs concurrently. Connections are
-  // opened exactly once by the first-class account pass below.
-  await Promise.allSettled(
-    allActiveUsers.map(async (user) => {
-      const homeGroup = getUserHomeGroup(user.id);
-      if (!homeGroup) return;
-
-      // Per-user IM config takes precedence; fall back to global config for admin
-      const userFeishu = getUserFeishuConfig(user.id);
-      const userQQ = getUserQQConfig(user.id);
-      const userWeChat = getUserWeChatConfig(user.id);
-
-      // Determine effective Feishu config: per-user > global fallback
-      let effectiveFeishu: FeishuConnectConfig | null = null;
-      if (userFeishu && userFeishu.appId && userFeishu.appSecret) {
-        effectiveFeishu = {
-          appId: userFeishu.appId,
-          appSecret: userFeishu.appSecret,
-          enabled: userFeishu.enabled,
-        };
-      } else if (globalFeishuConfig.source !== 'none') {
-        const gc = globalFeishuConfig.config;
-        effectiveFeishu = {
-          appId: gc.appId,
-          appSecret: gc.appSecret,
-          enabled: gc.enabled,
-        };
-      }
-
-      // Determine effective QQ config: per-user only (no global fallback)
-      let effectiveQQ: QQConnectConfig | null = null;
-      if (userQQ && userQQ.appId && userQQ.appSecret) {
-        effectiveQQ = {
-          appId: userQQ.appId,
-          appSecret: userQQ.appSecret,
-          enabled: userQQ.enabled,
-        };
-      }
-
-      // Determine effective WeChat config: per-user only (no global fallback)
-      let effectiveWeChat: WeChatConnectConfig | null = null;
-      if (userWeChat && userWeChat.botToken && userWeChat.ilinkBotId) {
-        effectiveWeChat = {
-          botToken: userWeChat.botToken,
-          ilinkBotId: userWeChat.ilinkBotId,
-          baseUrl: userWeChat.baseUrl,
-          cdnBaseUrl: userWeChat.cdnBaseUrl,
-          getUpdatesBuf: userWeChat.getUpdatesBuf,
-          bypassProxy: userWeChat.bypassProxy,
-          enabled: userWeChat.enabled,
-        };
-      }
-
-      try {
-        if (effectiveFeishu) {
-          ensureLegacyDefaultChannelAccount({
-            ownerUserId: user.id,
-            provider: 'feishu',
-            name: '默认飞书',
-            enabled: effectiveFeishu.enabled !== false,
-            secret: {
-              appId: effectiveFeishu.appId,
-              appSecret: effectiveFeishu.appSecret,
-              ownerOpenId: userFeishu?.ownerOpenId,
-            },
-          });
-        }
-        if (effectiveQQ) {
-          ensureLegacyDefaultChannelAccount({
-            ownerUserId: user.id,
-            provider: 'qq',
-            name: '默认 QQ',
-            enabled: effectiveQQ.enabled !== false,
-            secret: {
-              appId: effectiveQQ.appId,
-              appSecret: effectiveQQ.appSecret,
-            },
-          });
-        }
-        if (effectiveWeChat) {
-          ensureLegacyDefaultChannelAccount({
-            ownerUserId: user.id,
-            provider: 'wechat',
-            name: '默认微信',
-            enabled: effectiveWeChat.enabled !== false,
-            secret: {
-              botToken: effectiveWeChat.botToken,
-              ilinkBotId: effectiveWeChat.ilinkBotId,
-              baseUrl: effectiveWeChat.baseUrl,
-              cdnBaseUrl: effectiveWeChat.cdnBaseUrl,
-              getUpdatesBuf: effectiveWeChat.getUpdatesBuf,
-              bypassProxy: String(userWeChat?.bypassProxy ?? true),
-            },
-          });
-        }
-      } catch (err) {
-        logger.error(
-          { userId: user.id, err },
-          'Failed to migrate legacy IM config into channel accounts',
-        );
-      }
-    }),
-  );
-
-  // Single startup path: after legacy singleton configs are projected, only
-  // first-class accounts connect. This prevents the same credentials from
-  // running once as `provider` and again as `provider\0accountId`.
-  // Feishu records its durable Inbox before invoking these callbacks. Keep
-  // execution paused while transports connect and old provider cards are
-  // reconciled; messages arriving in this window remain queued for retry.
+  // Single startup path: only first-class channel accounts connect. Feishu
+  // records its durable Inbox before invoking these callbacks. Keep execution
+  // paused while transports connect and old provider cards are reconciled;
+  // messages arriving in this window remain queued for retry.
   imManager.deferInbound();
   await Promise.allSettled(
     listEnabledChannelAccounts().map((account) =>
       reloadChannelAccountById(account.id),
     ),
   );
-  anyFeishuConnected = imManager.isAnyFeishuConnected();
+  const anyFeishuConnected = imManager.isAnyFeishuConnected();
 
   // Recovery order is intentional and forms a correctness boundary:
   // exact Bot account ready -> close cards left live by the old process ->
@@ -14543,40 +14115,10 @@ async function main(): Promise<void> {
   // Start Feishu group sync if any connection is active
   if (anyFeishuConnected) {
     ensureFeishuSyncScheduler();
-  } else if (
-    globalFeishuConfig.config.enabled !== false &&
-    globalFeishuConfig.source !== 'none'
-  ) {
-    logger.warn(
-      'Feishu is not connected. Configure credentials in Settings to enable Feishu sync.',
-    );
   }
 
   // Run health check once on startup to clean up orphaned bindings, then periodically
-  void checkImBindingsHealth().then(() => {
-    // After health check, ensure auto_im agents exist for users with autoIsolateContext enabled
-    const groups = getAllRegisteredGroups();
-    const userIds = new Set<string>();
-    for (const [jid, group] of Object.entries(groups)) {
-      if (getChannelType(jid) === 'feishu' && group.created_by) {
-        userIds.add(group.created_by);
-      }
-    }
-    for (const uid of userIds) {
-      const isolationConfig = getUserContextIsolationConfig(uid, 'feishu', {
-        getUserFeishuConfig,
-      });
-      if (isolationConfig.enabled) {
-        const migrated = applyAutoIsolateContext(uid, true);
-        if (migrated > 0) {
-          logger.info(
-            { userId: uid, migrated },
-            'Startup: restored auto_im agents for user with autoIsolateContext enabled',
-          );
-        }
-      }
-    }
-  });
+  void checkImBindingsHealth();
   const IM_BINDING_HEALTH_CHECK_INTERVAL = 30 * 60 * 1000; // 30 min
   setInterval(() => {
     void checkImBindingsHealth();
@@ -14622,38 +14164,6 @@ async function checkImBindingsHealth(): Promise<void> {
     if (group.target_agent_id) {
       const agent = getAgent(group.target_agent_id);
       if (!agent) {
-        // For auto_im agents, re-create instead of unbinding if toggle is still on
-        const userId = group.created_by;
-        const channelType = getChannelType(jid);
-        if (userId && channelType) {
-          const isolationConfig = getUserContextIsolationConfig(
-            userId,
-            channelType,
-            {
-              getUserFeishuConfig,
-            },
-          );
-          if (isolationConfig.enabled) {
-            const unbound: RegisteredGroup = {
-              ...group,
-              target_agent_id: undefined,
-            };
-            if (
-              ensureAutoImConversationBinding(
-                jid,
-                unbound,
-                userId,
-                group.name || jid,
-              )
-            ) {
-              logger.info(
-                { jid, userId },
-                'Health check: re-created auto_im agent (previous agent lost)',
-              );
-              continue;
-            }
-          }
-        }
         const restored = unbindImGroup(
           jid,
           `Orphaned agent binding: agent ${group.target_agent_id} no longer exists`,

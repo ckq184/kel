@@ -165,10 +165,7 @@ describe('Feishu owner discovery is per channel account', () => {
       'utf8',
     );
     const start = source.indexOf('async function reloadChannelAccountById');
-    const end = source.indexOf(
-      'function syncLegacyConfigToDefaultChannelAccount',
-      start,
-    );
+    const end = source.indexOf('async function main()', start);
     expect(start).toBeGreaterThan(-1);
     expect(end).toBeGreaterThan(start);
     const reload = source.slice(start, end);
@@ -183,5 +180,6 @@ describe('Feishu owner discovery is per channel account', () => {
       /backfillEmptyAllowlistsForChannelAccount\(\s*account\.owner_user_id,\s*account\.id,\s*ownerOpenId,\s*\)/,
     );
     expect(reload).not.toContain('saveUserFeishuConfig');
+    expect(reload).not.toContain('saveFeishuOwnerOpenId');
   });
 });

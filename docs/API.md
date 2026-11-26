@@ -308,8 +308,10 @@ Provider：
 
 `/api/config/user-im/*` 的死门面（QQ 7 条、微信 5 条、`GET /user-im/feishu`）
 与 `GET /user-im/status`、`PUT /user-im/feishu` 已随渠道账号化删除
-（ISSUE-11）：连接状态与飞书凭据统一走 `/api/channel-accounts`。存留的两条
-绑定管理路由为正式路由，非兼容门面：
+（ISSUE-11）：连接状态与飞书凭据统一走 `/api/channel-accounts`。旧存储层
+（`data/config/user-im/*` 与全局 `feishu-provider.json`）已随 THESIS-22 删除，
+飞书 `ownerOpenId` 与微信长轮询游标只存在渠道账号加密 secret 中；旧目录/文件
+不再读取。存留的两条绑定管理路由为正式路由，非兼容门面：
 
 - `PUT /api/config/user-im/bindings/:imJid`
 - `POST /api/config/user-im/bindings/:imJid/reset-allowlist`

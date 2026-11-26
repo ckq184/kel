@@ -7,11 +7,15 @@ const indexSource = fs.readFileSync(
   'utf8',
 );
 
-describe('channel account startup compatibility contract', () => {
-  test('startup projects legacy configs, then connects only first-class accounts', () => {
+describe('channel account startup contract', () => {
+  test('startup connects only first-class accounts without legacy config projection', () => {
     expect(indexSource).not.toMatch(/\bconnectUserIMChannels\b/);
 
-    expect(indexSource).toContain('ensureLegacyDefaultChannelAccount({');
+    expect(indexSource).not.toContain('ensureLegacyDefaultChannelAccount(');
+    expect(indexSource).not.toContain('migrateSystemIMToPerUser');
+    expect(indexSource).not.toContain('getUserFeishuConfig');
+    expect(indexSource).not.toContain('getUserQQConfig');
+    expect(indexSource).not.toContain('getUserWeChatConfig');
     expect(indexSource).toContain(
       'listEnabledChannelAccounts().map((account) =>',
     );
