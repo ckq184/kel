@@ -45,7 +45,6 @@ import {
   getSession,
   getTaskById,
   getUserById,
-  getUserHomeGroup,
   getAgentProfileForWorkspace,
   getSessionAgentIdentity,
   logTaskRun,
@@ -1159,14 +1158,6 @@ async function runTaskInner(
     const runAgent =
       executionMode === 'host' ? runHostAgent : runContainerAgent;
 
-    // Resolve the workspace owner's home folder for correct volume mounts
-    // (skills, memory, CLAUDE.md). Must be the workspace's real owner, not
-    // the task creator — otherwise an admin-created cross-group task would
-    // mount the admin's own global skills/memory into a member's container.
-    const ownerHomeFolder = workspaceOwnerId
-      ? getUserHomeGroup(workspaceOwnerId)?.folder || workspace.folder
-      : workspace.folder;
-
     const output = await runAgentWithModelFallback(
       runAgent,
       workspaceGroup,
@@ -1261,7 +1252,6 @@ async function runTaskInner(
           finalizeRunLog();
         }
       },
-      ownerHomeFolder,
     );
 
     if (idleTimer) clearTimeout(idleTimer);

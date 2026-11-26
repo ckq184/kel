@@ -207,7 +207,6 @@ import {
   getChannelMount,
   migrateAgentProfileAutoCompactWindow,
   getChannelAccount,
-  listChannelAccountsForUser,
   listEnabledChannelAccounts,
   updateChannelAccountAuthStatus,
   updateChannelAccountStatus,
@@ -483,7 +482,6 @@ import {
   saveUserFeishuConfig,
   saveFeishuOwnerOpenId,
   saveUserWeChatConfig,
-  createUserContainerConcurrencyChecker,
 } from './runtime-config.js';
 import {
   MAX_TASK_PROMPT_LENGTH,
@@ -1668,14 +1666,6 @@ function findFileInSubdirs(
     // ignore
   }
   return null;
-}
-
-/** Resolve the owner's home folder for memory mounting. Non-home groups read owner's home memory. */
-function resolveOwnerHomeFolder(group: RegisteredGroup): string {
-  if (group.created_by) {
-    return getUserHomeGroup(group.created_by)?.folder || group.folder;
-  }
-  return group.folder;
 }
 
 function toContainerAgentProfile(
@@ -8235,8 +8225,6 @@ async function runAgent(
       });
     };
 
-    const ownerHomeFolder = resolveOwnerHomeFolder(group);
-
     let output: ContainerOutput;
 
     if (executionMode === 'host') {
@@ -8272,7 +8260,6 @@ async function runAgent(
         containerInput,
         onProcessCb,
         wrappedOnOutput,
-        ownerHomeFolder,
       );
     } else {
       output = await runAgentWithModelFallback(
@@ -8281,7 +8268,6 @@ async function runAgent(
         containerInput,
         onProcessCb,
         wrappedOnOutput,
-        ownerHomeFolder,
       );
     }
 
@@ -13740,258 +13726,6 @@ async function main(): Promise<void> {
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
 
-  // Reload Feishu connection for a specific user (hot-reload on config save)
-  const reloadFeishuConnection = async (config: {
-    appId: string;
-    appSecret: string;
-    enabled?: boolean;
-  }): Promise<boolean> => {
-    // Find admin user's home folder (legacy global config routes to admin)
-    const adminUsers = listUsers({
-      status: 'active',
-      role: 'admin',
-      page: 1,
-      pageSize: 1,
-    }).users;
-    const adminUser = adminUsers[0];
-    if (!adminUser) {
-      logger.warn('No admin user found for Feishu reload');
-      return false;
-    }
-
-    const defaultAccount = syncDefaultChannelAccountCredentials({
-      ownerUserId: adminUser.id,
-      provider: 'feishu',
-      name: '默认飞书',
-      enabled: config.enabled !== false,
-      secret: { appId: config.appId, appSecret: config.appSecret },
-    });
-    if (!defaultAccount.enabled) {
-      await disconnectChannelAccountById(defaultAccount.id);
-      return false;
-    }
-    const connected = await reloadChannelAccountById(defaultAccount.id);
-    if (connected && !feishuSyncInterval) {
-      syncGroupMetadata().catch((err) =>
-        logger.error({ err }, 'Group sync after Feishu reconnect failed'),
-      );
-      feishuSyncInterval = setInterval(() => {
-        syncGroupMetadata().catch((err) =>
-          logger.error({ err }, 'Periodic group sync failed'),
-        );
-      }, GROUP_SYNC_INTERVAL_MS);
-    }
-    return connected;
-  };
-
-  // Reload a per-user IM channel (hot-reload on user-im config save)
-  const reloadUserIMConfig = async (
-    userId: string,
-    channel: 'feishu' | 'qq' | 'wechat',
-  ): Promise<boolean> => {
-    const homeGroup = getUserHomeGroup(userId);
-    if (!homeGroup) {
-      logger.warn(
-        { userId, channel },
-        'No home group found for user IM reload',
-      );
-      return false;
-    }
-    const homeFolder = homeGroup.folder;
-    const onNewChat = buildOnNewChat(userId, homeFolder);
-
-    // Old per-provider config routes are a compatibility facade over the
-    // default first-class account. Never start a second legacy connector.
-    const projectedAccount = syncLegacyConfigToDefaultChannelAccount(
-      userId,
-      channel,
-    );
-    if (projectedAccount) {
-      if (!projectedAccount.enabled) {
-        await disconnectChannelAccountById(projectedAccount.id);
-        return false;
-      }
-      return reloadChannelAccountById(projectedAccount.id);
-    }
-
-    if (channel === 'feishu') {
-      await imManager.disconnectUserFeishu(userId);
-      const config = getUserFeishuConfig(userId);
-      if (
-        config &&
-        config.enabled !== false &&
-        config.appId &&
-        config.appSecret
-      ) {
-        const reloadOwnerRef = { value: config.ownerOpenId ?? undefined };
-        const getReloadOwnerOpenId = () => reloadOwnerRef.value;
-        const onReloadP2pSender = (senderOpenId: string) =>
-          learnFeishuOwner(userId, senderOpenId, reloadOwnerRef);
-        const onNewChat = buildOnNewChat(
-          userId,
-          homeFolder,
-          getReloadOwnerOpenId,
-        );
-        const connected = await imManager.connectUserFeishu(
-          userId,
-          config,
-          onNewChat,
-          {
-            onCommand: handleCommand,
-            resolveGroupFolder: (chatJid: string) =>
-              resolveEffectiveFolder(chatJid),
-            resolveEffectiveChatJid: buildResolveEffectiveChatJid(),
-            onAgentMessage: buildOnAgentMessage(),
-            onBotAddedToGroup: buildFeishuBotAddedHandler(
-              userId,
-              homeFolder,
-              getReloadOwnerOpenId,
-            ),
-            onBotRemovedFromGroup: buildOnBotRemovedFromGroup(),
-            shouldProcessGroupMessage,
-            resolveFeishuConversationPlan:
-              resolveFeishuConversationPlanForMessage,
-            isGroupOwnerMessage,
-            isSenderAllowedInGroup,
-            onFollowUpMessage: handleIncomingFollowUp,
-            onFollowUpCardAction: handleFollowUpCardAction,
-            onCardInterrupt: handleCardInterrupt,
-            onP2pSender: onReloadP2pSender,
-          },
-        );
-        logger.info(
-          { userId, connected },
-          'User Feishu connection hot-reloaded',
-        );
-        return connected;
-      }
-      logger.info({ userId }, 'User Feishu channel disabled via hot-reload');
-      return false;
-    } else if (channel === 'qq') {
-      await imManager.disconnectUserQQ(userId);
-      const config = getUserQQConfig(userId);
-      if (
-        config &&
-        config.enabled !== false &&
-        config.appId &&
-        config.appSecret
-      ) {
-        const connected = await imManager.connectUserQQ(
-          userId,
-          config,
-          onNewChat,
-          buildIsChatAuthorized(userId),
-          buildOnPairAttempt(userId),
-          {
-            onCommand: handleCommand,
-            resolveGroupFolder: (chatJid: string) =>
-              resolveEffectiveFolder(chatJid),
-            resolveEffectiveChatJid: buildResolveEffectiveChatJid(),
-            onAgentMessage: buildOnAgentMessage(),
-          },
-        );
-        logger.info({ userId, connected }, 'User QQ connection hot-reloaded');
-        return connected;
-      }
-      logger.info({ userId }, 'User QQ channel disabled via hot-reload');
-      return false;
-    } else if (channel === 'wechat') {
-      await imManager.disconnectUserWeChat(userId);
-      const config = getUserWeChatConfig(userId);
-      if (
-        config &&
-        config.enabled !== false &&
-        config.botToken &&
-        config.ilinkBotId
-      ) {
-        const connected = await imManager.connectUserWeChat(
-          userId,
-          {
-            botToken: config.botToken,
-            ilinkBotId: config.ilinkBotId,
-            baseUrl: config.baseUrl,
-            cdnBaseUrl: config.cdnBaseUrl,
-            getUpdatesBuf: config.getUpdatesBuf,
-            bypassProxy: config.bypassProxy,
-          },
-          onNewChat,
-          {
-            isChatAuthorized: buildIsChatAuthorized(userId),
-            onPairAttempt: buildOnPairAttempt(userId),
-            // With a durable cursor, replay is intentional recovery and must
-            // not be filtered by a new-process timestamp.
-            ignoreMessagesBefore: config.getUpdatesBuf ? undefined : Date.now(),
-            onCommand: handleCommand,
-            resolveGroupFolder: (chatJid: string) =>
-              resolveEffectiveFolder(chatJid),
-            resolveEffectiveChatJid: buildResolveEffectiveChatJid(),
-            onAgentMessage: buildOnAgentMessage(),
-            onUpdatesBuf: (cursor: string) => {
-              if (!cursor) return;
-              const latest = getUserWeChatConfig(userId);
-              if (!latest || latest.getUpdatesBuf === cursor) return;
-              saveUserWeChatConfig(userId, {
-                ...latest,
-                getUpdatesBuf: cursor,
-              });
-            },
-          },
-        );
-        logger.info(
-          { userId, connected },
-          'User WeChat connection hot-reloaded',
-        );
-        return connected;
-      }
-      logger.info({ userId }, 'User WeChat channel disabled via hot-reload');
-      return false;
-    }
-    return false;
-  };
-
-  // Reconnect all of a user's IM channels from persisted config — symmetric
-  // counterpart to disconnectAllUserChannels (called on admin re-enable/
-  // restore). Reuses reloadUserIMConfig per channel: it reads each channel's
-  // saved config and only connects the enabled ones, so disabled channels stay
-  // down without extra branching here.
-  const reconnectUserIMChannels = async (userId: string): Promise<void> => {
-    // 解封：disconnectAllUserChannels 把 user 标 sealed 后，所有 connectChannel
-    // 都被拒。re-enable / restore 用户时必须先解封否则 reload 全部失败。
-    imManager.markUserReconnectable(userId);
-    const channels: Array<'feishu' | 'qq' | 'wechat'> = [
-      'feishu',
-      'qq',
-      'wechat',
-    ];
-    await Promise.allSettled(
-      channels.map((channel) => reloadUserIMConfig(userId, channel)),
-    );
-    // reloadUserIMConfig projects and reconnects only the legacy-compatible
-    // default for each provider. A user may own additional first-class Bot
-    // accounts; reconnect those as well after the projection is complete.
-    const additionalAccounts = listChannelAccountsForUser(userId).filter(
-      (account) => account.enabled && !account.is_legacy_default,
-    );
-    const accountResults = await Promise.allSettled(
-      additionalAccounts.map((account) => reloadChannelAccountById(account.id)),
-    );
-    const failedAccountIds = accountResults.flatMap((result, index) =>
-      result.status === 'rejected' || result.value === false
-        ? [additionalAccounts[index].id]
-        : [],
-    );
-    if (failedAccountIds.length > 0) {
-      logger.warn(
-        { userId, failedAccountIds },
-        'Some first-class IM channel accounts failed to reconnect after user re-enable',
-      );
-    }
-    logger.info(
-      { userId, additionalAccounts: additionalAccounts.length },
-      'Reconnected user IM channels after re-enable',
-    );
-  };
-
   // Start Web server early so frontend auth/API isn't blocked by Feishu readiness.
   startWebServer({
     queue,
@@ -14012,9 +13746,6 @@ async function main(): Promise<void> {
         saveState();
       }
     },
-    reloadFeishuConnection,
-    reloadUserIMConfig,
-    reconnectUserIMChannels,
     reloadChannelAccount: reloadChannelAccountById,
     disconnectChannelAccount: disconnectChannelAccountById,
     testChannelAccount: testChannelAccountCredentials,
@@ -14028,12 +13759,6 @@ async function main(): Promise<void> {
           )
         : false;
     },
-    isFeishuConnected: () => imManager.isAnyFeishuConnected(),
-    isUserFeishuConnected: (userId: string) =>
-      imManager.isFeishuConnected(userId),
-    isUserQQConnected: (userId: string) => imManager.isQQConnected(userId),
-    isUserWeChatConnected: (userId: string) =>
-      imManager.isWeChatConnected(userId),
     processAgentConversation,
     getFeishuChatInfo: (userId: string, chatId: string) =>
       imManager.getFeishuChatInfo(userId, chatId),
@@ -14288,26 +14013,6 @@ async function main(): Promise<void> {
         await clearTrackedProcessingIndicators(groupJid);
       }
     },
-  );
-  // 用户级容器并发上限（ISSUE-07 批次B 项1）：原实现随 billing 订阅体系在
-  // 20febca 删除；现按系统设置 maxConcurrentContainersPerUser 恢复（null =
-  // 不启用），与 billing 彻底解耦。每次判定时即时读设置，热更新即时生效
-  // （对齐 maxConcurrentContainers 在 hasCapacityFor 里的读取方式）。
-  // 判定逻辑在 runtime-config 的 createUserContainerConcurrencyChecker，
-  // 与 tests/group-queue-user-concurrency.test.ts 共用同一实现。
-  queue.setUserConcurrentLimitChecker(
-    createUserContainerConcurrencyChecker({
-      getLimit: () => getSystemSettings().maxConcurrentContainersPerUser,
-      getGroup: (baseJid) => registeredGroups[baseJid],
-      getUserById,
-      getOwnedJids: (ownerId) =>
-        Object.entries(registeredGroups)
-          .filter(([, group]) => group.created_by === ownerId)
-          .map(([jid]) => jid),
-      hasDirectActiveRunner: (jid) => queue.hasDirectActiveRunner(jid),
-      countActiveTaskRunners: (baseJid) =>
-        queue.countActiveTaskRunners(baseJid),
-    }),
   );
   // Recovery: when agent process exits with unconsumed IPC messages,
   // re-enqueue processAgentConversation to pick them up. See issue #240.
@@ -14677,11 +14382,6 @@ async function main(): Promise<void> {
       if (allActiveUsers.length >= result.total) break;
       page++;
     }
-  }
-
-  // Register admin users for fallback IM routing
-  for (const user of allActiveUsers) {
-    if (user.role === 'admin') imManager.registerAdminUser(user.id);
   }
 
   let anyFeishuConnected = false;

@@ -265,9 +265,6 @@ export class GroupQueue {
         finishedAt: number,
       ) => void)
     | null = null;
-  private userConcurrentLimitFn:
-    | ((groupJid: string) => { allowed: boolean })
-    | null = null;
   private onUnconsumedAgentIpcFn:
     | ((groupJid: string, agentId: string) => void)
     | null = null;
@@ -735,12 +732,6 @@ export class GroupQueue {
     }
   }
 
-  setUserConcurrentLimitChecker(
-    fn: (groupJid: string) => { allowed: boolean },
-  ): void {
-    this.userConcurrentLimitFn = fn;
-  }
-
   /**
    * Called when an agent runner exits with unconsumed IPC message files.
    * The callback should re-enqueue processAgentConversation for the agent.
@@ -888,13 +879,6 @@ export class GroupQueue {
     const systemCapacity =
       this.activeContainerCount < getSystemSettings().maxConcurrentContainers;
     if (!systemCapacity) return false;
-
-    // User-level concurrent container limit (restored by ISSUE-07 item 1;
-    // billing was retired in ISSUE-09, this is not a billing gate).
-    if (this.userConcurrentLimitFn) {
-      const result = this.userConcurrentLimitFn(groupJid);
-      if (!result.allowed) return false;
-    }
     return true;
   }
 

@@ -8908,17 +8908,6 @@ export function getUserCount(includeDeleted = false): number {
   return row.count;
 }
 
-export function getActiveAdminCount(): number {
-  const row = db
-    .prepare(
-      `SELECT COUNT(*) as count
-       FROM users
-       WHERE role = 'admin' AND status = 'active'`,
-    )
-    .get() as { count: number };
-  return row.count;
-}
-
 type UserFieldUpdates = Partial<
   Pick<
     User,
@@ -9009,54 +8998,6 @@ export function updateUserFields(id: string, updates: UserFieldUpdates): void {
   db.prepare(`UPDATE users SET ${fields.join(', ')} WHERE id = ?`).run(
     ...values,
   );
-}
-
-/**
- * Promote/reactivate a user and enforce the admin host-only runtime projection
- * in one SQLite transaction. The caller still owns runner quiescing and the
- * system-settings policy check.
- */
-export function updateUserFieldsAndForceRuntimesToHost(
-  id: string,
-  updates: UserFieldUpdates,
-): AdminHostOnlyMigrationResult {
-  return db
-    .transaction(() => {
-      updateUserFields(id, updates);
-      const folderQuery =
-        'SELECT DISTINCT folder FROM registered_groups WHERE created_by = ?';
-      const migration = forceRuntimesToHostForFolderQuery(folderQuery, [id]);
-      db.prepare(
-        `DELETE FROM sessions WHERE group_folder IN (${folderQuery})`,
-      ).run(id);
-      db.prepare(
-        `DELETE FROM workspace_runtime_sessions
-         WHERE group_folder IN (${folderQuery})`,
-      ).run(id);
-      return migration;
-    })
-    .immediate();
-}
-
-export function deleteUser(id: string): void {
-  const now = new Date().toISOString();
-  const tx = db.transaction((userId: string) => {
-    db.prepare('DELETE FROM user_sessions WHERE user_id = ?').run(userId);
-    db.prepare(
-      `UPDATE users
-       SET status = 'deleted', deleted_at = ?, disable_reason = COALESCE(disable_reason, 'deleted_by_admin'), updated_at = ?
-       WHERE id = ?`,
-    ).run(now, now, userId);
-  });
-  tx(id);
-}
-
-export function restoreUser(id: string): void {
-  db.prepare(
-    `UPDATE users
-     SET status = 'disabled', deleted_at = NULL, disable_reason = NULL, updated_at = ?
-     WHERE id = ?`,
-  ).run(new Date().toISOString(), id);
 }
 
 // --- User Sessions ---

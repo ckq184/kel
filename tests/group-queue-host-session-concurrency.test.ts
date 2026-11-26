@@ -52,9 +52,6 @@ afterEach(async () => {
 describe('GroupQueue host-mode session concurrency', () => {
   test('different Feishu topic sessions start immediately without a global host slot pool', async () => {
     const queue = createQueue();
-    // Billing capacity is a Docker allocation concern and must not turn into a
-    // hidden host-process limit either.
-    queue.setUserConcurrentLimitChecker(() => ({ allowed: false }));
 
     const first = deferred();
     const second = deferred();

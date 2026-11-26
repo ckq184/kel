@@ -29,6 +29,7 @@
     "tests/im-manager-channel-accounts.test.ts",
     "tests/claude-context-resolver.test.ts",
     "tests/owner-gate.test.ts",
+    "tests/mcp-runtime-secret-boundary.test.ts",
     "tests/system-settings-per-user-echo.test.ts",
     "tests/group-queue-user-concurrency.test.ts"
   ]

@@ -624,15 +624,6 @@ export const SystemSettingsSchema = z
       .max(104857600)
       .optional(),
     maxConcurrentContainers: z.number().int().min(1).max(100).optional(),
-    // 用户级容器并发上限（容器模式）：null = 不启用；与 runtime-config 的
-    // normalize 口径一致（正整数、上限 100、可空）。
-    maxConcurrentContainersPerUser: z
-      .number()
-      .int()
-      .min(1)
-      .max(100)
-      .nullable()
-      .optional(),
     // Deprecated compatibility input. Host execution is serialized only by
     // Session; the route accepts and discards this key for stale clients.
     maxConcurrentHostProcesses: z.number().int().min(1).max(50).optional(),

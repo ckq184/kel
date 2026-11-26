@@ -13,7 +13,7 @@
 ## 1. 执行前核实（base `48903d0`）
 
 | 项                       | 复核结论                                                                                                                                                                                                                                                                                                                                             |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `reset:admin`            | `src/reset-admin.ts:40-51` 在用户名不存在时 `createUser`；无现存测试。脚本顶层 `void main()`，直接 import 会执行入口，需先抽出可测函数并加 CLI 入口判定。                                                                                                                                                                                            |
 | index 用户热重载         | `reloadFeishuConnection`（:13744）、`reloadUserIMConfig`（:13788）、`reconnectUserIMChannels`（:13957）及 `startWebServer` 接线（:14015-14017）无其他调用方；`web-context.ts` 的三个同名依赖只有声明与接线，无消费方。                                                                                                                               |
 | index 连接状态接线       | `isUserFeishuConnected`/`isUserQQConnected`/`isUserWeChatConnected`/`isFeishuConnected` 只出现在 `web-context.ts` 声明与 `index.ts` 接线；`isAnyFeishuConnected` 仍被 :14808 使用，保留。                                                                                                                                                            |
@@ -24,12 +24,12 @@
 | `ownerHomeFolder` 转发链 | `claude-context-resolver.ts:42` 声明未读；`container-runner.ts` 9 处逐层透传；`index.ts` 计算 + 2 处实参；`task-scheduler.ts` 计算 + 实参。以上全部删除。`task-routing.ts` 见证参数按用户裁决保留（见 §0），因此全仓仍会看到 3 行注释。                                                                                                              |
 | 按用户并发上限           | `runtime-config.ts` 接口/默认值/normalize/env 回退 + `nullableLimitField` + `createUserContainerConcurrencyChecker`；`index.ts:14293-14310` 接线；`group-queue.ts` 字段/setter/`hasCapacityFor`；`schemas.ts:629`；`routes/config.ts:1301`。                                                                                                         |
 | 额外受影响测试           | `channel-account-startup-contract`（2 条断言待删函数）、`group-queue-host-session-concurrency`（1 行 checker）、`routes-provider-runtime-apply`（用 checker 制造容量排队，需改用全局容器容量）、`im-manager-channel-accounts`（调用待删 `disconnectUserFeishu`）、`claude-context-resolver`（8 处待删字段）、`owner-gate`（注释提及 `deleteUser`）。 |
-| 文档                     | `docs/API.md` 只列 `GET                                                                                                                                                                                                                                                                                                                              | PUT /api/config/system`，未列任何系统设置字段；无可删字段说明（交付记录说明）。`CLAUDE.md`只提全局`maxConcurrentContainers`，不动。 |
+| 文档                     | `docs/API.md` 只列 `GET / PUT /api/config/system`，未列任何系统设置字段；无可删字段说明（交付记录说明）。`CLAUDE.md` 只提全局 `maxConcurrentContainers`，不动。                                                                                                                                                                                      |
 
 与 issue 的差异：
 
 1. `ownerHomeFolder` 的 task-routing 见证参数与其测试保留（§0 用户裁决）；issue 的“23 处”按转发链执行，`src/task-routing.ts` 不改。
-2. issue 未列出的 `tests/routes-provider-runtime-apply.test.ts`、`tests/group-queue-host-session-concurrency.test.ts`、`tests/im-manager-channel-accounts.test.ts`、`tests/claude-context-resolver.test.ts`、`tests/owner-gate.test.ts` 落在 `tests/**` 范围内，需同步适配。
+2. issue 未列出的 `tests/routes-provider-runtime-apply.test.ts`、`tests/group-queue-host-session-concurrency.test.ts`、`tests/im-manager-channel-accounts.test.ts`、`tests/claude-context-resolver.test.ts`、`tests/owner-gate.test.ts`、`tests/mcp-runtime-secret-boundary.test.ts` 落在 `tests/**` 范围内，需同步适配。
 
 ## 2. 方案（TDD）
 
@@ -51,7 +51,7 @@
    `maxConcurrentContainersPerUser`、`MAX_CONCURRENT_CONTAINERS_PER_USER`、
    `createUserContainerConcurrencyChecker`、`setUserConcurrentLimitChecker`；
    以及 `ownerHomeFolder` 在 `claude-context-resolver.ts`、`container-runner.ts`、`index.ts`、`task-scheduler.ts` 零出现。
-3. **系统设置接口**：`GET /api/config/system` 响应不含 `maxConcurrentContainersPerUser`；`PUT` 带该字段返回 200 但响应仍不含。
+3. **系统设置接口**：`GET /api/config/system` 响应不含 `maxConcurrentContainersPerUser`；`PUT` 带该字段因 strict schema 返回 400，且不持久化。
 
 同步修改锁定测试：
 
@@ -100,7 +100,7 @@
 
 ## 4. 范围声明（`.gatescope.json` allow）
 
-`.gatescope.json`、`docs/thesis-19-single-account-gate-plan.md`、`docs/issues4/THESIS-19-single-account-gate.md`、`docs/issues4/README.md`、`docs/issues4/task-personal-slim-plan.md`、`docs/审查记录.md`、`src/index.ts`、`src/im-manager.ts`、`src/web-context.ts`、`src/db.ts`、`src/host-execution-policy.ts`、`src/claude-context-resolver.ts`、`src/container-runner.ts`、`src/task-scheduler.ts`、`src/runtime-config.ts`、`src/schemas.ts`、`src/routes/config.ts`、`src/group-queue.ts`、`src/reset-admin.ts`、`tests/thesis-19-single-account-gate.test.ts`、`tests/channel-account-startup-contract.test.ts`、`tests/group-queue-host-session-concurrency.test.ts`、`tests/routes-provider-runtime-apply.test.ts`、`tests/host-execution-policy.test.ts`、`tests/im-manager-channel-accounts.test.ts`、`tests/claude-context-resolver.test.ts`、`tests/owner-gate.test.ts`、`tests/system-settings-per-user-echo.test.ts`、`tests/group-queue-user-concurrency.test.ts`。
+`.gatescope.json`、`docs/thesis-19-single-account-gate-plan.md`、`docs/issues4/THESIS-19-single-account-gate.md`、`docs/issues4/README.md`、`docs/issues4/task-personal-slim-plan.md`、`docs/审查记录.md`、`src/index.ts`、`src/im-manager.ts`、`src/web-context.ts`、`src/db.ts`、`src/host-execution-policy.ts`、`src/claude-context-resolver.ts`、`src/container-runner.ts`、`src/task-scheduler.ts`、`src/runtime-config.ts`、`src/schemas.ts`、`src/routes/config.ts`、`src/group-queue.ts`、`src/reset-admin.ts`、`tests/thesis-19-single-account-gate.test.ts`、`tests/channel-account-startup-contract.test.ts`、`tests/group-queue-host-session-concurrency.test.ts`、`tests/routes-provider-runtime-apply.test.ts`、`tests/host-execution-policy.test.ts`、`tests/im-manager-channel-accounts.test.ts`、`tests/claude-context-resolver.test.ts`、`tests/owner-gate.test.ts`、`tests/mcp-runtime-secret-boundary.test.ts`、`tests/system-settings-per-user-echo.test.ts`、`tests/group-queue-user-concurrency.test.ts`。
 
 与 issue“预计改动路径”的差异：不含 `src/task-routing.ts`（见证参数保留），不含 `docs/API.md`（无字段可删）。
 
