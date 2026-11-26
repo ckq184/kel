@@ -7,10 +7,10 @@
 | 优先级        | P2                                                                                                                                                                                                                                                                                                                                                                         |
 | 类型          | 兼容收窄（第二真源与旧迁移）                                                                                                                                                                                                                                                                                                                                               |
 | 依赖          | THESIS-19（同在 `src/index.ts` 13447 起的区域）                                                                                                                                                                                                                                                                                                                            |
-| 阻塞          | 23、26、28 至 31                                                                                                                                                                                                                                                                                                                                                           |
-| 可并行        | ✅ 21、24、25、27、32、33。⚠️ 20（`src/index.ts`、`src/runtime-config.ts` 不同区域）。❌ 19、23、26、28 至 31（口径见 [README 第三节](README.md#三并行关系与执行顺序)）                                                                                                                                                                                                    |
+| 阻塞          | 23、35、28 至 31                                                                                                                                                                                                                                                                                                                                                           |
+| 可并行        | 见 [README 3.1](README.md#31-并行矩阵) 第 22 行                                                                                                                                                                                                                                                                                                                            |
 | 预计改动路径  | `src/runtime-config.ts`（旧 IM 配置段）、`src/channel-account-migration.ts`、`src/routes/channel-accounts.ts`、`src/index.ts`（`migrateSystemIMToPerUser`、`syncLegacyConfigToDefaultChannelAccount`、`migrateDataDirectories`、`autoIsolateContext` 接线）、`src/im-context-isolation.ts`、`src/web-context.ts`、`src/schemas.ts`、`tests/**`、`CLAUDE.md`、`docs/API.md` |
-| 需用户决策    | **是**：D-I1、D-I2                                                                                                                                                                                                                                                                                                                                                         |
+| 需用户决策    | 否（v1.1：D-I1、D-I2 已定）                                                                                                                                                                                                                                                                                                                                                |
 | 来源          | 方案 P3、§5；ISSUE-11 计划中"迁移后消除第二真源"未完成的部分                                                                                                                                                                                                                                                                                                               |
 
 ## 目标
@@ -22,7 +22,7 @@
 - `src/runtime-config.ts`：旧按用户 IM 配置目录与读写（:2256 起，至约 :2509）、全局飞书配置读写（约 :1669–1717）。
 - `src/channel-account-migration.ts`（92 行）：把旧配置复制成默认渠道账号。
 - `src/routes/channel-accounts.ts` 约 252–372：注释仍称 `/user-im` 路由存在（ISSUE-11 已删）。
-- `src/index.ts`：`migrateSystemIMToPerUser`（:4116，启动时调用于 :13627）、`syncLegacyConfigToDefaultChannelAccount`（:13447）、`movePathWithFallback`/`migrateDataDirectories`（:13521 起）。
+- `src/index.ts`：`migrateSystemIMToPerUser`（:4116，启动时调用于 :13627）、`syncLegacyConfigToDefaultChannelAccount`（:13447）、`movePathWithFallback`/`migrateDataDirectories`（:13521 起）。另有 `src/index.ts` 14666–14794 按用户遍历（`listUsers`）的旧 IM 投影循环，一并删除。
 - 仍在用的读点：`ownerOpenId` 的两处读取与微信游标镜像（调查时在 `src/index.ts` 约 3447、13023、13408 一带）——这些值已存在渠道账号的密文里，要改为从渠道账号读取，不能直接删。
 - `autoIsolateContext`：`src/im-context-isolation.ts`（102 行）、`src/index.ts` 两处接线；`web/src` 零引用，无路由，只能手改旧 json 开启。
 - 钉死的测试：`tests/channel-account-startup-contract.test.ts`、`tests/feishu-channel-account-owner.test.ts`、`tests/wechat-account-runtime-contract.test.ts` 按名字切片读 `syncLegacyConfigToDefaultChannelAccount`；`tests/feishu-config-validation.test.ts` 是 `FeishuConfigSchema` 的唯一使用方。
@@ -34,12 +34,14 @@
 - 不改多账号能力（第二轮 §8.3 非目标）。
 - 不读 `data/`，不删磁盘上的旧 json 文件（合入后只是不再读取）。
 
-## 需用户决策（领取前拍板）
+## 已定事项（v1.1，2026-11-25）
 
-| #    | 问题                                             | 选项                                                             | 建议                               |
-| ---- | ------------------------------------------------ | ---------------------------------------------------------------- | ---------------------------------- |
-| D-I1 | 旧 IM 配置文件                                   | ① 不再读取，相关读写、迁移与复制逻辑全删；② 保留只读迁移一个版本 | ①（前提：README 第四节的用户确认） |
-| D-I2 | `autoIsolateContext`（新飞书私聊自动建独立会话） | ① 删除；② 保留并补设置界面                                       | ①                                  |
+| 原决策                    | 结论                                                             | 依据                                                  |
+| ------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------- |
+| D-I1 旧 IM 配置文件       | **不再读取**，相关读写、迁移、复制与按用户投影逻辑全删，不写搬迁 | 方案 P8；本机已只读核实无旧 IM 配置文件、渠道账号为 0 |
+| D-I2 `autoIsolateContext` | **删除**                                                         | 只能经旧 json 开启，无界面无路由；随旧配置一并裁掉    |
+
+飞书 `ownerOpenId` 与微信游标今后只存在渠道账号里；本机没有存量值需要保留。
 
 ## 执行前核实
 
@@ -59,7 +61,7 @@
 
 ## 风险与回滚
 
-- 若用户仍有只存在于旧 json 里的渠道配置，合入后该渠道不会连接。README 第四节要求合入前确认。
+- 若某部署仍有只存在于旧 json 里的渠道配置，合入后该渠道不会连接。本机已核实不存在此类文件（README 第四节）。
 - 回滚：`git revert <提交号>`。
 
 ## 交付记录
