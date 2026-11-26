@@ -30,21 +30,14 @@ function makeGroup(partial: Partial<RegisteredGroup>): RegisteredGroup {
 }
 
 describe('canSendCrossGroupMessage', () => {
-  test('admin home can send to any target', () => {
+  test('Home can send to any target', () => {
     const target = makeGroup({ folder: 'other', created_by: 'someoneelse' });
     expect(
-      canSendCrossGroupMessage(
-        true,
-        'main',
-        undefined,
-        target,
-        () => undefined,
-      ),
+      canSendCrossGroupMessage(true, 'main', target, () => undefined),
     ).toBe(true);
   });
 
   test('non-home group can send to a target sharing the same folder', () => {
-    const source = makeGroup({ folder: 'flow-x', created_by: 'u1' });
     const target = makeGroup({ folder: 'flow-x', created_by: 'u1' });
     expect(
       canSendCrossGroupMessage(false, 'flow-x', target, () => undefined),
@@ -52,7 +45,6 @@ describe('canSendCrossGroupMessage', () => {
   });
 
   test('non-home + different folder + different owner → denied', () => {
-    const source = makeGroup({ folder: 'flow-x', created_by: 'u1' });
     const target = makeGroup({ folder: 'flow-y', created_by: 'u2' });
     expect(
       canSendCrossGroupMessage(false, 'flow-x', target, () => undefined),
@@ -62,7 +54,6 @@ describe('canSendCrossGroupMessage', () => {
   // Branch 4: the f93d922 fix. Sub-workspace flow-x is bound to an IM
   // chat (qq:c2c:xxx) via target_main_jid; replies must succeed.
   test('IM chat bound to source workspace via target_main_jid → allowed', () => {
-    const source = makeGroup({ folder: 'flow-x', created_by: 'u1' });
     // The IM "group" entry has target_main_jid pointing at the workspace's
     // web jid. The lookup resolves that jid to the bound workspace whose
     // folder matches sourceFolder.
@@ -82,7 +73,6 @@ describe('canSendCrossGroupMessage', () => {
   });
 
   test('Feishu native topic route inherits its bound conversation ACL', () => {
-    const source = makeGroup({ folder: 'flow-x', created_by: 'u1' });
     const topicRoute =
       'feishu:oc_topic#thread:omt_current#root:om_current_root';
     const imTarget = makeGroup({
@@ -108,7 +98,6 @@ describe('canSendCrossGroupMessage', () => {
   });
 
   test('IM chat bound to a DIFFERENT workspace → denied', () => {
-    const source = makeGroup({ folder: 'flow-x', created_by: 'u1' });
     const imTarget = makeGroup({
       folder: 'main',
       target_main_jid: 'web:flow-y',
@@ -124,7 +113,6 @@ describe('canSendCrossGroupMessage', () => {
   });
 
   test('target_main_jid points to an unknown jid → denied', () => {
-    const source = makeGroup({ folder: 'flow-x', created_by: 'u1' });
     const imTarget = makeGroup({
       folder: 'main',
       target_main_jid: 'web:does-not-exist',
@@ -137,13 +125,7 @@ describe('canSendCrossGroupMessage', () => {
 
   test('undefined target → denied (regardless of source flags)', () => {
     expect(
-      canSendCrossGroupMessage(
-        false,
-        'flow-x',
-        undefined,
-        undefined,
-        () => undefined,
-      ),
+      canSendCrossGroupMessage(false, 'flow-x', undefined, () => undefined),
     ).toBe(false);
   });
 });
