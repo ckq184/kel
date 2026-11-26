@@ -15,7 +15,7 @@ import type { RegisteredGroup } from '../src/types.js';
  *      could not reply to its IM channel after agent-runner started
  *      rewriting ctx.chatJid to the IM source jid)
  *
- * Mutation checks (run by QA): removing branch 4 should turn the
+ * Mutation checks (run by QA): removing branch 3 should turn the
  * "bound IM jid" cases red. Flipping `bound?.folder === sourceFolder`
  * to `===` against anything else should also fail.
  */
@@ -51,14 +51,14 @@ describe('canSendCrossGroupMessage', () => {
     ).toBe(false);
   });
 
-  // Branch 4: the f93d922 fix. Sub-workspace flow-x is bound to an IM
+  // Bound-conversation branch (f93d922). Sub-workspace flow-x is bound to an IM
   // chat (qq:c2c:xxx) via target_main_jid; replies must succeed.
   test('IM chat bound to source workspace via target_main_jid → allowed', () => {
     // The IM "group" entry has target_main_jid pointing at the workspace's
     // web jid. The lookup resolves that jid to the bound workspace whose
     // folder matches sourceFolder.
     const imTarget = makeGroup({
-      folder: 'main', // home folder of admin (where IM messages land)
+      folder: 'main', // Home folder (where IM messages land)
       target_main_jid: 'web:flow-x',
     });
     const lookupGroup = vi.fn((jid: string) =>
