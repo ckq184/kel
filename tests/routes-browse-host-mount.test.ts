@@ -50,7 +50,7 @@ vi.mock('../src/middleware/auth.ts', () => ({
       id: 'browse-user',
       username: 'browse-user',
       role: 'admin',
-      status: 'active',
+      status: process.env.CKQCLAW_BROWSE_TEST_USER_STATUS ?? 'active',
     });
     return next();
   },
@@ -100,6 +100,26 @@ describe.sequential('mount-purpose directory browsing', () => {
 
     const response = await routes.request('/directories?purpose=mount');
     expect(response.status).toBe(200);
+  });
+
+  test('rejects host mount browsing for an inactive account', async () => {
+    writePolicy([
+      {
+        path: allowedRoot,
+        allowReadWrite: false,
+        description: 'Allowed',
+      },
+    ]);
+    process.env.CKQCLAW_BROWSE_TEST_USER_STATUS = 'disabled';
+    try {
+      const routes = await loadBrowseRoutes();
+      const response = await routes.request('/directories?purpose=mount');
+      const body = (await response.json()) as Record<string, unknown>;
+      expect(response.status).toBe(403);
+      expect(body.code).toBe('HOST_MOUNT_ACCOUNT_INACTIVE');
+    } finally {
+      delete process.env.CKQCLAW_BROWSE_TEST_USER_STATUS;
+    }
   });
 
   test('fails closed instead of falling back to HOME when policy is missing', async () => {
