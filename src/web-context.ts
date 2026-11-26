@@ -58,15 +58,6 @@ export interface WebDeps {
    * compatibility with focused route-test fixtures. */
   completeOutOfBandMessage?: (jid: string, cursor: MessageCursor) => void;
   advanceGlobalCursor: (cursor: MessageCursor) => void;
-  reloadFeishuConnection?: (config: {
-    appId: string;
-    appSecret: string;
-    enabled?: boolean;
-  }) => Promise<boolean>;
-  reloadUserIMConfig?: (
-    userId: string,
-    channel: 'feishu' | 'qq' | 'wechat',
-  ) => Promise<boolean>;
   reloadChannelAccount?: (accountId: string) => Promise<boolean>;
   disconnectChannelAccount?: (accountId: string) => Promise<void>;
   testChannelAccount?: (
@@ -74,18 +65,6 @@ export interface WebDeps {
     secret: ChannelAccountSecret,
   ) => Promise<{ success: boolean; unsupported?: boolean; error?: string }>;
   isChannelAccountConnected?: (accountId: string) => boolean;
-  /**
-   * Reconnect all of a user's IM channels from their persisted config.
-   * Symmetric counterpart to `imManager.disconnectAllUserChannels` — called
-   * when admin re-enables (or restores) a previously disabled/deleted user so
-   * their bots come back without a service restart. Only enabled channels
-   * with valid credentials actually connect.
-   */
-  reconnectUserIMChannels?: (userId: string) => Promise<void>;
-  isFeishuConnected?: () => boolean;
-  isUserFeishuConnected?: (userId: string) => boolean;
-  isUserQQConnected?: (userId: string) => boolean;
-  isUserWeChatConnected?: (userId: string) => boolean;
   processAgentConversation?: (
     chatJid: string,
     agentId: string,

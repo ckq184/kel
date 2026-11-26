@@ -39,7 +39,6 @@ interface ClaudeNativeConfigEntry {
 interface ClaudeContextPlanArgs {
   executionMode: 'host' | 'container';
   group: RegisteredGroup;
-  ownerHomeFolder?: string;
   externalClaudeDir: string;
   projectRoot: string;
   dataDir: string;

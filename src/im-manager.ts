@@ -136,19 +136,10 @@ interface ConnectFeishuOptions {
 
 export class IMConnectionManager {
   private connections = new Map<string, UserIMConnection>();
-  private adminUserIds = new Set<string>();
   // Per-(userId, channelType) 串行化锁。connectChannel / disconnectChannel
   // 必须按顺序排队，否则两次重叠的 reconnect 会让旧 disconnect 的清理跨过新
   // connect 的 channels.set，留下一条悬挂的 live channel（双发消息）。
   private channelLocks = new Map<string, Promise<unknown>>();
-  // Per-user 串行化锁：disconnectAllUserChannels 必须独占整个 user 范围，
-  // 否则只锁 channelType 时与 in-flight connectChannel('其他 channelType')
-  // 的 channels.set 仍会 race，让 connections.delete 之后 channel 复活。
-  // 同时记录 'sealed' 状态：disconnectAll 完成后的窗口里禁止 connectChannel
-  // 重新创建该 userId 的 connections 入口，直到外层逻辑显式调用
-  // markUserConnectableAgain（loadState 重建路径）。
-  private userLocks = new Map<string, Promise<unknown>>();
-  private sealedUsers = new Set<string>();
   // A provider credential must own at most one live connector. Duplicate
   // Feishu/QQ accounts otherwise compete for the
   // same event stream (409 polling conflicts or duplicate replies).
@@ -252,7 +243,6 @@ export class IMConnectionManager {
       accountId ? scopeChannelJid(jid, accountId) : jid;
     const inboundAllowed = (): boolean => {
       if (this.inboundPaused) return false;
-      if (userId && this.sealedUsers.has(userId)) return false;
       // Most lifecycle unit tests intentionally use the manager without a DB.
       // The production process always initializes SQLite before connecting IM.
       if (!userId || !isDatabaseInitialized()) return true;
@@ -477,30 +467,6 @@ export class IMConnectionManager {
     };
   }
 
-  private async withUserLock<T>(
-    userId: string,
-    fn: () => Promise<T>,
-  ): Promise<T> {
-    const prev = this.userLocks.get(userId) ?? Promise.resolve();
-    let release: () => void;
-    const next = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const chain = prev.catch(() => undefined).then(() => next);
-    this.userLocks.set(userId, chain);
-    await prev.catch(() => undefined);
-    try {
-      return await fn();
-    } finally {
-      release!();
-      // Drop tail entry once nothing else queued behind us, prevent unbounded
-      // growth of the lock map for short-lived users.
-      if (this.userLocks.get(userId) === chain) {
-        this.userLocks.delete(userId);
-      }
-    }
-  }
-
   private async withChannelLock<T>(
     userId: string,
     channelType: string,
@@ -527,11 +493,6 @@ export class IMConnectionManager {
     }
   }
 
-  /** Register a user ID as admin (for fallback routing) */
-  registerAdminUser(userId: string): void {
-    this.adminUserIds.add(userId);
-  }
-
   private getOrCreate(userId: string): UserIMConnection {
     let conn = this.connections.get(userId);
     if (!conn) {
@@ -556,113 +517,70 @@ export class IMConnectionManager {
     credentialIdentity?: string,
   ): Promise<boolean> {
     const channelKey = this.channelKey(channelType, accountId);
-    // user 维度锁 + sealed 检查：避免与 disconnectAllUserChannels race。
-    // disconnect-all 期间任何 connect 都被排到锁队列后面；disconnect-all
-    // 完成时把 user 标 sealed，新 connect 直接拒绝。运维流程：禁用/删除
-    // 用户后调用 markUserReconnectable 重新允许（loadState / 用户重新启用）。
-    return this.withUserLock(userId, async () => {
-      if (this.sealedUsers.has(userId)) {
-        logger.warn(
-          { userId, channelType },
-          'connectChannel rejected: user sealed (disabled/deleted)',
+    return this.withChannelLock(userId, channelKey, async () => {
+      // Disconnect existing channel of same type
+      await this.disconnectChannelLocked(userId, channelKey);
+
+      if (credentialIdentity) {
+        this.claimCredential(
+          channelType,
+          credentialIdentity,
+          userId,
+          accountId,
         );
-        // 谨慎：仍然 disconnect 任何已构造的 channel 释放底层资源
+      }
+      const conn = this.getOrCreate(userId);
+      const cleanupRejectedChannel = async (): Promise<boolean> => {
         try {
           await channel.disconnect();
-        } catch {
-          /* ignore */
-        }
-        return false;
-      }
-      return this.withChannelLock(userId, channelKey, async () => {
-        // Disconnect existing channel of same type
-        await this.disconnectChannelLocked(userId, channelKey);
-
-        // Re-check sealed inside the channel-lock — disconnectAllUserChannels
-        // may have flipped it while we were waiting; in that case bail.
-        if (this.sealedUsers.has(userId)) {
-          try {
-            await channel.disconnect();
-          } catch {
-            /* ignore */
-          }
+          return true;
+        } catch (cleanupError) {
+          // A failed cleanup may leave provider timers/listeners alive. Keep
+          // both the connector and credential claim tracked so shutdown or
+          // a later disconnect retry can finish cleanup without allowing a
+          // duplicate connector to claim the same Bot identity.
+          conn.channels.set(channelKey, channel);
+          logger.error(
+            { cleanupError, userId, channelType, accountId },
+            'Failed IM connector cleanup remains tracked for retry',
+          );
           return false;
         }
-        if (credentialIdentity) {
-          this.claimCredential(
-            channelType,
-            credentialIdentity,
+      };
+      let connected: boolean;
+      try {
+        connected = await channel.connect(
+          this.scopeConnectOpts(
+            opts,
+            scopeIncomingJids ? accountId : null,
             userId,
-            accountId,
-          );
+          ),
+        );
+      } catch (error) {
+        if (await cleanupRejectedChannel()) {
+          this.releaseCredentialClaim(userId, channelKey);
         }
-        const conn = this.getOrCreate(userId);
-        const cleanupRejectedChannel = async (): Promise<boolean> => {
+        throw error;
+      }
+      if (connected) {
+        conn.channels.set(channelKey, channel);
+        for (const listener of this.channelReadyListeners) {
           try {
-            await channel.disconnect();
-            return true;
-          } catch (cleanupError) {
-            // A failed cleanup may leave provider timers/listeners alive. Keep
-            // both the connector and credential claim tracked so shutdown or
-            // a later disconnect retry can finish cleanup without allowing a
-            // duplicate connector to claim the same Bot identity.
-            conn.channels.set(channelKey, channel);
-            logger.error(
-              { cleanupError, userId, channelType, accountId },
-              'Failed IM connector cleanup remains tracked for retry',
+            listener({ userId, channelType, accountId: accountId ?? null });
+          } catch (error) {
+            logger.warn(
+              { error, userId, channelType, accountId },
+              'IM channel-ready listener failed',
             );
-            return false;
-          }
-        };
-        let connected: boolean;
-        try {
-          connected = await channel.connect(
-            this.scopeConnectOpts(
-              opts,
-              scopeIncomingJids ? accountId : null,
-              userId,
-            ),
-          );
-        } catch (error) {
-          if (await cleanupRejectedChannel()) {
-            this.releaseCredentialClaim(userId, channelKey);
-          }
-          throw error;
-        }
-        if (connected) {
-          // 第三次也是最后一次 sealed 检查：channel.connect 期间网络耗时，
-          // disconnectAllUserChannels 可能已经把所有 channel 都断完并 seal。
-          if (this.sealedUsers.has(userId)) {
-            try {
-              await channel.disconnect();
-            } catch {
-              /* ignore */
-            }
-            this.releaseCredentialClaim(userId, channelKey);
-            return false;
-          }
-          conn.channels.set(channelKey, channel);
-          for (const listener of this.channelReadyListeners) {
-            try {
-              listener({ userId, channelType, accountId: accountId ?? null });
-            } catch (error) {
-              logger.warn(
-                { error, userId, channelType, accountId },
-                'IM channel-ready listener failed',
-              );
-            }
-          }
-          logger.info(
-            { userId, channelType, accountId },
-            'IM channel connected',
-          );
-        } else {
-          if (await cleanupRejectedChannel()) {
-            this.releaseCredentialClaim(userId, channelKey);
           }
         }
-        return connected;
-      });
+        logger.info({ userId, channelType, accountId }, 'IM channel connected');
+      } else {
+        if (await cleanupRejectedChannel()) {
+          this.releaseCredentialClaim(userId, channelKey);
+        }
+      }
+      return connected;
     });
   }
 
@@ -1159,20 +1077,12 @@ export class IMConnectionManager {
     );
   }
 
-  async disconnectUserFeishu(userId: string): Promise<void> {
-    await this.disconnectChannel(userId, 'feishu');
-  }
-
   async disconnectUserChannelAccount(
     userId: string,
     channelType: string,
     accountId: string,
   ): Promise<void> {
     await this.disconnectChannelAccount(userId, channelType, accountId);
-  }
-
-  async disconnectUserQQ(userId: string): Promise<void> {
-    await this.disconnectChannel(userId, 'qq');
   }
 
   /**
@@ -1253,10 +1163,6 @@ export class IMConnectionManager {
       options?.scopeIncomingJids,
       config.ilinkBotId,
     );
-  }
-
-  async disconnectUserWeChat(userId: string): Promise<void> {
-    await this.disconnectChannel(userId, 'wechat');
   }
 
   /**
@@ -1347,27 +1253,11 @@ export class IMConnectionManager {
     }
   }
 
-  isFeishuConnected(userId: string): boolean {
-    const conn = this.connections.get(userId);
-    return this.hasConnectedType(conn, 'feishu');
-  }
-
-  isQQConnected(userId: string): boolean {
-    const conn = this.connections.get(userId);
-    return this.hasConnectedType(conn, 'qq');
-  }
-
-  /** Check if any user has an active Feishu connection */
   isAnyFeishuConnected(): boolean {
     for (const conn of this.connections.values()) {
       if (this.hasConnectedType(conn, 'feishu')) return true;
     }
     return false;
-  }
-
-  isWeChatConnected(userId: string): boolean {
-    const conn = this.connections.get(userId);
-    return this.hasConnectedType(conn, 'wechat');
   }
 
   private hasConnectedType(
@@ -1471,57 +1361,6 @@ export class IMConnectionManager {
       }
     }
     return ids;
-  }
-
-  /**
-   * Disconnect all IM channels owned by a single user (feishu /
-   * qq / wechat). Used when admin disables
-   * or deletes a user — without this, an active feishu bot would keep
-   * responding to that user's group messages until the next service restart
-   * (loadState filters out non-active users at startup).
-   */
-  async disconnectAllUserChannels(userId: string): Promise<void> {
-    // 必须用 user-scope 锁串行 + 设 sealed 标记：仅 channelType 锁锁不住与
-    // 同一 user 的其他 channelType 的 connectChannel 并发，会让被禁用用户的
-    // connections 在 connections.delete 之后又被 connectChannel.getOrCreate
-    // 复活，bot 持续响应消息。sealed 标记让后续 connectChannel 直接拒绝
-    // 直到 markUserReconnectable 调用（恢复用户启用时由 reconnectUserIMChannels 触发）。
-    await this.withUserLock(userId, async () => {
-      this.sealedUsers.add(userId);
-      const conn = this.connections.get(userId);
-      if (!conn) {
-        logger.info({ userId }, 'No IM connections for user, marked sealed');
-        return;
-      }
-      const channelTypes = Array.from(conn.channels.keys());
-      for (const ct of channelTypes) {
-        try {
-          await this.disconnectChannelLocked(userId, ct);
-        } catch (err) {
-          logger.warn(
-            { userId, channelType: ct, err },
-            'Error disconnecting user IM channel',
-          );
-        }
-      }
-      const remaining = this.connections.get(userId);
-      if (remaining && remaining.channels.size === 0) {
-        this.connections.delete(userId);
-      }
-      logger.info(
-        { userId, sealedDuringDisconnect: true },
-        'All IM channels for user disconnected',
-      );
-    });
-  }
-
-  /**
-   * Allow connectChannel for this userId again. Used by reconnectUserIMChannels
-   * when an admin re-enables a previously disabled/deleted user — without this
-   * the sealed flag would block all reconnection until process restart.
-   */
-  markUserReconnectable(userId: string): void {
-    this.sealedUsers.delete(userId);
   }
 
   /**

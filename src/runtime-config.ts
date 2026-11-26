@@ -6,7 +6,6 @@ import os from 'os';
 import { ASSISTANT_NAME, DATA_DIR } from './config.js';
 import { logger } from './logger.js';
 import { stripOneMillionSuffix } from './model-suffix.js';
-import { stripVirtualJidSuffix } from './utils.js';
 
 const MAX_FIELD_LENGTH = 2000;
 const DEFAULT_THIRD_PARTY_PROFILE_ID = 'default';
@@ -2459,10 +2458,6 @@ export interface SystemSettings {
   idleTimeout: number;
   containerMaxOutputSize: number;
   maxConcurrentContainers: number;
-  // 用户级容器并发上限（容器模式）：null = 不启用。与 billing 无关——
-  // 原 billing 版上限随订阅体系在 20febca 删除，ISSUE-07 批次B 项1
-  // 按系统设置恢复（消费方 = group-queue 的 setUserConcurrentLimitChecker）。
-  maxConcurrentContainersPerUser: number | null;
   maxLoginAttempts: number;
   loginLockoutMinutes: number;
   // External Claude directory (admin only)
@@ -2498,7 +2493,6 @@ const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
   idleTimeout: 1800000,
   containerMaxOutputSize: 10485760,
   maxConcurrentContainers: 20,
-  maxConcurrentContainersPerUser: null,
   maxLoginAttempts: 5,
   loginLockoutMinutes: 15,
   externalClaudeDir: '',
@@ -2542,37 +2536,6 @@ function normalizeSystemSettings(
     const clamped = Math.min(max, Math.max(min, normalized));
     if (clamped !== parsed) invalidFields.add(String(key));
     return clamped;
-  };
-
-  // Nullable variant for opt-in limits: null = disabled (not an error).
-  // Out-of-range values fall back to null (disabled) instead of clamping —
-  // silently clamping an opt-in limit would enable a gate the admin
-  // never asked for.
-  const nullableLimitField = (
-    key: keyof SystemSettings,
-    fallback: number | null,
-    min: number,
-    max: number,
-  ): number | null => {
-    const value = raw[key];
-    if (value === undefined) return fallback;
-    if (value === null) return null;
-    const parsed =
-      typeof value === 'number'
-        ? value
-        : allowStringNumbers && typeof value === 'string' && value.trim()
-          ? Number(value)
-          : NaN;
-    if (!Number.isFinite(parsed)) {
-      invalidFields.add(String(key));
-      return fallback;
-    }
-    const normalized = Math.floor(parsed);
-    if (normalized < min || normalized > max) {
-      invalidFields.add(String(key));
-      return fallback;
-    }
-    return normalized;
   };
 
   const booleanField = (
@@ -2693,12 +2656,6 @@ function normalizeSystemSettings(
       1,
       100,
     ),
-    maxConcurrentContainersPerUser: nullableLimitField(
-      'maxConcurrentContainersPerUser',
-      DEFAULT_SYSTEM_SETTINGS.maxConcurrentContainersPerUser,
-      1,
-      100,
-    ),
     maxLoginAttempts: numberField(
       'maxLoginAttempts',
       DEFAULT_SYSTEM_SETTINGS.maxLoginAttempts,
@@ -2755,9 +2712,6 @@ function buildEnvFallbackSettings(): SystemSettings {
       idleTimeout: process.env.IDLE_TIMEOUT,
       containerMaxOutputSize: process.env.CONTAINER_MAX_OUTPUT_SIZE,
       maxConcurrentContainers: process.env.MAX_CONCURRENT_CONTAINERS,
-      // 空串/未设 → undefined → 默认 null（不启用）。
-      maxConcurrentContainersPerUser:
-        process.env.MAX_CONCURRENT_CONTAINERS_PER_USER || undefined,
       maxLoginAttempts: process.env.MAX_LOGIN_ATTEMPTS,
       loginLockoutMinutes: process.env.LOGIN_LOCKOUT_MINUTES,
       externalClaudeDir: process.env.EXTERNAL_CLAUDE_DIR,
@@ -2866,47 +2820,4 @@ export function saveSystemSettings(
   }
 
   return merged;
-}
-
-// ─── 用户级容器并发上限（ISSUE-07 批次B 项1）───────────────────────────────
-// 20febca 移除 billing 订阅体系时，group-queue 的 setUserConcurrentLimitChecker
-// 生产注入方（原 getUserConcurrentContainerLimit）一并被删，用户级上限随之失效。
-// 现按系统设置 maxConcurrentContainersPerUser 恢复，与 billing 彻底解耦：
-// null = 不启用。工厂由 src/index.ts main() 注入真实依赖；测试注入桩依赖——
-// 生产与测试共用同一判定实现。
-
-export interface UserContainerConcurrencyDeps {
-  /** 每次判定时读取当前上限（null = 不启用）；调用方应即时读设置以支持热更新。 */
-  getLimit: () => number | null;
-  /** base JID → 已注册工作区（取 created_by 判定归属）。 */
-  getGroup: (baseJid: string) => { created_by?: string | null } | undefined;
-  getUserById: (
-    userId: string,
-  ) => { id: string; role: string } | null | undefined;
-  /** 枚举该用户拥有的全部已注册 base JID。 */
-  getOwnedJids: (ownerId: string) => string[];
-  hasDirectActiveRunner: (jid: string) => boolean;
-  countActiveTaskRunners: (baseJid: string) => number;
-}
-
-export function createUserContainerConcurrencyChecker(
-  deps: UserContainerConcurrencyDeps,
-): (groupJid: string) => { allowed: boolean } {
-  return (groupJid: string) => {
-    const limit = deps.getLimit();
-    if (limit == null) return { allowed: true };
-    const baseJid = stripVirtualJidSuffix(groupJid);
-    const group = deps.getGroup(baseJid);
-    if (!group?.created_by) return { allowed: true };
-    const owner = deps.getUserById(group.created_by);
-    if (!owner || owner.role === 'admin') return { allowed: true };
-    // 统计该用户名下 active runner：直接 runner + task 虚拟 JID runner
-    // （复刻 20febca 删除前的统计语义）。
-    let userActive = 0;
-    for (const jid of deps.getOwnedJids(owner.id)) {
-      if (deps.hasDirectActiveRunner(jid)) userActive++;
-      userActive += deps.countActiveTaskRunners(jid);
-    }
-    return { allowed: userActive < limit };
-  };
 }

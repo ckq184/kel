@@ -374,7 +374,6 @@ describe('managed MCP runtime secret boundary', () => {
         undefined,
         undefined,
         undefined,
-        undefined,
         {
           id: 'restricted-system-profile',
           name: 'Restricted System Profile',

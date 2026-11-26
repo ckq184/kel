@@ -994,7 +994,6 @@ export function buildVolumeMounts(
   isAdminHome: boolean,
   mountUserSkills = true,
   sessionAgentId?: string,
-  ownerHomeFolder?: string,
   taskRunId?: string,
   resolvedProvider?: ResolvedProvider,
   ipcAgentId?: string,
@@ -1076,7 +1075,6 @@ export function buildVolumeMounts(
   const claudeContextPlan = buildClaudeContextPlan({
     executionMode: 'container',
     group,
-    ownerHomeFolder,
     externalClaudeDir: getEffectiveExternalDir(),
     projectRoot,
     dataDir: DATA_DIR,
@@ -1515,7 +1513,6 @@ export async function runContainerAgent(
     selectedProviderId: string | null,
   ) => void,
   onOutput?: (output: ContainerOutput) => Promise<void>,
-  ownerHomeFolder?: string,
 ): Promise<ContainerOutput> {
   const startTime = Date.now();
   const sessionAgentId = input.sessionAgentId ?? input.agentId;
@@ -1578,7 +1575,6 @@ export async function runContainerAgent(
       isAdminHome,
       shouldMountUserSkills,
       sessionAgentId,
-      ownerHomeFolder,
       input.taskRunId,
       resolvedProvider,
       input.agentId,
@@ -1654,7 +1650,6 @@ export async function runContainerAgent(
         const audit = buildClaudeContextPlan({
           executionMode: 'container',
           group,
-          ownerHomeFolder,
           externalClaudeDir: getEffectiveExternalDir(),
           projectRoot: process.cwd(),
           dataDir: DATA_DIR,
@@ -2044,7 +2039,6 @@ export async function runHostAgent(
     selectedProviderId: string | null,
   ) => void,
   onOutput?: (output: ContainerOutput) => Promise<void>,
-  ownerHomeFolder?: string,
 ): Promise<ContainerOutput> {
   const startTime = Date.now();
   const sessionAgentId = input.sessionAgentId ?? input.agentId;
@@ -2192,7 +2186,6 @@ export async function runHostAgent(
   const hostClaudeContextPlan = buildClaudeContextPlan({
     executionMode: 'host',
     group,
-    ownerHomeFolder,
     externalClaudeDir: getEffectiveExternalDir(),
     projectRoot: process.cwd(),
     dataDir: DATA_DIR,
@@ -2788,7 +2781,6 @@ export async function runAgentWithModelFallback(
     selectedProviderId: string | null,
   ) => void,
   onOutput?: (output: ContainerOutput) => Promise<void>,
-  ownerHomeFolder?: string,
 ): Promise<ContainerOutput> {
   // A top-level Agent owns exactly one complete model configuration. Retrying
   // through other enabled configurations would violate that contract and can
@@ -2820,13 +2812,7 @@ export async function runAgentWithModelFallback(
         }
       : undefined;
 
-    lastOutput = await runFn(
-      group,
-      input,
-      onProcess,
-      gatedOnOutput,
-      ownerHomeFolder,
-    );
+    lastOutput = await runFn(group, input, onProcess, gatedOnOutput);
     if (
       input.isScheduledTask &&
       lastOutput.providerFailure &&
