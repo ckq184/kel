@@ -118,18 +118,16 @@ describe('host directory mount editor contract', () => {
     ]);
   });
 
-  it('gates mount controls to container-mode admins and clears stale drafts', () => {
+  it('gates mount controls to container workspaces and clears stale drafts', () => {
     const dialog = read('web/src/components/chat/CreateContainerDialog.tsx');
 
-    expect(dialog).toContain(
-      "const canHostExec = useAuthStore((s) => s.user?.role === 'admin');",
-    );
-    expect(dialog).toContain(
-      "if (canHostExec && executionMode === 'container') return;",
-    );
+    // THESIS-21：单账号下宿主机模式恒可用，不再按角色显隐。
+    expect(dialog).not.toContain('canHostExec');
+    expect(dialog).toContain("if (executionMode === 'container') return;");
     expect(dialog).toContain('setHostMounts([]);');
     expect(dialog).toContain('setFieldErrors({});');
-    expect(dialog).toContain("canHostExec && executionMode === 'container'");
+    // 挂载校验仍接在 container 分支上（不是只看模式字符串）。
+    expect(dialog).toContain('? validateHostDirectoryMounts(hostMounts)');
     expect(dialog).toContain('<HostDirectoryMountEditor');
   });
 

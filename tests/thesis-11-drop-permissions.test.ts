@@ -214,10 +214,12 @@ describe('permission system source cleanup', () => {
     }
   });
 
-  test('monitor route is guarded by role instead of permission', () => {
+  test('monitor route is guarded by auth instead of permission or role', () => {
     const appSource = read('web/src/App.tsx');
     expect(appSource).not.toContain('requiredPermission');
-    expect(appSource).toContain('requireAdmin');
+    // THESIS-21：系统只保留管理员一个角色，运行状态对唯一账号开放。
+    expect(appSource).not.toContain('requireAdmin');
+    expect(appSource).toMatch(/path="\/monitor"[\s\S]*<AuthGuard>/);
   });
 
   test('e2e user fixture no longer carries permissions', () => {

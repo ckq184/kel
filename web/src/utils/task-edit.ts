@@ -1,18 +1,4 @@
 export type TaskExecutionMode = 'host' | 'container';
-type TaskExecutionRole = 'admin' | 'member';
-
-export function getAllowedTaskExecutionModes(
-  role: TaskExecutionRole,
-): TaskExecutionMode[] {
-  return role === 'admin' ? ['host', 'container'] : ['container'];
-}
-
-export function canSelectTaskExecutionMode(
-  role: TaskExecutionRole,
-  mode: TaskExecutionMode,
-): boolean {
-  return getAllowedTaskExecutionModes(role).includes(mode);
-}
 
 export function buildTaskWorkspacePatch(input: {
   currentChatJid: string;

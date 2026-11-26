@@ -252,7 +252,7 @@ export function ChatView({ groupJid, onBack, headerLeft }: ChatViewProps) {
   const isOwnHome =
     isHome &&
     ((!!group?.created_by && group.created_by === currentUser?.id) ||
-      (currentUser?.role === 'admin' && group?.folder === 'main'));
+      group?.folder === 'main');
   useEffect(() => {
     if (!isOwnHome) {
       setImStatus(null);

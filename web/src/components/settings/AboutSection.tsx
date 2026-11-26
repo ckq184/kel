@@ -87,7 +87,7 @@ export function AboutSection() {
         </div>
         <p className="text-sm text-muted-foreground leading-relaxed">
           复用成熟的 Pi Agent
-          SDK，把产品重心放在工作区、渠道连接、能力治理和多用户协作体验上。
+          SDK，把产品重心放在工作区、渠道连接、能力治理和日常使用体验上。
         </p>
       </div>
     </div>

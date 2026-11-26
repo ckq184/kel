@@ -3,7 +3,6 @@ import { Navigate, useSearchParams } from 'react-router-dom';
 import { Menu } from 'lucide-react';
 import { toast } from 'sonner';
 
-import { useAuthStore } from '../stores/auth';
 import { SettingsNav } from '../components/settings/SettingsNav';
 import { ClaudeProviderSection } from '../components/settings/ClaudeProviderSection';
 import { ProfileSection } from '../components/settings/ProfileSection';
@@ -40,13 +39,6 @@ const VALID_TABS: SettingsTab[] = [
   'bindings',
   'monitor',
 ];
-const SYSTEM_TABS: SettingsTab[] = [
-  'claude',
-  'appearance',
-  'system',
-  'main-agent',
-  'host-integration',
-];
 const FULLPAGE_TABS: SettingsTab[] = ['monitor'];
 
 const LEGACY_TAB_ROUTES: Partial<Record<SettingsTab, string>> = {
@@ -59,16 +51,9 @@ const LEGACY_TAB_ROUTES: Partial<Record<SettingsTab, string>> = {
 };
 
 export function SettingsPage() {
-  const { user: currentUser } = useAuthStore();
   const [searchParams, setSearchParams] = useSearchParams();
   const [navOpen, setNavOpen] = useState(false);
 
-  const isAdmin = currentUser?.role === 'admin';
-  const canAccessSystemSettings = isAdmin;
-
-  const defaultTab: SettingsTab = canAccessSystemSettings
-    ? 'claude'
-    : 'profile';
   const rawTabValue = searchParams.get('tab');
   // Keep bookmarks and already-open tabs from the retired automation page on
   // the closest remaining settings surface instead of falling back to models.
@@ -78,17 +63,9 @@ export function SettingsPage() {
 
   const activeTab = useMemo((): SettingsTab => {
     const raw = rawTab;
-    if (raw && VALID_TABS.includes(raw)) {
-      if (SYSTEM_TABS.includes(raw) && !canAccessSystemSettings)
-        return defaultTab;
-      if ((raw === 'main-agent' || raw === 'host-integration') && !isAdmin) {
-        return defaultTab;
-      }
-      if (raw === 'monitor' && !canAccessSystemSettings) return defaultTab;
-      return raw;
-    }
-    return defaultTab;
-  }, [rawTab, canAccessSystemSettings, defaultTab, isAdmin]);
+    if (raw && VALID_TABS.includes(raw)) return raw;
+    return 'claude';
+  }, [rawTab]);
 
   const handleTabChange = useCallback(
     (tab: SettingsTab) => {
@@ -149,8 +126,6 @@ export function SettingsPage() {
       <SettingsNav
         activeTab={activeTab}
         onTabChange={handleTabChange}
-        canAccessSystemSettings={canAccessSystemSettings}
-        isAdmin={isAdmin}
         open={navOpen}
         onOpenChange={setNavOpen}
       />

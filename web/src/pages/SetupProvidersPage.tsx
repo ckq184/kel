@@ -56,8 +56,6 @@ export function SetupProvidersPage() {
   useEffect(() => {
     if (user === null && initialized === true) {
       navigate('/login', { replace: true });
-    } else if (user && user.role !== 'admin') {
-      navigate('/chat', { replace: true });
     }
   }, [user, initialized, navigate]);
 

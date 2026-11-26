@@ -11,11 +11,7 @@ import {
   partitionAgentWorkspaceSections,
   workspaceCreationBlockReason,
 } from '../web/src/utils/agent-product';
-import {
-  buildTaskWorkspacePatch,
-  canSelectTaskExecutionMode,
-  getAllowedTaskExecutionModes,
-} from '../web/src/utils/task-edit';
+import { buildTaskWorkspacePatch } from '../web/src/utils/task-edit';
 import type { GroupEntry } from '../web/src/utils/group-utils';
 import {
   getAgentContextSource,
@@ -95,16 +91,6 @@ describe('Agent-first frontend product contracts', () => {
       chat_jid: 'web:container',
       execution_mode: 'container',
     });
-  });
-
-  it('only exposes host task execution to admins', () => {
-    expect(getAllowedTaskExecutionModes('admin')).toEqual([
-      'host',
-      'container',
-    ]);
-    expect(getAllowedTaskExecutionModes('member')).toEqual(['container']);
-    expect(canSelectTaskExecutionMode('member', 'host')).toBe(false);
-    expect(canSelectTaskExecutionMode('member', 'container')).toBe(true);
   });
 
   it('blocks workspace creation when Agent loading failed instead of using a silent default', () => {

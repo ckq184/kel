@@ -6,11 +6,10 @@ import { LogoLoading } from '../common/LogoLoading';
 
 interface AuthGuardProps {
   children: React.ReactNode;
-  requireAdmin?: boolean;
 }
 
-export function AuthGuard({ children, requireAdmin }: AuthGuardProps) {
-  const { authenticated, checking, checkAuth, user, initialized, setupStatus } =
+export function AuthGuard({ children }: AuthGuardProps) {
+  const { authenticated, checking, checkAuth, initialized, setupStatus } =
     useAuthStore();
   const location = useLocation();
   const navigate = useNavigate();
@@ -77,17 +76,9 @@ export function AuthGuard({ children, requireAdmin }: AuthGuardProps) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  // Admin onboarding: force provider setup flow before entering full app.
-  if (
-    user?.role === 'admin' &&
-    setupStatus?.needsSetup &&
-    location.pathname !== '/setup/providers'
-  ) {
+  // Onboarding: force provider setup flow before entering full app.
+  if (setupStatus?.needsSetup && location.pathname !== '/setup/providers') {
     return <Navigate to="/setup/providers" replace />;
-  }
-
-  if (requireAdmin && user?.role !== 'admin') {
-    return <Navigate to="/chat" replace />;
   }
 
   return <>{children}</>;

@@ -6,14 +6,11 @@ export interface UserPublic {
   id: string;
   username: string;
   display_name: string;
-  role: 'admin' | 'member';
+  role: 'admin';
   status: 'active' | 'disabled' | 'deleted';
-  disable_reason: string | null;
-  notes: string | null;
   created_at: string;
   last_login_at: string | null;
   last_active_at: string | null;
-  deleted_at: string | null;
   avatar_emoji: string | null;
   avatar_color: string | null;
   avatar_url: string | null;

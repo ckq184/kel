@@ -78,8 +78,6 @@ export function toUserPublic(u: User): UserPublic {
     display_name: u.display_name,
     role: u.role,
     status: u.status,
-    disable_reason: u.disable_reason,
-    notes: u.notes,
     avatar_emoji: u.avatar_emoji ?? null,
     avatar_color: u.avatar_color ?? null,
     avatar_url: u.avatar_url ?? null,
@@ -87,7 +85,6 @@ export function toUserPublic(u: User): UserPublic {
     created_at: u.created_at,
     last_login_at: u.last_login_at,
     last_active_at: null,
-    deleted_at: u.deleted_at,
   };
 }
 

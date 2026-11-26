@@ -49,7 +49,9 @@ describe('settings information architecture', () => {
 
     expect(app).toContain('path="/capabilities/:section?"');
     expect(app).not.toContain('path="/usage"');
-    expect(app).toContain('<AuthGuard requireAdmin>');
+    // THESIS-21：运行状态对唯一账号开放，不再有角色路由守卫。
+    expect(app).toContain('path="/monitor"');
+    expect(app).not.toContain('requireAdmin');
     expect(settings).toContain("skills: '/capabilities/skills'");
     expect(settings).toContain("'mcp-servers': '/capabilities/mcp'");
     expect(settings).not.toContain("plugins: '/capabilities/plugins'");
@@ -138,11 +140,10 @@ describe('settings information architecture', () => {
       /纯宿主机模式[\s\S]*关闭后不会自动把已有工作区迁回\s*Docker/,
     );
     expect(system).not.toContain('普通成员仍固定使用');
-    expect(page).toMatch(/const isAdmin = currentUser\?\.role/);
-    expect(page).toMatch(/raw === 'monitor' && !canAccessSystemSettings/);
-    expect(page).toMatch(
-      /SYSTEM_TABS\.includes\(raw\) && !canAccessSystemSettings/,
-    );
+    // THESIS-21：单账号下设置页不再按角色回退或隐藏系统配置 tab。
+    expect(page).not.toMatch(/isAdmin|canAccessSystemSettings|SYSTEM_TABS/);
+    expect(page).toContain('VALID_TABS.includes(raw)');
+    expect(page).toContain("return 'claude';");
   });
 
   test('uses accurate channel and provider safety semantics', () => {

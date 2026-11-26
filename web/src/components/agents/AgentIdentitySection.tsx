@@ -31,7 +31,6 @@ type MainAppearance = ReturnType<typeof useAuthStore.getState>['appearance'];
 export interface AgentIdentitySectionProps {
   draftMode: boolean;
   draftStep: number;
-  isAdmin: boolean;
   mainAppearance: MainAppearance;
   name: string;
   setName: Dispatch<SetStateAction<string>>;
@@ -62,7 +61,6 @@ export function AgentIdentitySection(props: AgentIdentitySectionProps) {
   const {
     draftMode,
     draftStep,
-    isAdmin,
     mainAppearance,
     name,
     setName,
@@ -278,7 +276,7 @@ export function AgentIdentitySection(props: AgentIdentitySectionProps) {
             </p>
           )}
         </div>
-        {isAdmin && !draftMode && (
+        {!draftMode && (
           <div className="flex items-start justify-between gap-4 rounded-lg border bg-muted/20 px-3 py-3">
             <div className="min-w-0">
               <div className="text-sm font-medium text-foreground">

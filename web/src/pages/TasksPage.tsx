@@ -3,7 +3,6 @@ import { Clock, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react';
 import { TaskCard } from '../components/tasks/TaskCard';
 import { CreateTaskForm } from '../components/tasks/CreateTaskForm';
 import { useTasksStore, type ScheduledTask } from '../stores/tasks';
-import { useAuthStore } from '../stores/auth';
 import { useGroupsStore } from '../stores/groups';
 import { showToast } from '../utils/toast';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
@@ -42,7 +41,6 @@ export function TasksPage() {
     runTaskNow,
     stopTaskRun,
   } = useTasksStore();
-  const { user } = useAuthStore();
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [view, setView] = useState<TaskView>('current');
   const [query, setQuery] = useState('');
@@ -53,7 +51,6 @@ export function TasksPage() {
   const [mutatingTaskIds, setMutatingTaskIds] = useState<Set<string>>(
     new Set(),
   );
-  const isAdmin = user?.role === 'admin';
 
   useEffect(() => {
     loadTasks();
@@ -511,7 +508,6 @@ export function TasksPage() {
             setShowCreateForm(false);
             loadTasks();
           }}
-          isAdmin={isAdmin}
         />
       )}
 

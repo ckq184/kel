@@ -52,6 +52,10 @@ Public：
 - `DELETE /api/auth/sessions/:id`
 - `POST /api/auth/avatar`
 
+登录、`GET /api/auth/me` 与账户相关接口返回的 `user` 对象包含 `role`
+（唯一账号为管理员 `admin`），不再返回 `disable_reason`、`notes`、
+`deleted_at`；`status` 仍用于展示账号启用状态。
+
 ## 工作区、消息和运行控制
 
 - `GET|POST /api/groups`

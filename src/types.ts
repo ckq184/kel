@@ -686,8 +686,6 @@ export interface UserPublic {
   display_name: string;
   role: UserRole;
   status: UserStatus;
-  disable_reason: string | null;
-  notes: string | null;
   avatar_emoji: string | null;
   avatar_color: string | null;
   avatar_url: string | null;
@@ -695,7 +693,6 @@ export interface UserPublic {
   created_at: string;
   last_login_at: string | null;
   last_active_at: string | null;
-  deleted_at: string | null;
 }
 
 export interface UserSession {
