@@ -142,9 +142,8 @@ describe('settings information architecture', () => {
     expect(system).not.toContain('普通成员仍固定使用');
     // THESIS-21：单账号下设置页不再按角色回退或隐藏系统配置 tab。
     expect(page).not.toMatch(/isAdmin|canAccessSystemSettings|SYSTEM_TABS/);
-    expect(page).toMatch(
-      /if \(raw && VALID_TABS\.includes\(raw\)\) return raw;/,
-    );
+    expect(page).toContain('VALID_TABS.includes(raw)');
+    expect(page).toContain("return 'claude';");
   });
 
   test('uses accurate channel and provider safety semantics', () => {

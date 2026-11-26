@@ -83,7 +83,10 @@ const USER_PUBLIC_FORBIDDEN_FIELDS = [
 
 describe('frontend role gates are gone', () => {
   test('web source has no admin guard, role comparison, or multi-user wording', () => {
-    const offenders = listSourceFiles(webSourceRoot).flatMap((file) => {
+    const files = listSourceFiles(webSourceRoot);
+    // 防止目录/工作目录漂移导致扫描空转。
+    expect(files.length).toBeGreaterThan(100);
+    const offenders = files.flatMap((file) => {
       const relative = path.relative(root, file);
       const source = stripComments(fs.readFileSync(file, 'utf8'));
       const findings: string[] = [];
@@ -196,6 +199,7 @@ function request(
 
 function expectNarrowUser(user: Record<string, unknown>) {
   expect(user.role).toBe('admin');
+  expect(user.status).toBe('active');
   for (const field of USER_PUBLIC_FORBIDDEN_FIELDS) {
     expect(user, field).not.toHaveProperty(field);
   }

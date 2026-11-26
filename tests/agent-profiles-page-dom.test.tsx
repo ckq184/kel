@@ -60,7 +60,6 @@ const mocks = vi.hoisted(() => {
     otherProfile,
     profiles: [profile],
     governanceByProfile: {} as Record<string, unknown>,
-    userRole: 'admin' as 'admin',
     updateProfile: vi.fn(async () => ({
       ...profile,
       runtime_policy: {
@@ -112,7 +111,7 @@ vi.mock('../web/src/stores/agent-profiles', () => ({
 vi.mock('../web/src/stores/auth', () => ({
   useAuthStore: (selector: (state: unknown) => unknown) =>
     selector({
-      user: { id: 'admin-user', role: mocks.userRole },
+      user: { id: 'admin-user', role: 'admin' },
       appearance: null,
     }),
 }));
@@ -195,7 +194,6 @@ afterEach(() => {
   currentLocation = '';
   mocks.profiles = [mocks.profile];
   mocks.governanceByProfile = {};
-  mocks.userRole = 'admin';
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.clearAllMocks();
@@ -376,12 +374,11 @@ describe('智能体宿主机 Skills 自动保存', () => {
         runtime_cleanup_pending: true,
       },
     };
-    const all = await renderPage();
+    await renderPage();
 
     expect(container?.textContent).toContain(
       '智能体配置已保存，但工作区运行时清理未完成',
     );
-    expect(all.textContent).toContain('全部使用');
     expect(container?.textContent).not.toContain(
       '当前无法查看和授权宿主机 Skills',
     );

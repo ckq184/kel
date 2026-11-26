@@ -557,51 +557,49 @@ export function CreateContainerDialog({
                           />
                         </div>
                       )}
-                      <>
-                        <label className="flex cursor-pointer items-start gap-3 rounded-lg border p-2 transition-colors hover:bg-accent/50">
-                          <input
-                            type="radio"
-                            name="init_mode"
-                            value="git"
-                            checked={initMode === 'git'}
-                            onChange={() => {
-                              setInitMode('git');
+                      <label className="flex cursor-pointer items-start gap-3 rounded-lg border p-2 transition-colors hover:bg-accent/50">
+                        <input
+                          type="radio"
+                          name="init_mode"
+                          value="git"
+                          checked={initMode === 'git'}
+                          onChange={() => {
+                            setInitMode('git');
+                            clearSubmissionErrors();
+                          }}
+                          className="mt-0.5 accent-primary"
+                        />
+                        <div className="flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <GitBranch className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-sm font-medium">
+                              克隆 Git 仓库
+                            </span>
+                          </div>
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            从 GitHub 等平台克隆仓库到工作区
+                          </p>
+                        </div>
+                      </label>
+                      {initMode === 'git' && (
+                        <div className="ml-6">
+                          <label
+                            htmlFor="workspace-init-git-url"
+                            className="sr-only"
+                          >
+                            Git 仓库地址
+                          </label>
+                          <Input
+                            id="workspace-init-git-url"
+                            value={initGitUrl}
+                            onChange={(e) => {
+                              setInitGitUrl(e.target.value);
                               clearSubmissionErrors();
                             }}
-                            className="mt-0.5 accent-primary"
+                            placeholder="https://github.com/user/repo"
                           />
-                          <div className="flex-1">
-                            <div className="flex items-center gap-1.5">
-                              <GitBranch className="h-4 w-4 text-muted-foreground" />
-                              <span className="text-sm font-medium">
-                                克隆 Git 仓库
-                              </span>
-                            </div>
-                            <p className="mt-0.5 text-xs text-muted-foreground">
-                              从 GitHub 等平台克隆仓库到工作区
-                            </p>
-                          </div>
-                        </label>
-                        {initMode === 'git' && (
-                          <div className="ml-6">
-                            <label
-                              htmlFor="workspace-init-git-url"
-                              className="sr-only"
-                            >
-                              Git 仓库地址
-                            </label>
-                            <Input
-                              id="workspace-init-git-url"
-                              value={initGitUrl}
-                              onChange={(e) => {
-                                setInitGitUrl(e.target.value);
-                                clearSubmissionErrors();
-                              }}
-                              placeholder="https://github.com/user/repo"
-                            />
-                          </div>
-                        )}
-                      </>
+                        </div>
+                      )}
                     </div>
 
                     <div className="border-t border-border pt-4">

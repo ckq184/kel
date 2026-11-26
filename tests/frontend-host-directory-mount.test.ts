@@ -126,7 +126,8 @@ describe('host directory mount editor contract', () => {
     expect(dialog).toContain("if (executionMode === 'container') return;");
     expect(dialog).toContain('setHostMounts([]);');
     expect(dialog).toContain('setFieldErrors({});');
-    expect(dialog).toContain("executionMode === 'container'");
+    // 挂载校验仍接在 container 分支上（不是只看模式字符串）。
+    expect(dialog).toContain('? validateHostDirectoryMounts(hostMounts)');
     expect(dialog).toContain('<HostDirectoryMountEditor');
   });
 
