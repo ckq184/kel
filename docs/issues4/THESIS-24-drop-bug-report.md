@@ -2,7 +2,7 @@
 
 | 字段          | 值                                                                                                                                                                                                                                                                                                     |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 状态          | 进行中                                                                                                                                                                                                                                                                                                 |
+| 状态          | 已完成                                                                                                                                                                                                                                                                                                 |
 | 领取人 / 分支 | claude/thesis-24-drop-bug-report                                                                                                                                                                                                                                                                       |
 | 优先级        | P2                                                                                                                                                                                                                                                                                                     |
 | 类型          | 裁减（功能下线）                                                                                                                                                                                                                                                                                       |
@@ -50,4 +50,9 @@
 
 ## 交付记录
 
-（待填）
+- **提交**：`fa7d89f`（立项）、`d243a8c`（实现）、`c169264`（审查处置），交付簿记随本提交（分支 `claude/thesis-24-drop-bug-report`，基于 main `48903d0`）。
+- **实现**：删除 `src/routes/bug-report.ts`（564 行）与 `src/web.ts` 的 import/挂载；删除 `src/schemas.ts` 的 `BugReportGenerateSchema`、`BugReportSubmitSchema` 与 `MAX_SCREENSHOT_BASE64_LENGTH`；删除 `web/src/components/common/BugReportDialog.tsx`（497 行）及 `UnifiedSidebar`、`AboutSection` 两处入口；删除 `tests/bug-report-sanitize.test.ts`、`tests/thesis-02-bug-report-capability.test.ts`；`docs/API.md` 删路由行与问题报告块、标题改为“监控”，`CLAUDE.md` 的 `RECALL_MODEL` 去掉“Bug 报告摘要”。
+- **验证**：`npm run verify` 六步全绿（369 文件，3029 通过 / 23 跳过 / 0 失败）；`node scripts/check-scope.mjs` 17 个路径全在声明范围内（含交付簿记）；`npm run docs:check` 158 个 Markdown；新契约 9 例在 base 上全失败、实现后全通过；`frontend-reachability-contract` 与 `api-route-caller-contract` 通过。
+- **偏差**：issue 预计路径中的 `web/src/api/**`、`docs/ACL-MATRIX.md`、`README.md` 经核实无需改动；实际增列 `src/schemas.ts`。`CLAUDE.md` 共 44 行 diff，除 `RECALL_MODEL` 一行外均为 Prettier 表格对齐。
+- **范围外登记**：`src/agent-profile-generator.ts:30` 注释仍以 bug-report 作对照，该文件由 THESIS-25 整文件删除，本包不碰；`scripts/gate-pre-commit.mjs:5-8` 注释与 `.gatesecretsignore:17` 仍提 `src/routes/bug-report.ts` / `tests/bug-report-sanitize.test.ts`，属 git hooks 与 secret 扫描配置，按 AGENTS §2 需用户单独批准，登记延后。
+- **未实机验收**：待用户冒烟侧栏与“关于”页无“报告问题”，其余侧栏功能正常。
