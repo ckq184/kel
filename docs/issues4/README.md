@@ -31,7 +31,7 @@
 | [THESIS-24](THESIS-24-drop-bug-report.md)          | 裁 Bug 报告                                  | P4         | P2     | 无                           | −1,080 / −200         | 否（已定）      | 已完成 |
 | [THESIS-25](THESIS-25-drop-profile-generator.md)   | 裁 Agent 档案生成与润色                      | P5         | P2     | 无                           | −780 / −200           | 否（已定）      | 已完成 |
 | [THESIS-26](THESIS-26-safe-slim-backend.md)        | 安全瘦身（后端）                             | P7         | P2     | 19、20、34                   | −660 / 小             | **是**（D-S2）  | 待领取 |
-| [THESIS-27](THESIS-27-safe-slim-runner-web.md)     | 安全瘦身（Runner 与前端）                    | P7         | P3     | 20                           | −650 / 小             | 否              | 进行中 |
+| [THESIS-27](THESIS-27-safe-slim-runner-web.md)     | 安全瘦身（Runner 与前端）                    | P7         | P3     | 20                           | −650 / 小             | 否              | 已完成 |
 | [THESIS-28](THESIS-28-index-state-accessors.md)    | index.ts 拆分（一）：状态读写器与未用 import | P7         | P2     | 19、20、22、23、26、34 至 37 | −140                  | 否              | 待领取 |
 | [THESIS-29](THESIS-29-index-split-im-commands.md)  | index.ts 拆分（二）：IM 斜杠命令             | P7         | P2     | 28                           | 搬约 1,100            | 否              | 待领取 |
 | [THESIS-30](THESIS-30-index-split-im-delivery.md)  | index.ts 拆分（三）：IM 投递与指示器         | P7         | P2     | 29                           | 搬约 1,200            | 否              | 待领取 |

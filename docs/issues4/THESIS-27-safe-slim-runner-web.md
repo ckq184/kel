@@ -2,7 +2,7 @@
 
 | 字段          | 值                                                                                                                                                                                                                                                                                                                                      |
 | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 状态          | 进行中                                                                                                                                                                                                                                                                                                                                  |
+| 状态          | 已完成                                                                                                                                                                                                                                                                                                                                  |
 | 领取人 / 分支 | claude/thesis-27-safe-slim-runner-web                                                                                                                                                                                                                                                                                                   |
 | 优先级        | P3                                                                                                                                                                                                                                                                                                                                      |
 | 类型          | 重复代码                                                                                                                                                                                                                                                                                                                                |
@@ -54,4 +54,18 @@
 
 ## 交付记录
 
-（待填）
+- **交付日期**：2026-11-26｜**分支**：`claude/thesis-27-safe-slim-runner-web`｜**base**：`5f0db61`
+- **提交**：`4a8374e` 立项与表征用例、`cfe27d4` 实现、`8ffd530` 规格审查处置、`cc6232d` 质量审查处置，交付文档紧随其后。
+- **实现**：
+  - R1：`container/agent-runner/src/mcp-tools.ts` 的 pause/resume/cancel/stop_task_run/restore 改为 `taskMutationTool` 工厂；名称、description、参数 schema/describe、IPC 请求体、成功/失败/超时文案逐字不变；`type: '<字面量>'` 保留，双向契约扫描通过。
+  - R2：`src/ipc/task-ops.ts` 抽出 `revisionFailurePayload` / `writeRevisionOutcome` / 缺失 revision 校验；五个 case 的冲突、not_found、active_run、成功回执与日志/通知顺序保持不变。
+  - W1：`EmojiPicker.tsx` 六类表情各压成一个空白分隔字符串，加载时拆分；分类名、顺序、数量（119/32/43/24/48/41）、类内重复 🌈 与跨类重复 🎵 保留；未用 `Array.from`（会拆坏 ZWJ 序列）。
+  - W2：`envRowsToText` 移入 `web/src/utils/custom-env.ts`，ProviderEditor 与 SetupProvidersPage 共用。
+  - W3：新增 `UserMenuPopover.tsx` 与 `useAgentWorkspaceSections.ts`，侧栏与聊天页的账号菜单、Agent 分组计算各只剩一份实现。
+- **净减行数**：生产代码 `+468 / −900`，净减 **432 行**（issue 估算 ~650）。分项与偏差原因见 plan §8：R2 公共骨架抵掉重复块、W2 函数仅 7 行、W3 两个共享实现自身约 118 行。plan 立项时的行数阈值已改为如实记录，**该验收调整待用户追认**。
+- **范围**：最终 `node scripts/check-scope.mjs` 20 路径全在 `.gatescope.json` 内（含本交付记录）；新增 `useAgentWorkspaceSections.ts` 属 W3 重复片段，allow 与 plan 已同步。
+- **门禁**：`npm run verify` 6/6 全绿（372 文件 3066 通过 / 23 跳过，34.4s）；`make typecheck` 覆盖 root、web、`container/agent-runner`；runner build 通过。
+- **容器镜像**：无行为变化，无需为此单独重建；`container/agent-runner` 仅在 verify 第 5 步执行 tsc。
+- **审查**：规格审查“有条件通过”（无 Critical；行数基线待用户追认）；质量审查“通过”（Critical 0 / Major 0 / Minor 6，均已处置）。详见 `docs/审查记录.md`。
+- **人工冒烟（待用户）**：在对话里让 Agent 暂停、恢复、取消一个定时任务；聊天输入框表情选择器显示正常。
+- **已知边界**：`update_task` 的缺失 revision 守卫仍单列以保留 `failUpdate` 的 warn 日志，未强行并入 helper。
