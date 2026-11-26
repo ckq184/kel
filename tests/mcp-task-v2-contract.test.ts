@@ -27,6 +27,7 @@ function setup() {
     groupFolder: 'workspace',
     isHome: true,
     agentBuilderEnabled: true,
+    ownerProfileEnabled: false,
     workspaceIpc: root,
     workspaceGroup: root,
   };
@@ -378,6 +379,7 @@ describe.each(TASK_TOOL_CASES)(
   'task tool contract: $toolName (THESIS-27 R1)',
   (contract) => {
     test('declares the same name, arguments and IPC request body', async () => {
+      vi.useFakeTimers();
       const { root, tools } = setup();
       const taskTool = tools.find((tool) => tool.name === contract.toolName);
       expect(taskTool).toBeDefined();
@@ -425,16 +427,27 @@ describe.each(TASK_TOOL_CASES)(
         expect(request).not.toHaveProperty('groupFolder');
         expect(request).not.toHaveProperty('isMain');
       }
+      expect(Object.keys(request).sort(), 'IPC 请求字段全集').toEqual(
+        [
+          'type',
+          'requestId',
+          'timestamp',
+          ...Object.keys(contract.requestTarget),
+          ...(contract.hasWorkspaceContext ? ['groupFolder', 'isMain'] : []),
+        ].sort(),
+      );
 
       writeResult(root, contract.requestType, request.requestId as string, {
         ...contract.successResult,
       });
+      await vi.advanceTimersByTimeAsync(500);
       await expect(pending).resolves.toMatchObject({
         content: [{ type: 'text', text: contract.successText }],
       });
     });
 
     test('passes a revision conflict through as an error result', async () => {
+      vi.useFakeTimers();
       const { root, tools } = setup();
       const taskTool = tools.find((tool) => tool.name === contract.toolName)!;
       const pending = taskTool.handler(contract.args as never, {} as never);
@@ -446,6 +459,7 @@ describe.each(TASK_TOOL_CASES)(
         code: 'TASK_REVISION_CONFLICT',
         error,
       });
+      await vi.advanceTimersByTimeAsync(500);
 
       await expect(pending).resolves.toMatchObject({
         isError: true,
@@ -454,6 +468,7 @@ describe.each(TASK_TOOL_CASES)(
     });
 
     test('passes a missing task through as an error result', async () => {
+      vi.useFakeTimers();
       const { root, tools } = setup();
       const taskTool = tools.find((tool) => tool.name === contract.toolName)!;
       const pending = taskTool.handler(contract.args as never, {} as never);
@@ -462,6 +477,7 @@ describe.each(TASK_TOOL_CASES)(
         success: false,
         error: 'Task not found.',
       });
+      await vi.advanceTimersByTimeAsync(500);
 
       await expect(pending).resolves.toMatchObject({
         isError: true,

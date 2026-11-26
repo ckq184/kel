@@ -67,6 +67,8 @@ const CATEGORIES = [
   },
 ];
 
+// 再生成口径：sha256(emojis.join('\u0000')).hex.slice(0, 16)。有意调整
+// 表情表时用同一表达式重算并同步上方常量；数量/首尾/重复项保留为可读锚点。
 const sequenceHash = (emojis: string[]) =>
   createHash('sha256').update(emojis.join('\u0000')).digest('hex').slice(0, 16);
 

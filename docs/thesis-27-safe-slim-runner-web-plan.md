@@ -101,11 +101,11 @@
 
 ## 8. 执行偏差（2026-11-26，实现后实测）
 
-- **净减行数**：生产代码实测 `+462 / −900`，净减 **438 行**（不含测试新增）。issue 估算 ~650：
+- **净减行数**：生产代码在审查处置后实测 `+468 / −900`，净减 **432 行**（不含测试新增；实现提交 `cfe27d4` 时为 `+462 / −900`，净减 438，差异来自质量审查补的注释与类型收窄）。issue 估算 ~650：
   - R1 实测 −120（issue ~200）：工厂保留类型安全的通用配置与共享 schema，未把五个工具压成无类型的单行表。
-  - R2 实测 −3（issue ~80）：宿主回执去重同时引入 `revisionFailurePayload` / `writeRevisionOutcome` / 缺失 revision 校验共约 140 行公共骨架，抵掉了 144 行重复块。issue 的估算没有计入骨架本身。update 的缺失 revision 守卫仍单列以保留 `failUpdate` 的 warn 日志，未强行并入 helper。
+  - R2 实测 **净增 2**（issue ~80）：宿主回执去重同时引入 `revisionFailurePayload` / `writeRevisionOutcome` / 缺失 revision 校验共约 146 行公共骨架，抵掉了 144 行重复块。issue 的估算没有计入骨架本身。update 的缺失 revision 守卫仍单列以保留 `failUpdate` 的 warn 日志，未强行并入 helper。
   - W1 实测 −296（issue ~300），一致。
-  - W2 实测 −5（issue ~15）：custom-env +15、ProviderEditor −7、SetupProvidersPage −13。函数体只有 7 行，移入共享模块后净值受限。
+  - W2 实测 −4（issue ~15）：custom-env +15、ProviderEditor −7、SetupProvidersPage −12。函数体只有 7 行，移入共享模块后净值受限。
   - W3 实测 −14（issue ~35）：Popover 共享组件 +77、分组 hook +41、两页净减 −132（侧栏 −67、聊天页 −65）。issue 的估算没有计入两个共享实现本身的骨架。
 - **处理**：不改回为刻意压行数的写法（可读性与类型安全优先）；验收条件 4 改为如实记录，行数不作为通过条件。issue 原本的验收条件（verify + check-scope + 人工冒烟）不受影响。
 - **W1 拆分方式**：issue 建议 `Array.from`，实测会按码点拆坏 ZWJ 表情，改为空白分隔 + `split(/\s+/)`；用例以 hash 锁定每类完整顺序，并锁定类内重复 🌈 与跨类重复 🎵。

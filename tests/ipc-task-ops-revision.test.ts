@@ -183,6 +183,7 @@ describe('IPC task revision failure contract (THESIS-27 R2)', () => {
           },
         },
       ]);
+      expect(mocks.notifyTaskSchedulerChanged).not.toHaveBeenCalled();
     });
 
     test(`${type} reports a concurrently deleted task`, async () => {
@@ -199,6 +200,7 @@ describe('IPC task revision failure contract (THESIS-27 R2)', () => {
           payload: { success: false, error: 'Task not found.' },
         },
       ]);
+      expect(mocks.notifyTaskSchedulerChanged).not.toHaveBeenCalled();
     });
   }
 
@@ -224,6 +226,7 @@ describe('IPC task revision failure contract (THESIS-27 R2)', () => {
         },
       },
     ]);
+    expect(mocks.notifyTaskSchedulerChanged).not.toHaveBeenCalled();
   });
 
   test('update_task rejects a missing expected_revision', async () => {
@@ -238,6 +241,15 @@ describe('IPC task revision failure contract (THESIS-27 R2)', () => {
         },
       },
     ]);
+    expect(mocks.loggerWarn).toHaveBeenCalledWith(
+      {
+        sourceGroup: 'workspace',
+        taskId: 'task-1',
+        error: 'expected_revision is required. Call list_tasks first.',
+      },
+      'update_task rejected',
+    );
+    expect(mocks.notifyTaskSchedulerChanged).not.toHaveBeenCalled();
   });
 
   test('update_task reports a revision conflict and a missing task', async () => {
@@ -253,12 +265,20 @@ describe('IPC task revision failure contract (THESIS-27 R2)', () => {
       taskId: 'task-1',
       expectedRevision: 3,
     });
-    expect(conflict[0].payload).toEqual({
-      success: false,
-      code: 'TASK_REVISION_CONFLICT',
-      error: 'Task changed; current revision is 5. Call list_tasks and retry.',
-      task: { revision: 5 },
-    });
+    expect(conflict).toEqual([
+      {
+        type: 'update_task',
+        requestId: 'request-1',
+        payload: {
+          success: false,
+          code: 'TASK_REVISION_CONFLICT',
+          error:
+            'Task changed; current revision is 5. Call list_tasks and retry.',
+          task: { revision: 5 },
+        },
+      },
+    ]);
+    expect(mocks.notifyTaskSchedulerChanged).not.toHaveBeenCalled();
 
     mocks.updateTaskWithRevision.mockReturnValue({ status: 'not_found' });
     const missing = await runTaskOp({
@@ -266,10 +286,25 @@ describe('IPC task revision failure contract (THESIS-27 R2)', () => {
       taskId: 'task-1',
       expectedRevision: 3,
     });
-    expect(missing[0].payload).toEqual({
-      success: false,
-      error: 'Task not found.',
-    });
+    expect(missing).toEqual([
+      {
+        type: 'update_task',
+        requestId: 'request-1',
+        payload: {
+          success: false,
+          error: 'Task not found.',
+        },
+      },
+    ]);
+    expect(mocks.loggerWarn).toHaveBeenCalledWith(
+      {
+        sourceGroup: 'workspace',
+        taskId: 'task-1',
+        error: 'Task not found.',
+      },
+      'update_task rejected',
+    );
+    expect(mocks.notifyTaskSchedulerChanged).not.toHaveBeenCalled();
   });
 
   test('restore_task keeps its shorter conflict message and deleted-task error', async () => {
@@ -285,12 +320,19 @@ describe('IPC task revision failure contract (THESIS-27 R2)', () => {
       taskId: 'task-1',
       expectedRevision: 3,
     });
-    expect(conflict[0].payload).toEqual({
-      success: false,
-      code: 'TASK_REVISION_CONFLICT',
-      error: 'Task changed; current revision is 5.',
-      task: { revision: 5 },
-    });
+    expect(conflict).toEqual([
+      {
+        type: 'restore_task',
+        requestId: 'request-1',
+        payload: {
+          success: false,
+          code: 'TASK_REVISION_CONFLICT',
+          error: 'Task changed; current revision is 5.',
+          task: { revision: 5 },
+        },
+      },
+    ]);
+    expect(mocks.notifyTaskSchedulerChanged).not.toHaveBeenCalled();
 
     mocks.restoreTaskWithRevision.mockReturnValue({ status: 'not_found' });
     const missing = await runTaskOp({
@@ -298,10 +340,17 @@ describe('IPC task revision failure contract (THESIS-27 R2)', () => {
       taskId: 'task-1',
       expectedRevision: 3,
     });
-    expect(missing[0].payload).toEqual({
-      success: false,
-      error: 'Deleted task not found.',
-    });
+    expect(missing).toEqual([
+      {
+        type: 'restore_task',
+        requestId: 'request-1',
+        payload: {
+          success: false,
+          error: 'Deleted task not found.',
+        },
+      },
+    ]);
+    expect(mocks.notifyTaskSchedulerChanged).not.toHaveBeenCalled();
   });
 
   test('restore_task still requires both task_id and expected_revision', async () => {
@@ -389,11 +438,13 @@ describe('IPC task revision failure contract (THESIS-27 R2)', () => {
       taskId: 'task-1',
       expectedRevision: 3,
     });
-    expect(cancelled[0].payload).toEqual({
-      success: true,
-      taskId: 'task-1',
-      revision: 4,
-    });
+    expect(cancelled).toEqual([
+      {
+        type: 'cancel_task',
+        requestId: 'request-1',
+        payload: { success: true, taskId: 'task-1', revision: 4 },
+      },
+    ]);
     expect(mocks.notifyTaskSchedulerChanged).toHaveBeenCalledTimes(1);
     expect(mocks.loggerInfo).toHaveBeenCalledWith(
       { taskId: 'task-1', sourceGroup: 'workspace' },
@@ -414,12 +465,18 @@ describe('IPC task revision failure contract (THESIS-27 R2)', () => {
       taskId: 'task-1',
       expectedRevision: 3,
     });
-    expect(results[0].payload).toEqual({
-      success: true,
-      taskId: 'task-1',
-      nextRun: baseTask().next_run,
-      revision: 4,
-    });
+    expect(results).toEqual([
+      {
+        type: 'update_task',
+        requestId: 'request-1',
+        payload: {
+          success: true,
+          taskId: 'task-1',
+          nextRun: baseTask().next_run,
+          revision: 4,
+        },
+      },
+    ]);
     expect(mocks.notifyTaskSchedulerChanged).toHaveBeenCalledTimes(1);
     expect(mocks.loggerInfo).toHaveBeenCalledWith(
       { taskId: 'task-1', sourceGroup: 'workspace' },
@@ -440,11 +497,13 @@ describe('IPC task revision failure contract (THESIS-27 R2)', () => {
       taskId: 'task-1',
       expectedRevision: 3,
     });
-    expect(results[0].payload).toEqual({
-      success: true,
-      taskId: 'task-1',
-      revision: 4,
-    });
+    expect(results).toEqual([
+      {
+        type: 'restore_task',
+        requestId: 'request-1',
+        payload: { success: true, taskId: 'task-1', revision: 4 },
+      },
+    ]);
     expect(mocks.notifyTaskSchedulerChanged).toHaveBeenCalledTimes(1);
     expect(mocks.loggerInfo).not.toHaveBeenCalled();
   });

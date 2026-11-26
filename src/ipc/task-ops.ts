@@ -76,11 +76,16 @@ export interface IpcTaskOpsInput {
   SAFE_REQUEST_ID_RE: RegExp;
 }
 
-interface RevisionMutationLike {
-  status: string;
-  task?: { revision: number };
-  run?: { id: string };
-}
+/**
+ * 与 db 的 TaskRevisionMutationResult / TaskSoftDeleteMutationResult 对齐的
+ * 局部判别联合。结构化类型让 db 返回值直接可传入，同时保证失败回执所需
+ * 字段必存在（不依赖非空断言）。
+ */
+type RevisionMutationLike =
+  | { status: 'updated'; task: { revision: number } }
+  | { status: 'conflict'; task: { revision: number } }
+  | { status: 'not_found' }
+  | { status: 'active_run'; task: { revision: number }; run: { id: string } };
 
 interface RevisionFailurePayload {
   code?: string;
@@ -98,23 +103,20 @@ function revisionFailurePayload(
   mutation: RevisionMutationLike,
   options: { conflictHint?: boolean; notFoundError?: string } = {},
 ): RevisionFailurePayload | null {
-  // db 的返回类型保证 conflict 必带 task、active_run 必带 run；用非空断言
-  // 表达该不变量，避免缺字段时被误判为"无失败"而静默不写回执。
   if (mutation.status === 'conflict') {
-    const task = mutation.task!;
     const hint =
       options.conflictHint === false ? '' : ' Call list_tasks and retry.';
     return {
       code: 'TASK_REVISION_CONFLICT',
-      error: `Task changed; current revision is ${task.revision}.${hint}`,
-      task,
+      error: `Task changed; current revision is ${mutation.task.revision}.${hint}`,
+      task: mutation.task,
     };
   }
   if (mutation.status === 'active_run') {
     return {
       code: 'TASK_HAS_ACTIVE_RUN',
       error: 'Task is running. Stop the current run before deleting.',
-      runId: mutation.run!.id,
+      runId: mutation.run.id,
     };
   }
   if (mutation.status === 'not_found') {
