@@ -277,28 +277,28 @@ Web 持久设置 > 环境变量 > 代码默认值
 
 常用环境变量：
 
-| 变量                                                   | 默认值                        | 说明                                                                                                              |
-| ------------------------------------------------------ | ----------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `WEB_PORT`                                             | `3001`                        | HTTP、WebSocket 端口                                                                                              |
-| `WEB_SESSION_SECRET`                                   | 自动生成并持久化              | Cookie 签名                                                                                                       |
-| `CONTAINER_IMAGE`                                      | `ckq184/ckqclaw-agent:latest` | GitHub Actions 发布的 Runner 镜像                                                                                 |
-| `CONTAINER_TIMEOUT`                                    | `1800000`                     | 默认运行超时                                                                                                      |
-| `IDLE_TIMEOUT`                                         | `1800000`                     | 暖 Runner 空闲时间                                                                                                |
-| `MAX_CONCURRENT_CONTAINERS`                            | `20`                          | Docker 并发                                                                                                       |
-| `MAX_FILE_SIZE_MB`                                     | `50`                          | Web/IM 入站文件上限                                                                                               |
-| `CORS_ALLOWED_ORIGINS`                                 | 仅 localhost                  | WebSocket Origin 白名单                                                                                           |
-| `CORS_ALLOW_LOCALHOST`                                 | `true`                        | WebSocket Origin 额外放行 localhost/127.0.0.1 任意端口                                                            |
-| `TRUST_PROXY`                                          | `false`                       | 是否信任反向代理来源头                                                                                            |
-| `TZ`                                                   | 系统时区                      | 调度时区                                                                                                          |
-| `RECALL_MODEL`                                         | 未设置                        | 生成式回顾/摘要类调用（/recall、AI 任务解析、Agent Profile 生成）优先使用的模型，未设置时由默认 Provider 模型执行 |
-| `CKQCLAW_ASSISTANT_NAME`（旧别名 `ASSISTANT_NAME`）    | `CKQClaw`                     | 对外助手名称（渠道消息发送方显示名等）                                                                            |
-| `ALLOW_LEGACY_UNSIGNED_COOKIE`                         | `false`                       | 临时接受旧版未签名 session cookie 并自动升级，仅旧部署在线升级时短期开启                                          |
-| `CKQCLAW_WEB_URL` / `PUBLIC_BASE_URL` / `WEB_BASE_URL` | 未设置                        | 渠道卡片外部 trace 链接的 Web 根地址，按列出顺序取第一个生效；未设置不生成外部链接                                |
-| `CONTAINER_MAX_OUTPUT_SIZE`                            | `10485760`                    | Runner 输出上限（字节），系统设置 `containerMaxOutputSize` 的环境变量回落项                                       |
-| `EXTERNAL_CLAUDE_DIR`                                  | 空                            | `host_claude` 兼容上下文的外部 Claude 数据目录，系统设置回落项                                                    |
-| `ADMIN_HOST_ONLY_MODE`                                 | `false`                       | Admin Host 专属模式初始值，系统设置回落项                                                                         |
-| `MAIN_AGENT_CONTEXT_SOURCE`                            | `host_claude`                 | 主 Agent 上下文来源初始值（`managed` 或 `host_claude`），系统设置回落项                                           |
-| `CKQCLAW_MIGRATION_BACKUP_DIR`                         | `<db 目录>/migration-backups` | Schema 迁移前自动备份目录                                                                                         |
+| 变量                                                   | 默认值                        | 说明                                                                                          |
+| ------------------------------------------------------ | ----------------------------- | --------------------------------------------------------------------------------------------- |
+| `WEB_PORT`                                             | `3001`                        | HTTP、WebSocket 端口                                                                          |
+| `WEB_SESSION_SECRET`                                   | 自动生成并持久化              | Cookie 签名                                                                                   |
+| `CONTAINER_IMAGE`                                      | `ckq184/ckqclaw-agent:latest` | GitHub Actions 发布的 Runner 镜像                                                             |
+| `CONTAINER_TIMEOUT`                                    | `1800000`                     | 默认运行超时                                                                                  |
+| `IDLE_TIMEOUT`                                         | `1800000`                     | 暖 Runner 空闲时间                                                                            |
+| `MAX_CONCURRENT_CONTAINERS`                            | `20`                          | Docker 并发                                                                                   |
+| `MAX_FILE_SIZE_MB`                                     | `50`                          | Web/IM 入站文件上限                                                                           |
+| `CORS_ALLOWED_ORIGINS`                                 | 仅 localhost                  | WebSocket Origin 白名单                                                                       |
+| `CORS_ALLOW_LOCALHOST`                                 | `true`                        | WebSocket Origin 额外放行 localhost/127.0.0.1 任意端口                                        |
+| `TRUST_PROXY`                                          | `false`                       | 是否信任反向代理来源头                                                                        |
+| `TZ`                                                   | 系统时区                      | 调度时区                                                                                      |
+| `RECALL_MODEL`                                         | 未设置                        | 生成式回顾/摘要类调用（/recall、AI 任务解析）优先使用的模型，未设置时由默认 Provider 模型执行 |
+| `CKQCLAW_ASSISTANT_NAME`（旧别名 `ASSISTANT_NAME`）    | `CKQClaw`                     | 对外助手名称（渠道消息发送方显示名等）                                                        |
+| `ALLOW_LEGACY_UNSIGNED_COOKIE`                         | `false`                       | 临时接受旧版未签名 session cookie 并自动升级，仅旧部署在线升级时短期开启                      |
+| `CKQCLAW_WEB_URL` / `PUBLIC_BASE_URL` / `WEB_BASE_URL` | 未设置                        | 渠道卡片外部 trace 链接的 Web 根地址，按列出顺序取第一个生效；未设置不生成外部链接            |
+| `CONTAINER_MAX_OUTPUT_SIZE`                            | `10485760`                    | Runner 输出上限（字节），系统设置 `containerMaxOutputSize` 的环境变量回落项                   |
+| `EXTERNAL_CLAUDE_DIR`                                  | 空                            | `host_claude` 兼容上下文的外部 Claude 数据目录，系统设置回落项                                |
+| `ADMIN_HOST_ONLY_MODE`                                 | `false`                       | Admin Host 专属模式初始值，系统设置回落项                                                     |
+| `MAIN_AGENT_CONTEXT_SOURCE`                            | `host_claude`                 | 主 Agent 上下文来源初始值（`managed` 或 `host_claude`），系统设置回落项                       |
+| `CKQCLAW_MIGRATION_BACKUP_DIR`                         | `<db 目录>/migration-backups` | Schema 迁移前自动备份目录                                                                     |
 
 Provider 和渠道账号应优先通过 Web 配置。Legacy `/api/config/user-im/*` 只用于兼容，
 新功能统一使用 `/api/channel-accounts`。

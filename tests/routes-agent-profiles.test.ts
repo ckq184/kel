@@ -23,25 +23,6 @@ vi.mock('../src/logger.js', () => ({
   logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
 }));
 
-vi.mock('../src/agent-profile-generator.js', () => ({
-  generateAgentProfileDraft: vi.fn(async (description: string) => ({
-    name: description.includes('评审') ? '代码评审 Agent' : 'AI Agent',
-    identity_prompt: `根据描述生成：${description}`,
-  })),
-  refineAgentProfilePrompt: vi.fn(
-    async ({
-      currentPrompt,
-      message,
-    }: {
-      currentPrompt: string;
-      message: string;
-    }) => ({
-      reply: `已按要求调整：${message}`,
-      identity_prompt: `${currentPrompt}\n新增要求：${message}`.trim(),
-    }),
-  ),
-}));
-
 vi.mock('../src/middleware/auth.ts', () => ({
   authMiddleware: async (c: any, next: any) => {
     c.set('user', {
@@ -852,77 +833,6 @@ describe('/api/agent-profiles routes', () => {
     expect(res.status).toBe(400);
   });
 
-  test('POST /generate returns an AI AgentProfile draft', async () => {
-    const res = await routes.request('/generate', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ description: '帮我做代码评审，重点看风险。' }),
-    });
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.draft).toEqual({
-      name: '代码评审 Agent',
-      identity_prompt: '根据描述生成：帮我做代码评审，重点看风险。',
-    });
-  });
-
-  test('POST /generate rejects blank descriptions', async () => {
-    const res = await routes.request('/generate', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ description: '   ' }),
-    });
-    expect(res.status).toBe(400);
-  });
-
-  test('POST /:id/refine-prompt returns a candidate without saving it', async () => {
-    const [profile] = db.listAgentProfilesForUser('routes-agent-user');
-    const originalPrompt = profile.identity_prompt;
-    const res = await routes.request(`/${profile.id}/refine-prompt`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        message: '回答时先给结论',
-        current_prompt: '你是一个研究助手。',
-        history: [
-          { role: 'user', content: '语气更直接一些' },
-          { role: 'assistant', content: '已经调整了表达方式。' },
-        ],
-      }),
-    });
-
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({
-      refinement: {
-        reply: '已按要求调整：回答时先给结论',
-        identity_prompt: '你是一个研究助手。\n新增要求：回答时先给结论',
-      },
-    });
-    expect(
-      db.getAgentProfileForUser(profile.id, 'routes-agent-user'),
-    ).toMatchObject({ identity_prompt: originalPrompt });
-  });
-
-  test('POST /:id/refine-prompt validates ownership and input', async () => {
-    const missing = await routes.request('/missing-profile/refine-prompt', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        message: '调整一下',
-        current_prompt: '',
-      }),
-    });
-    expect(missing.status).toBe(404);
-
-    const [profile] = db.listAgentProfilesForUser('routes-agent-user');
-    const invalid = await routes.request(`/${profile.id}/refine-prompt`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ message: '   ', current_prompt: '' }),
-    });
-    expect(invalid.status).toBe(400);
-  });
-
   test('does not delete the default AgentProfile', async () => {
     const [defaultProfile] = db.listAgentProfilesForUser('routes-agent-user');
     const res = await routes.request(`/${defaultProfile.id}`, {
@@ -1623,5 +1533,29 @@ describe('/api/agent-profiles routes', () => {
       db.getAgentProfileForUser(profile.id, 'routes-agent-user'),
     ).toBeDefined();
     expect(db.getWorkspaceAgentProfileId(folder)).toBe(profile.id);
+  });
+});
+
+describe('retired Agent Profile AI endpoints (THESIS-25)', () => {
+  test('POST /generate returns 404', async () => {
+    const res = await routes.request('/generate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ description: '帮我做代码评审，重点看风险。' }),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  test('POST /:id/refine-prompt returns 404', async () => {
+    const [profile] = db.listAgentProfilesForUser('routes-agent-user');
+    const res = await routes.request(`/${profile.id}/refine-prompt`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        message: '回答时先给结论',
+        current_prompt: '你是一个研究助手。',
+      }),
+    });
+    expect(res.status).toBe(404);
   });
 });

@@ -431,14 +431,6 @@ describe('error-extraction copies route through the shared module (ISSUE-11 B4)'
       "extractErrorMessage(error, '删除 MCP 服务器失败')",
     );
   });
-
-  test('remaining copies keep their fallback texts verbatim', () => {
-    // 各副本的兜底文案经 fallback 参数原样迁移（抽样锁定；正则容忍
-    // prettier 对长行的折行）。
-    expect(
-      read('web/src/components/agents/AgentPromptAssistant.tsx'),
-    ).toContain("extractErrorMessage(err, 'AI 调整失败，请稍后重试')");
-  });
 });
 
 // ───────────────────────────── ④.c B5：safeStorage / buildCustomEnv

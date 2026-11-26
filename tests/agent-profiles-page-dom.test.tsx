@@ -100,7 +100,6 @@ vi.mock('../web/src/stores/agent-profiles', () => ({
     governanceByProfile: mocks.governanceByProfile,
     governanceLoading: {},
     governanceErrors: {},
-    generateProfileDraft: vi.fn(),
     createProfile: vi.fn(),
     updateProfile: mocks.updateProfile,
     uploadProfileAvatar: vi.fn(),
@@ -146,9 +145,6 @@ vi.mock('../web/src/stores/mcp-servers', () => ({
     }),
 }));
 
-vi.mock('../web/src/components/agents/AgentPromptAssistant', () => ({
-  AgentPromptAssistant: () => null,
-}));
 vi.mock('../web/src/components/agents/AgentPromptEditor', () => ({
   AgentPromptEditor: () => null,
 }));

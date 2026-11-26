@@ -1,6 +1,6 @@
 {
   "task": "THESIS-24 裁 Bug 报告 - 侧栏与关于页去掉报告问题入口，/api/bug-report 三个接口下线，删除路由、schema、前端对话框与专属测试，同步 API 文档与 RECALL_MODEL 说明",
-  "base": "48903d0",
+  "base": "8f58351",
   "allow": [
     ".gatescope.json",
     "docs/thesis-24-drop-bug-report-plan.md",
@@ -15,6 +15,7 @@
     "web/src/components/layout/UnifiedSidebar.tsx",
     "web/src/components/settings/AboutSection.tsx",
     "tests/thesis-24-drop-bug-report.test.ts",
+    "tests/api-route-caller-contract.test.ts",
     "tests/bug-report-sanitize.test.ts",
     "tests/thesis-02-bug-report-capability.test.ts"
   ]

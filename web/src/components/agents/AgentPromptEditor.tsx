@@ -22,14 +22,9 @@ import {
 interface AgentPromptEditorProps {
   value: AgentPromptParts;
   onChange: (value: AgentPromptParts) => void;
-  onOpenAssistant?: (section: AgentPromptSection) => void;
 }
 
-export function AgentPromptEditor({
-  value,
-  onChange,
-  onOpenAssistant,
-}: AgentPromptEditorProps) {
+export function AgentPromptEditor({ value, onChange }: AgentPromptEditorProps) {
   const [activeSection, setActiveSection] =
     useState<AgentPromptSection>('identity');
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -135,16 +130,6 @@ export function AgentPromptEditor({
                   {active.description}
                 </p>
               </div>
-              {onOpenAssistant && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => onOpenAssistant(active.key)}
-                >
-                  <Sparkles className="size-3.5" />用 AI 优化这一段
-                </Button>
-              )}
             </div>
             <Textarea
               id={`agent-prompt-${active.key}`}

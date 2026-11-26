@@ -171,10 +171,8 @@ HTTP 状态为 409；请求不会停止现有 Runner，也不会修改绑定。
 ## Agent Profiles
 
 - `GET|POST /api/agent-profiles`
-- `POST /api/agent-profiles/generate`
 - `PATCH|DELETE /api/agent-profiles/:id`
 - `POST|DELETE /api/agent-profiles/:id/avatar`
-- `POST /api/agent-profiles/:id/refine-prompt`
 - `GET /api/agent-profiles/:id/workspaces`
 - `GET /api/agent-profiles/:id/prompt-versions`
 - `POST /api/agent-profiles/:id/prompt-versions/:version/restore`

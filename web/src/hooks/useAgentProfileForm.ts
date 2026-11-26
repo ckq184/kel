@@ -4,17 +4,14 @@ import type {
   AgentProfilePromptMode,
   AgentProfileRuntimePolicy,
 } from '../types';
-import type {
-  AgentPromptParts,
-  AgentPromptSection,
-} from '../utils/agent-prompts';
+import type { AgentPromptParts } from '../utils/agent-prompts';
 import {
   DEFAULT_RUNTIME_POLICY,
   sameRuntimePolicy,
 } from '../utils/agent-runtime-policy-form';
 
 // ISSUE-12 波 5 单元 5.4：AgentProfilesPage 的表单状态簇（name/identity/
-// soul/agents/tools 四段提示词/promptMode/modelConfigId/assistantSection/
+// soul/agents/tools 四段提示词/promptMode/modelConfigId/
 // 头像四态）、currentPrompts/setCurrentPrompts、选中档案回填效应与
 // dirty/draftDirty 计算原文搬运（原页面 128-142/159-173/301-334/343-369
 // 四段）。计划红线严格落实：回填效应依赖数组刻意只含
@@ -50,8 +47,6 @@ export function useAgentProfileForm(input: UseAgentProfileFormInput) {
   const [promptMode, setPromptMode] =
     useState<AgentProfilePromptMode>('append');
   const [modelConfigId, setModelConfigId] = useState('inherit');
-  const [assistantSection, setAssistantSection] =
-    useState<AgentPromptSection>('identity');
   const [avatarEmoji, setAvatarEmoji] = useState<string | null>(null);
   const [avatarColor, setAvatarColor] = useState<string | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
@@ -152,8 +147,6 @@ export function useAgentProfileForm(input: UseAgentProfileFormInput) {
     setPromptMode,
     modelConfigId,
     setModelConfigId,
-    assistantSection,
-    setAssistantSection,
     avatarEmoji,
     setAvatarEmoji,
     avatarColor,
