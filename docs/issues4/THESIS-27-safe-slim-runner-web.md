@@ -69,3 +69,4 @@
 - **审查**：规格审查“有条件通过”（无 Critical；行数基线待用户追认）；质量审查“通过”（Critical 0 / Major 0 / Minor 6，均已处置）。详见 `docs/审查记录.md`。
 - **人工冒烟（待用户）**：在对话里让 Agent 暂停、恢复、取消一个定时任务；聊天输入框表情选择器显示正常。
 - **已知边界**：`update_task` 的缺失 revision 守卫仍单列以保留 `failUpdate` 的 warn 日志，未强行并入 helper。
+- **并行提示（THESIS-34）**：本包新增 `web/src/hooks/useAgentWorkspaceSections.ts`，其中 3 处使用 `is_my_home`；THESIS-34 把该字段改名为 `is_home` 时必须同步此文件（侧栏与聊天页已改为经 hook 读取，旧文件不再直接出现该字段）。THESIS-34 后合入时先 rebase 本分支并补这一处；本包后合入时同理。
