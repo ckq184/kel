@@ -82,7 +82,7 @@ const USER_PUBLIC_FORBIDDEN_FIELDS = [
 ] as const;
 
 describe('frontend role gates are gone', () => {
-  test('web source has no admin route guard or role comparison', () => {
+  test('web source has no admin guard, role comparison, or multi-user wording', () => {
     const offenders = listSourceFiles(webSourceRoot).flatMap((file) => {
       const relative = path.relative(root, file);
       const source = stripComments(fs.readFileSync(file, 'utf8'));
@@ -90,27 +90,21 @@ describe('frontend role gates are gone', () => {
       if (source.includes('requireAdmin')) {
         findings.push(`${relative}: requireAdmin`);
       }
+      if (source.includes('多用户')) {
+        findings.push(`${relative}: 多用户`);
+      }
+      if (source.includes("'member'")) {
+        findings.push(`${relative}: 'member'`);
+      }
       if (MCP_ROLE_GATE_EXEMPT.has(relative)) return findings;
       const roleComparison = source.match(/\brole\s*[!=]==\s*['"]admin['"]/);
       if (roleComparison) {
         findings.push(`${relative}: ${roleComparison[0]}`);
       }
-      if (source.includes("'member'")) {
-        findings.push(`${relative}: 'member'`);
-      }
       return findings;
     });
 
     expect(offenders).toEqual([]);
-  });
-
-  test('login and about surfaces no longer say 多用户', () => {
-    for (const file of [
-      'web/src/pages/LoginPage.tsx',
-      'web/src/components/settings/AboutSection.tsx',
-    ]) {
-      expect(stripComments(read(file)), file).not.toContain('多用户');
-    }
   });
 
   test('frontend user type keeps the single admin role and drops multi-user fields', () => {
